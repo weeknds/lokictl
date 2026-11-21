@@ -73,7 +73,7 @@ void on_stop_signal(int signal_number) {
 
 // Development tools set this variable to a file path to receive frame
 // statistics (see platform::FrameStats). Unset or empty means off.
-constexpr const char* kFrameStatsFileVariable = "NETDECK_FRAME_STATS_FILE";
+constexpr const char* kFrameStatsFileVariable = "LOKICTL_FRAME_STATS_FILE";
 
 void report_frame_stats_error(const std::string& message) {
     LOG_WARN("frame statistics stopped: {}", message);

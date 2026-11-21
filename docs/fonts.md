@@ -1,11 +1,11 @@
 <!--
-SPDX-FileCopyrightText: 2026 Netdeck contributors
+SPDX-FileCopyrightText: 2026 LokiCTL contributors
 SPDX-License-Identifier: MIT
 -->
 
 # Fonts
 
-Netdeck ships its own text fonts so the three themes look the same in the
+LokiCTL ships its own text fonts so the three themes look the same in the
 desktop simulator and on the device. This page lists what is bundled, where it
 comes from, and which special characters (arrows, dots, line pieces and
 braille) each font can actually draw.
@@ -13,7 +13,7 @@ braille) each font can actually draw.
 ## Bundled fonts
 
 All text fonts live in `assets/fonts/` and are installed to
-`/usr/share/netdeck/fonts/` by the Debian package. They are the unmodified
+`/usr/share/lokictl/fonts/` by the Debian package. They are the unmodified
 static TTF files from each project's official release: nothing was subset,
 renamed or re-saved. Two weights of each family are included.
 
@@ -39,7 +39,7 @@ copied unchanged from the same release. `assets/fonts/LICENSE.txt` lists every
 bundled font with its source, release and license, and it also covers the
 icon fonts that were already there: the Phosphor icon font
 (`Phosphor-Fill.ttf`) and the two Kenney keyboard fonts. The package installs
-that file as `/usr/share/doc/netdeck/third-party-assets-license.txt`.
+that file as `/usr/share/doc/lokictl/third-party-assets-license.txt`.
 
 ### Which theme uses which font
 
@@ -191,8 +191,8 @@ character" sign described above.
 To draw the pages, build the simulator and run, from the repository root:
 
 ```sh
-./build/darwin-arm64/Debug/netdeck --snapshot build/shots/fonts.png --page dev-fonts
-./build/darwin-arm64/Debug/netdeck --snapshot build/shots/fonts-terminal.png --page dev-fonts-jetbrains-mono --theme terminal
+./build/darwin-arm64/Debug/lokictl --snapshot build/shots/fonts.png --page dev-fonts
+./build/darwin-arm64/Debug/lokictl --snapshot build/shots/fonts-terminal.png --page dev-fonts-jetbrains-mono --theme terminal
 ```
 
 The theme only changes the colours of these pages; the sample text is always

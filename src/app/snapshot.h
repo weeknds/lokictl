@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2026 Netdeck contributors
+ * SPDX-FileCopyrightText: 2026 LokiCTL contributors
  *
  * SPDX-License-Identifier: MIT
  */

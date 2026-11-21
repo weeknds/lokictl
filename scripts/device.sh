@@ -1,24 +1,24 @@
 #!/usr/bin/env bash
-# SPDX-FileCopyrightText: 2026 Netdeck contributors
+# SPDX-FileCopyrightText: 2026 LokiCTL contributors
 # SPDX-License-Identifier: MIT
 #
-# Installs, runs and tests Netdeck on a real CardputerZero over SSH.
+# Installs, runs and tests LokiCTL on a real CardputerZero over SSH.
 #
 #   scripts/device.sh deploy        build the package if needed, copy it, install it
-#   scripts/device.sh run           start Netdeck on the device's screen
+#   scripts/device.sh run           start LokiCTL on the device's screen
 #   scripts/device.sh run --theme constellation
 #                                   the same, in that theme for this run only
 #   scripts/device.sh screen x.png  save what the screen shows
 #   scripts/device.sh key 6         press keys on the device
 #   scripts/device.sh stats         memory, CPU and frame time
-#   scripts/device.sh stop          stop Netdeck and bring the launcher back
+#   scripts/device.sh stop          stop LokiCTL and bring the launcher back
 #
 # "scripts/device.sh --help" lists every command and option.
 #
 # The device is chosen with two environment variables, never stored in the
 # repository:
-#   NETDECK_DEVICE     <user>@<device-ip> (required)
-#   NETDECK_SSH_OPTS   extra ssh options, for example "-i <path-to-key>" (optional)
+#   LOKICTL_DEVICE     <user>@<device-ip> (required)
+#   LOKICTL_SSH_OPTS   extra ssh options, for example "-i <path-to-key>" (optional)
 #
 # Everything runs over plain ssh. The device side is scripts/device-agent.py,
 # which is streamed to the device's python3 on each call; nothing else is
@@ -32,7 +32,7 @@ agent_script="${script_dir}/device-agent.py"
 package_name_pattern='^[A-Za-z0-9._+-]+\.deb$'
 # The package is copied to this name in the device user's home folder, so it
 # never replaces a file of the user's; the device side deletes it afterwards.
-upload_name="netdeck_upload.deb"
+upload_name="lokictl_upload.deb"
 png_signature="89504e470d0a1a0a"
 
 device=""
@@ -43,23 +43,23 @@ usage() {
   cat <<'EOF'
 Usage: scripts/device.sh <command> [options]
 
-Install, run and test Netdeck on a CardputerZero over SSH.
+Install, run and test LokiCTL on a CardputerZero over SSH.
 
 Commands:
   deploy [--no-build] [--with-deps] [<file.deb>]
                   Build the package if needed (scripts/build-deb.sh), copy it
                   to the device and install it. --no-build uses the newest
-                  dist/netdeck_*_arm64.deb. --with-deps allows apt to install
+                  dist/lokictl_*_arm64.deb. --with-deps allows apt to install
                   missing libraries as well (by default it must install
-                  nothing but Netdeck).
-  remove          Stop Netdeck and uninstall it.
-  run [--theme T] Start Netdeck on the device's screen. The launcher is
-                  paused while it runs and comes back when Netdeck stops.
+                  nothing but LokiCTL).
+  remove          Stop LokiCTL and uninstall it.
+  run [--theme T] Start LokiCTL on the device's screen. The launcher is
+                  paused while it runs and comes back when LokiCTL stops.
                   --theme uses theme T (instrument, constellation or
                   terminal) for this run only and saves nothing; without
-                  it, Netdeck's saved setting or its default decides. An
-                  unknown name makes Netdeck exit at once with a message.
-  stop            Stop Netdeck (however it was started) and bring the
+                  it, LokiCTL's saved setting or its default decides. An
+                  unknown name makes LokiCTL exit at once with a message.
+  stop            Stop LokiCTL (however it was started) and bring the
                   launcher back on HOME. Safe to repeat.
   status          Show the installed version and what is running.
   screen <out.png> [--no-wait]
@@ -68,30 +68,30 @@ Commands:
   key <name>... [--long | --hold-ms N] [--launcher]
                   Press keys, one after another. --long holds each for 1 s,
                   --hold-ms holds for 20 to 2500 ms (default 60). Keys are
-                  only sent while Netdeck runs, unless --launcher.
+                  only sent while LokiCTL runs, unless --launcher.
                   Names: 0-9, a-z, esc, enter, tab, space, backspace, up,
                   down, left, right, help, screenshot, and fn+h (help),
                   fn+j (screenshot), fn+f (up), fn+x (down), fn+z (left),
                   fn+c (right).
   stats [--seconds N]
-                  Netdeck's memory and CPU use over N seconds (default 3,
+                  LokiCTL's memory and CPU use over N seconds (default 3,
                   1 to 30), free memory and frame time.
   snapshot <out.png> [--page P] [--theme T] [--settle-ms N]
-                  Run "netdeck --snapshot" on the device and save the PNG.
+                  Run "lokictl --snapshot" on the device and save the PNG.
                   Without --theme the picture uses the default theme; the
                   saved setting is not read.
   logs [-n N]     Show the last N log lines (default 50) of the latest
-                  'run' only, also after Netdeck has stopped.
+                  'run' only, also after LokiCTL has stopped.
 
 Environment:
-  NETDECK_DEVICE    <user>@<device-ip> of the device (required).
-  NETDECK_SSH_OPTS  Extra ssh options, split on spaces, for example
+  LOKICTL_DEVICE    <user>@<device-ip> of the device (required).
+  LOKICTL_SSH_OPTS  Extra ssh options, split on spaces, for example
                     "-i <path-to-key>" (optional).
 
 Exit codes:
   0  done
   1  failed or refused (the message says why)
-  2  usage error or NETDECK_DEVICE missing
+  2  usage error or LOKICTL_DEVICE missing
   3  device unreachable
 EOF
 }
@@ -119,22 +119,22 @@ on_exit() {
 trap on_exit EXIT
 
 require_device() {
-  device="${NETDECK_DEVICE:-}"
+  device="${LOKICTL_DEVICE:-}"
   if [ -z "${device}" ]; then
-    printf 'Set NETDECK_DEVICE to the device, for example:\n' >&2
-    printf '  export NETDECK_DEVICE=<user>@<device-ip>\n' >&2
-    printf '  export NETDECK_SSH_OPTS="-i <path-to-key>"   # optional\n' >&2
+    printf 'Set LOKICTL_DEVICE to the device, for example:\n' >&2
+    printf '  export LOKICTL_DEVICE=<user>@<device-ip>\n' >&2
+    printf '  export LOKICTL_SSH_OPTS="-i <path-to-key>"   # optional\n' >&2
     exit 2
   fi
   case "${device}" in
     -* | *[[:space:]]*)
-      printf 'NETDECK_DEVICE must look like <user>@<device-ip>.\n' >&2
+      printf 'LOKICTL_DEVICE must look like <user>@<device-ip>.\n' >&2
       exit 2
       ;;
   esac
   ssh_opts=()
-  if [ -n "${NETDECK_SSH_OPTS:-}" ]; then
-    read -r -a ssh_opts <<< "${NETDECK_SSH_OPTS}"
+  if [ -n "${LOKICTL_SSH_OPTS:-}" ]; then
+    read -r -a ssh_opts <<< "${LOKICTL_SSH_OPTS}"
   fi
 }
 
@@ -146,7 +146,7 @@ remote() {
   ssh ${ssh_opts[@]+"${ssh_opts[@]}"} -o BatchMode=yes -o ConnectTimeout=10 \
     "${device}" "$1" || status=$?
   if [ "${status}" -eq 255 ]; then
-    printf 'Device unreachable: is it switched on, and are NETDECK_DEVICE / NETDECK_SSH_OPTS right?\n' >&2
+    printf 'Device unreachable: is it switched on, and are LOKICTL_DEVICE / LOKICTL_SSH_OPTS right?\n' >&2
     exit 3
   fi
   return "${status}"
@@ -199,8 +199,8 @@ cmd_deploy() {
   if [ -n "${package}" ]; then
     [ -f "${package}" ] || fail "Package not found: ${package}"
   elif [ "${build}" -eq 0 ]; then
-    package="$(ls -t "${repo_root}"/dist/netdeck_*_arm64.deb 2>/dev/null | head -n 1 || true)"
-    [ -n "${package}" ] || fail "No dist/netdeck_*_arm64.deb found. Run without --no-build to build one."
+    package="$(ls -t "${repo_root}"/dist/lokictl_*_arm64.deb 2>/dev/null | head -n 1 || true)"
+    [ -n "${package}" ] || fail "No dist/lokictl_*_arm64.deb found. Run without --no-build to build one."
   else
     log "Building the package (scripts/build-deb.sh)"
     package="$("${repo_root}/scripts/build-deb.sh")" || fail "Building the package failed (see above)."

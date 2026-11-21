@@ -1,11 +1,11 @@
 <!--
-SPDX-FileCopyrightText: 2026 Netdeck contributors
+SPDX-FileCopyrightText: 2026 LokiCTL contributors
 SPDX-License-Identifier: MIT
 -->
 
 # Themes
 
-Netdeck has three looks, called themes: **Instrument**, **Constellation** and
+LokiCTL has three looks, called themes: **Instrument**, **Constellation** and
 **Terminal**. This page explains what a theme is made of, how a screen gets
 its look, how the app picks a theme, and how to add a new one.
 
@@ -196,9 +196,9 @@ At startup the app takes the first of these that applies:
 
 Snapshot mode never reads the settings file, so without `--theme` a
 snapshot always uses the default theme. The settings file is
-`config/netdeck.conf` in the simulator. On the device it is
-`/etc/netdeck.conf`, with your own changes saved to
-`~/.config/netdeck/netdeck.conf`. The shipped file has no `dark_mode` line,
+`config/lokictl.conf` in the simulator. On the device it is
+`/etc/lokictl.conf`, with your own changes saved to
+`~/.config/lokictl/lokictl.conf`. The shipped file has no `dark_mode` line,
 so a fresh install starts in the default theme.
 
 The log says which theme was picked and why, for example
@@ -259,7 +259,7 @@ pages exist for checking themes; they can only be drawn this way:
 From the repository root, after building the simulator:
 
 ```sh
-B=./build/darwin-arm64/Debug/netdeck
+B=./build/darwin-arm64/Debug/lokictl
 $B --snapshot build/shots/theme-terminal.png --page dev-theme --theme terminal
 $B --snapshot build/shots/help-instrument.png --page dev-help --theme instrument
 $B --snapshot build/shots/toast-constellation.png --page dev-toast --theme constellation
@@ -271,7 +271,7 @@ done
 To start the simulator in one theme for a single run:
 
 ```sh
-./build/darwin-arm64/Debug/netdeck --theme constellation
+./build/darwin-arm64/Debug/lokictl --theme constellation
 ```
 
 On a device, `scripts/device.sh snapshot <file.png> --page dev-theme --theme

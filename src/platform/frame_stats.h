@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2026 Netdeck contributors
+ * SPDX-FileCopyrightText: 2026 LokiCTL contributors
  *
  * SPDX-License-Identifier: MIT
  */
@@ -19,7 +19,7 @@
 //   render_us_last=<latest frame in microseconds>
 //
 // It is opt-in: the app only creates it when a development tool asks for it
-// (scripts/device.sh sets NETDECK_FRAME_STATS_FILE). Everything runs on the UI
+// (scripts/device.sh sets LOKICTL_FRAME_STATS_FILE). Everything runs on the UI
 // thread, and the file is removed again when the object is destroyed.
 
 #include "lvgl.h"

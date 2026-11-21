@@ -1,9 +1,9 @@
-# SPDX-FileCopyrightText: 2026 Netdeck contributors
+# SPDX-FileCopyrightText: 2026 LokiCTL contributors
 # SPDX-License-Identifier: MIT
 """Device side of scripts/device.sh.
 
 scripts/device.sh sends this file over SSH and runs it on the CardputerZero
-as "python3 - <command> ...", so nothing besides the Netdeck package is ever
+as "python3 - <command> ...", so nothing besides the LokiCTL package is ever
 installed on the device. It only uses the Python standard library and also
 runs on older Python 3 versions (3.9 and newer).
 
@@ -34,9 +34,9 @@ import tempfile
 import time
 import zlib
 
-APP = "netdeck"
-BINARY = "/usr/bin/netdeck"
-DEV_UNIT = "netdeck-dev.service"
+APP = "lokictl"
+BINARY = "/usr/bin/lokictl"
+DEV_UNIT = "lokictl-dev.service"
 PACKAGED_UNIT = APP + ".service"
 LAUNCHER_UNIT = "APPLaunch.service"
 LAUNCHER_DIR = "/usr/share/APPLaunch"
@@ -44,7 +44,7 @@ DESKTOP_FILE = LAUNCHER_DIR + "/applications/" + APP + ".desktop"
 KEYBOARD_NAME = "tca8418c"
 FRAMEBUFFER = "/dev/fb0"
 SCREEN_SIZE = (320, 170)
-FRAME_STATS_VARIABLE = "NETDECK_FRAME_STATS_FILE"
+FRAME_STATS_VARIABLE = "LOKICTL_FRAME_STATS_FILE"
 FRAME_STATS_NAME = APP + "-frame-stats"
 PACKAGE_FILE_PATTERN = re.compile(r"^[A-Za-z0-9._+-]+\.deb$")
 
@@ -326,8 +326,8 @@ def process_alive(pid):
     return bool(fields) and fields[0] not in ("Z", "X")
 
 
-def netdeck_pids():
-    """Netdeck processes of this user, not counting snapshot runs."""
+def lokictl_pids():
+    """LokiCTL processes of this user, not counting snapshot runs."""
     pids = []
     for pid in user_pids():
         if process_exe(pid) != BINARY or not process_alive(pid):
@@ -383,7 +383,7 @@ def process_unit(pid):
 
 
 def launcher_open_apps():
-    """Apps the launcher has open: (pid, name, is_netdeck) for each.
+    """Apps the launcher has open: (pid, name, is_lokictl) for each.
 
     The launcher runs every app as its own child in a new process group, so
     an open app is a child of the launcher that leads its own group.
@@ -405,12 +405,12 @@ def launcher_open_apps():
         if ppid != launcher_pid or pgid != pid:
             continue
         group = [other for other, other_fields in stats.items() if other_fields[2] == str(pgid)]
-        is_netdeck = any(process_exe(member) == BINARY for member in group)
-        apps.append((pid, process_comm(pid), is_netdeck))
+        is_lokictl = any(process_exe(member) == BINARY for member in group)
+        apps.append((pid, process_comm(pid), is_lokictl))
     return apps
 
 
-def describe_netdeck(pid):
+def describe_lokictl(pid):
     unit = process_unit(pid)
     if unit == DEV_UNIT:
         return "started by 'device.sh run'"
@@ -445,7 +445,7 @@ def read_frame_stats(path):
 
 
 def process_frame_stats_path(pid):
-    """The frame statistics file a running Netdeck writes, if any."""
+    """The frame statistics file a running LokiCTL writes, if any."""
     try:
         with open("/proc/%d/environ" % pid, "rb") as handle:
             raw = handle.read()
@@ -463,7 +463,7 @@ def process_frame_stats_path(pid):
 
 
 def package_state():
-    """(dpkg state, version); the state is "ii" when Netdeck is installed.
+    """(dpkg state, version); the state is "ii" when LokiCTL is installed.
 
     A removed package whose settings files remain still has a version, with
     state "rc", so the version alone does not mean installed.
@@ -624,10 +624,10 @@ def cmd_install(args):
 
     say("Installed %s %s." % (APP, installed_version() or "?"))
     say("The installed %s matches the package (sha256 %s...)." % (BINARY, expected[:16]))
-    say("Netdeck is now on the launcher's HOME screen (%s)." % os.path.basename(DESKTOP_FILE))
-    running = netdeck_pids()
+    say("LokiCTL is now on the launcher's HOME screen (%s)." % os.path.basename(DESKTOP_FILE))
+    running = lokictl_pids()
     if running:
-        say("Netdeck is still running the old program (pid %s) until it is restarted: "
+        say("LokiCTL is still running the old program (pid %s) until it is restarted: "
             "device.sh stop, then device.sh run." % ", ".join(str(pid) for pid in running))
     return 0
 
@@ -636,7 +636,7 @@ def cmd_remove(args):
     for item in stop_everything():
         say("- " + item)
     if not installed_version():
-        say("Netdeck is not installed; nothing to remove.")
+        say("LokiCTL is not installed; nothing to remove.")
         return 0
     changes = simulate(["remove", APP])
     others = [pkg for _, pkg in changes if pkg != APP]
@@ -651,7 +651,7 @@ def cmd_remove(args):
     )
     if result.returncode != 0:
         raise Failure("apt-get remove failed (exit %d, see above)." % result.returncode)
-    say("Netdeck was removed. Its settings in /etc stay until the package is purged.")
+    say("LokiCTL was removed. Its settings in /etc stay until the package is purged.")
     return 0
 
 
@@ -672,22 +672,22 @@ def start_launcher_and_wait(timeout=15.0):
 
 
 def dev_unit_command(stats_path, launcher, theme=None):
-    """The systemd-run command line that starts Netdeck for 'run'.
+    """The systemd-run command line that starts LokiCTL for 'run'.
 
     theme, if given, is passed on as "--theme <theme>" after the program
-    path. It is not checked here: Netdeck knows its theme names and exits
+    path. It is not checked here: LokiCTL knows its theme names and exits
     at once with a message if it does not know this one.
     """
     cmd = ["systemd-run", "--user", "--unit=" + DEV_UNIT, "--collect", "--quiet",
            "-p", "TimeoutStopSec=5",
            "--setenv=%s=%s" % (FRAME_STATS_VARIABLE, stats_path)]
     if launcher:
-        # Whenever Netdeck ends (stop, crash, or the user quits it on the
+        # Whenever LokiCTL ends (stop, crash, or the user quits it on the
         # device), systemd brings the launcher back.
         cmd += ["--working-directory=" + LAUNCHER_DIR,
                 "-p", "ExecStopPost=/usr/bin/systemctl --user start --no-block " + LAUNCHER_UNIT]
     # systemd-run stops reading its own options at the program path, so
-    # everything after it goes to Netdeck.
+    # everything after it goes to LokiCTL.
     cmd.append(BINARY)
     if theme is not None:
         cmd += ["--theme", theme]
@@ -696,14 +696,14 @@ def dev_unit_command(stats_path, launcher, theme=None):
 
 def cmd_run(args):
     if not os.path.isfile(BINARY):
-        raise Failure("Netdeck is not installed. Run 'device.sh deploy' first.")
-    running = netdeck_pids()
+        raise Failure("LokiCTL is not installed. Run 'device.sh deploy' first.")
+    running = lokictl_pids()
     if running:
-        raise Failure("Netdeck is already running (pid %s, %s). Use 'device.sh stop' first."
-                      % (running[0], describe_netdeck(running[0])))
+        raise Failure("LokiCTL is already running (pid %s, %s). Use 'device.sh stop' first."
+                      % (running[0], describe_lokictl(running[0])))
 
     def other_apps():
-        return [(pid, name) for pid, name, is_netdeck in launcher_open_apps() if not is_netdeck]
+        return [(pid, name) for pid, name, is_lokictl in launcher_open_apps() if not is_lokictl]
 
     # Right after it starts, the launcher runs short helpers (such as nmcli)
     # the same way it runs apps, so only refuse if the other program stays.
@@ -719,7 +719,7 @@ def cmd_run(args):
     invocation = ""
     try:
         if launcher:
-            say("Pausing the launcher (%s) while Netdeck runs ..." % LAUNCHER_UNIT)
+            say("Pausing the launcher (%s) while LokiCTL runs ..." % LAUNCHER_UNIT)
             result = systemctl_user("stop", LAUNCHER_UNIT, timeout=45)
             if result.returncode != 0:
                 say(result.stderr.strip())
@@ -733,7 +733,7 @@ def cmd_run(args):
         result = run(cmd, timeout=30)
         if result.returncode != 0:
             say(result.stderr.strip())
-            raise Failure("systemd-run could not start Netdeck.")
+            raise Failure("systemd-run could not start LokiCTL.")
         # Identifies this run's lines in the journal. Empty if the unit has
         # already ended and been unloaded; the log tail then goes by time.
         invocation = current_invocation_id()
@@ -747,12 +747,12 @@ def cmd_run(args):
             # the clean-up (ExecStopPost); an unloaded unit reads "inactive".
             return unit_state(DEV_UNIT) not in ("active", "activating", "reloading")
 
-        # Netdeck exits at once when it refuses its options (an unknown
+        # LokiCTL exits at once when it refuses its options (an unknown
         # --theme, for example), so stop waiting as soon as the unit ends.
         if not wait_for(lambda: has_screen() or has_ended(), 5.0):
-            raise Failure("Netdeck did not open %s within 5 s." % FRAMEBUFFER)
+            raise Failure("LokiCTL did not open %s within 5 s." % FRAMEBUFFER)
         if not has_screen():
-            raise Failure("Netdeck did not start: it exited right away. Its own message is "
+            raise Failure("LokiCTL did not start: it exited right away. Its own message is "
                           "in the log lines above.")
         pid = unit_main_pid(DEV_UNIT)
 
@@ -761,7 +761,7 @@ def cmd_run(args):
             return bool(values) and values.get("frames", 0) > 0
 
         if not wait_for(drew_frame, 8.0):
-            say("Warning: Netdeck has not reported a finished frame yet.")
+            say("Warning: LokiCTL has not reported a finished frame yet.")
         started = True
     finally:
         if not started:
@@ -772,7 +772,7 @@ def cmd_run(args):
                 start_launcher_and_wait()
             if attempt_started_at is not None:
                 # Only this attempt's lines, never an earlier run's. When
-                # Netdeck refuses its options it prints its message and then
+                # LokiCTL refuses its options it prints its message and then
                 # its usage text (about 17 lines), so keep enough lines to
                 # still show the message.
                 try:
@@ -782,19 +782,19 @@ def cmd_run(args):
                 if tail:
                     say("Last log lines of %s:\n%s" % (DEV_UNIT, tail))
 
-    say("Netdeck is running (pid %d)." % pid)
+    say("LokiCTL is running (pid %d)." % pid)
     if launcher:
-        say("The launcher is paused until 'device.sh stop', or until Netdeck exits.")
+        say("The launcher is paused until 'device.sh stop', or until LokiCTL exits.")
     level = backlight_level()
     if level and level[0] == 0:
         say("Note: the backlight is off (the launcher had put the screen to sleep), so the "
-            "panel stays dark; 'screen' still captures what Netdeck draws. To see it on the "
+            "panel stays dark; 'screen' still captures what LokiCTL draws. To see it on the "
             "device, stop, press a key on the device to wake it, then run again.")
     return 0
 
 
 def stop_everything():
-    """Stops every Netdeck run and makes sure the launcher is back.
+    """Stops every LokiCTL run and makes sure the launcher is back.
 
     Returns a list of what was done (empty if nothing was running).
     """
@@ -805,28 +805,28 @@ def stop_everything():
         result = systemctl_user("stop", DEV_UNIT, timeout=30)
         if result.returncode != 0:
             say(result.stderr.strip())
-        done.append("stopped Netdeck (%s)" % DEV_UNIT)
+        done.append("stopped LokiCTL (%s)" % DEV_UNIT)
 
-    leftover = netdeck_pids()
+    leftover = lokictl_pids()
     if leftover:
         for pid in leftover:
             try:
                 os.kill(pid, signal.SIGTERM)
             except OSError:
                 pass
-        if not wait_for(lambda: not netdeck_pids(), 5.0):
-            for pid in netdeck_pids():
+        if not wait_for(lambda: not lokictl_pids(), 5.0):
+            for pid in lokictl_pids():
                 try:
                     os.kill(pid, signal.SIGKILL)
                 except OSError:
                     pass
-            wait_for(lambda: not netdeck_pids(), 2.0)
-            done.append("killed Netdeck (pid %s) after it ignored SIGTERM"
+            wait_for(lambda: not lokictl_pids(), 2.0)
+            done.append("killed LokiCTL (pid %s) after it ignored SIGTERM"
                         % ", ".join(str(pid) for pid in leftover))
         else:
-            done.append("stopped Netdeck (pid %s)" % ", ".join(str(pid) for pid in leftover))
+            done.append("stopped LokiCTL (pid %s)" % ", ".join(str(pid) for pid in leftover))
 
-    if not netdeck_pids():
+    if not lokictl_pids():
         stats_path = frame_stats_path()
         remove_quietly(stats_path)
         remove_quietly(stats_path + ".tmp")
@@ -844,8 +844,8 @@ def stop_everything():
 def cmd_stop(args):
     done = stop_everything()
     problems = []
-    if netdeck_pids():
-        problems.append("a Netdeck process is still running")
+    if lokictl_pids():
+        problems.append("a LokiCTL process is still running")
     if launcher_installed() and unit_state(LAUNCHER_UNIT) != "active":
         problems.append("the launcher is not active")
     for item in done:
@@ -855,7 +855,7 @@ def cmd_stop(args):
     if problems:
         raise Failure("Stop did not finish: " + "; ".join(problems) + ".")
     if done:
-        say("Netdeck is stopped and the launcher is back on HOME.")
+        say("LokiCTL is stopped and the launcher is back on HOME.")
     return 0
 
 
@@ -871,12 +871,12 @@ def cmd_status(args):
     else:
         lines.append(("package", "not installed"))
 
-    running = netdeck_pids()
+    running = lokictl_pids()
     if running:
-        lines.append(("netdeck", "; ".join("running, pid %d, %s" % (pid, describe_netdeck(pid))
+        lines.append(("lokictl", "; ".join("running, pid %d, %s" % (pid, describe_lokictl(pid))
                                            for pid in running)))
     else:
-        lines.append(("netdeck", "not running"))
+        lines.append(("lokictl", "not running"))
 
     if launcher_installed():
         state = unit_state(LAUNCHER_UNIT)
@@ -885,7 +885,7 @@ def cmd_status(args):
             lines.append(("launcher", "active (pid %d)" % pid))
         else:
             lines.append(("launcher", state + (" (paused by device.sh run)" if running else "")))
-        open_apps = [name for _, name, is_netdeck in launcher_open_apps() if not is_netdeck]
+        open_apps = [name for _, name, is_lokictl in launcher_open_apps() if not is_lokictl]
         if open_apps:
             lines.append(("open in launcher", ", ".join(open_apps)))
     else:
@@ -1154,8 +1154,8 @@ def cmd_key(args):
     else:
         hold_ms = DEFAULT_HOLD_MS
 
-    if not args.launcher and not netdeck_pids():
-        raise Failure("Netdeck is not running, so the keys would go to the launcher. "
+    if not args.launcher and not lokictl_pids():
+        raise Failure("LokiCTL is not running, so the keys would go to the launcher. "
                       "Nothing was sent. Start it with 'device.sh run' (or add --launcher "
                       "to really press keys on the launcher).")
 
@@ -1232,9 +1232,9 @@ def format_duration(seconds):
 
 
 def cmd_stats(args):
-    running = netdeck_pids()
+    running = lokictl_pids()
     if not running:
-        raise Failure("Netdeck is not running. Start it with 'device.sh run'.")
+        raise Failure("LokiCTL is not running. Start it with 'device.sh run'.")
     dev_pid = unit_main_pid(DEV_UNIT)
     pid = dev_pid if dev_pid in running else running[0]
     ticks_per_second = os.sysconf("SC_CLK_TCK")
@@ -1248,7 +1248,7 @@ def cmd_stats(args):
     elapsed = time.monotonic() - started
     frames_after = read_frame_stats(stats_path)
     if ticks_before is None or ticks_after is None:
-        raise Failure("Netdeck (pid %d) stopped during the measurement." % pid)
+        raise Failure("LokiCTL (pid %d) stopped during the measurement." % pid)
 
     fields = process_stat(pid)
     uptime_text = (read_text("/proc/uptime") or "0").split()[0]
@@ -1264,7 +1264,7 @@ def cmd_stats(args):
     memory = meminfo()
     load = " ".join((read_text("/proc/loadavg") or "? ? ?").split()[:3])
 
-    lines = [("pid", "%d (%s, running for %s)" % (pid, describe_netdeck(pid), format_duration(process_age)))]
+    lines = [("pid", "%d (%s, running for %s)" % (pid, describe_lokictl(pid), format_duration(process_age)))]
     memory_text = "RSS %.1f MB" % (rss_kb / 1024.0)
     if pss_kb is not None:
         memory_text += ", PSS %.1f MB" % (pss_kb / 1024.0)
@@ -1278,7 +1278,7 @@ def cmd_stats(args):
     lines.append(("load", load))
 
     if frames_after is None:
-        lines.append(("frame time", "not measured (start Netdeck with 'device.sh run')"))
+        lines.append(("frame time", "not measured (start LokiCTL with 'device.sh run')"))
     else:
         total = frames_after.get("frames", 0)
         window = total - frames_before.get("frames", 0) if frames_before else 0
@@ -1302,7 +1302,7 @@ def cmd_stats(args):
 
 def cmd_snapshot(args):
     if not os.path.isfile(BINARY):
-        raise Failure("Netdeck is not installed. Run 'device.sh deploy' first.")
+        raise Failure("LokiCTL is not installed. Run 'device.sh deploy' first.")
     base = runtime_dir()
     if not os.path.isdir(base):
         base = "/tmp"
@@ -1319,7 +1319,7 @@ def cmd_snapshot(args):
         # The app logs to stdout, which is reserved for the picture here.
         result = run(cmd, timeout=60, stdout=sys.stderr, stderr=sys.stderr)
         if result.returncode != 0:
-            say("netdeck --snapshot failed (exit %d)." % result.returncode)
+            say("lokictl --snapshot failed (exit %d)." % result.returncode)
             return result.returncode if 0 < result.returncode < 255 else 1
         with open(path, "rb") as handle:
             sys.stdout.buffer.write(handle.read())
@@ -1396,7 +1396,7 @@ def cmd_selftest(args):
     assert parse_key_capabilities("") == set()
     assert parse_key_capabilities("1 0") == {64}
 
-    # "run --theme T" hands the name to Netdeck unchecked, after the program
+    # "run --theme T" hands the name to LokiCTL unchecked, after the program
     # path, where systemd-run no longer reads options of its own.
     parser = build_parser()
     assert parser.parse_args(["run"]).theme is None, "run without --theme"
@@ -1456,11 +1456,11 @@ def build_parser():
     install.add_argument("--label", default="", help="package file name to show in messages")
     install.set_defaults(handler=cmd_install)
 
-    commands.add_parser("remove", help="stop and remove Netdeck").set_defaults(handler=cmd_remove)
-    run_parser = commands.add_parser("run", help="start Netdeck on the screen")
-    run_parser.add_argument("--theme", help="theme for this run only (passed on to Netdeck)")
+    commands.add_parser("remove", help="stop and remove LokiCTL").set_defaults(handler=cmd_remove)
+    run_parser = commands.add_parser("run", help="start LokiCTL on the screen")
+    run_parser.add_argument("--theme", help="theme for this run only (passed on to LokiCTL)")
     run_parser.set_defaults(handler=cmd_run)
-    commands.add_parser("stop", help="stop Netdeck, bring back the launcher").set_defaults(handler=cmd_stop)
+    commands.add_parser("stop", help="stop LokiCTL, bring back the launcher").set_defaults(handler=cmd_stop)
     commands.add_parser("status", help="show what is running").set_defaults(handler=cmd_status)
 
     screen = commands.add_parser("screen", help="write the screen as PNG to stdout")
@@ -1479,7 +1479,7 @@ def build_parser():
     stats.add_argument("--seconds", type=range_value(1, 30, "--seconds"), default=3)
     stats.set_defaults(handler=cmd_stats)
 
-    snapshot = commands.add_parser("snapshot", help="netdeck --snapshot, PNG to stdout")
+    snapshot = commands.add_parser("snapshot", help="lokictl --snapshot, PNG to stdout")
     snapshot.add_argument("--page")
     snapshot.add_argument("--theme")
     snapshot.add_argument("--settle-ms", type=range_value(0, 60000, "--settle-ms"))

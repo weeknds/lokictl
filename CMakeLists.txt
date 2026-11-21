@@ -6,14 +6,14 @@
 
 cmake_minimum_required(VERSION 3.31)
 
-project(netdeck VERSION 0.1.0 LANGUAGES C CXX)
+project(lokictl VERSION 0.1.0 LANGUAGES C CXX)
 
 # Application identity. This block and the project() line above are the only
 # places where the build names the app: targets, install paths, package
 # metadata and compile definitions are all derived from these values.
 # Keep app-builder.json, config/<APP_CONFIG_NAME>.conf and
 # assets/images/<APP_ICON_NAME>*.png in step with them by hand.
-set(APP_DISPLAY_NAME "Netdeck")            # launcher entry, window title, title bar, logs
+set(APP_DISPLAY_NAME "LokiCTL")            # launcher entry, window title, title bar, logs
 set(APP_NAME "${PROJECT_NAME}")            # log tag, screenshot prefix, /usr/share/<name> assets (the executable is named by project())
 set(APP_PACKAGE_NAME "${PROJECT_NAME}")    # Debian/store package name
 set(APP_CONFIG_NAME "${PROJECT_NAME}")     # <name>.conf and ~/.config/<name>/

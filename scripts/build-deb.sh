@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SPDX-FileCopyrightText: 2026 Netdeck contributors
+# SPDX-FileCopyrightText: 2026 LokiCTL contributors
 # SPDX-License-Identifier: MIT
 #
 # Builds the CardputerZero Debian package (dist/<name>_<version>-<revision>_arm64.deb)
@@ -12,7 +12,7 @@
 
 set -euo pipefail
 
-image_tag="netdeck-build:trixie"
+image_tag="lokictl-build:trixie"
 # Docker label holding the hash of the Dockerfile the image was built from.
 image_label="${image_tag%%:*}.dockerfile.sha256"
 # The repository is always mounted at this fixed path. Paths from the build
