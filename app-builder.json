@@ -1,0 +1,30 @@
+{
+  "app_name": "Netdeck",
+  "package_name": "netdeck",
+  "version": "0.1.0",
+  "description": "Pocket network multitool for CardputerZero",
+
+  "store": {
+    "summary": "Pocket network multitool: live status, router, hotspot and VPN modes, device discovery and tools.",
+    "description": "Netdeck turns the CardputerZero into a pocket network multitool. It shows live network status, switches the device between router, hotspot-sharing and VPN-gateway modes, finds the devices on a network and offers everyday network tools. Three switchable visual themes are included: Instrument, Constellation and Terminal.",
+    "categories": ["TODO"],
+    "screenshots": [
+      "screenshot/app-simulator-dark-darwin.png",
+      "screenshot/app-simulator-light-darwin.png"
+    ],
+    "icon": "assets/images/netdeck.png",
+    "license": "MIT",
+    "source_repo": "TODO",
+    "author": { "github": "TODO", "display_name": "TODO" },
+    "share_code": "TODO",
+    "permissions": {
+      "camera": true,
+      "microphone": false,
+      "imu": false,
+      "network": true,
+      "additional_hardware": false,
+      "background_service": true,
+      "external_display": false
+    }
+  }
+}
