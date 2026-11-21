@@ -91,10 +91,12 @@ bool load_application_config(const std::string& path,
 
         const auto key = lowercase(trim(line.substr(0, separator)));
         if (section == "application" && key == "dark_mode") {
-            if (!parse_bool(line.substr(separator + 1), config.dark_mode)) {
+            bool dark_mode = false;
+            if (!parse_bool(line.substr(separator + 1), dark_mode)) {
                 error = "invalid dark_mode value at line " + std::to_string(line_number);
                 return false;
             }
+            config.dark_mode = dark_mode;
         }
     }
 
@@ -127,8 +129,10 @@ bool save_application_config(const std::string& path,
     std::vector<std::string> updated;
     bool in_application_section = false;
     bool found_application_section = false;
-    bool wrote_dark_mode = false;
-    const std::string dark_mode_line = config.dark_mode ? "dark_mode=yes" : "dark_mode=no";
+    // With no value to write, the file is written back unchanged.
+    bool wrote_dark_mode = !config.dark_mode.has_value();
+    const std::string dark_mode_line =
+        config.dark_mode.value_or(false) ? "dark_mode=yes" : "dark_mode=no";
 
     for (const auto& current_line : lines) {
         const auto normalized = trim(current_line);
@@ -143,7 +147,7 @@ bool save_application_config(const std::string& path,
             found_application_section = found_application_section || in_application_section;
         }
 
-        if (in_application_section && is_key(current_line, "dark_mode")) {
+        if (config.dark_mode && in_application_section && is_key(current_line, "dark_mode")) {
             if (!wrote_dark_mode) {
                 updated.push_back(dark_mode_line);
                 wrote_dark_mode = true;
@@ -154,13 +158,18 @@ bool save_application_config(const std::string& path,
     }
 
     if (!wrote_dark_mode) {
-        if (!updated.empty() && !updated.back().empty()) {
-            updated.emplace_back();
+        if (in_application_section) {
+            // [application] is the last section: the key goes at its end.
+            updated.push_back(dark_mode_line);
+        } else {
+            if (!updated.empty() && !updated.back().empty()) {
+                updated.emplace_back();
+            }
+            if (!found_application_section) {
+                updated.emplace_back("[application]");
+            }
+            updated.push_back(dark_mode_line);
         }
-        if (!found_application_section) {
-            updated.emplace_back("[application]");
-        }
-        updated.push_back(dark_mode_line);
     }
 
     std::ofstream output(path, std::ios::trunc);

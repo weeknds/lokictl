@@ -12,7 +12,9 @@ namespace screen {
 
 class ButterScreen : public BaseScreen {
 public:
-    ButterScreen(viewmodel::BaseViewModel& view_model, app::AssetManager& assets);
+    ButterScreen(viewmodel::BaseViewModel& view_model,
+                 app::AssetManager& assets,
+                 view::ThemeEngine& theme_engine);
 
 private:
     void build_content(lv_obj_t* content) override;

@@ -9,6 +9,8 @@
 #include "apple_screen.h"
 #include "butter_screen.h"
 #include "dev_fonts_screen.h"
+#include "dev_overlays_screen.h"
+#include "dev_theme_screen.h"
 
 namespace app {
 namespace {
@@ -31,8 +33,10 @@ void current_page_observer(lv_observer_t* observer, lv_subject_t* subject) {
 
 } // namespace
 
-ScreenManager::ScreenManager(viewmodel::BaseViewModel& view_model, AssetManager& assets)
-    : view_model_(view_model), assets_(assets) {}
+ScreenManager::ScreenManager(viewmodel::BaseViewModel& view_model,
+                             AssetManager& assets,
+                             view::ThemeEngine& theme_engine)
+    : view_model_(view_model), assets_(assets), theme_engine_(theme_engine) {}
 
 ScreenManager::~ScreenManager() {
     lv_async_call_cancel(flush_requested_page_async, this);
@@ -55,19 +59,31 @@ void ScreenManager::start() {
 }
 
 void ScreenManager::show_apple_screen() {
-    load_screen(std::make_unique<screen::AppleScreen>(view_model_, assets_));
+    load_screen(std::make_unique<screen::AppleScreen>(view_model_, assets_, theme_engine_));
     loaded_page_ = model::AppPage::Apple;
     has_loaded_page_ = true;
 }
 
 void ScreenManager::show_butter_screen() {
-    load_screen(std::make_unique<screen::ButterScreen>(view_model_, assets_));
+    load_screen(std::make_unique<screen::ButterScreen>(view_model_, assets_, theme_engine_));
     loaded_page_ = model::AppPage::Butter;
     has_loaded_page_ = true;
 }
 
 void ScreenManager::show_dev_fonts_screen(model::AppPage page) {
-    load_screen(std::make_unique<screen::DevFontsScreen>(view_model_, assets_, page));
+    load_screen(std::make_unique<screen::DevFontsScreen>(view_model_, assets_, theme_engine_, page));
+    loaded_page_ = page;
+    has_loaded_page_ = true;
+}
+
+void ScreenManager::show_dev_theme_screen() {
+    load_screen(std::make_unique<screen::DevThemeScreen>(view_model_, assets_, theme_engine_));
+    loaded_page_ = model::AppPage::DevTheme;
+    has_loaded_page_ = true;
+}
+
+void ScreenManager::show_dev_overlays_screen(model::AppPage page) {
+    load_screen(std::make_unique<screen::DevOverlaysScreen>(view_model_, assets_, theme_engine_, page));
     loaded_page_ = page;
     has_loaded_page_ = true;
 }
@@ -91,6 +107,16 @@ void ScreenManager::flush_requested_page() {
 
     if (screen::DevFontsScreen::handles(requested_page_)) {
         show_dev_fonts_screen(requested_page_);
+        return;
+    }
+
+    if (screen::DevThemeScreen::handles(requested_page_)) {
+        show_dev_theme_screen();
+        return;
+    }
+
+    if (screen::DevOverlaysScreen::handles(requested_page_)) {
+        show_dev_overlays_screen(requested_page_);
         return;
     }
 

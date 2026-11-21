@@ -12,15 +12,22 @@
 #include <ctime>
 
 #include "asset_manager.h"
-#include "bindings.h"
 #include "device_status.h"
+#include "style.h"
 #include "theme.h"
+#include "theme_engine.h"
 #include "ui_const.h"
 
 namespace view::widgets {
 namespace {
 
 constexpr uint32_t kDeviceRefreshTicks = 5;
+
+// Fixed widths keep the status icons from moving when the text changes.
+// Every theme's Mono font fits "100%" and "21:11" in these.
+constexpr int32_t kIconWidth    = 18;
+constexpr int32_t kPercentWidth = 40;
+constexpr int32_t kTimeWidth    = 42;
 
 const char* wifi_icon(int32_t strength_percent, bool connected) {
     if (!connected || strength_percent < 0) {
@@ -55,13 +62,13 @@ const char* battery_icon(int32_t capacity_percent, bool charging) {
 }
 
 void configure_label(lv_obj_t* label,
-                     lv_subject_t* dark_mode_subject,
+                     const view::Theme& theme,
                      const lv_font_t* font,
                      int32_t width) {
     lv_obj_set_width(label, width);
     lv_obj_set_style_text_font(label, font, 0);
+    lv_obj_set_style_text_color(label, theme.colors.text, 0);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-    reactive::bind_theme(label, dark_mode_subject, reactive::ThemeRole::Text);
 }
 
 void set_visible(lv_obj_t* obj, bool visible) {
@@ -75,8 +82,11 @@ void set_visible(lv_obj_t* obj, bool visible) {
 
 } // namespace
 
-TitleBar::TitleBar(lv_obj_t* parent, viewmodel::BaseViewModel& view_model, app::AssetManager& assets)
-    : BaseWidgets(parent), view_model_(view_model), assets_(assets) {}
+TitleBar::TitleBar(lv_obj_t* parent,
+                   viewmodel::BaseViewModel& view_model,
+                   app::AssetManager& assets,
+                   view::ThemeEngine& theme_engine)
+    : BaseWidgets(parent), view_model_(view_model), assets_(assets), theme_engine_(theme_engine) {}
 
 TitleBar::~TitleBar() {
     if (refresh_timer_) {
@@ -90,21 +100,21 @@ void TitleBar::build() {
         return;
     }
 
+    const auto& theme = theme_engine_.theme();
+
     core_obj_ = lv_obj_create(parent_);
     lv_obj_remove_style_all(core_obj_);
     lv_obj_set_size(core_obj_, LV_PCT(100), kTitleBarHeight);
     lv_obj_align(core_obj_, LV_ALIGN_TOP_MID, 0, 0);
     lv_obj_clear_flag(core_obj_, LV_OBJ_FLAG_SCROLLABLE);
-    reactive::bind_theme(core_obj_, view_model_.dark_mode_subject(), reactive::ThemeRole::Bar);
+    view::style::bar(core_obj_, theme, view::style::Edge::Bottom);
 
     auto* title = lv_label_create(core_obj_);
     lv_label_bind_text(title, view_model_.title_subject(), nullptr);
     lv_label_set_long_mode(title, LV_LABEL_LONG_DOT);
     lv_obj_set_width(title, 142);
-    const lv_font_t* title_font = assets_.load_standard_font(14);
-    lv_obj_set_style_text_font(title, title_font ? title_font : &lv_font_montserrat_14, 0);
+    view::style::text(title, theme, view::FontRole::Title);
     lv_obj_align(title, LV_ALIGN_LEFT_MID, 8, 0);
-    reactive::bind_theme(title, view_model_.dark_mode_subject(), reactive::ThemeRole::Text);
 
     auto* status = lv_obj_create(core_obj_);
     lv_obj_remove_style_all(status);
@@ -115,25 +125,24 @@ void TitleBar::build() {
     lv_obj_set_style_pad_column(status, 3, 0);
     lv_obj_clear_flag(status, LV_OBJ_FLAG_SCROLLABLE);
 
+    // Without the icon font the labels show the font's empty box rather than
+    // nothing, which makes the missing file easy to notice.
     const lv_font_t* icon_font = assets_.load_font("Phosphor-Fill.ttf", 16);
     if (!icon_font) {
-        icon_font = &lv_font_montserrat_14;
+        icon_font = theme.font(view::FontRole::Body);
     }
-    const lv_font_t* status_font =
-        assets_.load_standard_font(14, app::StandardFontWeight::Regular);
-    if (!status_font) {
-        status_font = &lv_font_montserrat_14;
-    }
+    const lv_font_t* status_font = theme.font(view::FontRole::Mono);
+
     wifi_label_ = lv_label_create(status);
-    configure_label(wifi_label_, view_model_.dark_mode_subject(), icon_font, 18);
+    configure_label(wifi_label_, theme, icon_font, kIconWidth);
     ethernet_label_ = lv_label_create(status);
-    configure_label(ethernet_label_, view_model_.dark_mode_subject(), icon_font, 18);
+    configure_label(ethernet_label_, theme, icon_font, kIconWidth);
     battery_icon_label_ = lv_label_create(status);
-    configure_label(battery_icon_label_, view_model_.dark_mode_subject(), icon_font, 18);
+    configure_label(battery_icon_label_, theme, icon_font, kIconWidth);
     battery_percent_label_ = lv_label_create(status);
-    configure_label(battery_percent_label_, view_model_.dark_mode_subject(), status_font, 40);
+    configure_label(battery_percent_label_, theme, status_font, kPercentWidth);
     time_label_ = lv_label_create(status);
-    configure_label(time_label_, view_model_.dark_mode_subject(), status_font, 42);
+    configure_label(time_label_, theme, status_font, kTimeWidth);
 
     refresh_time();
     refresh_device_status();

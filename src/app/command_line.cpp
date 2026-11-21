@@ -60,6 +60,8 @@ LaunchOptions parse_command_line(int argc, const char* const* argv) {
 
     bool list_pages = false;
     bool has_snapshot = false;
+    bool has_theme = false;
+    // --page or --settle-ms, which only mean something for a snapshot.
     bool has_snapshot_option = false;
 
     for (int index = 1; index < argc; ++index) {
@@ -94,11 +96,15 @@ LaunchOptions parse_command_line(int argc, const char* const* argv) {
             continue;
         }
 
+        if (argument == "--theme") {
+            options.theme = std::string(value);
+            has_theme = true;
+            continue;
+        }
+
         has_snapshot_option = true;
         if (argument == "--page") {
             options.page = std::string(value);
-        } else if (argument == "--theme") {
-            options.theme = std::string(value);
         } else if (!parse_settle_ms(value, options.settle_ms)) {
             return invalid("--settle-ms must be a whole number from 0 to " +
                            std::to_string(kMaxSettleMs));
@@ -106,15 +112,19 @@ LaunchOptions parse_command_line(int argc, const char* const* argv) {
     }
 
     if (list_pages) {
-        if (has_snapshot || has_snapshot_option) {
+        if (has_snapshot || has_theme || has_snapshot_option) {
             return invalid("--list-pages cannot be combined with other options");
         }
         options.mode = LaunchMode::ListPages;
         return options;
     }
     if (!has_snapshot) {
-        // Only --page, --theme or --settle-ms can get here.
-        return invalid("--page, --theme and --settle-ms only work together with --snapshot");
+        if (has_snapshot_option) {
+            return invalid("--page and --settle-ms only work together with --snapshot");
+        }
+        // A normal start, possibly with --theme for this run.
+        options.mode = LaunchMode::Interactive;
+        return options;
     }
 
     options.mode = LaunchMode::Snapshot;
@@ -124,11 +134,11 @@ LaunchOptions parse_command_line(int argc, const char* const* argv) {
 std::string usage_text() {
     const std::string program = APP_NAME;
 
-    const std::string themes = view::theme_choice_names();
-    const std::string default_theme = view::theme_choices().front().name;
+    const std::string themes = view::theme_names();
+    const std::string default_theme = view::theme_spec(view::kDefaultThemeId).name;
     const std::string default_page = page_registry().front().name;
 
-    const std::string start_form = program;
+    const std::string start_form = program + " [--theme <name>]";
     const std::string list_form = program + " --list-pages";
     const std::string help_form = program + " --help";
     const std::size_t form_width =
@@ -143,12 +153,16 @@ std::string usage_text() {
     text += "  " + program + " --snapshot <out.png> [--page <name>] [--theme <name>]\n";
     text += "  " + std::string(program.size() + 1, ' ') + "[--settle-ms <n>]\n";
     text += "\n";
+    text += "  " + padded("--theme <name>", option_width) + "one of: " + themes + "\n";
+    text += "  " + std::string(option_width, ' ') +
+            "When starting the app, the theme is used for this run\n";
+    text += "  " + std::string(option_width, ' ') +
+            "only and is not saved. Snapshot default: " + default_theme + "\n";
+    text += "\n";
     text += "--snapshot draws one page into a PNG file of 320x170 pixels without\n";
     text += "opening a window, then exits. Snapshot options:\n";
     text += "  " + padded("--page <name>", option_width) + "page to draw (default: " +
             default_page + ", see --list-pages)\n";
-    text += "  " + padded("--theme <name>", option_width) + themes + " (default: " +
-            default_theme + ")\n";
     text += "  " + padded("--settle-ms <n>", option_width) +
             "LVGL time before capture, 0-" + std::to_string(kMaxSettleMs) +
             " ms (default: " + std::to_string(kDefaultSettleMs) + ")\n";

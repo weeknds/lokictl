@@ -17,11 +17,19 @@ namespace app {
 class AssetManager;
 }
 
+namespace view {
+class ThemeEngine;
+}
+
 namespace view::widgets {
 
 class NavBar : public BaseWidgets {
 public:
-    NavBar(lv_obj_t* parent, viewmodel::BaseViewModel& view_model, app::AssetManager& assets);
+    // Styled from theme_engine.theme() when built; see view::ThemeEngine.
+    NavBar(lv_obj_t* parent,
+           viewmodel::BaseViewModel& view_model,
+           app::AssetManager& assets,
+           view::ThemeEngine& theme_engine);
     ~NavBar() override;
 
     void build() override;
@@ -42,12 +50,11 @@ private:
 
     viewmodel::BaseViewModel& view_model_;
     app::AssetManager& assets_;
+    view::ThemeEngine& theme_engine_;
     std::array<std::unique_ptr<IconButton>, 5> icon_buttons_;
-    std::array<lv_obj_t*, 3> shortcut_key_labels_{};
-    lv_font_t* icon_font_{nullptr};
+    const lv_font_t* icon_font_{nullptr};
     lv_obj_t* shortcut_bar_{nullptr};
     lv_observer_t* page_observer_{nullptr};
-    lv_observer_t* theme_observer_{nullptr};
 };
 
 } // namespace view::widgets

@@ -11,12 +11,8 @@
 #include <cstdint>
 #include <string>
 
-namespace app {
-class AssetManager;
-}
-
-namespace viewmodel {
-class BaseViewModel;
+namespace view {
+class ThemeEngine;
 }
 
 namespace view::widgets {
@@ -38,12 +34,12 @@ struct ToastConfig {
     uint32_t duration_ms{2600};
 };
 
+// A short message in a box near the bottom of the screen. The highlighted
+// part of a message is drawn in the colour of its tone. A toast usually lives
+// on the top layer, outside any screen, so it follows theme changes itself.
 class Toast : public BaseWidgets {
 public:
-    Toast(lv_obj_t* parent,
-          viewmodel::BaseViewModel& view_model,
-          app::AssetManager& assets,
-          ToastConfig config = {});
+    Toast(lv_obj_t* parent, view::ThemeEngine& theme_engine, ToastConfig config = {});
     ~Toast() override;
 
     void build() override;
@@ -72,8 +68,7 @@ private:
     static void hide_timer_cb(lv_timer_t* timer);
     static void theme_observer_cb(lv_observer_t* observer, lv_subject_t* subject);
 
-    viewmodel::BaseViewModel& view_model_;
-    app::AssetManager& assets_;
+    view::ThemeEngine& theme_engine_;
     ToastConfig config_;
     ToastTone tone_{ToastTone::Default};
     std::string prefix_;

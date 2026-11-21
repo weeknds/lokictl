@@ -6,10 +6,11 @@
 
 #include "help_popup.h"
 
-#include "asset_manager.h"
-#include "base_viewmodel.h"
+#include "style.h"
 #include "theme.h"
+#include "theme_engine.h"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 
@@ -23,8 +24,8 @@ struct HelpRow {
 
 constexpr std::array<HelpRow, 5> kAppleRows = {{
     {"HOLD ESC / 4", "Exit"},
-    {"5", "Text weight"},
-    {"6", "Light / dark"},
+    {"5", "Text size"},
+    {"6", "Theme (next start)"},
     {"7", "Version info"},
     {"8", "Open counter"},
 }};
@@ -35,99 +36,93 @@ constexpr std::array<HelpRow, 3> kButterRows = {{
     {"C / RIGHT", "Increase"},
 }};
 
+// The panel is as tall as its text, which depends on the theme's fonts;
+// with five rows it stays well inside the 170 px screen in every theme.
+constexpr int32_t kPanelWidth = view::kScreenWidth - 16;
+
+lv_obj_t* plain_object(lv_obj_t* parent) {
+    auto* obj = lv_obj_create(parent);
+    lv_obj_remove_style_all(obj);
+    lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
+    return obj;
+}
+
+// Width of the widest key text of both pages in `font`, so the action column
+// lines up in every theme.
+int32_t key_column_width(const lv_font_t* font) {
+    int32_t widest = 0;
+    const auto measure = [&](const char* text) {
+        lv_point_t size{};
+        lv_text_get_size(&size, text, font, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+        widest = std::max(widest, size.x);
+    };
+    for (const auto& row : kAppleRows) {
+        measure(row.key);
+    }
+    for (const auto& row : kButterRows) {
+        measure(row.key);
+    }
+    return widest;
+}
+
 } // namespace
 
-HelpPopup::HelpPopup(lv_obj_t* parent,
-                     viewmodel::BaseViewModel& view_model,
-                     app::AssetManager& assets)
-    : BaseWidgets(parent), view_model_(view_model), assets_(assets) {}
+HelpPopup::HelpPopup(lv_obj_t* parent, view::ThemeEngine& theme_engine)
+    : BaseWidgets(parent), theme_engine_(theme_engine) {}
 
 void HelpPopup::build() {
     if (core_obj_ || !parent_) {
         return;
     }
 
-    core_obj_ = lv_obj_create(parent_);
-    lv_obj_remove_style_all(core_obj_);
+    // The dimmed backdrop over the whole screen.
+    core_obj_ = plain_object(parent_);
     lv_obj_set_size(core_obj_, LV_PCT(100), LV_PCT(100));
-    lv_obj_set_style_bg_color(core_obj_, lv_color_black(), 0);
-    lv_obj_set_style_bg_opa(core_obj_, LV_OPA_50, 0);
     lv_obj_add_flag(core_obj_, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_clear_flag(core_obj_, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_event_cb(core_obj_, backdrop_clicked_cb, LV_EVENT_CLICKED, this);
 
-    panel_ = lv_obj_create(core_obj_);
-    lv_obj_remove_style_all(panel_);
-    lv_obj_set_size(panel_, 292, 146);
+    panel_ = plain_object(core_obj_);
+    lv_obj_set_size(panel_, kPanelWidth, LV_SIZE_CONTENT);
     lv_obj_center(panel_);
-    lv_obj_set_style_radius(panel_, 6, 0);
-    lv_obj_set_style_bg_opa(panel_, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(panel_, 1, 0);
-    lv_obj_set_style_shadow_width(panel_, 14, 0);
-    lv_obj_set_style_shadow_opa(panel_, LV_OPA_20, 0);
-    lv_obj_set_style_pad_all(panel_, 0, 0);
-    lv_obj_clear_flag(panel_, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_flex_flow(panel_, LV_FLEX_FLOW_COLUMN);
     lv_obj_add_flag(panel_, LV_OBJ_FLAG_CLICKABLE);
 
-    title_ = lv_label_create(panel_);
+    header_ = plain_object(panel_);
+    lv_obj_set_size(header_, LV_PCT(100), LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(header_, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(header_, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    title_ = lv_label_create(header_);
     lv_label_set_text(title_, "Keyboard help");
-    auto* title_font = assets_.load_standard_font(15);
-    lv_obj_set_style_text_font(title_, title_font ? title_font : &lv_font_montserrat_14, 0);
-    lv_obj_align(title_, LV_ALIGN_TOP_LEFT, 12, 9);
 
-    page_badge_ = lv_label_create(panel_);
-    auto* badge_font = assets_.load_standard_font(11);
-    lv_obj_set_style_text_font(page_badge_, badge_font ? badge_font : &lv_font_montserrat_12, 0);
-    lv_obj_set_style_radius(page_badge_, 3, 0);
-    lv_obj_set_style_pad_hor(page_badge_, 6, 0);
-    lv_obj_set_style_pad_ver(page_badge_, 2, 0);
-    lv_obj_align(page_badge_, LV_ALIGN_TOP_RIGHT, -10, 7);
+    page_badge_ = lv_label_create(header_);
 
-    auto* rows = lv_obj_create(panel_);
-    lv_obj_remove_style_all(rows);
-    lv_obj_set_size(rows, 268, 88);
-    lv_obj_align(rows, LV_ALIGN_TOP_MID, 0, 35);
-    lv_obj_set_flex_flow(rows, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(rows, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
-    lv_obj_set_style_pad_row(rows, 1, 0);
-    lv_obj_clear_flag(rows, LV_OBJ_FLAG_SCROLLABLE);
+    rows_box_ = plain_object(panel_);
+    lv_obj_set_size(rows_box_, LV_PCT(100), LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(rows_box_, LV_FLEX_FLOW_COLUMN);
 
-    auto* key_font = assets_.load_standard_font(11);
-    auto* action_font = assets_.load_standard_font(12, app::StandardFontWeight::Regular);
     for (auto& widgets : rows_) {
-        widgets.row = lv_obj_create(rows);
-        lv_obj_remove_style_all(widgets.row);
-        lv_obj_set_size(widgets.row, LV_PCT(100), 16);
-        lv_obj_clear_flag(widgets.row, LV_OBJ_FLAG_SCROLLABLE);
+        widgets.row = plain_object(rows_box_);
+        lv_obj_set_size(widgets.row, LV_PCT(100), LV_SIZE_CONTENT);
+        lv_obj_set_flex_flow(widgets.row, LV_FLEX_FLOW_ROW);
+        lv_obj_set_flex_align(widgets.row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
         widgets.key = lv_label_create(widgets.row);
-        lv_obj_set_width(widgets.key, 82);
-        lv_obj_set_style_text_font(widgets.key, key_font ? key_font : &lv_font_montserrat_12, 0);
         lv_obj_set_style_text_align(widgets.key, LV_TEXT_ALIGN_LEFT, 0);
-        lv_obj_align(widgets.key, LV_ALIGN_LEFT_MID, 0, 0);
 
         widgets.action = lv_label_create(widgets.row);
-        lv_obj_set_width(widgets.action, 176);
-        lv_obj_set_style_text_font(widgets.action,
-                                   action_font ? action_font : &lv_font_montserrat_12,
-                                   0);
-        lv_obj_align(widgets.action, LV_ALIGN_RIGHT_MID, 0, 0);
+        lv_label_set_long_mode(widgets.action, LV_LABEL_LONG_DOT);
+        lv_obj_set_flex_grow(widgets.action, 1);
     }
 
     footer_ = lv_label_create(panel_);
     lv_label_set_text(footer_, "HELP / ESC  Close   PRSC  Screenshot");
-    lv_label_set_long_mode(footer_, LV_LABEL_LONG_CLIP);
-    auto* footer_font = assets_.load_standard_font(10);
-    lv_obj_set_style_text_font(footer_, footer_font ? footer_font : &lv_font_montserrat_10, 0);
-    lv_obj_set_style_text_align(footer_, LV_TEXT_ALIGN_LEFT, 0);
-    lv_obj_set_size(footer_, LV_SIZE_CONTENT, 12);
-    lv_obj_align(footer_, LV_ALIGN_BOTTOM_LEFT, 12, -7);
+    lv_label_set_long_mode(footer_, LV_LABEL_LONG_DOT);
+    lv_obj_set_width(footer_, LV_PCT(100));
 
-    lv_subject_add_observer_obj(view_model_.dark_mode_subject(),
-                                theme_observer_cb,
-                                core_obj_,
-                                this);
-    apply_theme();
+    // LVGL calls the observer once right away, which applies the current
+    // theme; it then runs again after every theme change.
+    lv_subject_add_observer_obj(theme_engine_.subject(), theme_observer_cb, core_obj_, this);
     hide();
 }
 
@@ -139,7 +134,6 @@ void HelpPopup::show(model::AppPage page) {
         return;
     }
     update_rows(page);
-    apply_theme();
     lv_obj_move_foreground(core_obj_);
     lv_obj_remove_flag(core_obj_, LV_OBJ_FLAG_HIDDEN);
 }
@@ -171,23 +165,45 @@ void HelpPopup::update_rows(model::AppPage page) {
     }
 }
 
+// Sets every colour, font and spacing from the active theme. The sizes that
+// depend on font metrics (the key column, and through the flex layout every
+// row and the panel height) follow from here as well.
 void HelpPopup::apply_theme() {
     if (!panel_) {
         return;
     }
-    const auto colors = view::palette(view_model_.is_dark_mode());
-    lv_obj_set_style_bg_color(panel_, colors.surface, 0);
-    lv_obj_set_style_border_color(panel_, colors.border, 0);
-    lv_obj_set_style_shadow_color(panel_, lv_color_black(), 0);
-    lv_obj_set_style_text_color(title_, colors.text, 0);
-    lv_obj_set_style_bg_color(page_badge_, colors.primary, 0);
-    lv_obj_set_style_bg_opa(page_badge_, LV_OPA_20, 0);
-    lv_obj_set_style_text_color(page_badge_, colors.primary, 0);
-    lv_obj_set_style_text_color(footer_, colors.text_disabled, 0);
+
+    const auto& theme = theme_engine_.theme();
+    const auto& colors = theme.colors;
+    const auto& metrics = theme.metrics;
+
+    lv_obj_set_style_bg_color(core_obj_, colors.background, 0);
+    lv_obj_set_style_bg_opa(core_obj_, LV_OPA_70, 0);
+
+    view::style::popup(panel_, theme);
+    lv_obj_set_style_pad_hor(panel_, metrics.space_lg, 0);
+    lv_obj_set_style_pad_ver(panel_, metrics.space_md, 0);
+    lv_obj_set_style_pad_row(panel_, metrics.space_sm, 0);
+
+    view::style::text(title_, theme, view::FontRole::Title);
+
+    view::style::text(page_badge_, theme, view::FontRole::Small, colors.accent);
+    lv_obj_set_style_border_color(page_badge_, colors.accent, 0);
+    lv_obj_set_style_border_width(page_badge_, metrics.border_width, 0);
+    lv_obj_set_style_border_opa(page_badge_, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(page_badge_, metrics.radius, 0);
+    lv_obj_set_style_pad_hor(page_badge_, metrics.space_sm, 0);
+    lv_obj_set_style_pad_ver(page_badge_, 0, 0);
+
+    const lv_font_t* key_font = theme.font(view::FontRole::Strong);
+    const int32_t key_width = key_column_width(key_font) + metrics.space_md;
     for (auto& row : rows_) {
-        lv_obj_set_style_text_color(row.key, colors.primary, 0);
-        lv_obj_set_style_text_color(row.action, colors.text, 0);
+        view::style::text(row.key, theme, view::FontRole::Strong, colors.accent);
+        lv_obj_set_width(row.key, key_width);
+        view::style::text(row.action, theme, view::FontRole::Body);
     }
+
+    view::style::text(footer_, theme, view::FontRole::Small, colors.muted);
 }
 
 void HelpPopup::backdrop_clicked_cb(lv_event_t* event) {

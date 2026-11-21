@@ -17,6 +17,11 @@ namespace app {
 class AssetManager;
 }
 
+namespace view {
+class ThemeEngine;
+struct Theme;
+} // namespace view
+
 namespace screen {
 
 class BaseScreen {
@@ -28,7 +33,11 @@ public:
         FullScreen,
     };
 
-    BaseScreen(viewmodel::BaseViewModel& view_model, app::AssetManager& assets);
+    // Screens are styled from theme_engine.theme() when they are built and
+    // are built again when the theme changes.
+    BaseScreen(viewmodel::BaseViewModel& view_model,
+               app::AssetManager& assets,
+               view::ThemeEngine& theme_engine);
     virtual ~BaseScreen();
 
     BaseScreen(const BaseScreen&) = delete;
@@ -42,10 +51,13 @@ protected:
 
     viewmodel::BaseViewModel& view_model();
     app::AssetManager& assets();
+    const view::Theme& theme() const;
+    view::ThemeEngine& theme_engine();
 
 private:
     viewmodel::BaseViewModel& view_model_;
     app::AssetManager& assets_;
+    view::ThemeEngine& theme_engine_;
     lv_obj_t* root_{nullptr};
     lv_obj_t* content_{nullptr};
     std::unique_ptr<view::widgets::TitleBar> title_bar_;

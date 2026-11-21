@@ -89,11 +89,6 @@ DesktopSimulatorFrame::DesktopSimulatorFrame(const AssetManager& assets) {
 }
 
 DesktopSimulatorFrame::~DesktopSimulatorFrame() {
-    if (theme_observer_) {
-        lv_observer_remove(theme_observer_);
-        theme_observer_ = nullptr;
-    }
-
     keypad_.reset();
     if (pointer_) lv_indev_delete(pointer_);
     if (encoder_) lv_indev_delete(encoder_);
@@ -267,25 +262,8 @@ bool DesktopSimulatorFrame::initialize_display() {
     return true;
 }
 
-void DesktopSimulatorFrame::bind_dark_mode(lv_subject_t* dark_mode_subject) {
-    if (!dark_mode_subject) {
-        return;
-    }
-    if (theme_observer_) {
-        lv_observer_remove(theme_observer_);
-    }
-    theme_observer_ = lv_subject_add_observer(dark_mode_subject, theme_observer, this);
-}
-
-void DesktopSimulatorFrame::theme_observer(lv_observer_t* observer, lv_subject_t* subject) {
-    auto* frame = static_cast<DesktopSimulatorFrame*>(lv_observer_get_user_data(observer));
-    if (frame) {
-        frame->set_dark_mode(lv_subject_get_int(subject) != 0);
-    }
-}
-
-void DesktopSimulatorFrame::set_dark_mode(bool dark_mode) {
-    dark_mode_ = dark_mode;
+void DesktopSimulatorFrame::set_dark_shell(bool dark) {
+    dark_shell_ = dark;
     render();
 }
 
@@ -426,7 +404,7 @@ void DesktopSimulatorFrame::render() {
 
     SDL_SetRenderDrawColor(renderer_, 0x20, 0x21, 0x24, 0xff);
     SDL_RenderClear(renderer_);
-    auto* shell = dark_mode_ ? dark_texture_ : light_texture_;
+    auto* shell = dark_shell_ ? dark_texture_ : light_texture_;
     if (shell) SDL_RenderCopy(renderer_, shell, nullptr, nullptr);
     if (keypad_) keypad_->render(renderer_);
     if (lvgl_texture_) SDL_RenderCopy(renderer_, lvgl_texture_, nullptr, &kScreenRect);

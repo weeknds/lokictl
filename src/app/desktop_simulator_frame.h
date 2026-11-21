@@ -39,13 +39,13 @@ public:
 
     lv_display_t* display() const;
     bool process_events();
-    void bind_dark_mode(lv_subject_t* dark_mode_subject);
+    // Picks the dark or the light shell art drawn around the screen.
+    void set_dark_shell(bool dark);
 
 private:
     static void flush_cb(lv_display_t* display, const lv_area_t* area, uint8_t* px_map);
     static void pointer_read_cb(lv_indev_t* indev, lv_indev_data_t* data);
     static void encoder_read_cb(lv_indev_t* indev, lv_indev_data_t* data);
-    static void theme_observer(lv_observer_t* observer, lv_subject_t* subject);
 
     bool initialize_sdl();
     bool initialize_display();
@@ -55,7 +55,6 @@ private:
     void update_pointer(int32_t window_x, int32_t window_y, bool pressed);
     void emit_physical_key(int32_t sdl_key, bool pressed);
     void render();
-    void set_dark_mode(bool dark_mode);
 
     SDL_Window* window_{nullptr};
     SDL_Renderer* renderer_{nullptr};
@@ -65,7 +64,6 @@ private:
     lv_display_t* display_{nullptr};
     lv_indev_t* pointer_{nullptr};
     lv_indev_t* encoder_{nullptr};
-    lv_observer_t* theme_observer_{nullptr};
     std::unique_ptr<DesktopVirtualKeypad> keypad_;
     std::vector<uint32_t> framebuffer_;
     int32_t pointer_x_{0};
@@ -73,7 +71,7 @@ private:
     int16_t encoder_diff_{0};
     bool pointer_pressed_{false};
     bool encoder_pressed_{false};
-    bool dark_mode_{false};
+    bool dark_shell_{false};
     bool initialized_{false};
 };
 

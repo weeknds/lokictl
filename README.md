@@ -50,8 +50,33 @@ Notes:
   Windows desktops are carried over but untested.
 - Keys: `4` to `8` are the five soft keys under the screen and `ESC` goes back.
   Hold `ESC` on the first page (or close the window) to quit.
-- The simulator reads its settings from `config/netdeck.conf`. Toggling dark
-  mode in the simulator rewrites that file.
+- `--theme <name>` starts the simulator in one theme for this run only, for
+  example `./build/darwin-arm64/Debug/netdeck --theme constellation`. The
+  device frame drawn around the screen follows the theme: white for
+  Instrument, black for the other two. See [Themes](#themes).
+- The simulator reads its settings from `config/netdeck.conf`. Pressing `6`
+  on the home page saves the theme for the next start, so it rewrites that
+  file.
+
+## Themes
+
+Netdeck has three themes: Instrument, Constellation and Terminal. Each one
+sets the colours, fonts, spacing and borders of every screen. At startup the
+app picks the theme like this:
+
+1. `--theme instrument`, `--theme constellation` or `--theme terminal` on the
+   command line. On a normal start it counts for that run only and is not
+   saved.
+2. Otherwise the saved setting. For now, `6` on the home page switches it
+   between Terminal and Instrument; the running theme stays as it is and a
+   message names the theme the next start will use. Constellation can only
+   be picked with `--theme` until the theme choice is saved by name.
+3. Otherwise the default theme, Terminal. It is set in one place,
+   `view::kDefaultThemeId` in `src/view/theme.h`.
+
+Switching themes while the app runs is planned for a later version.
+[docs/themes.md](docs/themes.md) lists every colour, font and spacing value
+of the three themes and explains how screens use them.
 
 ## Screenshots without a window
 
@@ -62,7 +87,8 @@ building:
 
 ```sh
 ./build/darwin-arm64/Debug/netdeck --snapshot build/shots/home.png
-./build/darwin-arm64/Debug/netdeck --snapshot build/shots/counter-dark.png --page demo-counter --theme dark
+./build/darwin-arm64/Debug/netdeck --snapshot build/shots/counter-terminal.png --page demo-counter --theme terminal
+./build/darwin-arm64/Debug/netdeck --snapshot build/shots/home-instrument.png --theme instrument
 ./build/darwin-arm64/Debug/netdeck --list-pages
 ```
 
@@ -71,7 +97,9 @@ Options:
 - `--snapshot <file>`: where to save the PNG. Missing folders are created.
 - `--page <name>`: which page to draw. The default is the first page, and
   `--list-pages` prints all page names.
-- `--theme <name>`: `light` or `dark`. The default is `light`.
+- `--theme <name>`: `instrument`, `constellation` or `terminal`. The default
+  is `terminal`, the app's default theme. Any other name is refused with a
+  message that lists the three.
 - `--settle-ms <n>`: how long LVGL's own clock runs before the picture is
   taken, from 0 to 60000. The default is 300. The program does not really
   wait that long; it finishes in a fraction of a second.
@@ -79,22 +107,25 @@ Options:
 
 Notes:
 
-- Snapshot mode does not read or change the settings file, so your own dark
-  mode choice does not affect the picture.
+- Snapshot mode does not read or change the settings file, so the theme you
+  saved with `6` does not affect the picture. Without `--theme` it always
+  uses the default theme.
 - Only the page itself is captured. Pop-up messages and the help overlay are
-  not included.
+  not included. The developer pages `dev-help` and `dev-toast` show the same
+  help panel and messages on a page of their own, so their look can still be
+  checked.
 - The clock in the title bar shows the current time, so two pictures taken a
   minute apart are not identical.
 
 ## Fonts
 
-Netdeck bundles five text font families in `assets/fonts/`: Space Grotesk and
-IBM Plex Mono for the Instrument theme, Geist Mono for Constellation,
-JetBrains Mono for Terminal, and Inter for general interface text. They are
-the unmodified files from each project's official release and are licensed
-under the SIL Open Font License. [docs/fonts.md](docs/fonts.md) lists their
-versions and which special characters (arrows, dots, line pieces, braille)
-each font can draw.
+Netdeck bundles five text font families in `assets/fonts/`: Space Grotesk,
+Inter and IBM Plex Mono for the Instrument theme, Geist Mono for
+Constellation and JetBrains Mono for Terminal. JetBrains Mono also fills in
+the symbols the other fonts lack. They are the unmodified files from each
+project's official release and are licensed under the SIL Open Font License.
+[docs/fonts.md](docs/fonts.md) lists their versions and which special
+characters (arrows, dots, line pieces, braille) each font can draw.
 
 To see the fonts as the app draws them:
 
@@ -103,7 +134,11 @@ To see the fonts as the app draws them:
 ```
 
 Pages whose names start with `dev-` are for developers. They can only be
-drawn this way and cannot be opened from the app itself.
+drawn this way and cannot be opened from the app itself:
+
+- `dev-fonts` and the `dev-fonts-<family>` pages show the raw fonts;
+- `dev-theme` shows a theme's colours, font roles, a card, a list and a pane;
+- `dev-help` and `dev-toast` show the help panel and the pop-up messages.
 
 ## Build the device package
 
@@ -208,10 +243,10 @@ A typical session, from the repository root:
 
 ```sh
 scripts/device.sh deploy                         # build if needed, copy, install
-scripts/device.sh run                            # start Netdeck on the device
+scripts/device.sh run --theme constellation      # start Netdeck in one theme
 scripts/device.sh screen build/shots/device.png  # save the device's screen
-scripts/device.sh key 6                          # press 6 (light/dark theme)
-scripts/device.sh screen build/shots/device-dark.png
+scripts/device.sh key 8                          # press 8 (counter page)
+scripts/device.sh screen build/shots/device-counter.png
 scripts/device.sh stats                          # memory, CPU and frame time
 scripts/device.sh stop                           # stop it, the launcher returns
 ```
@@ -227,7 +262,12 @@ The commands:
   can name a package file. Afterwards it checks that the installed program
   matches the package and that the launcher entry and icon are in place, and
   deletes the copied file.
-- `run`: starts Netdeck on the device's screen (see below).
+- `run [--theme T]`: starts Netdeck on the device's screen (see below).
+  `--theme` picks `instrument`, `constellation` or `terminal` for this run
+  only and saves nothing; without it, the setting saved on the device
+  decides, or else the default theme. If Netdeck does not know the name, it
+  exits at once: `run` then shows Netdeck's message, brings the launcher
+  back and exits with code 1.
 - `stop`: stops Netdeck, however it was started, and brings the launcher back
   on HOME. Running it when nothing runs does no harm.
 - `status`: shows the installed version, whether Netdeck runs and which
@@ -287,8 +327,10 @@ holds it for 20 to 2500 ms. Keys are only sent while Netdeck runs, so they
 cannot open something on the launcher by accident; `--launcher` turns that
 check off.
 
-In the current demo pages, `6` switches between light and dark, `5` switches
-bold text, `8` opens the counter page and holding `esc` quits. On the counter
+On the home page of the current demo, `6` picks the theme for the next start
+(it switches the saved setting between Terminal and Instrument and shows a
+message naming that theme), `5` switches the greeting between two text
+sizes, `8` opens the counter page and holding `esc` quits. On the counter
 page, `c` or `right` counts up, `z` or `left` counts down and `esc` goes back.
 `help` (fn+H) shows the key help on every page.
 
@@ -335,7 +377,7 @@ cmake/
   templates/          inputs for the launcher entry, systemd unit and conffiles
   toolchains/         cross-compiler setup for the device
 config/               default settings file
-docs/                 notes on the bundled fonts
+docs/                 notes on the bundled fonts and the themes
 screenshot/           simulator screenshots
 scripts/
   build-deb.sh        builds the device package in a Debian arm64 container
@@ -352,7 +394,8 @@ src/
   platform/           keyboard input, screenshots, frame statistics and other
                       device services
   reactive/           helpers around LVGL observer subjects
-  view/               theme and UI constants
+  view/               themes (colour and font tables, theme engine), shared
+                      style helpers and UI constants
     screens/          full-screen pages
     widgets/          reusable UI parts
   viewmodel/          state and actions exposed to the views

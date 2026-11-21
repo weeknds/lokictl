@@ -26,7 +26,7 @@ struct LaunchOptions {
     LaunchMode mode{LaunchMode::Interactive};
     std::string snapshot_path;
     std::string page;                       // empty: default page
-    std::string theme;                      // empty: default theme
+    std::string theme;                      // empty: not given on the command line
     uint32_t settle_ms{kDefaultSettleMs};
     std::string error;                      // set when mode == Invalid
 };

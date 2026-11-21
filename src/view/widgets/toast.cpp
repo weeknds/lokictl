@@ -6,20 +6,17 @@
 
 #include "toast.h"
 
-#include "asset_manager.h"
-#include "base_viewmodel.h"
+#include "style.h"
 #include "theme.h"
+#include "theme_engine.h"
 
 #include <algorithm>
 #include <cstdio>
 
 namespace view::widgets {
 
-Toast::Toast(lv_obj_t* parent,
-             viewmodel::BaseViewModel& view_model,
-             app::AssetManager& assets,
-             ToastConfig config)
-    : BaseWidgets(parent), view_model_(view_model), assets_(assets), config_(config) {}
+Toast::Toast(lv_obj_t* parent, view::ThemeEngine& theme_engine, ToastConfig config)
+    : BaseWidgets(parent), theme_engine_(theme_engine), config_(config) {}
 
 Toast::~Toast() {
     if (hide_timer_) {
@@ -37,11 +34,6 @@ void Toast::build() {
     lv_obj_remove_style_all(core_obj_);
     lv_obj_set_size(core_obj_, config_.min_width, config_.min_height);
     lv_obj_align(core_obj_, LV_ALIGN_BOTTOM_MID, 0, -config_.bottom_offset);
-    lv_obj_set_style_radius(core_obj_, 10, 0);
-    lv_obj_set_style_border_width(core_obj_, 0, 0);
-    lv_obj_set_style_bg_opa(core_obj_, LV_OPA_90, 0);
-    lv_obj_set_style_shadow_width(core_obj_, 8, 0);
-    lv_obj_set_style_shadow_opa(core_obj_, LV_OPA_10, 0);
     lv_obj_clear_flag(core_obj_, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_clear_flag(core_obj_, LV_OBJ_FLAG_CLICKABLE);
 
@@ -49,18 +41,11 @@ void Toast::build() {
     lv_label_set_long_mode(label_, LV_LABEL_LONG_WRAP);
     lv_label_set_recolor(label_, true);
     lv_obj_set_style_text_align(label_, LV_TEXT_ALIGN_CENTER, 0);
-    font_ = assets_.load_standard_font(12);
-    if (!font_) {
-        font_ = &lv_font_montserrat_12;
-    }
-    lv_obj_set_style_text_font(label_, font_, 0);
     lv_obj_center(label_);
 
-    lv_subject_add_observer_obj(view_model_.dark_mode_subject(),
-                                theme_observer_cb,
-                                core_obj_,
-                                this);
-    apply_theme();
+    // LVGL calls the observer once right away, which applies the current
+    // theme; it then runs again after every theme change.
+    lv_subject_add_observer_obj(theme_engine_.subject(), theme_observer_cb, core_obj_, this);
     hide();
 }
 
@@ -103,7 +88,6 @@ void Toast::show_highlighted(const std::string& prefix,
 
 void Toast::show_current_message(uint32_t duration_ms, bool persistent) {
     update_size();
-    apply_theme();
     lv_obj_move_foreground(core_obj_);
     lv_obj_remove_flag(core_obj_, LV_OBJ_FLAG_HIDDEN);
 
@@ -188,8 +172,8 @@ void Toast::update_label_text() {
         return;
     }
 
-    const auto colors = view::palette(view_model_.is_dark_mode());
-    lv_color_t highlight_color = colors.primary;
+    const auto& colors = theme_engine_.theme().colors;
+    lv_color_t highlight_color = colors.accent;
     if (tone_ == ToastTone::Success) {
         highlight_color = colors.success;
     }
@@ -200,17 +184,24 @@ void Toast::update_label_text() {
         highlight_color = colors.error;
     }
 
+    // LVGL's recolour command: "#rrggbb text#".
     char color_hex[8]{};
     std::snprintf(color_hex,
                   sizeof(color_hex),
-                  "%06x",
-                  static_cast<unsigned int>(lv_color_to_int(highlight_color) & 0xffffffU));
+                  "%02x%02x%02x",
+                  static_cast<unsigned int>(highlight_color.red),
+                  static_cast<unsigned int>(highlight_color.green),
+                  static_cast<unsigned int>(highlight_color.blue));
     const std::string text =
         prefix_ + "#" + color_hex + " " + highlighted_ + "#" + suffix_;
     lv_label_set_text(label_, text.c_str());
 }
 
 void Toast::update_size() {
+    if (!core_obj_ || !label_ || !font_) {
+        return;
+    }
+
     const int32_t max_width = std::max(config_.min_width, config_.max_width);
     const int32_t content_max_width =
         std::max<int32_t>(1, max_width - config_.horizontal_padding * 2);
@@ -249,17 +240,17 @@ void Toast::update_size() {
 }
 
 void Toast::apply_theme() {
-    if (!core_obj_) {
+    if (!core_obj_ || !label_) {
         return;
     }
 
-    const auto colors = view::palette(view_model_.is_dark_mode());
-    lv_obj_set_style_bg_color(core_obj_, colors.button, 0);
-    lv_obj_set_style_shadow_color(core_obj_, lv_color_black(), 0);
-    lv_obj_set_style_text_color(label_, colors.text, 0);
-    update_label_text();
-    lv_obj_update_layout(label_);
-    lv_obj_center(label_);
+    const auto& theme = theme_engine_.theme();
+    view::style::popup(core_obj_, theme);
+    // The font decides the toast's size, so the size is worked out again.
+    font_ = theme.font(view::FontRole::Body);
+    lv_obj_set_style_text_font(label_, font_, 0);
+    lv_obj_set_style_text_color(label_, theme.colors.text, 0);
+    update_size();
 }
 
 void Toast::hide_timer_cb(lv_timer_t* timer) {

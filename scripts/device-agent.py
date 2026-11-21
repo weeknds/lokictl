@@ -671,6 +671,29 @@ def start_launcher_and_wait(timeout=15.0):
     return ok
 
 
+def dev_unit_command(stats_path, launcher, theme=None):
+    """The systemd-run command line that starts Netdeck for 'run'.
+
+    theme, if given, is passed on as "--theme <theme>" after the program
+    path. It is not checked here: Netdeck knows its theme names and exits
+    at once with a message if it does not know this one.
+    """
+    cmd = ["systemd-run", "--user", "--unit=" + DEV_UNIT, "--collect", "--quiet",
+           "-p", "TimeoutStopSec=5",
+           "--setenv=%s=%s" % (FRAME_STATS_VARIABLE, stats_path)]
+    if launcher:
+        # Whenever Netdeck ends (stop, crash, or the user quits it on the
+        # device), systemd brings the launcher back.
+        cmd += ["--working-directory=" + LAUNCHER_DIR,
+                "-p", "ExecStopPost=/usr/bin/systemctl --user start --no-block " + LAUNCHER_UNIT]
+    # systemd-run stops reading its own options at the program path, so
+    # everything after it goes to Netdeck.
+    cmd.append(BINARY)
+    if theme is not None:
+        cmd += ["--theme", theme]
+    return cmd
+
+
 def cmd_run(args):
     if not os.path.isfile(BINARY):
         raise Failure("Netdeck is not installed. Run 'device.sh deploy' first.")
@@ -705,15 +728,7 @@ def cmd_run(args):
         remove_quietly(stats_path)
         remove_quietly(stats_path + ".tmp")
 
-        cmd = ["systemd-run", "--user", "--unit=" + DEV_UNIT, "--collect", "--quiet",
-               "-p", "TimeoutStopSec=5",
-               "--setenv=%s=%s" % (FRAME_STATS_VARIABLE, stats_path)]
-        if launcher:
-            # Whenever Netdeck ends (stop, crash, or the user quits it on the
-            # device), systemd brings the launcher back.
-            cmd += ["--working-directory=" + LAUNCHER_DIR,
-                    "-p", "ExecStopPost=/usr/bin/systemctl --user start --no-block " + LAUNCHER_UNIT]
-        cmd.append(BINARY)
+        cmd = dev_unit_command(stats_path, launcher, args.theme)
         attempt_started_at = time.time()
         result = run(cmd, timeout=30)
         if result.returncode != 0:
@@ -727,8 +742,18 @@ def cmd_run(args):
             pid = unit_main_pid(DEV_UNIT)
             return process_alive(pid) and holds_fb(pid)
 
-        if not wait_for(has_screen, 5.0):
+        def has_ended():
+            # "deactivating" means the program is gone and systemd is running
+            # the clean-up (ExecStopPost); an unloaded unit reads "inactive".
+            return unit_state(DEV_UNIT) not in ("active", "activating", "reloading")
+
+        # Netdeck exits at once when it refuses its options (an unknown
+        # --theme, for example), so stop waiting as soon as the unit ends.
+        if not wait_for(lambda: has_screen() or has_ended(), 5.0):
             raise Failure("Netdeck did not open %s within 5 s." % FRAMEBUFFER)
+        if not has_screen():
+            raise Failure("Netdeck did not start: it exited right away. Its own message is "
+                          "in the log lines above.")
         pid = unit_main_pid(DEV_UNIT)
 
         def drew_frame():
@@ -746,9 +771,12 @@ def cmd_run(args):
                 say("Restoring the launcher ...")
                 start_launcher_and_wait()
             if attempt_started_at is not None:
-                # Only this attempt's lines, never an earlier run's.
+                # Only this attempt's lines, never an earlier run's. When
+                # Netdeck refuses its options it prints its message and then
+                # its usage text (about 17 lines), so keep enough lines to
+                # still show the message.
                 try:
-                    tail = journal_tail(20, invocation, since=attempt_started_at)
+                    tail = journal_tail(40, invocation, since=attempt_started_at)
                 except Failure:
                     tail = ""
                 if tail:
@@ -1368,6 +1396,24 @@ def cmd_selftest(args):
     assert parse_key_capabilities("") == set()
     assert parse_key_capabilities("1 0") == {64}
 
+    # "run --theme T" hands the name to Netdeck unchecked, after the program
+    # path, where systemd-run no longer reads options of its own.
+    parser = build_parser()
+    assert parser.parse_args(["run"]).theme is None, "run without --theme"
+    assert parser.parse_args(["run", "--theme", "constellation"]).theme == "constellation"
+    assert parser.parse_args(["run", "--theme=nope"]).theme == "nope", "names are not checked"
+    stats = "/run/user/1000/" + FRAME_STATS_NAME
+    for launcher in (True, False):
+        plain = dev_unit_command(stats, launcher)
+        assert plain[0] == "systemd-run" and plain[-1] == BINARY, plain
+        assert "--theme" not in plain, plain
+        themed = dev_unit_command(stats, launcher, "constellation")
+        assert themed[:-2] == plain, themed
+        assert themed[-3:] == [BINARY, "--theme", "constellation"], themed
+        assert themed.count(BINARY) == 1, themed
+    assert ("--working-directory=" + LAUNCHER_DIR) in dev_unit_command(stats, True)
+    assert ("--working-directory=" + LAUNCHER_DIR) not in dev_unit_command(stats, False)
+
     sys.stdout.write("selftest ok\n")
     return 0
 
@@ -1411,7 +1457,9 @@ def build_parser():
     install.set_defaults(handler=cmd_install)
 
     commands.add_parser("remove", help="stop and remove Netdeck").set_defaults(handler=cmd_remove)
-    commands.add_parser("run", help="start Netdeck on the screen").set_defaults(handler=cmd_run)
+    run_parser = commands.add_parser("run", help="start Netdeck on the screen")
+    run_parser.add_argument("--theme", help="theme for this run only (passed on to Netdeck)")
+    run_parser.set_defaults(handler=cmd_run)
     commands.add_parser("stop", help="stop Netdeck, bring back the launcher").set_defaults(handler=cmd_stop)
     commands.add_parser("status", help="show what is running").set_defaults(handler=cmd_status)
 

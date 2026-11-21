@@ -11,6 +11,7 @@
 #include "logger.h"
 #include "screen_manager.h"
 #include "screenshot_service.h"
+#include "theme_engine.h"
 
 #include "lvgl.h"
 
@@ -125,14 +126,24 @@ int run_snapshot(const SnapshotRequest& request) {
     lv_log_register_print_cb(forward_lvgl_warnings);
 #endif
 
-    // Declaration order matters: objects are destroyed in reverse, so screens
-    // go first, then the display, then the view model subjects, then fonts.
+    // Declaration order matters: objects are destroyed in reverse, so the
+    // screens go first, then the display, then the view model subjects, then
+    // the theme with its fonts, and the AssetManager last.
     AssetManager assets;
 
+    view::ThemeEngine theme_engine(assets, request.theme);
+    if (!theme_engine.fonts_complete()) {
+        std::fprintf(stderr,
+                     "%s: some fonts of the %s theme could not be loaded; "
+                     "check that the font files are installed\n",
+                     APP_NAME,
+                     theme_engine.theme().name);
+        return 1;
+    }
+
     viewmodel::BaseViewModel view_model;
-    // Both are set before any screen or observer exists. The user's settings
-    // file is neither read nor written in snapshot mode.
-    view_model.set_dark_mode(request.theme.dark_mode);
+    // Set before any screen or observer exists. The user's settings file is
+    // neither read nor written in snapshot mode.
     view_model.show_page(request.page);
 
     HeadlessDisplay headless;
@@ -141,13 +152,9 @@ int run_snapshot(const SnapshotRequest& request) {
         std::fprintf(stderr, "%s: could not create the in-memory display\n", APP_NAME);
         return 1;
     }
+    theme_engine.attach_display(display);
 
-    auto* standard_font = assets.load_standard_font(14);
-    view::apply_lvgl_theme(display,
-                           view_model.is_dark_mode(),
-                           standard_font ? standard_font : LV_FONT_DEFAULT);
-
-    ScreenManager screen_manager(view_model, assets);
+    ScreenManager screen_manager(view_model, assets, theme_engine);
     screen_manager.start();
 
     // Run LVGL on the virtual clock until the requested time has passed.

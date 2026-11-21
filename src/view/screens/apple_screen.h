@@ -12,7 +12,9 @@ namespace screen {
 
 class AppleScreen : public BaseScreen {
 public:
-    AppleScreen(viewmodel::BaseViewModel& view_model, app::AssetManager& assets);
+    AppleScreen(viewmodel::BaseViewModel& view_model,
+                app::AssetManager& assets,
+                view::ThemeEngine& theme_engine);
 
 private:
     void build_content(lv_obj_t* content) override;

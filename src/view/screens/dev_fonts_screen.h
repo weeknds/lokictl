@@ -22,6 +22,7 @@ class DevFontsScreen : public BaseScreen {
 public:
     DevFontsScreen(viewmodel::BaseViewModel& view_model,
                    app::AssetManager& assets,
+                   view::ThemeEngine& theme_engine,
                    model::AppPage page);
     ~DevFontsScreen() override;
 

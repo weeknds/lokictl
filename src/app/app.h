@@ -6,6 +6,10 @@
 
 #pragma once
 
+#include "theme.h"
+
+#include <optional>
+
 namespace app {
 
 class Application {
@@ -15,7 +19,8 @@ public:
     int run(int argc, char** argv);
 
 private:
-    int run_interactive();
+    // `theme_override` comes from --theme; it is used for this run only.
+    int run_interactive(std::optional<view::ThemeId> theme_override);
 };
 
 } // namespace app

@@ -17,7 +17,7 @@ namespace app {
 struct SnapshotRequest {
     std::string output_path;
     model::AppPage page;
-    view::ThemeChoice theme;
+    view::ThemeId theme;
     uint32_t settle_ms;
 };
 

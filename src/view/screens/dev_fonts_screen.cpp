@@ -6,8 +6,8 @@
 
 #include "dev_fonts_screen.h"
 
-#include "bindings.h"
 #include "bundled_fonts.h"
+#include "style.h"
 #include "theme.h"
 
 #include <cstddef>
@@ -175,10 +175,11 @@ std::string count_line(const lv_font_t* font) {
            count_of(font, kBoxDrawing) + " braille " + braille_count(font);
 }
 
-// Adds one line of text drawn in `font`. If the font did not load, the line
-// says so in the error colour; the sample is never drawn in another font.
+// Adds one line of text drawn in `font`, in the theme's text colour. If the
+// font did not load, the line says so in the theme's Small font and error
+// colour; the sample itself is never drawn in another font.
 lv_obj_t* add_text(lv_obj_t* parent,
-                   viewmodel::BaseViewModel& view_model,
+                   const view::Theme& theme,
                    const lv_font_t* font,
                    const char* file_name,
                    const std::string& text) {
@@ -186,14 +187,13 @@ lv_obj_t* add_text(lv_obj_t* parent,
     if (!font) {
         const std::string missing = std::string("MISSING ") + file_name;
         lv_label_set_text(label, missing.c_str());
-        lv_obj_set_style_text_font(label, &lv_font_montserrat_12, 0);
-        lv_obj_set_style_text_color(label, view::palette(view_model.is_dark_mode()).error, 0);
+        view::style::text(label, theme, view::FontRole::Small, theme.colors.error);
         return label;
     }
 
     lv_label_set_text(label, text.c_str());
     lv_obj_set_style_text_font(label, font, 0);
-    reactive::bind_theme(label, view_model.dark_mode_subject(), reactive::ThemeRole::Text);
+    lv_obj_set_style_text_color(label, theme.colors.text, 0);
     return label;
 }
 
@@ -201,8 +201,9 @@ lv_obj_t* add_text(lv_obj_t* parent,
 
 DevFontsScreen::DevFontsScreen(viewmodel::BaseViewModel& view_model,
                                app::AssetManager& assets,
+                               view::ThemeEngine& theme_engine,
                                model::AppPage page)
-    : BaseScreen(view_model, assets), page_(page), fonts_(assets) {
+    : BaseScreen(view_model, assets, theme_engine), page_(page), fonts_(assets) {
     // build_content() runs inside init() and needs fonts_, so init() is
     // called here rather than in the base class.
     init(Layout::FullScreen);
@@ -252,7 +253,7 @@ void DevFontsScreen::build_overview(lv_obj_t* content) {
             auto* font = fonts_.load(files[i], kSmallSize);
             const std::string text = std::string(family.name) + " " + weights[i] + "  " + kSampleAddress +
                                      " " + kArrows[0] + kArrows[1];
-            auto* label = add_text(content, view_model(), font, files[i], text);
+            auto* label = add_text(content, theme(), font, files[i], text);
             lv_obj_set_pos(label, kSidePadding, y);
             y += kOverviewPitch;
         }
@@ -278,15 +279,15 @@ void DevFontsScreen::build_family(lv_obj_t* content, size_t family_index) {
     lv_obj_clear_flag(column, LV_OBJ_FLAG_SCROLLABLE);
 
     const std::string name(family.name);
-    auto& vm = view_model();
-    add_text(column, vm, regular, family.regular_file, name + " Regular  " + kSampleDigits);
-    add_text(column, vm, heavy, family.heavy_file, name + " " + family.heavy_weight + "  " + kSampleDigits);
-    add_text(column, vm, regular, family.regular_file, join(kArrows) + "   " + join(kMarks));
-    add_text(column, vm, regular, family.regular_file, join(kBoxDrawing) + "   " + join(kBrailleSamples));
-    add_text(column, vm, regular, family.regular_file, count_line(regular));
-    add_text(column, vm, regular_large, family.regular_file, kSampleAddress);
+    const auto& theme = this->theme();
+    add_text(column, theme, regular, family.regular_file, name + " Regular  " + kSampleDigits);
+    add_text(column, theme, heavy, family.heavy_file, name + " " + family.heavy_weight + "  " + kSampleDigits);
+    add_text(column, theme, regular, family.regular_file, join(kArrows) + "   " + join(kMarks));
+    add_text(column, theme, regular, family.regular_file, join(kBoxDrawing) + "   " + join(kBrailleSamples));
+    add_text(column, theme, regular, family.regular_file, count_line(regular));
+    add_text(column, theme, regular_large, family.regular_file, kSampleAddress);
     add_text(column,
-             vm,
+             theme,
              heavy_large,
              family.heavy_file,
              std::string(kArrows[0]) + "12.4 " + kArrows[1] + "3.1 " + kMarks[0] + kMarks[4] + kMarks[5]);

@@ -6,6 +6,8 @@
 #
 #   scripts/device.sh deploy        build the package if needed, copy it, install it
 #   scripts/device.sh run           start Netdeck on the device's screen
+#   scripts/device.sh run --theme constellation
+#                                   the same, in that theme for this run only
 #   scripts/device.sh screen x.png  save what the screen shows
 #   scripts/device.sh key 6         press keys on the device
 #   scripts/device.sh stats         memory, CPU and frame time
@@ -51,8 +53,12 @@ Commands:
                   missing libraries as well (by default it must install
                   nothing but Netdeck).
   remove          Stop Netdeck and uninstall it.
-  run             Start Netdeck on the device's screen. The launcher is
+  run [--theme T] Start Netdeck on the device's screen. The launcher is
                   paused while it runs and comes back when Netdeck stops.
+                  --theme uses theme T (instrument, constellation or
+                  terminal) for this run only and saves nothing; without
+                  it, Netdeck's saved setting or its default decides. An
+                  unknown name makes Netdeck exit at once with a message.
   stop            Stop Netdeck (however it was started) and bring the
                   launcher back on HOME. Safe to repeat.
   status          Show the installed version and what is running.
@@ -72,6 +78,8 @@ Commands:
                   1 to 30), free memory and frame time.
   snapshot <out.png> [--page P] [--theme T] [--settle-ms N]
                   Run "netdeck --snapshot" on the device and save the PNG.
+                  Without --theme the picture uses the default theme; the
+                  saved setting is not read.
   logs [-n N]     Show the last N log lines (default 50) of the latest
                   'run' only, also after Netdeck has stopped.
 

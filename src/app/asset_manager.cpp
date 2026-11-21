@@ -30,13 +30,6 @@
 namespace app {
 namespace {
 
-#if !USE_DESKTOP
-constexpr const char* kNotoSansCjkRegular =
-    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc";
-constexpr const char* kNotoSansCjkBold =
-    "/usr/share/fonts/opentype/noto/NotoSansCJK-Medium.ttc";
-#endif
-
 bool path_exists(const std::filesystem::path& path) {
     std::error_code ec;
     return std::filesystem::exists(path, ec);
@@ -48,38 +41,14 @@ std::filesystem::path weakly_canonical_path(const std::filesystem::path& path) {
     return ec ? path.lexically_normal() : canonical;
 }
 
-#if !USE_DESKTOP
-const lv_font_t* fallback_font(uint32_t size) {
-    if (size <= 10) {
-        return &lv_font_montserrat_10;
-    }
-    if (size <= 12) {
-        return &lv_font_montserrat_12;
-    }
-    if (size <= 14) {
-        return &lv_font_montserrat_14;
-    }
-    if (size <= 16) {
-        return &lv_font_montserrat_16;
-    }
-    if (size <= 18) {
-        return &lv_font_montserrat_18;
-    }
-    if (size <= 20) {
-        return &lv_font_montserrat_20;
-    }
-    if (size <= 24) {
-        return &lv_font_montserrat_24;
-    }
-    return &lv_font_montserrat_28;
-}
-#endif
-
 } // namespace
 
 struct AssetManager::LoadedFont {
     std::filesystem::path path;
     uint32_t size;
+    // Part of the font's identity: the same file and size with another
+    // fallback is a separate entry.
+    const lv_font_t* fallback;
     lv_font_t* font;
     // Number of acquire_font() calls not yet matched by release_font().
     uint32_t users{0};
@@ -137,17 +106,24 @@ std::filesystem::path AssetManager::resolve_font(const std::filesystem::path& fi
 }
 
 lv_font_t* AssetManager::load_font(const std::filesystem::path& file_name, uint32_t size) {
-    auto* loaded_font = find_or_load(file_name, size);
-    if (!loaded_font) {
-        return nullptr;
-    }
-
-    loaded_font->pinned = true;
-    return loaded_font->font;
+    auto* loaded_font = load_pinned(file_name, size, nullptr);
+    return loaded_font ? loaded_font->font : nullptr;
 }
 
-lv_font_t* AssetManager::acquire_font(const std::filesystem::path& file_name, uint32_t size) {
-    auto* loaded_font = find_or_load(file_name, size);
+AssetManager::LoadedFont* AssetManager::load_pinned(const std::filesystem::path& file_name,
+                                                    uint32_t size,
+                                                    const lv_font_t* fallback) {
+    auto* loaded_font = find_or_load(file_name, size, fallback);
+    if (loaded_font) {
+        loaded_font->pinned = true;
+    }
+    return loaded_font;
+}
+
+lv_font_t* AssetManager::acquire_font(const std::filesystem::path& file_name,
+                                      uint32_t size,
+                                      const lv_font_t* fallback) {
+    auto* loaded_font = find_or_load(file_name, size, fallback);
     if (!loaded_font) {
         return nullptr;
     }
@@ -183,6 +159,21 @@ void AssetManager::release_font(const lv_font_t* font) {
         return;
     }
 
+    // Freeing a font that another loaded font still names as its fallback
+    // would leave that font with a dangling pointer. This only happens when
+    // fonts are released in the wrong order; the font then stays loaded
+    // until the AssetManager goes.
+    const bool still_a_fallback =
+        std::any_of(loaded_fonts_.begin(), loaded_fonts_.end(), [&](const auto& other) {
+            return other && other->fallback == loaded_font.font;
+        });
+    if (still_a_fallback) {
+        LOG_WARN("release_font: {} ({}) is still the fallback of another font; keeping it",
+                 loaded_font.path.string(),
+                 loaded_font.size);
+        return;
+    }
+
     const auto path = loaded_font.path;
     const auto size = loaded_font.size;
     lv_freetype_font_delete(loaded_font.font);
@@ -194,7 +185,8 @@ void AssetManager::release_font(const lv_font_t* font) {
 }
 
 AssetManager::LoadedFont* AssetManager::find_or_load(const std::filesystem::path& file_name,
-                                                     uint32_t size) {
+                                                     uint32_t size,
+                                                     const lv_font_t* fallback) {
 #if LV_USE_FREETYPE
     auto path = resolve_font(file_name);
     if (path.empty()) {
@@ -203,7 +195,8 @@ AssetManager::LoadedFont* AssetManager::find_or_load(const std::filesystem::path
     }
 
     auto existing = std::find_if(loaded_fonts_.begin(), loaded_fonts_.end(), [&](const auto& loaded_font) {
-        return loaded_font && loaded_font->path == path && loaded_font->size == size;
+        return loaded_font && loaded_font->path == path && loaded_font->size == size &&
+               loaded_font->fallback == fallback;
     });
     if (existing != loaded_fonts_.end()) {
         return existing->get();
@@ -217,32 +210,24 @@ AssetManager::LoadedFont* AssetManager::find_or_load(const std::filesystem::path
         LOG_WARN("failed to load freetype font: {}", path.string());
         return nullptr;
     }
+    // Set once, right after creation: this entry is the only user of the
+    // new font instance, so no other user's font changes.
+    font->fallback = fallback;
 
-    loaded_fonts_.push_back(std::make_unique<LoadedFont>(LoadedFont{path, size, font, 0, false}));
-    LOG_INFO("loaded freetype font: {} ({})", path.string(), size);
+    loaded_fonts_.push_back(
+        std::make_unique<LoadedFont>(LoadedFont{path, size, fallback, font, 0, false}));
+    if (fallback) {
+        LOG_INFO("loaded freetype font: {} ({}, with fallback)", path.string(), size);
+    } else {
+        LOG_INFO("loaded freetype font: {} ({})", path.string(), size);
+    }
     return loaded_fonts_.back().get();
 #else
     LV_UNUSED(file_name);
     LV_UNUSED(size);
+    LV_UNUSED(fallback);
     LOG_WARN("FreeType font loading requested but LV_USE_FREETYPE is disabled");
     return nullptr;
-#endif
-}
-
-lv_font_t* AssetManager::load_standard_font(uint32_t size, StandardFontWeight weight) {
-#if USE_DESKTOP
-    LV_UNUSED(size);
-    LV_UNUSED(weight);
-    return nullptr;
-#else
-    const char* path = weight == StandardFontWeight::Regular
-                           ? kNotoSansCjkRegular
-                           : kNotoSansCjkBold;
-    auto* font = load_font(path, size);
-    if (font) {
-        font->fallback = fallback_font(size);
-    }
-    return font;
 #endif
 }
 
@@ -268,8 +253,10 @@ FontSet::~FontSet() {
     clear();
 }
 
-lv_font_t* FontSet::load(const std::filesystem::path& file_name, uint32_t size) {
-    auto* font = assets_.acquire_font(file_name, size);
+lv_font_t* FontSet::load(const std::filesystem::path& file_name,
+                         uint32_t size,
+                         const lv_font_t* fallback) {
+    auto* font = assets_.acquire_font(file_name, size, fallback);
     if (font) {
         fonts_.push_back(font);
     }
@@ -277,8 +264,9 @@ lv_font_t* FontSet::load(const std::filesystem::path& file_name, uint32_t size) 
 }
 
 void FontSet::clear() {
-    for (auto* font : fonts_) {
-        assets_.release_font(font);
+    // Newest first, so every font is given back before its fallback.
+    for (auto it = fonts_.rbegin(); it != fonts_.rend(); ++it) {
+        assets_.release_font(*it);
     }
     fonts_.clear();
 }

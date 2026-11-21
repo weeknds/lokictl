@@ -21,17 +21,6 @@ enum class Compare {
     LessOrEqual,
 };
 
-enum class ThemeRole {
-    Screen,
-    Surface,
-    Bar,
-    Button,
-    Text,
-};
-
-void bind_theme(lv_obj_t* obj, lv_subject_t* dark_mode_subject, ThemeRole role);
-void bind_theme(lv_obj_t* obj, Subject& dark_mode_subject, ThemeRole role);
-
 void bind_bool_text(lv_obj_t* label,
                     lv_subject_t* bool_subject,
                     const char* false_text,

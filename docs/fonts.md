@@ -15,7 +15,7 @@ braille) each font can actually draw.
 All text fonts live in `assets/fonts/` and are installed to
 `/usr/share/netdeck/fonts/` by the Debian package. They are the unmodified
 static TTF files from each project's official release: nothing was subset,
-renamed or re-saved. Only the two weights each theme needs are included.
+renamed or re-saved. Two weights of each family are included.
 
 | Family | Weights | Files | Size in bytes | Comes from | Release tag | Font version | License |
 |---|---|---|---|---|---|---|---|
@@ -43,12 +43,19 @@ that file as `/usr/share/doc/netdeck/third-party-assets-license.txt`.
 
 ### Which theme uses which font
 
-| Theme | Fonts |
-|---|---|
-| Instrument | Space Grotesk for the big words and numbers, IBM Plex Mono for everything else |
-| Constellation | Geist Mono |
-| Terminal | JetBrains Mono |
-| General interface text | Inter |
+Screens ask for a font role, and each theme maps the role to a file (see
+[themes.md](themes.md) for the sizes):
+
+| Theme | Display, Title | Body | Strong | Mono, Small |
+|---|---|---|---|---|
+| Instrument | Space Grotesk Bold | Inter Regular | Inter SemiBold | IBM Plex Mono Regular |
+| Constellation | Geist Mono Bold | Geist Mono Regular | Geist Mono Bold | Geist Mono Regular |
+| Terminal | JetBrains Mono Bold | JetBrains Mono Regular | JetBrains Mono Bold | JetBrains Mono Regular |
+
+Every font in this table that is not JetBrains Mono also gets JetBrains Mono
+Regular as its fallback for missing symbols (see
+[What this means](#what-this-means)). Two bundled files are not used by any
+theme yet: Space Grotesk Regular and IBM Plex Mono SemiBold.
 
 JetBrains Mono is also installed on the device as a system font. We bundle it
 anyway, so the simulator and the device use exactly the same file and render
@@ -113,10 +120,14 @@ The same results, counted per group:
   Mono, a rectangle with a slanted line in JetBrains Mono, a box with a
   question mark in Space Grotesk, and a narrow solid bar in Inter. The font
   does not borrow the character from another font on its own.
-- **Ways to fill the gaps** (to be decided in the theme work, not here):
-  - use an icon from the bundled Phosphor icon font;
-  - draw dots, check marks and lines as LVGL shapes;
-  - give the font an LVGL fallback font that has the missing characters.
+- **How the themes fill the gaps:** every theme font that is not JetBrains
+  Mono gets JetBrains Mono Regular at the same size as its LVGL fallback
+  font. When the font lacks a character, LVGL draws it from JetBrains Mono,
+  so ● ✓ ✕ and the box-drawing lines show up in every theme. The fallback is
+  set on a separate copy of the font, so the developer pages below, which
+  load the fonts without a fallback, still show each font's own coverage.
+  Braille stays unavailable, because JetBrains Mono has none either. More in
+  [themes.md](themes.md#symbols-and-the-fallback-font).
 - **No kern table:** none of the ten files has the old-style `kern` table.
   Kerning means small spacing fixes between letter pairs such as "AV". The
   three monospaced families have no kerning at all, which is normal for
@@ -181,8 +192,13 @@ To draw the pages, build the simulator and run, from the repository root:
 
 ```sh
 ./build/darwin-arm64/Debug/netdeck --snapshot build/shots/fonts.png --page dev-fonts
-./build/darwin-arm64/Debug/netdeck --snapshot build/shots/fonts-terminal.png --page dev-fonts-jetbrains-mono --theme dark
+./build/darwin-arm64/Debug/netdeck --snapshot build/shots/fonts-terminal.png --page dev-fonts-jetbrains-mono --theme terminal
 ```
 
-If a font file cannot be found or loaded, its line says `MISSING` followed by
-the file name in red, instead of quietly using another font.
+The theme only changes the colours of these pages; the sample text is always
+drawn in the font it names. If a font file cannot be found or loaded, its
+line says `MISSING` followed by the file name in the theme's error colour,
+instead of quietly using another font.
+
+The `dev-theme` page shows the fonts as the themes use them, fallback
+included; see [themes.md](themes.md#looking-at-the-result).

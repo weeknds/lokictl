@@ -19,6 +19,7 @@
 #include "base_viewmodel.h"
 #include "frame_stats.h"
 #include "theme.h"
+#include "theme_engine.h"
 #include "toast.h"
 
 #include <chrono>
@@ -27,6 +28,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 
@@ -127,7 +129,7 @@ void persist_dark_mode_observer(lv_observer_t* observer, lv_subject_t* subject) 
     if (save_application_config(persistence->config_path, config, error)) {
         LOG_INFO("saved config: {} (dark_mode={})",
                  persistence->config_path,
-                 config.dark_mode ? "yes" : "no");
+                 dark_mode ? "yes" : "no");
     } else {
         LOG_WARN("failed to save config {}: {}", persistence->config_path, error);
     }
@@ -135,12 +137,17 @@ void persist_dark_mode_observer(lv_observer_t* observer, lv_subject_t* subject) 
 
 class ShortcutController {
 public:
-    ShortcutController(viewmodel::BaseViewModel& view_model, AssetManager& assets)
+    ShortcutController(viewmodel::BaseViewModel& view_model, view::ThemeEngine& theme_engine)
         : view_model_(view_model),
-          toast_(std::make_unique<view::widgets::Toast>(lv_layer_top(), view_model, assets)),
-          help_popup_(std::make_unique<view::widgets::HelpPopup>(lv_layer_top(), view_model, assets)) {
+          toast_(std::make_unique<view::widgets::Toast>(lv_layer_top(), theme_engine)),
+          help_popup_(std::make_unique<view::widgets::HelpPopup>(lv_layer_top(), theme_engine)),
+          last_dark_mode_(view_model.is_dark_mode()) {
         toast_->build();
         help_popup_->build();
+        // LVGL calls the observer once right away; last_dark_mode_ already
+        // holds that value, so no toast appears at startup.
+        dark_mode_observer_ =
+            lv_subject_add_observer(view_model_.dark_mode_subject(), dark_mode_changed_cb, this);
         platform::set_global_key_listener(global_key_listener, this);
         platform::set_key_release_listener(key_release_listener, this);
     }
@@ -148,6 +155,10 @@ public:
     ~ShortcutController() {
         platform::clear_key_release_listener(key_release_listener, this);
         platform::clear_global_key_listener(global_key_listener, this);
+        if (dark_mode_observer_) {
+            lv_observer_remove(dark_mode_observer_);
+            dark_mode_observer_ = nullptr;
+        }
     }
 
 private:
@@ -237,6 +248,30 @@ private:
         exit_armed_ = false;
     }
 
+    // Key 6 flips the saved dark_mode setting, which picks the theme of the
+    // next start (Terminal for yes, Instrument for no). The running theme
+    // stays as it is, so a toast says what will change.
+    void handle_dark_mode_change(bool dark_mode) {
+        if (dark_mode == last_dark_mode_) {
+            return;
+        }
+        last_dark_mode_ = dark_mode;
+
+        const auto next_theme = dark_mode ? view::ThemeId::Terminal : view::ThemeId::Instrument;
+        toast_->show_highlighted("Next start: ",
+                                 view::theme_spec(next_theme).display_name,
+                                 " theme",
+                                 view::widgets::ToastTone::Default,
+                                 kThemeToastDurationMs);
+    }
+
+    static void dark_mode_changed_cb(lv_observer_t* observer, lv_subject_t* subject) {
+        auto* controller = static_cast<ShortcutController*>(lv_observer_get_user_data(observer));
+        if (controller) {
+            controller->handle_dark_mode_change(lv_subject_get_int(subject) != 0);
+        }
+    }
+
     static bool global_key_listener(uint32_t key,
                                     const char*,
                                     bool long_pressed,
@@ -252,9 +287,13 @@ private:
         }
     }
 
+    static constexpr uint32_t kThemeToastDurationMs = 4500;
+
     viewmodel::BaseViewModel& view_model_;
     std::unique_ptr<view::widgets::Toast> toast_;
     std::unique_ptr<view::widgets::HelpPopup> help_popup_;
+    lv_observer_t* dark_mode_observer_{nullptr};
+    bool last_dark_mode_{false};
     uint32_t exit_key_pressed_{0};
     bool exit_armed_{false};
 };
@@ -303,6 +342,35 @@ int report_usage_error(const std::string& message) {
     return 2;
 }
 
+// Turns the --theme value into a theme. An empty name (no --theme) leaves
+// `theme` unset. Returns false with a message for any unknown name.
+bool resolve_theme_option(const std::string& name,
+                          std::optional<view::ThemeId>& theme,
+                          std::string& error) {
+    theme.reset();
+    if (name.empty()) {
+        return true;
+    }
+    if (const view::ThemeSpec* spec = view::find_theme(name)) {
+        theme = spec->id;
+        return true;
+    }
+    if (name == "light" || name == "dark") {
+        error = "there is no theme '" + name + "' any more: light and dark were replaced by " +
+                "the themes " + view::theme_names();
+        return false;
+    }
+    error = "unknown theme '" + name + "' (use one of: " + view::theme_names() + ")";
+    return false;
+}
+
+const char* yes_no_unset(const std::optional<bool>& value) {
+    if (!value) {
+        return "unset";
+    }
+    return *value ? "yes" : "no";
+}
+
 } // namespace
 
 int Application::run(int argc, char** argv) {
@@ -320,28 +388,31 @@ int Application::run(int argc, char** argv) {
                 std::puts(entry.name);
             }
             return 0;
-        case LaunchMode::Snapshot: {
-            const PageInfo* page =
-                options.page.empty() ? &page_registry().front() : find_page(options.page);
-            if (!page) {
-                return report_usage_error("unknown page '" + options.page + "' (see --list-pages)");
-            }
-
-            const view::ThemeChoice* theme = options.theme.empty()
-                                                 ? &view::theme_choices().front()
-                                                 : view::find_theme_choice(options.theme);
-            if (!theme) {
-                return report_usage_error("unknown theme '" + options.theme +
-                                          "' (use one of: " + view::theme_choice_names() + ")");
-            }
-
-            return run_snapshot(
-                SnapshotRequest{options.snapshot_path, page->page, *theme, options.settle_ms});
-        }
+        case LaunchMode::Snapshot:
         case LaunchMode::Interactive:
             break;
     }
-    const int exit_code = run_interactive();
+
+    std::optional<view::ThemeId> theme;
+    std::string theme_error;
+    if (!resolve_theme_option(options.theme, theme, theme_error)) {
+        return report_usage_error(theme_error);
+    }
+
+    if (options.mode == LaunchMode::Snapshot) {
+        const PageInfo* page =
+            options.page.empty() ? &page_registry().front() : find_page(options.page);
+        if (!page) {
+            return report_usage_error("unknown page '" + options.page + "' (see --list-pages)");
+        }
+
+        return run_snapshot(SnapshotRequest{options.snapshot_path,
+                                            page->page,
+                                            theme.value_or(view::kDefaultThemeId),
+                                            options.settle_ms});
+    }
+
+    const int exit_code = run_interactive(theme);
     // Logged once run_interactive() has torn everything down, so these are
     // the last lines of a run.
     if (stop_signal != 0) {
@@ -351,7 +422,7 @@ int Application::run(int argc, char** argv) {
     return exit_code;
 }
 
-int Application::run_interactive() {
+int Application::run_interactive(std::optional<view::ThemeId> theme_override) {
     logger::Logger::init();
     logger::Logger::set_tag(APP_NAME);
 
@@ -380,16 +451,46 @@ int Application::run_interactive() {
     ApplicationConfig config;
     std::string config_error;
     if (load_application_config(loaded_config_path, config, config_error)) {
-        view_model.set_dark_mode(config.dark_mode);
         LOG_INFO("loaded config: {} (dark_mode={})",
                  loaded_config_path,
-                 config.dark_mode ? "yes" : "no");
+                 yes_no_unset(config.dark_mode));
     } else {
+        config = ApplicationConfig{};
         LOG_WARN("failed to load config {}: {}; using defaults", loaded_config_path, config_error);
+    }
+    // The view model keeps the saved setting, not a --theme choice, so
+    // toggling it saves the right value for the next start.
+    view_model.set_dark_mode(
+        config.dark_mode.value_or(view::theme_spec(view::kDefaultThemeId).metrics.dark));
+
+    // The theme for this run: --theme wins, then the saved setting, then the
+    // default.
+    view::ThemeId theme_id = view::kDefaultThemeId;
+    const char* theme_source = "the default";
+    if (theme_override) {
+        theme_id = *theme_override;
+        theme_source = "the command line";
+    } else if (config.dark_mode) {
+        // Interim mapping until the theme is saved by name: the old dark_mode
+        // setting picks Terminal (yes) or Instrument (no).
+        theme_id = *config.dark_mode ? view::ThemeId::Terminal : view::ThemeId::Instrument;
+        theme_source = "the saved setting";
+    }
+
+    // Created before the display and destroyed after it, so every LVGL
+    // object is gone before the theme's fonts are freed.
+    view::ThemeEngine theme_engine(assets, theme_id);
+    LOG_INFO("theme: {} (from {})", theme_engine.theme().name, theme_source);
+    if (!theme_engine.fonts_complete()) {
+        LOG_WARN("some fonts of the {} theme could not be loaded; built-in fonts are used instead",
+                 theme_engine.theme().name);
     }
 
 #if USE_DESKTOP
     DesktopSimulatorFrame simulator_frame(assets);
+    // Instrument has a light ground and gets the light shell art; the other
+    // themes get the dark one.
+    simulator_frame.set_dark_shell(theme_engine.theme().metrics.dark);
     auto* display = simulator_frame.display();
 #else
     auto* display = init_device_display();
@@ -409,18 +510,11 @@ int Application::run_interactive() {
             display, stats_path, report_frame_stats_error);
     }
 
-    auto* standard_font = assets.load_standard_font(14);
-    view::apply_lvgl_theme(display,
-                           view_model.is_dark_mode(),
-                           standard_font ? standard_font : LV_FONT_DEFAULT);
+    theme_engine.attach_display(display);
 
-#if USE_DESKTOP
-    simulator_frame.bind_dark_mode(view_model.dark_mode_subject());
-#endif
-
-    ScreenManager screen_manager(view_model, assets);
+    ScreenManager screen_manager(view_model, assets, theme_engine);
     screen_manager.start();
-    ShortcutController shortcuts(view_model, assets);
+    ShortcutController shortcuts(view_model, theme_engine);
 
     DarkModePersistence dark_mode_persistence{user_config_path, view_model.is_dark_mode()};
     auto* dark_mode_observer = lv_subject_add_observer(view_model.dark_mode_subject(),

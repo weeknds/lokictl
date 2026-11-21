@@ -13,11 +13,17 @@
 
 #include <memory>
 
+namespace view {
+class ThemeEngine;
+}
+
 namespace app {
 
 class ScreenManager {
 public:
-    ScreenManager(viewmodel::BaseViewModel& view_model, AssetManager& assets);
+    ScreenManager(viewmodel::BaseViewModel& view_model,
+                  AssetManager& assets,
+                  view::ThemeEngine& theme_engine);
     ~ScreenManager();
 
     ScreenManager(const ScreenManager&) = delete;
@@ -27,6 +33,8 @@ public:
     void show_apple_screen();
     void show_butter_screen();
     void show_dev_fonts_screen(model::AppPage page);
+    void show_dev_theme_screen();
+    void show_dev_overlays_screen(model::AppPage page);
     void request_page(model::AppPage page);
     void flush_requested_page();
     lv_obj_t* current_screen() const;
@@ -36,6 +44,7 @@ private:
 
     viewmodel::BaseViewModel& view_model_;
     AssetManager& assets_;
+    view::ThemeEngine& theme_engine_;
     std::unique_ptr<screen::BaseScreen> current_screen_;
     lv_observer_t* page_observer_ = nullptr;
     model::AppPage requested_page_ = model::AppPage::Apple;

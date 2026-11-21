@@ -20,6 +20,9 @@ enum class AppPage {
     DevFontsGeistMono,
     DevFontsJetBrainsMono,
     DevFontsInter,
+    DevTheme,
+    DevHelp,
+    DevToast,
 };
 
 class BaseModel {

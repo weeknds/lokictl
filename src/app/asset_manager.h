@@ -16,11 +16,6 @@
 
 namespace app {
 
-enum class StandardFontWeight {
-    Regular,
-    Bold,
-};
-
 class AssetManager {
 public:
     explicit AssetManager(std::string app_name = default_app_name(),
@@ -37,23 +32,36 @@ public:
     std::filesystem::path resolve(const std::filesystem::path& relative_path) const;
     std::filesystem::path resolve_font(const std::filesystem::path& file_name) const;
 
-    // Loads a font from the fonts folder. It stays loaded until the
-    // AssetManager is destroyed, so callers never free it.
+    // A loaded font is identified by its file, its size and its fallback
+    // font (the font LVGL asks for characters this one does not have). The
+    // same file at the same size with another fallback is a separate font
+    // instance, so giving one user a fallback never changes the font other
+    // users see.
+
+    // Loads a font from the fonts folder, without a fallback. It stays
+    // loaded until the AssetManager is destroyed, so callers never free it.
     lv_font_t* load_font(const std::filesystem::path& file_name, uint32_t size);
-    lv_font_t* load_standard_font(uint32_t size,
-                                  StandardFontWeight weight = StandardFontWeight::Bold);
 
     // Counted loading, for fonts that are only needed for a while. Every
     // successful acquire_font() must be matched by one release_font(); the
     // font is freed when the last user releases it, unless load_font() has
-    // also loaded it. Prefer FontSet over calling these directly.
-    lv_font_t* acquire_font(const std::filesystem::path& file_name, uint32_t size);
+    // also loaded it. `fallback` must stay loaded for as long as this font
+    // is: acquire it first and release it last. Prefer FontSet over calling
+    // these directly.
+    lv_font_t* acquire_font(const std::filesystem::path& file_name,
+                            uint32_t size,
+                            const lv_font_t* fallback = nullptr);
     void release_font(const lv_font_t* font);
 
 private:
     struct LoadedFont;
 
-    LoadedFont* find_or_load(const std::filesystem::path& file_name, uint32_t size);
+    LoadedFont* find_or_load(const std::filesystem::path& file_name,
+                             uint32_t size,
+                             const lv_font_t* fallback);
+    LoadedFont* load_pinned(const std::filesystem::path& file_name,
+                            uint32_t size,
+                            const lv_font_t* fallback);
     void add_root_if_valid(std::filesystem::path path);
 
     std::vector<std::filesystem::path> roots_;
@@ -66,6 +74,9 @@ private:
 // Rules:
 // - Delete the LVGL objects that use these fonts before calling clear() or
 //   destroying the FontSet. Labels keep plain pointers to their font.
+// - Load a fallback font before the font that uses it. clear() gives the
+//   fonts back in the reverse order, so a font always goes before its
+//   fallback.
 // - A FontSet must be destroyed before the AssetManager it was made with.
 class FontSet {
 public:
@@ -75,9 +86,12 @@ public:
     FontSet(const FontSet&) = delete;
     FontSet& operator=(const FontSet&) = delete;
 
-    // Returns the font, or nullptr if it could not be loaded.
-    lv_font_t* load(const std::filesystem::path& file_name, uint32_t size);
-    // Gives back every font loaded through this set.
+    // Returns the font, or nullptr if it could not be loaded. `fallback` is
+    // used for characters the font does not have (nullptr: none).
+    lv_font_t* load(const std::filesystem::path& file_name,
+                    uint32_t size,
+                    const lv_font_t* fallback = nullptr);
+    // Gives back every font loaded through this set, newest first.
     void clear();
 
 private:

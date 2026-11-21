@@ -9,7 +9,9 @@
 #include "asset_manager.h"
 #include "bindings.h"
 #include "linux_input.h"
+#include "style.h"
 #include "theme.h"
+#include "theme_engine.h"
 #include "ui_const.h"
 
 namespace view::widgets {
@@ -20,6 +22,10 @@ struct IconSpec {
     lv_event_cb_t click_cb;
 };
 
+// The icons are spread evenly across the bar, inset kNavSideInset from each
+// side, and then nudged by these offsets so each one sits above its key
+// (4 to 8). Both values were tuned together: change neither on its own.
+constexpr int32_t kNavSideInset = 1;
 constexpr std::array<int32_t, 5> kNavButtonXOffsets = {30, 17, 2, -15, -30};
 
 struct ShortcutSpec {
@@ -35,8 +41,11 @@ constexpr std::array<ShortcutSpec, 3> kButterShortcuts = {{
 
 } // namespace
 
-NavBar::NavBar(lv_obj_t* parent, viewmodel::BaseViewModel& view_model, app::AssetManager& assets)
-    : BaseWidgets(parent), view_model_(view_model), assets_(assets) {}
+NavBar::NavBar(lv_obj_t* parent,
+               viewmodel::BaseViewModel& view_model,
+               app::AssetManager& assets,
+               view::ThemeEngine& theme_engine)
+    : BaseWidgets(parent), view_model_(view_model), assets_(assets), theme_engine_(theme_engine) {}
 
 NavBar::~NavBar() {
     for (size_t i = 0; i < icon_buttons_.size(); ++i) {
@@ -48,10 +57,6 @@ NavBar::~NavBar() {
     if (page_observer_) {
         lv_observer_remove(page_observer_);
         page_observer_ = nullptr;
-    }
-    if (theme_observer_) {
-        lv_observer_remove(theme_observer_);
-        theme_observer_ = nullptr;
     }
 }
 
@@ -67,18 +72,21 @@ void NavBar::build() {
     lv_obj_clear_flag(core_obj_, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_flex_flow(core_obj_, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(core_obj_, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_left(core_obj_, 8, 0);
-    lv_obj_set_style_pad_right(core_obj_, 8, 0);
-    reactive::bind_theme(core_obj_, view_model_.dark_mode_subject(), reactive::ThemeRole::Bar);
+    view::style::bar(core_obj_, theme_engine_.theme(), view::style::Edge::Top);
+    // Set after the bar style, which leaves padding alone. The rule is on
+    // the top edge only, so it never moves the icons sideways.
+    lv_obj_set_style_pad_left(core_obj_, kNavSideInset, 0);
+    lv_obj_set_style_pad_right(core_obj_, kNavSideInset, 0);
 
     create_icon_buttons();
     create_shortcut_hints();
     page_observer_ = reactive::observe_obj(core_obj_, view_model_.current_page_subject(), update_icons_cb, this);
-    theme_observer_ = reactive::observe_obj(core_obj_, view_model_.dark_mode_subject(), update_icons_cb, this);
     update_icon_buttons();
 }
 
 void NavBar::create_shortcut_hints() {
+    const auto& theme = theme_engine_.theme();
+
     shortcut_bar_ = lv_obj_create(core_obj_);
     lv_obj_remove_style_all(shortcut_bar_);
     lv_obj_set_size(shortcut_bar_, LV_PCT(100), LV_PCT(100));
@@ -87,51 +95,41 @@ void NavBar::create_shortcut_hints() {
     lv_obj_set_style_pad_hor(shortcut_bar_, 10, 0);
     lv_obj_clear_flag(shortcut_bar_, LV_OBJ_FLAG_SCROLLABLE);
 
-    const lv_font_t* key_font = assets_.load_standard_font(14);
-    if (!key_font) {
-        key_font = &lv_font_montserrat_14;
-    }
-    const lv_font_t* text_font = assets_.load_standard_font(14, app::StandardFontWeight::Regular);
-    if (!text_font) {
-        text_font = &lv_font_montserrat_14;
-    }
-
-    for (size_t index = 0; index < kButterShortcuts.size(); ++index) {
-        const auto& shortcut = kButterShortcuts[index];
+    for (const auto& shortcut : kButterShortcuts) {
         auto* item = lv_obj_create(shortcut_bar_);
         lv_obj_remove_style_all(item);
         lv_obj_set_size(item, LV_SIZE_CONTENT, LV_PCT(100));
         lv_obj_set_flex_flow(item, LV_FLEX_FLOW_ROW);
         lv_obj_set_flex_align(item, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-        lv_obj_set_style_pad_column(item, 3, 0);
+        lv_obj_set_style_pad_column(item, theme.metrics.space_sm, 0);
         lv_obj_clear_flag(item, LV_OBJ_FLAG_SCROLLABLE);
 
         auto* key = lv_label_create(item);
         lv_label_set_text(key, shortcut.key);
-        lv_obj_set_style_text_font(key, key_font, 0);
-        shortcut_key_labels_[index] = key;
+        view::style::text(key, theme, view::FontRole::Strong, theme.colors.accent);
 
         auto* label = lv_label_create(item);
         lv_label_set_text(label, shortcut.action);
-        lv_obj_set_style_text_font(label, text_font, 0);
-        reactive::bind_theme(label, view_model_.dark_mode_subject(), reactive::ThemeRole::Text);
+        view::style::text(label, theme, view::FontRole::Body);
     }
 }
 
 void NavBar::create_icon_buttons() {
-    const auto light_color = view::palette(false).text;
-    const auto dark_color = view::palette(true).text;
     icon_font_ = assets_.load_font("Phosphor-Fill.ttf", 22);
+    if (!icon_font_) {
+        // The buttons then show the font's empty box, which makes the missing
+        // icon file easy to notice.
+        icon_font_ = theme_engine_.theme().font(view::FontRole::Body);
+    }
 
     for (size_t i = 0; i < icon_buttons_.size(); ++i) {
         icon_buttons_[i] = std::make_unique<IconButton>(core_obj_,
                                                         view_model_,
+                                                        theme_engine_,
                                                         32,
                                                         24,
                                                         "",
-                                                        icon_font_ ? icon_font_ : &lv_font_montserrat_14,
-                                                        light_color,
-                                                        dark_color,
+                                                        icon_font_,
                                                         nullptr,
                                                         &view_model_,
                                                         true);
@@ -143,14 +141,12 @@ void NavBar::create_icon_buttons() {
 
 void NavBar::update_icon_buttons() {
     const bool is_butter_page = view_model_.current_page() == model::AppPage::Butter;
-    const bool is_dark_mode = view_model_.is_dark_mode();
-    const auto colors = view::palette(is_dark_mode);
-    const char* theme_icon = is_dark_mode ? ICON_SUN : ICON_MOON;
     /* nav bar icons showed on apple screen */
     const std::array<IconSpec, 5> apple_icons = {{
         {ICON_SIGN_OUT, request_quit_cb},
-        {ICON_TEXT_BOLD, toggle_bold_text_cb},
-        {theme_icon, toggle_theme_cb},
+        {ICON_TEXT_SIZE, toggle_bold_text_cb},
+        // Key 6 picks the theme for the next start; one fixed icon for it.
+        {ICON_MOON, toggle_theme_cb},
         {ICON_INFO, show_info_cb},
         {ICON_SQUARE_ARROW_RIGHT, toggle_page_cb},
     }};
@@ -164,11 +160,6 @@ void NavBar::update_icon_buttons() {
     }};
 
     platform::set_nav_shortcut_mode(is_butter_page);
-    for (auto* key_label : shortcut_key_labels_) {
-        if (key_label) {
-            lv_obj_set_style_text_color(key_label, colors.primary, 0);
-        }
-    }
     if (shortcut_bar_) {
         if (is_butter_page) {
             lv_obj_remove_flag(shortcut_bar_, LV_OBJ_FLAG_HIDDEN);

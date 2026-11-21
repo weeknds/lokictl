@@ -13,11 +13,19 @@ namespace app {
 class AssetManager;
 }
 
+namespace view {
+class ThemeEngine;
+}
+
 namespace view::widgets {
 
 class TitleBar : public BaseWidgets {
 public:
-    TitleBar(lv_obj_t* parent, viewmodel::BaseViewModel& view_model, app::AssetManager& assets);
+    // Styled from theme_engine.theme() when built; see view::ThemeEngine.
+    TitleBar(lv_obj_t* parent,
+             viewmodel::BaseViewModel& view_model,
+             app::AssetManager& assets,
+             view::ThemeEngine& theme_engine);
     ~TitleBar() override;
 
     void build() override;
@@ -29,6 +37,7 @@ private:
 
     viewmodel::BaseViewModel& view_model_;
     app::AssetManager& assets_;
+    view::ThemeEngine& theme_engine_;
     lv_obj_t* time_label_{nullptr};
     lv_obj_t* wifi_label_{nullptr};
     lv_obj_t* ethernet_label_{nullptr};

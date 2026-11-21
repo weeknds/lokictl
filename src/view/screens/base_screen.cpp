@@ -7,13 +7,16 @@
 #include "base_screen.h"
 
 #include "asset_manager.h"
-#include "bindings.h"
+#include "style.h"
 #include "theme.h"
+#include "theme_engine.h"
 
 namespace screen {
 
-BaseScreen::BaseScreen(viewmodel::BaseViewModel& view_model, app::AssetManager& assets)
-    : view_model_(view_model), assets_(assets) {}
+BaseScreen::BaseScreen(viewmodel::BaseViewModel& view_model,
+                       app::AssetManager& assets,
+                       view::ThemeEngine& theme_engine)
+    : view_model_(view_model), assets_(assets), theme_engine_(theme_engine) {}
 
 BaseScreen::~BaseScreen() {
     title_bar_.reset();
@@ -34,7 +37,7 @@ void BaseScreen::init(Layout layout) {
     lv_obj_clear_flag(root_, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_set_size(root_, view::kScreenWidth, view::kScreenHeight);
-    reactive::bind_theme(root_, view_model_.dark_mode_subject(), reactive::ThemeRole::Screen);
+    view::style::screen(root_, theme());
 
     if (layout == Layout::FullScreen) {
         content_ = lv_obj_create(root_);
@@ -43,10 +46,10 @@ void BaseScreen::init(Layout layout) {
         lv_obj_align(content_, LV_ALIGN_TOP_MID, 0, 0);
     }
     else {
-        title_bar_ = std::make_unique<view::widgets::TitleBar>(root_, view_model_, assets_);
+        title_bar_ = std::make_unique<view::widgets::TitleBar>(root_, view_model_, assets_, theme_engine_);
         title_bar_->build();
 
-        nav_bar_ = std::make_unique<view::widgets::NavBar>(root_, view_model_, assets_);
+        nav_bar_ = std::make_unique<view::widgets::NavBar>(root_, view_model_, assets_, theme_engine_);
         nav_bar_->build();
 
         content_ = lv_obj_create(root_);
@@ -55,8 +58,9 @@ void BaseScreen::init(Layout layout) {
         lv_obj_align(content_, LV_ALIGN_TOP_MID, 0, view::kTitleBarHeight);
     }
 
+    // Transparent: the screen root draws the ground.
     lv_obj_clear_flag(content_, LV_OBJ_FLAG_SCROLLABLE);
-    reactive::bind_theme(content_, view_model_.dark_mode_subject(), reactive::ThemeRole::Surface);
+    lv_obj_set_style_bg_opa(content_, LV_OPA_TRANSP, 0);
 
     build_content(content_);
 }
@@ -71,6 +75,14 @@ viewmodel::BaseViewModel& BaseScreen::view_model() {
 
 app::AssetManager& BaseScreen::assets() {
     return assets_;
+}
+
+const view::Theme& BaseScreen::theme() const {
+    return theme_engine_.theme();
+}
+
+view::ThemeEngine& BaseScreen::theme_engine() {
+    return theme_engine_;
 }
 
 } // namespace screen
