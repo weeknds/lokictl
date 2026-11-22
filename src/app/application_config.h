@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <optional>
 #include <string>
 
@@ -37,11 +38,26 @@ struct ApplicationConfig {
     // the last line counts. It is not checked here (see
     // valid_hotspot_password()).
     std::optional<std::string> hotspot_password;
+    // The `hotspot_name` key of [application]: the hotspot's network name
+    // after the user renamed it, as it stands after the '=' (trimmed); empty
+    // means the default name. Unset when the file has no such key; when it
+    // appears more than once, the last line counts. It is not checked here
+    // (see valid_hotspot_name()).
+    std::optional<std::string> hotspot_name;
 };
 
 // True for a password a WPA2 hotspot takes: 8 to 63 printable ASCII
 // characters, without a space at either end (the file is read trimmed).
 bool valid_hotspot_password(const std::string& password);
+
+// The longest hotspot name, in bytes: the longest name a Wi-Fi network can
+// have.
+constexpr std::size_t kHotspotNameMax = 32;
+
+// True for a name the hotspot may take: 1 to kHotspotNameMax printable
+// ASCII characters, without a space at either end (the file is read
+// trimmed).
+bool valid_hotspot_name(const std::string& name);
 
 bool load_application_config(const std::string& path,
                              ApplicationConfig& config,
@@ -49,8 +65,9 @@ bool load_application_config(const std::string& path,
 // Updates the [application] section of `path`, creating the file, its
 // folder and the section when needed:
 // - `theme=<name>` is written when config.theme is set,
-//   `dim_when_idle=yes|no` when config.dim_when_idle is set and
-//   `hotspot_password=<password>` when config.hotspot_password is set. Each replaces
+//   `dim_when_idle=yes|no` when config.dim_when_idle is set,
+//   `hotspot_password=<password>` when config.hotspot_password is set and
+//   `hotspot_name=<name>` when config.hotspot_name is set. Each replaces
 //   the first line of its key in the section, and any further lines of
 //   that key are dropped; with no such line it goes at the end of the
 //   section. A key that is not set is left as it is in the file.

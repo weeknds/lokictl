@@ -249,7 +249,7 @@ public:
     }
 
     void request_mode(const ModeRequest& request) override {
-        pretend_.request(request.mode);
+        pretend_.request(request);
     }
 
 private:

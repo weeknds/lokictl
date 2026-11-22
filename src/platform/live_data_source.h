@@ -33,7 +33,10 @@ namespace platform {
 // Switching modes: on the real root of a device build, and only when the
 // source may change the network (a normal start), request_mode() and
 // leave_modes() go to NetworkManagerClient's actions; Router is refused at
-// once ("Plug in a cable first") unless the kernel's uplink is a cable.
+// once ("Plug in a cable first") unless the kernel's uplink is a cable, and
+// a restart (a new name or password while Router runs) goes to
+// restart_router(). The hotspot's name is the request's, or else
+// default_hotspot_name().
 // Everywhere else (test folders, the Mac, snapshots, --print-data) the
 // switch only pretends (PretendModeSwitch), and a test folder's
 // "networkmanager" file can make it fail.
@@ -112,10 +115,6 @@ public:
     static constexpr std::chrono::milliseconds kServiceStartInterval{100};
 
 private:
-    // The hotspot's network name: "LokiCTL-" and the last four hex digits
-    // of kHotspotInterface's hardware address, in capitals.
-    std::string hotspot_name() const;
-
     // Forgets the traffic: no counters, rates not known, empty histories.
     void forget_traffic();
     // Reads the uplink's counters and works out the rates (see read()).

@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 
 namespace viewmodel {
@@ -24,6 +25,10 @@ class BaseViewModel;
 }
 
 namespace app {
+
+// A new hotspot password: 12 characters from a set that is easy to read and
+// type (no 0/o, 1/l/i), from the system's random source.
+std::string random_hotspot_password();
 
 // The screen's side of the data layer. It owns a platform::DataReader,
 // fetches the newest values from it and hands them to the view model, which
@@ -67,6 +72,15 @@ namespace app {
 // quitting" when a reader that changes the network stops while a mode other
 // than Client is on or a switch runs.
 //
+// The hotspot's name and password: it follows the Hotspot page's requests
+// (BaseViewModel::request_hotspot_rename() and
+// request_new_hotspot_password()), makes the new password, gives the new
+// values to the view model, has them saved (set_hotspot_saver(), only when
+// the reader changes the real network) and, while Router runs, asks the
+// reader to start the hotspot again with them (ModeRequest::restart).
+// Requests while a switch runs are ignored. Log lines: "data: hotspot
+// renamed" and "data: new hotspot password" (never the values).
+//
 // Create it after the view model and destroy it before; like
 // app::ThemeController, it is not copied.
 class DataController {
@@ -106,11 +120,18 @@ public:
     // more than once, and without start().
     void stop();
 
-    // Called on the UI thread when Router is asked for while the view
-    // model holds no hotspot password and the reader changes the real
-    // network: it makes one, saves it, gives it to the view model and
-    // returns it. Empty: the view model's password is used as it is.
-    void set_password_maker(std::function<std::string()> maker);
+    // Makes the hotspot's new passwords: when the Hotspot page asks for
+    // one, and when Router is asked for while the view model holds none
+    // and the reader changes the real network. Empty (the default):
+    // random_hotspot_password(). Snapshots set a fixed one.
+    void set_password_generator(std::function<std::string()> generator);
+
+    // Saves a changed name or password (a value that is not set stays as
+    // it is in the settings file). Called on the UI thread, and only when
+    // the reader changes the real network; empty: nothing is saved.
+    using HotspotSaver =
+        std::function<void(const std::optional<std::string>& name, const std::optional<std::string>& password)>;
+    void set_hotspot_saver(HotspotSaver saver);
 
     // Tells the controller whether the screen is dark (app::PowerController,
     // F3.7). While it is, the reader is told that neither the traffic nor
@@ -126,7 +147,16 @@ private:
     // Hands a mode request of the view model to the reader. The user data
     // is the controller.
     static void mode_request_cb(lv_observer_t* observer, lv_subject_t* subject);
+    // Handles a change the Hotspot page asked for. The user data is the
+    // controller.
+    static void hotspot_request_cb(lv_observer_t* observer, lv_subject_t* subject);
     void request_mode(model::NetMode mode);
+    void change_hotspot();
+    // Hands `request` to the reader; without the background reader it is
+    // taken with a reading right away.
+    void send(const platform::ModeRequest& request);
+    std::string new_password() const;
+    void save_hotspot(const std::optional<std::string>& name, const std::optional<std::string>& password);
     void log_mode(const model::HomeData& data);
     // Hands the reader the traffic and details flags for the page on top
     // and the screen's state.
@@ -150,7 +180,10 @@ private:
     lv_observer_t* page_observer_{nullptr};
     lv_observer_t* mode_observer_{nullptr};
     int32_t mode_requests_seen_{0};  // the view model's request count handed on last
-    std::function<std::string()> password_maker_;
+    lv_observer_t* hotspot_observer_{nullptr};
+    int32_t hotspot_requests_seen_{0};
+    std::function<std::string()> password_generator_;
+    HotspotSaver hotspot_saver_;
     bool mode_logged_{false};
     model::NetMode logged_mode_{model::NetMode::Client};
     model::SwitchState logged_switch_{model::SwitchState::Idle};

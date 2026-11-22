@@ -84,6 +84,15 @@ install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts/LICENSE.txt"
     DESTINATION "${CMAKE_INSTALL_DOCDIR}"
     RENAME "third-party-assets-license.txt"
 )
+# LVGL is linked into the program, with the QR code encoder it brings for
+# the Hotspot page's join code.
+install(FILES "${LVGL_SOURCE_DIR}/LICENCE.txt"
+    DESTINATION "${CMAKE_INSTALL_DOCDIR}"
+    RENAME "lvgl-license.txt"
+)
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/docs/third-party/qrcodegen-license.txt"
+    DESTINATION "${CMAKE_INSTALL_DOCDIR}"
+)
 
 set(CPACK_GENERATOR "DEB")
 set(CPACK_PACKAGING_INSTALL_PREFIX "/usr")

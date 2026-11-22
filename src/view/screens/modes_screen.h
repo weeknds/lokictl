@@ -28,8 +28,8 @@ namespace screen {
 // Up and down (F/X) move the highlight and stop at the first and the last
 // row. Enter or key 6 (Use) asks for the highlighted mode
 // (BaseViewModel::request_mode()); Use is switched off on the mode that is
-// on, on Share and VPN, and while a switch runs. Key 4 or a short ESC goes
-// back. The page never waits for the switch: the data layer does it, and
+// on, on Share and VPN, and while a switch runs. Key 7 (QR) opens the
+// Hotspot page, in any mode. Key 4 or a short ESC goes back. The page never waits for the switch: the data layer does it, and
 // the page follows HomeData::mode and HomeData::mode_switch as they arrive.
 //
 // The highlight lives in the view model (modes_selection_*), where

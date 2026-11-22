@@ -247,6 +247,7 @@ struct HomeData {
     // something while ap_active is true.
     std::string ap_name;               // network name (SSID) of the access point
     std::string ap_security;           // security of the access point, for example "WPA2"
+    int32_t ap_channel{0};             // Wi-Fi channel of the access point; 0 when not known
     int32_t uptime_seconds{0};         // time since the mode started, seconds
     ModeSwitch mode_switch;            // the last switch between modes (see ModeSwitch)
     // The current rates, kbit/s; kRateUnknown (or any negative value) when

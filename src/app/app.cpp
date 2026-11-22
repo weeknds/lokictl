@@ -16,6 +16,7 @@
 #include "key_controller.h"
 #include "logger.h"
 #include "linux_input.h"
+#include "mode_switch.h"
 #include "page_registry.h"
 #include "power_controller.h"
 #include "screen_manager.h"
@@ -34,7 +35,6 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
-#include <random>
 #include <string>
 #include <thread>
 #include <vector>
@@ -190,32 +190,25 @@ bool save_dimming_choice(const std::string& path, bool on) {
     return true;
 }
 
-// Makes a new hotspot password: 12 characters from a set that is easy to
-// read and type (no 0/o, 1/l/i), saves it as the hotspot_password= key of
-// the settings file at `path` (which keeps every other line and becomes
-// readable by its owner only) and gives it to the view model. A failure to
-// save is logged; the password is still used for this run. The password
-// itself never goes to the log.
-std::string make_hotspot_password(const std::string& path, viewmodel::BaseViewModel& view_model) {
-    constexpr char kCharacters[] = "abcdefghjkmnpqrstuvwxyz23456789";
-    constexpr std::size_t kLength = 12;
-    std::random_device random;
-    std::uniform_int_distribution<std::size_t> pick(0, sizeof(kCharacters) - 2);
-    std::string password;
-    for (std::size_t index = 0; index < kLength; ++index) {
-        password += kCharacters[pick(random)];
-    }
-
+// Saves a changed hotspot name or password as the hotspot_name= and
+// hotspot_password= keys of the settings file at `path` (which keeps every
+// other line, and becomes readable by its owner only when the password is
+// written). A value that is not set is left alone. A failure to save is
+// logged; the values are still used for this run. Neither value goes to
+// the log.
+void save_hotspot_settings(const std::string& path,
+                           const std::optional<std::string>& name,
+                           const std::optional<std::string>& password) {
     ApplicationConfig config;
+    config.hotspot_name = name;
     config.hotspot_password = password;
+    const char* what = name && password ? "name and password" : name ? "name" : "password";
     std::string error;
     if (save_application_config(path, config, error)) {
-        LOG_INFO("saved a new hotspot password to {}", path);
+        LOG_INFO("saved the hotspot's {} to {}", what, path);
     } else {
-        LOG_WARN("could not save the new hotspot password to {}: {}", path, error);
+        LOG_WARN("could not save the hotspot's {} to {}: {}", what, path, error);
     }
-    view_model.set_hotspot_password(password);
-    return password;
 }
 
 // The idle times of this run: the normal ones, or those of
@@ -457,12 +450,27 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override,
     // Dimming is on unless the user switched it off on the Settings page.
     view_model.set_screen_dimming(config.dim_when_idle.value_or(true));
 
-    // The hotspot's password. The simulator shows a made-up one and never
-    // writes one; the device uses the saved one, and makes and saves one at
-    // the first switch to Router when there is none (see below).
+    // The hotspot's name and password. The simulator shows made-up ones
+    // and never writes them; the device uses the saved ones, the default
+    // name (from wlan0's hardware address) until the user renames it, and
+    // makes and saves a password at the first switch to Router when there
+    // is none (see below).
 #if USE_DESKTOP
+    view_model.set_default_hotspot_name(model::sample_home_data().ap_name);
+    view_model.set_hotspot_name(model::sample_home_data().ap_name);
     view_model.set_hotspot_password(model::kExampleHotspotPassword);
 #else
+    // An empty hotspot_name= line means the default name.
+    view_model.set_default_hotspot_name(platform::default_hotspot_name("/"));
+    if (config.hotspot_name && valid_hotspot_name(*config.hotspot_name)) {
+        view_model.set_hotspot_name(*config.hotspot_name);
+    } else {
+        if (config.hotspot_name && !config.hotspot_name->empty()) {
+            LOG_WARN("the hotspot_name in {} is not 1 to 32 printable characters; the default name is used",
+                     loaded_config_path);
+        }
+        view_model.set_hotspot_name(view_model.default_hotspot_name());
+    }
     if (config.hotspot_password && valid_hotspot_password(*config.hotspot_password)) {
         view_model.set_hotspot_password(*config.hotspot_password);
     } else if (config.hotspot_password) {
@@ -553,8 +561,10 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override,
     // are stopped right after it, before anything else is torn down.
     // Only a normal start may change the network (switching modes).
     DataController data(view_model, platform::make_data_source(data_source, data_root, true));
-    data.set_password_maker(
-        [&view_model, &user_config_path] { return make_hotspot_password(user_config_path, view_model); });
+    data.set_hotspot_saver([&user_config_path](const std::optional<std::string>& name,
+                                               const std::optional<std::string>& password) {
+        save_hotspot_settings(user_config_path, name, password);
+    });
     data.read_first();
 
     ScreenManager screen_manager(view_model, assets, theme_engine);

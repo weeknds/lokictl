@@ -31,6 +31,13 @@ constexpr int32_t kHomeClientRows = 3;
 // The highlighted row of the Modes page while it follows the active mode.
 constexpr int32_t kModesFollowsActive = -1;
 
+// A change of the hotspot the Hotspot page asks for (see
+// BaseViewModel::request_hotspot_rename()).
+enum class HotspotChange {
+    Rename,      // a new name, BaseViewModel::requested_hotspot_name()
+    NewPassword, // a new random password
+};
+
 class BaseViewModel {
 public:
     BaseViewModel();
@@ -125,12 +132,48 @@ public:
     void request_mode(model::NetMode mode);
     lv_subject_t* mode_request_subject();
     model::NetMode requested_mode() const;
-    // The hotspot's password, for the Modes page to show while Router runs.
-    // The app sets it (from the settings file on the device, a made-up one
-    // in the simulator and in snapshots); empty when there is none yet. It
+    // The hotspot's password, for the Modes and Hotspot pages to show. The
+    // app sets it (from the settings file on the device, a made-up one in
+    // the simulator and in snapshots); empty when there is none yet. It
     // never goes to the log.
     const std::string& hotspot_password() const;
     void set_hotspot_password(const std::string& password);
+    // The hotspot's name, the one Router starts with: the saved name, or
+    // the default one on the device, a made-up one in the simulator and in
+    // snapshots. Set by the app.
+    const std::string& hotspot_name() const;
+    void set_hotspot_name(const std::string& name);
+    // The name the hotspot has until the user renames it, and gets back
+    // when a rename leaves the name empty. Set by the app at start.
+    const std::string& default_hotspot_name() const;
+    void set_default_hotspot_name(const std::string& name);
+    // Counts every change of the hotspot's name or password made with the
+    // two setters above, so the pages that show them follow. Starts at 0.
+    lv_subject_t* hotspot_subject();
+
+    // The Hotspot page.
+    // Sets typing back to off, then opens the page (see open_page()). The
+    // Modes page's key 7 uses it.
+    bool open_hotspot();
+    // Asks for a new name (an empty one means the default name) or a new
+    // random password. The view model only
+    // passes the request on: app::DataController makes the password, saves
+    // the change, sets the new values with the setters above and starts
+    // the hotspot again if it runs. Counts every request, like
+    // request_mode(); requested_hotspot_change() and
+    // requested_hotspot_name() say what was asked.
+    void request_hotspot_rename(const std::string& name);
+    void request_new_hotspot_password();
+    lv_subject_t* hotspot_request_subject();
+    HotspotChange requested_hotspot_change() const;
+    const std::string& requested_hotspot_name() const;
+    // True while the page is in typing mode (renaming); the name typed so
+    // far is hotspot_draft(). Kept here like the key test page's typing.
+    lv_subject_t* hotspot_typing_subject();
+    bool hotspot_typing() const;
+    void set_hotspot_typing(bool typing);
+    const std::string& hotspot_draft() const;
+    void set_hotspot_draft(const std::string& draft);
 
     // The home page.
     // The values it shows (see model::HomeData). The page reads them while
@@ -197,6 +240,14 @@ private:
     reactive::IntSubject mode_request_subject_;
     model::NetMode requested_mode_{model::NetMode::Client};
     std::string hotspot_password_;
+    std::string hotspot_name_;
+    std::string default_hotspot_name_;
+    reactive::IntSubject hotspot_subject_;
+    reactive::IntSubject hotspot_request_subject_;
+    HotspotChange requested_hotspot_change_{HotspotChange::Rename};
+    std::string requested_hotspot_name_;
+    reactive::BoolSubject hotspot_typing_subject_;
+    std::string hotspot_draft_;
     reactive::IntSubject home_selection_subject_;
     reactive::IntSubject home_data_subject_;
     reactive::IntSubject key_test_selection_subject_;

@@ -434,9 +434,10 @@ UI thread never waits.
 
 **The mode comes from NetworkManager, not from memory.** An active profile
 named `LokiCTL hotspot` that carries LokiCTL's own user-data mark means
-Router: `mode`, `ap_active`, `ap_name`, `ap_security` and `uptime_seconds`
-are filled in from it, and `mode_detail` reads `eth0 → wi-fi ap · nat ·
-dhcp`. So a restarted LokiCTL shows Router and can undo it, and a restart
+Router: `mode`, `ap_active`, `ap_name`, `ap_security`, `ap_channel` and
+`uptime_seconds` are filled in from it (the channel from the frequency of
+the access point NetworkManager shows on `wlan0`; 0 when it shows none),
+and `mode_detail` reads `eth0 → wi-fi ap · nat · dhcp`. So a restarted LokiCTL shows Router and can undo it, and a restart
 of the device always lands in Client.
 
 Who really switches: only the `live` source on the device's real root, in a
@@ -452,8 +453,9 @@ change anything.
   to disk, autoconnect off, not tied to the app, so it survives a crash):
   an access point on `wlan0`, 2.4 GHz, WPA2-PSK (CCMP), IPv4 shared, IPv6
   off. NetworkManager's shared mode hands out addresses (its own
-  `dnsmasq`) and shares the link (`nft`). The name is `LokiCTL-` and the
-  last four hex digits of `wlan0`'s hardware address. The UUID of the
+  `dnsmasq`) and shares the link (`nft`). The name is the view model's
+  (see below): `LokiCTL-` and the last four hex digits of `wlan0`'s
+  hardware address until the user renames it. The UUID of the
   Wi-Fi profile `wlan0` was on, and the time the profile was made, go into
   its user data (`lokictl.restore`, `lokictl.started`). A leftover profile
   of LokiCTL's that is not active is deleted first. The switch is done when
@@ -472,6 +474,15 @@ change anything.
   under the 5 s `scripts/device.sh stop` gives before SIGKILL. The Wi-Fi
   join finishes after the app has gone. A quit in plain Client sends
   nothing. Keeping a mode after quitting comes later.
+- **A new name or password while Router runs**
+  (`restart_router()`, `ModeRequest::restart`): the profile is built
+  afresh with the same UUID, the same `lokictl.restore` and a new
+  `lokictl.started`, updated in memory only (`Update2` with the in-memory
+  flag; it stays under `/run`) and activated again on `wlan0`. So `wlan0`
+  goes straight from the old hotspot to the new one and never falls back
+  to the home Wi-Fi in between; devices on it must join again. A failure,
+  or 20 s without the hotspot, undoes it to Client as above. Nothing is
+  sent while the hotspot is not active.
 - While a switch is busy the live source reads every 100 ms, so the
   answers are handled soon.
 
@@ -498,6 +509,29 @@ set without look-alikes such as `0`/`o` and `1`/`l`), saved with the file
 made readable by its owner only (mode 0600) before the line goes in, and
 kept. The shipped `/etc/lokictl.conf` has no such line. The simulator and
 snapshots show a fixed made-up password and never write one.
+
+**The hotspot's name** lives in the view model next to the password: the
+`hotspot_name=` key of the settings file when it holds a valid name (1 to
+32 printable characters, no space at either end), else the default name.
+The simulator and snapshots use the sample's made-up `LokiCTL-7F`.
+
+**Rename and new password** (the Hotspot page): the page asks the view
+model (`request_hotspot_rename()`, `request_new_hotspot_password()`), and
+`app::DataController` makes the password (`random_hotspot_password()`; in
+snapshots a fixed made-up one, `w4nbe8rhq2js`), sets the new values in the
+view model, has them saved (only where the reader changes the real
+network) and, while Router runs, sends a restart request. A request while
+a switch runs is ignored. Log lines: `data: hotspot renamed`, `data: new
+hotspot password`, then the usual switch lines; never the values. The
+pretend switch takes a restart like any switch (`Switching` for one
+reading) and shows the new name afterwards. For example:
+
+```sh
+$B --snapshot build/shots/hotspot.png --page hotspot --data sample
+$B --snapshot build/shots/hotspot-off.png --page hotspot --data cable
+$B --snapshot build/shots/hotspot-renamed.png --page hotspot --data sample --keys 5,backspace,x,enter,data
+$B --snapshot build/shots/hotspot-new-password.png --page hotspot --data sample --keys 6,6,data
+```
 
 The rights come from the package's polkit rule (see the README): apps
 started by the launcher are not an active login session, so without it
@@ -780,6 +814,7 @@ network=Harbour-Cafe
 security=WPA2
 signal_dbm=-57
 access_point=no
+ap_channel=unknown
 clients=0
 down_kbps=2400
 up_kbps=300
@@ -825,6 +860,7 @@ The lines always come in this order:
 | `security=` | the Wi-Fi network's security, for example `WPA2` |
 | `signal_dbm=` | the Wi-Fi signal in dBm, with a plain hyphen: `-57` |
 | `access_point=` | `yes` while the device runs its own access point, else `no` |
+| `ap_channel=` | the access point's Wi-Fi channel, or `unknown` (always without an access point) |
 | `clients=` | the number of connected clients |
 | `down_kbps=`, `up_kbps=` | the current rates in kbit/s |
 | `down_history=`, `up_history=` | the two graphs: 24 shares of 0 to 100 (100 is the history's peak), oldest first, separated by commas |

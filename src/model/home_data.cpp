@@ -224,6 +224,7 @@ bool operator==(const HomeData& left, const HomeData& right) {
            left.ap_active == right.ap_active &&
            left.ap_name == right.ap_name &&
            left.ap_security == right.ap_security &&
+           left.ap_channel == right.ap_channel &&
            left.uptime_seconds == right.uptime_seconds &&
            left.mode_switch == right.mode_switch &&
            left.down_kbps == right.down_kbps &&
@@ -261,6 +262,7 @@ HomeData sample_home_data() {
     data.ap_active = true;
     data.ap_name = "LokiCTL-7F";
     data.ap_security = "WPA2";
+    data.ap_channel = 6;
     data.uptime_seconds = 751;
     data.down_kbps = 3800;
     data.up_kbps = 900;

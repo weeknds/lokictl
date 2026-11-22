@@ -251,9 +251,11 @@ int run_snapshot(const SnapshotRequest& request) {
 
     viewmodel::BaseViewModel view_model;
     // Set before any screen or observer exists. The user's settings file is
-    // neither read nor written in snapshot mode, so the hotspot's password
-    // is the made-up one.
+    // neither read nor written in snapshot mode, so the hotspot's name and
+    // password are the made-up ones.
     view_model.show_page(request.page);
+    view_model.set_default_hotspot_name(model::sample_home_data().ap_name);
+    view_model.set_hotspot_name(model::sample_home_data().ap_name);
     view_model.set_hotspot_password(model::kExampleHotspotPassword);
 
     HeadlessDisplay headless;
@@ -269,6 +271,9 @@ int run_snapshot(const SnapshotRequest& request) {
     // only; a snapshot never starts the background reader. Its log lines
     // stay out of the output, because the logger only shows warnings here.
     DataController data(view_model, platform::make_data_source(request.data_source, request.data_root));
+    // A new password is a fixed made-up one, so the same command always
+    // gives the same picture; no saver is set, so nothing is written.
+    data.set_password_generator([] { return std::string(model::kExampleNewHotspotPassword); });
     data.read_first();
 
     ScreenManager screen_manager(view_model, assets, theme_engine);

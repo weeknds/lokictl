@@ -14,10 +14,10 @@
 // asks for an internet check.
 //
 // Every call that changes the network is in the block marked "Actions"
-// below: adding and activating the in-memory hotspot profile, deleting
-// LokiCTL's hotspot profiles and activating the Wi-Fi profile the hotspot
-// interface was on before. Nothing else is ever added, changed or deleted,
-// and only kHotspotInterface is touched.
+// below: adding, updating (in memory) and activating the in-memory hotspot
+// profile, deleting LokiCTL's hotspot profiles and activating the Wi-Fi
+// profile the hotspot interface was on before. Nothing else is ever added,
+// changed or deleted, and only kHotspotInterface is touched.
 
 #include "network_manager.h"
 
@@ -221,6 +221,59 @@ int64_t wall_clock_seconds() {
     return static_cast<int64_t>(std::time(nullptr));
 }
 
+// LokiCTL's hotspot profile for `request`, with `uuid`, the Wi-Fi profile
+// to bring back (`restore`, may be empty) and the time now as its start:
+// an access point on the request's interface, 2.4 GHz, WPA2-PSK (CCMP),
+// IPv4 shared, IPv6 off, autoconnect off. The caller owns the result.
+NMConnection* hotspot_profile(const RouterRequest& request, const char* uuid, const std::string& restore) {
+    NMConnection* connection = nm_simple_connection_new();
+    auto* setting_connection = NM_SETTING_CONNECTION(nm_setting_connection_new());
+    g_object_set(setting_connection,
+                 NM_SETTING_CONNECTION_ID, kHotspotProfile,
+                 NM_SETTING_CONNECTION_UUID, uuid,
+                 NM_SETTING_CONNECTION_TYPE, NM_SETTING_WIRELESS_SETTING_NAME,
+                 NM_SETTING_CONNECTION_INTERFACE_NAME, request.interface_name.c_str(),
+                 NM_SETTING_CONNECTION_AUTOCONNECT, FALSE,
+                 nullptr);
+    nm_connection_add_setting(connection, NM_SETTING(setting_connection));
+
+    auto* user = NM_SETTING_USER(nm_setting_user_new());
+    const std::string started = std::to_string(wall_clock_seconds());
+    nm_setting_user_set_data(user, kStartedKey, started.c_str(), nullptr);
+    if (!restore.empty()) {
+        nm_setting_user_set_data(user, kRestoreKey, restore.c_str(), nullptr);
+    }
+    nm_connection_add_setting(connection, NM_SETTING(user));
+
+    auto* wireless = NM_SETTING_WIRELESS(nm_setting_wireless_new());
+    GBytes* ssid = g_bytes_new(request.name.data(), request.name.size());
+    g_object_set(wireless,
+                 NM_SETTING_WIRELESS_SSID, ssid,
+                 NM_SETTING_WIRELESS_MODE, NM_SETTING_WIRELESS_MODE_AP,
+                 NM_SETTING_WIRELESS_BAND, "bg",
+                 nullptr);
+    g_bytes_unref(ssid);
+    nm_connection_add_setting(connection, NM_SETTING(wireless));
+
+    auto* security = NM_SETTING_WIRELESS_SECURITY(nm_setting_wireless_security_new());
+    g_object_set(security,
+                 NM_SETTING_WIRELESS_SECURITY_KEY_MGMT, "wpa-psk",
+                 NM_SETTING_WIRELESS_SECURITY_PSK, request.password.c_str(),
+                 nullptr);
+    nm_setting_wireless_security_add_proto(security, "rsn");
+    nm_setting_wireless_security_add_pairwise(security, "ccmp");
+    nm_setting_wireless_security_add_group(security, "ccmp");
+    nm_connection_add_setting(connection, NM_SETTING(security));
+
+    auto* ipv4 = NM_SETTING_IP_CONFIG(nm_setting_ip4_config_new());
+    g_object_set(ipv4, NM_SETTING_IP_CONFIG_METHOD, NM_SETTING_IP4_CONFIG_METHOD_SHARED, nullptr);
+    nm_connection_add_setting(connection, NM_SETTING(ipv4));
+    auto* ipv6 = NM_SETTING_IP_CONFIG(nm_setting_ip6_config_new());
+    g_object_set(ipv6, NM_SETTING_IP_CONFIG_METHOD, NM_SETTING_IP6_CONFIG_METHOD_DISABLED, nullptr);
+    nm_connection_add_setting(connection, NM_SETTING(ipv6));
+    return connection;
+}
+
 } // namespace
 
 struct NetworkManagerClient::Impl {
@@ -253,6 +306,8 @@ struct NetworkManagerClient::Impl {
     static void on_profile_deleted(GObject* source, GAsyncResult* result, gpointer user_data);
     static void on_leftover_deleted(GObject* source, GAsyncResult* result, gpointer user_data);
     static void on_restored(GObject* source, GAsyncResult* result, gpointer user_data);
+    static void on_hotspot_updated(GObject* source, GAsyncResult* result, gpointer user_data);
+    static void on_hotspot_reactivated(GObject* source, GAsyncResult* result, gpointer user_data);
 
     // Called in `context` when the start has ended, well or not.
     static void on_started(GObject* source, GAsyncResult* result, gpointer user_data) {
@@ -434,6 +489,17 @@ void NetworkManagerClient::read(NetworkManagerReading& reading) {
             }
         }
         hotspot.security = nm_connection_get_setting_wireless_security(profile) != nullptr ? "WPA2" : "open";
+        // NetworkManager shows its own access point as the device's active
+        // one, with the frequency it picked.
+        if (active_devices != nullptr && active_devices->len > 0) {
+            auto* device = static_cast<NMDevice*>(g_ptr_array_index(active_devices, 0));
+            if (NM_IS_DEVICE_WIFI(device)) {
+                if (NMAccessPoint* own = nm_device_wifi_get_active_access_point(NM_DEVICE_WIFI(device))) {
+                    const guint32 channel = nm_utils_wifi_freq_to_channel(nm_access_point_get_frequency(own));
+                    hotspot.channel = channel > 0 && channel < 200 ? static_cast<int32_t>(channel) : 0;
+                }
+            }
+        }
         if (const char* started = user_data(profile, kStartedKey)) {
             const int64_t since = g_ascii_strtoll(started, nullptr, 10);
             const int64_t uptime = wall_clock_seconds() - since;
@@ -533,53 +599,9 @@ void NetworkManagerClient::start_router(const RouterRequest& request) {
         }
     }
 
-    NMConnection* connection = nm_simple_connection_new();
     char* uuid = nm_utils_uuid_generate();
-    auto* setting_connection = NM_SETTING_CONNECTION(nm_setting_connection_new());
-    g_object_set(setting_connection,
-                 NM_SETTING_CONNECTION_ID, kHotspotProfile,
-                 NM_SETTING_CONNECTION_UUID, uuid,
-                 NM_SETTING_CONNECTION_TYPE, NM_SETTING_WIRELESS_SETTING_NAME,
-                 NM_SETTING_CONNECTION_INTERFACE_NAME, request.interface_name.c_str(),
-                 NM_SETTING_CONNECTION_AUTOCONNECT, FALSE,
-                 nullptr);
+    NMConnection* connection = hotspot_profile(request, uuid, restore);
     g_free(uuid);
-    nm_connection_add_setting(connection, NM_SETTING(setting_connection));
-
-    auto* user = NM_SETTING_USER(nm_setting_user_new());
-    const std::string started = std::to_string(wall_clock_seconds());
-    nm_setting_user_set_data(user, kStartedKey, started.c_str(), nullptr);
-    if (!restore.empty()) {
-        nm_setting_user_set_data(user, kRestoreKey, restore.c_str(), nullptr);
-    }
-    nm_connection_add_setting(connection, NM_SETTING(user));
-
-    auto* wireless = NM_SETTING_WIRELESS(nm_setting_wireless_new());
-    GBytes* ssid = g_bytes_new(request.name.data(), request.name.size());
-    g_object_set(wireless,
-                 NM_SETTING_WIRELESS_SSID, ssid,
-                 NM_SETTING_WIRELESS_MODE, NM_SETTING_WIRELESS_MODE_AP,
-                 NM_SETTING_WIRELESS_BAND, "bg",
-                 nullptr);
-    g_bytes_unref(ssid);
-    nm_connection_add_setting(connection, NM_SETTING(wireless));
-
-    auto* security = NM_SETTING_WIRELESS_SECURITY(nm_setting_wireless_security_new());
-    g_object_set(security,
-                 NM_SETTING_WIRELESS_SECURITY_KEY_MGMT, "wpa-psk",
-                 NM_SETTING_WIRELESS_SECURITY_PSK, request.password.c_str(),
-                 nullptr);
-    nm_setting_wireless_security_add_proto(security, "rsn");
-    nm_setting_wireless_security_add_pairwise(security, "ccmp");
-    nm_setting_wireless_security_add_group(security, "ccmp");
-    nm_connection_add_setting(connection, NM_SETTING(security));
-
-    auto* ipv4 = NM_SETTING_IP_CONFIG(nm_setting_ip4_config_new());
-    g_object_set(ipv4, NM_SETTING_IP_CONFIG_METHOD, NM_SETTING_IP4_CONFIG_METHOD_SHARED, nullptr);
-    nm_connection_add_setting(connection, NM_SETTING(ipv4));
-    auto* ipv6 = NM_SETTING_IP_CONFIG(nm_setting_ip6_config_new());
-    g_object_set(ipv6, NM_SETTING_IP_CONFIG_METHOD, NM_SETTING_IP6_CONFIG_METHOD_DISABLED, nullptr);
-    nm_connection_add_setting(connection, NM_SETTING(ipv6));
 
     // Kept in memory only, never written to disk, and not tied to this
     // program: the hotspot stays up if LokiCTL is killed, and the next start
@@ -597,6 +619,59 @@ void NetworkManagerClient::start_router(const RouterRequest& request) {
     ++self.pending;
     nm_client_add_and_activate_connection2(client, connection, device, nullptr, g_variant_builder_end(&options),
                                            self.action_cancellable, &Impl::on_router_added, &self);
+    g_main_context_pop_thread_default(self.context);
+    g_object_unref(connection);
+}
+
+void NetworkManagerClient::restart_router(const RouterRequest& request) {
+    Impl& self = *impl_;
+    if (busy() || self.closing) {
+        return;
+    }
+    NMClient* client = self.client;
+    if (client == nullptr || !nm_client_get_nm_running(client)) {
+        return;
+    }
+    // The hotspot's profile, while it is active; otherwise nothing runs that
+    // could start again.
+    NMRemoteConnection* profile = nullptr;
+    const GPtrArray* actives = nm_client_get_active_connections(client);
+    for (guint index = 0; profile == nullptr && actives != nullptr && index < actives->len; ++index) {
+        auto* active = static_cast<NMActiveConnection*>(g_ptr_array_index(actives, index));
+        NMRemoteConnection* candidate = nm_active_connection_get_connection(active);
+        if (candidate != nullptr && is_hotspot_profile(NM_CONNECTION(candidate))) {
+            profile = candidate;
+        }
+    }
+    if (profile == nullptr) {
+        return;
+    }
+    self.status = model::ModeSwitch{};
+    self.status.target = model::NetMode::Router;
+    NMDevice* device = nm_client_get_device_by_iface(client, request.interface_name.c_str());
+    if (device == nullptr || !NM_IS_DEVICE_WIFI(device)) {
+        self.fail(model::SwitchError::Failed, "no Wi-Fi device " + request.interface_name);
+        return;
+    }
+
+    // Built afresh (the client's copy of the profile holds no password),
+    // with the same UUID and the same Wi-Fi profile to bring back.
+    const char* restore = user_data(NM_CONNECTION(profile), kRestoreKey);
+    NMConnection* connection =
+        hotspot_profile(request, nm_connection_get_uuid(NM_CONNECTION(profile)), restore != nullptr ? restore : "");
+
+    self.switch_started = Clock::now();
+    self.status.state = model::SwitchState::Switching;
+    self.router_waiting = true;
+    self.undo_when_added = false;
+    self.restore_interface = request.interface_name;
+    ++self.pending;
+    // Updated in memory only (the profile stays under /run, never on disk);
+    // on_hotspot_updated() then activates it again.
+    g_main_context_push_thread_default(self.context);
+    nm_remote_connection_update2(profile, nm_connection_to_dbus(connection, NM_CONNECTION_SERIALIZE_ALL),
+                                 NM_SETTINGS_UPDATE2_FLAG_IN_MEMORY, nullptr, self.action_cancellable,
+                                 &Impl::on_hotspot_updated, &self);
     g_main_context_pop_thread_default(self.context);
     g_object_unref(connection);
 }
@@ -731,6 +806,66 @@ void NetworkManagerClient::Impl::on_restored(GObject* source, GAsyncResult* resu
     g_clear_error(&error);
 }
 
+// The restart's update has been answered: on success the profile is
+// activated again on the hotspot's interface; on failure the switch is
+// undone, so the page never shows a password the hotspot does not use.
+void NetworkManagerClient::Impl::on_hotspot_updated(GObject* source, GAsyncResult* result, gpointer user_data) {
+    auto* self = static_cast<Impl*>(user_data);
+    GError* error = nullptr;
+    GVariant* answer = nm_remote_connection_update2_finish(NM_REMOTE_CONNECTION(source), result, &error);
+    --self->pending;
+    if (answer != nullptr) {
+        g_variant_unref(answer);
+    }
+    if ((error != nullptr && g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED)) || !self->router_waiting ||
+        self->closing) {
+        // Given up meanwhile (too long, or on the way out).
+        g_clear_error(&error);
+        return;
+    }
+    if (error != nullptr) {
+        self->router_waiting = false;
+        self->fail(permission_denied(error) ? model::SwitchError::NotAllowed : model::SwitchError::Failed,
+                   reason_of(error));
+        g_clear_error(&error);
+        self->delete_profiles_and_restore();
+        return;
+    }
+    NMDevice* device = nm_client_get_device_by_iface(self->client, self->restore_interface.c_str());
+    g_main_context_push_thread_default(self->context);
+    ++self->pending;
+    nm_client_activate_connection_async(self->client, NM_CONNECTION(source), device, nullptr,
+                                        self->action_cancellable, &Impl::on_hotspot_reactivated, self);
+    g_main_context_pop_thread_default(self->context);
+}
+
+void NetworkManagerClient::Impl::on_hotspot_reactivated(GObject* source, GAsyncResult* result, gpointer user_data) {
+    auto* self = static_cast<Impl*>(user_data);
+    GError* error = nullptr;
+    NMActiveConnection* active = nm_client_activate_connection_finish(NM_CLIENT(source), result, &error);
+    --self->pending;
+    if ((error != nullptr && g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED)) || !self->router_waiting ||
+        self->closing) {
+        if (active != nullptr) {
+            g_object_unref(active);
+        }
+        g_clear_error(&error);
+        return;
+    }
+    if (active == nullptr) {
+        self->router_waiting = false;
+        self->fail(permission_denied(error) ? model::SwitchError::NotAllowed : model::SwitchError::Failed,
+                   reason_of(error));
+        g_clear_error(&error);
+        self->delete_profiles_and_restore();
+        return;
+    }
+    g_clear_error(&error);
+    // check_progress() ends the switch once this activation is active.
+    self->release_activation();
+    self->activation = active;
+}
+
 // Called by read(): ends a switch that has finished, failed or run too long.
 void NetworkManagerClient::Impl::check_progress() {
     if (router_waiting && activation != nullptr) {
@@ -812,6 +947,8 @@ bool NetworkManagerClient::can_change_network() {
 }
 
 void NetworkManagerClient::start_router(const RouterRequest& /*request*/) {}
+
+void NetworkManagerClient::restart_router(const RouterRequest& /*request*/) {}
 
 void NetworkManagerClient::start_client() {}
 

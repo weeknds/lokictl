@@ -6,12 +6,14 @@
 
 #include "data_controller.h"
 
+#include "application_config.h"
 #include "base_viewmodel.h"
 #include "logger.h"
 
 #include <algorithm>
 #include <chrono>
 #include <cstddef>
+#include <random>
 #include <string>
 #include <utility>
 
@@ -41,6 +43,18 @@ int32_t logged_charge(int32_t percent) {
 
 } // namespace
 
+std::string random_hotspot_password() {
+    constexpr char kCharacters[] = "abcdefghjkmnpqrstuvwxyz23456789";
+    constexpr std::size_t kLength = 12;
+    std::random_device random;
+    std::uniform_int_distribution<std::size_t> pick(0, sizeof(kCharacters) - 2);
+    std::string password;
+    for (std::size_t index = 0; index < kLength; ++index) {
+        password += kCharacters[pick(random)];
+    }
+    return password;
+}
+
 DataController::DataController(viewmodel::BaseViewModel& view_model,
                                std::unique_ptr<platform::DataSource> source)
     : view_model_(view_model),
@@ -52,6 +66,8 @@ DataController::DataController(viewmodel::BaseViewModel& view_model,
     // is no request.
     mode_requests_seen_ = lv_subject_get_int(view_model_.mode_request_subject());
     mode_observer_ = lv_subject_add_observer(view_model_.mode_request_subject(), mode_request_cb, this);
+    hotspot_requests_seen_ = lv_subject_get_int(view_model_.hotspot_request_subject());
+    hotspot_observer_ = lv_subject_add_observer(view_model_.hotspot_request_subject(), hotspot_request_cb, this);
 }
 
 DataController::~DataController() {
@@ -63,6 +79,10 @@ DataController::~DataController() {
     if (mode_observer_) {
         lv_observer_remove(mode_observer_);
         mode_observer_ = nullptr;
+    }
+    if (hotspot_observer_) {
+        lv_observer_remove(hotspot_observer_);
+        hotspot_observer_ = nullptr;
     }
 }
 
@@ -159,24 +179,106 @@ void DataController::mode_request_cb(lv_observer_t* observer, lv_subject_t* subj
     controller->request_mode(controller->view_model_.requested_mode());
 }
 
-void DataController::set_password_maker(std::function<std::string()> maker) {
-    password_maker_ = std::move(maker);
+void DataController::hotspot_request_cb(lv_observer_t* observer, lv_subject_t* subject) {
+    auto* controller = static_cast<DataController*>(lv_observer_get_user_data(observer));
+    if (!controller) {
+        return;
+    }
+    const int32_t count = lv_subject_get_int(subject);
+    if (count == controller->hotspot_requests_seen_) {
+        return;
+    }
+    controller->hotspot_requests_seen_ = count;
+    controller->change_hotspot();
+}
+
+void DataController::set_password_generator(std::function<std::string()> generator) {
+    password_generator_ = std::move(generator);
+}
+
+void DataController::set_hotspot_saver(HotspotSaver saver) {
+    hotspot_saver_ = std::move(saver);
+}
+
+std::string DataController::new_password() const {
+    return password_generator_ ? password_generator_() : random_hotspot_password();
+}
+
+void DataController::save_hotspot(const std::optional<std::string>& name, const std::optional<std::string>& password) {
+    if (hotspot_saver_ && reader_.changes_network()) {
+        hotspot_saver_(name, password);
+    }
 }
 
 void DataController::request_mode(model::NetMode mode) {
     platform::ModeRequest request;
     request.mode = mode;
     if (mode == model::NetMode::Router) {
+        request.name = view_model_.hotspot_name();
         request.password = view_model_.hotspot_password();
-        if (request.password.empty() && password_maker_ && reader_.changes_network()) {
-            request.password = password_maker_();
+        if (request.password.empty() && reader_.changes_network()) {
+            request.password = new_password();
+            view_model_.set_hotspot_password(request.password);
+            save_hotspot(std::nullopt, request.password);
         }
     }
+    send(request);
+}
+
+void DataController::send(const platform::ModeRequest& request) {
     reader_.request_mode(request);
     if (!reader_.running()) {
         // Snapshots: the request is taken with a reading right away.
         reader_.read_now();
         poll();
+    }
+}
+
+void DataController::change_hotspot() {
+    // While a switch runs a restart would be ignored, so nothing changes:
+    // the pages never show a name or a password the hotspot does not use.
+    if (view_model_.home().mode_switch.state == model::SwitchState::Switching) {
+        return;
+    }
+    std::string name = view_model_.hotspot_name();
+    std::string password = view_model_.hotspot_password();
+    std::optional<std::string> saved_name;
+    std::optional<std::string> saved_password;
+    if (view_model_.requested_hotspot_change() == viewmodel::HotspotChange::Rename) {
+        // An empty name puts the default name back; the saved line is then
+        // left empty, so the default counts again at the next start.
+        const std::string& requested = view_model_.requested_hotspot_name();
+        const std::string& target = requested.empty() ? view_model_.default_hotspot_name() : requested;
+        if (!valid_hotspot_name(target) || target == name) {
+            return;
+        }
+        name = target;
+        saved_name = requested;
+        LOG_INFO("data: hotspot renamed");
+    } else {
+        password = new_password();
+        saved_password = password;
+        LOG_INFO("data: new hotspot password");
+    }
+    if (password.empty() && reader_.changes_network()) {
+        // A hotspot left running without a saved password: the restart
+        // needs one.
+        password = new_password();
+        saved_password = password;
+    }
+    view_model_.set_hotspot_name(name);
+    view_model_.set_hotspot_password(password);
+    save_hotspot(saved_name, saved_password);
+
+    // While Router runs, the hotspot starts again with the new values.
+    const model::HomeData& data = view_model_.home();
+    if (data.mode == model::NetMode::Router && data.ap_active) {
+        platform::ModeRequest request;
+        request.mode = model::NetMode::Router;
+        request.name = name;
+        request.password = password;
+        request.restart = true;
+        send(request);
     }
 }
 

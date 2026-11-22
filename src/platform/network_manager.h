@@ -46,6 +46,7 @@ struct NetworkManagerReading {
         std::string interface_name; // for example "wlan0"
         std::string name;           // the network name (SSID) it sends
         std::string security;       // for example "WPA2"
+        int32_t channel{0};         // the Wi-Fi channel it sends on; 0 when not known
         int32_t uptime_seconds{0};  // since the profile was made; 0 when not known
     };
     Hotspot hotspot;
@@ -71,7 +72,7 @@ constexpr const char* kHotspotProfile = "LokiCTL hotspot";
 //   switched off, else Connecting while a device is being connected, else
 //   WifiOff when the Wi-Fi radio is off, else Unknown (plainly no network).
 // - While the hotspot is active: the mode is Router, with the hotspot's
-//   name, security and uptime (see show_router()).
+//   name, security, channel and uptime (see show_router()).
 void apply_network_manager(const NetworkManagerReading& reading, model::HomeData& data);
 
 // Adds `reading` to the Status page's ports (see read_ports()): each
@@ -117,9 +118,10 @@ struct RouterRequest {
 // never available and changes nothing (can_change_network() is false).
 //
 // It reads, and only the action calls below change anything:
-// start_router(), start_client() and leave(). They add, activate and delete
-// only the in-memory profile kHotspotProfile, and activate only the Wi-Fi
-// profile its interface was on before, on that interface. They never wait:
+// start_router(), restart_router(), start_client() and leave(). They add,
+// update, activate and delete only the in-memory profile kHotspotProfile,
+// and activate only the Wi-Fi profile its interface was on before, on that
+// interface. They never wait:
 // each sends its requests and returns, and the answers are handled by
 // later read() calls (leave() waits, on the way out only).
 //
@@ -169,6 +171,15 @@ public:
     // the hotspot is active; when it fails, or takes longer than
     // kSwitchLimit, it is undone as by start_client().
     void start_router(const RouterRequest& request);
+    // Router again, with a new name or password: while LokiCTL's hotspot
+    // is active, its profile is built afresh from `request` (same UUID, the
+    // same lokictl.restore, a new lokictl.started), updated in memory only
+    // and activated again on `request.interface_name`, so the interface
+    // goes straight from the old hotspot to the new one. Devices on the
+    // hotspot must join again. The switch ends when the hotspot is active;
+    // when it fails, or takes longer than kSwitchLimit, it is undone as by
+    // start_client(). Nothing is sent while the hotspot is not active.
+    void restart_router(const RouterRequest& request);
     // Client: deletes every profile of LokiCTL's hotspot, then activates
     // the Wi-Fi profile recorded in it, if there is one (otherwise the
     // service's own autoconnect picks). The switch ends when the service

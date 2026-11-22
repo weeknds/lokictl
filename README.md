@@ -558,9 +558,10 @@ mode that is on:
   the built-in Wi-Fi. It needs a network cable that leads to the internet;
   without one the page says `Plug in a cable first` and nothing changes.
   The hotspot is called `LokiCTL-` and four characters of the Wi-Fi's
-  hardware address. Its password is made once, at the first switch to
-  Router, and saved in `~/.config/lokictl/lokictl.conf` (readable only by
-  you). The page shows the name and the password while Router runs.
+  hardware address until you rename it. Its password is made once, at the
+  first switch to Router, and saved in `~/.config/lokictl/lokictl.conf`
+  (readable only by you). The page shows the name and the password while
+  Router runs.
 - **Share** and **VPN** come later and are dimmed.
 
 `f` or `up` and `x` or `down` move the highlight; `enter` or `6` USE
@@ -574,6 +575,23 @@ restart of the device always ends in Client too. If LokiCTL is killed
 instead of quitting, the hotspot stays on until LokiCTL starts again; the
 Modes page then shows Router and can switch back. On the Mac the switch
 only pretends, so the pages can be tried.
+
+`7` QR on the Modes page opens the Hotspot page. While Router runs it shows
+a QR code at the left: point a phone's camera at it to join the hotspot
+without typing the password. At the right are the hotspot's name, its
+password, the Wi-Fi channel and how long it has run; while Router is off it
+shows the name and password Router will use.
+
+- `5` NAME renames the hotspot: type the new name (1 to 32 characters;
+  the keyboard gives lowercase letters, digits and space for now), `enter`
+  saves it, a short `esc` cancels. `enter` on an empty name puts the
+  default name back.
+- `6` PASS makes a new random password; press it twice, so it never
+  happens by accident.
+- Both are saved in `~/.config/lokictl/lokictl.conf`. While Router runs
+  the hotspot starts again at once with the new name or password (the page
+  says `Applying…`), so phones and laptops on it must join again.
+- `4` BACK or a short `esc` goes back.
 
 The package installs a polkit rule, `/usr/share/polkit-1/rules.d/60-lokictl.rules`,
 because apps started by the launcher may not change NetworkManager's
@@ -643,8 +661,8 @@ script, `scripts/device-agent.py`, is sent to the device's `python3` with each
 command and is not stored there, and the copied package file is deleted after
 installing. LokiCTL keeps one file of its own there: picking a theme or
 switching "Dim when idle" on the Settings page saves it in
-`~/.config/lokictl/lokictl.conf`, and so does the first switch to Router
-(the hotspot's password). The package also installs the polkit rule
+`~/.config/lokictl/lokictl.conf`, and so do the first switch to Router
+(the hotspot's password) and a new name or password on the Hotspot page. The package also installs the polkit rule
 described above. Switching to Router changes the network (see the Modes
 page above); quitting LokiCTL switches back to Client. While it runs, LokiCTL dims the screen
 through `/sys/class/backlight/backlight/brightness` and puts the old value

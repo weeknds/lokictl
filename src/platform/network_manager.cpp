@@ -94,7 +94,8 @@ void apply_network_manager(const NetworkManagerReading& reading, model::HomeData
     }
 
     if (reading.hotspot.active) {
-        show_router(data, reading.hotspot.name, reading.hotspot.security, reading.hotspot.uptime_seconds);
+        show_router(data, reading.hotspot.name, reading.hotspot.security, reading.hotspot.channel,
+                    reading.hotspot.uptime_seconds);
     }
 
     if (data.uplink_kind != model::LinkKind::None) {

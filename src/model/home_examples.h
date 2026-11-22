@@ -55,4 +55,8 @@ StatusDetails example_status_details(const HomeData& data);
 // snapshots show it; it is never written to a settings file.
 constexpr const char* kExampleHotspotPassword = "fx7kq2mv9tpa";
 
+// The made-up password a snapshot makes when the Hotspot page asks for a
+// new one, so the same command always gives the same picture.
+constexpr const char* kExampleNewHotspotPassword = "w4nbe8rhq2js";
+
 } // namespace model

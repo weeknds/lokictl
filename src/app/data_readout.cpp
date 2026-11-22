@@ -158,6 +158,7 @@ int run_data_readout(platform::DataSourceKind kind, uint32_t steps, const std::s
     print_text("security", data.wifi_security);
     print_number("signal_dbm", data.wifi_signal_dbm, data.wifi_signal_dbm != model::kSignalUnknown);
     std::printf("access_point=%s\n", data.ap_active ? "yes" : "no");
+    print_number("ap_channel", data.ap_channel, data.ap_channel > 0);
     std::printf("clients=%zu\n", data.clients.size());
     print_number("down_kbps", data.down_kbps, data.down_kbps >= 0);
     print_number("up_kbps", data.up_kbps, data.up_kbps >= 0);

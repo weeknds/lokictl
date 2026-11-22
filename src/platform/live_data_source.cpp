@@ -9,9 +9,7 @@
 #include "device_info.h"
 
 #include <algorithm>
-#include <cctype>
 #include <ctime>
-#include <fstream>
 #include <limits>
 #include <time.h>
 #include <utility>
@@ -88,27 +86,16 @@ bool LiveDataSource::changes_network() const {
     return changes_network_;
 }
 
-std::string LiveDataSource::hotspot_name() const {
-    std::ifstream file(root_ / "sys/class/net" / kHotspotInterface / "address");
-    std::string address;
-    std::string digits;
-    if (file >> address) {
-        for (const char character : address) {
-            if (std::isxdigit(static_cast<unsigned char>(character)) != 0) {
-                digits += static_cast<char>(std::toupper(static_cast<unsigned char>(character)));
-            }
-        }
-    }
-    return "LokiCTL-" + (digits.size() >= 4 ? digits.substr(digits.size() - 4) : std::string("0000"));
-}
-
 void LiveDataSource::request_mode(const ModeRequest& request) {
     if (!changes_network_) {
-        pretend_.request(request.mode);
+        pretend_.request(request);
         return;
     }
     refused_ = false;
-    if (request.mode == model::NetMode::Router) {
+    const std::string name = request.name.empty() ? default_hotspot_name(root_) : request.name;
+    if (request.mode == model::NetMode::Router && request.restart) {
+        network_manager_->restart_router(RouterRequest{kHotspotInterface, name, request.password});
+    } else if (request.mode == model::NetMode::Router) {
         // Decided on a fresh look at the kernel's uplink: Router shares a
         // cable, never the Wi-Fi it is about to take over.
         if (read_network(root_, addresses_file_).kind != model::LinkKind::Cable) {
@@ -119,7 +106,7 @@ void LiveDataSource::request_mode(const ModeRequest& request) {
             refusal_.error = model::SwitchError::NoCable;
             return;
         }
-        network_manager_->start_router(RouterRequest{kHotspotInterface, hotspot_name(), request.password});
+        network_manager_->start_router(RouterRequest{kHotspotInterface, name, request.password});
     } else if (request.mode == model::NetMode::Client) {
         network_manager_->start_client();
     }

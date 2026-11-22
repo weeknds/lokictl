@@ -68,6 +68,15 @@ bool valid_hotspot_password(const std::string& password) {
     });
 }
 
+bool valid_hotspot_name(const std::string& name) {
+    if (name.empty() || name.size() > kHotspotNameMax || name.front() == ' ' || name.back() == ' ') {
+        return false;
+    }
+    return std::all_of(name.begin(), name.end(), [](char character) {
+        return character >= 0x20 && character <= 0x7E;
+    });
+}
+
 bool load_application_config(const std::string& path,
                              ApplicationConfig& config,
                              std::string& error) {
@@ -108,6 +117,8 @@ bool load_application_config(const std::string& path,
             }
         } else if (section == "application" && key == "hotspot_password") {
             config.hotspot_password = trim(line.substr(separator + 1));
+        } else if (section == "application" && key == "hotspot_name") {
+            config.hotspot_name = trim(line.substr(separator + 1));
         } else if (section == "application" && key == "dark_mode") {
             // A value that cannot be read is ignored instead of failing the
             // load, so the theme key of the same file still counts.
@@ -165,6 +176,9 @@ bool save_application_config(const std::string& path,
     }
     if (config.hotspot_password) {
         keys.push_back({"hotspot_password", "hotspot_password=" + *config.hotspot_password, false});
+    }
+    if (config.hotspot_name) {
+        keys.push_back({"hotspot_name", "hotspot_name=" + *config.hotspot_name, false});
     }
 
     std::vector<std::string> updated;

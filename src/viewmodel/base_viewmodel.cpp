@@ -17,6 +17,13 @@ int page_to_int(model::AppPage page) {
     return static_cast<int>(page);
 }
 
+// Counts one more on a counter subject, starting again at 1 after the
+// largest value.
+void bump(reactive::IntSubject& counter) {
+    const int32_t count = counter.value();
+    counter.set(count == std::numeric_limits<int32_t>::max() ? 1 : count + 1);
+}
+
 } // namespace
 
 BaseViewModel::BaseViewModel()
@@ -30,6 +37,9 @@ BaseViewModel::BaseViewModel()
       status_scroll_subject_(0),
       modes_selection_subject_(kModesFollowsActive),
       mode_request_subject_(0),
+      hotspot_subject_(0),
+      hotspot_request_subject_(0),
+      hotspot_typing_subject_(false),
       home_selection_subject_(0),
       home_data_subject_(0),
       key_test_selection_subject_(0),
@@ -201,7 +211,87 @@ const std::string& BaseViewModel::hotspot_password() const {
 }
 
 void BaseViewModel::set_hotspot_password(const std::string& password) {
+    if (password == hotspot_password_) {
+        return;
+    }
     hotspot_password_ = password;
+    bump(hotspot_subject_);
+}
+
+const std::string& BaseViewModel::hotspot_name() const {
+    return hotspot_name_;
+}
+
+void BaseViewModel::set_hotspot_name(const std::string& name) {
+    if (name == hotspot_name_) {
+        return;
+    }
+    hotspot_name_ = name;
+    bump(hotspot_subject_);
+}
+
+const std::string& BaseViewModel::default_hotspot_name() const {
+    return default_hotspot_name_;
+}
+
+void BaseViewModel::set_default_hotspot_name(const std::string& name) {
+    default_hotspot_name_ = name;
+}
+
+lv_subject_t* BaseViewModel::hotspot_subject() {
+    return hotspot_subject_.native();
+}
+
+bool BaseViewModel::open_hotspot() {
+    set_hotspot_typing(false);
+    return open_page(model::AppPage::Hotspot);
+}
+
+void BaseViewModel::request_hotspot_rename(const std::string& name) {
+    // Stored first: the observers run inside set() and read it from there.
+    requested_hotspot_change_ = HotspotChange::Rename;
+    requested_hotspot_name_ = name;
+    bump(hotspot_request_subject_);
+}
+
+void BaseViewModel::request_new_hotspot_password() {
+    requested_hotspot_change_ = HotspotChange::NewPassword;
+    requested_hotspot_name_.clear();
+    bump(hotspot_request_subject_);
+}
+
+lv_subject_t* BaseViewModel::hotspot_request_subject() {
+    return hotspot_request_subject_.native();
+}
+
+HotspotChange BaseViewModel::requested_hotspot_change() const {
+    return requested_hotspot_change_;
+}
+
+const std::string& BaseViewModel::requested_hotspot_name() const {
+    return requested_hotspot_name_;
+}
+
+lv_subject_t* BaseViewModel::hotspot_typing_subject() {
+    return hotspot_typing_subject_.native();
+}
+
+bool BaseViewModel::hotspot_typing() const {
+    return hotspot_typing_subject_.value();
+}
+
+void BaseViewModel::set_hotspot_typing(bool typing) {
+    if (typing != hotspot_typing_subject_.value()) {
+        hotspot_typing_subject_.set(typing);
+    }
+}
+
+const std::string& BaseViewModel::hotspot_draft() const {
+    return hotspot_draft_;
+}
+
+void BaseViewModel::set_hotspot_draft(const std::string& draft) {
+    hotspot_draft_ = draft;
 }
 
 const model::HomeData& BaseViewModel::home() const {

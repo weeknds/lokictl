@@ -95,6 +95,7 @@ view::widgets::HelpContent ModesScreen::help_content() {
                 {"ESC / 4", "Back"},
                 {"F / X", "Up / down"},
                 {"ENTER / 6", "Switch to the mode"},
+                {"7", "Hotspot: join code, name"},
             }};
 }
 
@@ -134,7 +135,7 @@ view::widgets::SoftKeySet ModesScreen::soft_keys() {
         {"Back", [&view_model] { view_model.go_back(); }},
         {},
         {"Use", [this] { use_selected(); }, true, false},
-        {},
+        {"QR", [&view_model] { view_model.open_hotspot(); }},
         {},
     }};
 }

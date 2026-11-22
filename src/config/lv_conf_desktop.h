@@ -172,6 +172,9 @@
 #define LV_USE_LIST                        1
 #define LV_USE_TEXTAREA                    1
 #define LV_USE_KEYBOARD                    1
+
+/* The Hotspot page's join code (LVGL's own QR code encoder, MIT). */
+#define LV_USE_QRCODE                      1
 #define LV_USE_FLEX                        1
 #define LV_USE_GRID                        1
 

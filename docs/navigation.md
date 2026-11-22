@@ -179,8 +179,8 @@ its soft keys switched off, because they cannot be pressed then; the key
 test page does this.
 
 On the device, letters arrive in lowercase for now: shift and sym are not
-handled yet. Only the key test page has typing mode, to show how the switch
-works. A real text field comes later, with the command bar.
+handled yet. The key test page shows how the switch works; the Hotspot
+page uses typing mode to rename the hotspot.
 
 ## How a page takes part
 
@@ -340,13 +340,44 @@ rows and a status line, and it is drawn the same way in every theme:
 |---|---|
 | `f`/`x` or up/down | moves the highlight; it stops at the first and the last row |
 | `Enter` or `6` USE | switches to the highlighted mode; USE is dimmed on the mode that is on, on Share and VPN, and while a switch runs |
+| `7` QR | opens the Hotspot page, in any mode |
 | `4` BACK or a short ESC | goes back |
 
 The page only asks (`BaseViewModel::request_mode()`); the data layer does
 the switch (see [data.md](data.md#switching-modes)), so the page never
 waits, and it follows the values as they arrive. The highlight lives in the
 view model and starts on the mode that is on each time the page is opened
-from the home page. The help panel shows the badge `MODES` and three rows.
+from the home page. The help panel shows the badge `MODES` and four rows.
+
+## The Hotspot page
+
+`hotspot` shows how to join the hotspot and changes its name and password.
+It has no title bar, so the code can be as big as the height allows:
+
+- at the left, while Router runs, a QR code (LVGL's own widget) that a
+  phone camera scans to join: `WIFI:T:WPA;S:<name>;P:<password>;;`, with
+  `\`, `;`, `,`, `:` and `"` escaped by a backslash. It is black on white
+  with a white quiet zone in every theme, because phone cameras often fail
+  on light-on-dark codes. While Router is off, and while a switch runs, a
+  box says when the code shows instead;
+- at the right, the heading with `on` or `off`, the name (the running
+  hotspot's while Router runs, otherwise the one Router will use), the
+  password, the channel and security, and a line with the state:
+  `Applying…`, an error as on the Modes page, the question of key 6, or how
+  long the hotspot has run.
+
+| Key | What it does |
+|---|---|
+| `5` NAME | typing mode with the current name: characters are added (at most 32), `Backspace` takes one away, `Enter` saves a valid name (1 to 32 printable characters, no space at either end) or, on an empty name, puts the default name back; a short ESC cancels |
+| `6` PASS | the first press asks (`Press 6 again for a new password`), the second makes a new random password; any other key cancels |
+| `4` BACK or a short ESC | goes back (a short ESC first cancels typing or the question) |
+
+NAME and PASS are dimmed while a switch runs, and every key is dimmed while
+typing. The page only asks (`BaseViewModel::request_hotspot_rename()` and
+`request_new_hotspot_password()`); `app::DataController` saves the change
+and, while Router runs, starts the hotspot again (see
+[data.md](data.md#switching-modes)). Typing and the name typed so far live
+in the view model. The help panel shows the badge `HOTSPOT` and four rows.
 
 ## The Status page
 
