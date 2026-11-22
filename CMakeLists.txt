@@ -482,6 +482,7 @@ target_link_libraries(${PROJECT_NAME}_platform
     PUBLIC
         lvgl
         ${PROJECT_NAME}_identity
+        ${PROJECT_NAME}_model
 )
 
 # ====================================================

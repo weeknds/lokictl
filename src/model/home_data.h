@@ -30,6 +30,21 @@ constexpr int kNetModeCount = 4;
 // "VPN". Pages write it in capitals or lowercase as their theme asks.
 const char* net_mode_name(NetMode mode);
 
+// What the battery is doing, as the system reports it.
+enum class BatteryState {
+    Unknown = 0, // not reported, or a report the app does not know
+    Discharging, // the device runs on the battery
+    Charging,    // on the charger, and the battery is charging
+    Idle,        // on the charger, not charging (full, or held by the charger)
+};
+
+// The name of a battery state in lowercase: "unknown", "discharging",
+// "charging" or "idle". Used by the log and the --print-data readout.
+const char* battery_state_name(BatteryState state);
+
+// HomeData::battery_percent when the charge is not known.
+constexpr int32_t kBatteryPercentUnknown = -1;
+
 // One device connected to the access point.
 struct HomeClient {
     std::string name;    // host name, for example "printer"
@@ -39,12 +54,20 @@ struct HomeClient {
     bool is_new;         // connected since the user last looked
 };
 
+// Every field is compared. A new field must be added here too: the data
+// layer hands a block over only when it differs from the last one.
+bool operator==(const HomeClient& left, const HomeClient& right);
+bool operator!=(const HomeClient& left, const HomeClient& right);
+
 // Everything the home page shows. Numbers are stored as numbers in the units
 // noted on each field; the page turns them into text.
 struct HomeData {
     bool sample{true};                 // true while the values are made up
     int32_t clock_minutes{0};          // time of day, minutes since midnight
-    int32_t battery_percent{0};        // battery charge, per cent (0-100)
+    // Battery charge, per cent (0-100), or kBatteryPercentUnknown (-1) when
+    // it is not known. Unknown is never shown as 0.
+    int32_t battery_percent{kBatteryPercentUnknown};
+    BatteryState battery_state{BatteryState::Unknown}; // what the battery is doing
     NetMode mode{NetMode::Client};     // the active mode
     std::string mode_detail;           // one line on what the mode does
     std::string uplink_name;           // interface of the uplink, for example "eth0"
@@ -64,9 +87,16 @@ struct HomeData {
     std::vector<HomeClient> clients;   // connected devices, in the order they are shown
 };
 
-// Made-up example values for the home page, used until the data layer reads
-// the real ones. HomeData::sample is true, so the page marks them as sample
-// data.
+// Every field is compared. A new field must be added here too: the data
+// layer hands a block over only when it differs from the last one, so a
+// field left out here would never reach the screen on its own.
+bool operator==(const HomeData& left, const HomeData& right);
+bool operator!=(const HomeData& left, const HomeData& right);
+
+// Made-up example values for the home page. They are the `sample` data
+// source as they are, the starting point of the `demo` source, and every
+// value the `live` source does not read yet. HomeData::sample is true, so
+// the page marks them as sample data.
 HomeData sample_home_data();
 
 } // namespace model

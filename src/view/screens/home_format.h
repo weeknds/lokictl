@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include "home_data.h"
+
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -19,8 +21,11 @@ namespace screen::home {
 // Minutes since midnight as "HH:MM": 125 -> "02:05". Clamped to 00:00-23:59.
 std::string clock_text(int32_t minutes);
 
-// A charge or share as "N%": 57 -> "57%". Clamped to 0-100.
-std::string percent_text(int32_t percent);
+// The battery charge as the home page shows it: "91%"; "91%+" while the
+// battery charges; "--%" whenever the charge is not known (a negative
+// `percent`), whatever the state. A known charge is clamped to 0-100. Idle
+// and discharging read the same.
+std::string battery_text(int32_t percent, model::BatteryState state);
 
 // A duration as "HH:MM:SS": 3725 -> "01:02:05". Negative values give
 // "00:00:00"; hours go past 99 when they must.

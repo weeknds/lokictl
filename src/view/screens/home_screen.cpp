@@ -96,12 +96,24 @@ void HomeScreen::build_content(lv_obj_t* content) {
 
     layout_->build(context());
 
-    // Added last: LVGL calls the observer once right away, which marks the
-    // selected client.
+    // LVGL calls each observer once right away. For the values that call
+    // changes nothing, because build() has just shown them.
+    lv_subject_add_observer_obj(view_model().home_data_subject(), data_observer, content, this);
+
+    // Added last: its first call marks the selected client.
     lv_subject_add_observer_obj(view_model().home_selection_subject(),
                                 selection_observer,
                                 content,
                                 this);
+}
+
+void HomeScreen::data_observer(lv_observer_t* observer, lv_subject_t* /*subject*/) {
+    auto* screen = static_cast<HomeScreen*>(lv_observer_get_user_data(observer));
+    if (!screen || !screen->layout_) {
+        return;
+    }
+
+    screen->layout_->update(screen->context());
 }
 
 void HomeScreen::selection_observer(lv_observer_t* observer, lv_subject_t* /*subject*/) {

@@ -34,8 +34,15 @@ std::string clock_text(int32_t minutes) {
     return buffer;
 }
 
-std::string percent_text(int32_t percent) {
-    return std::to_string(std::clamp<int32_t>(percent, 0, 100)) + "%";
+std::string battery_text(int32_t percent, model::BatteryState state) {
+    if (percent < 0) {
+        return "--%";
+    }
+    std::string text = std::to_string(std::clamp<int32_t>(percent, 0, 100)) + "%";
+    if (state == model::BatteryState::Charging) {
+        text += "+";
+    }
+    return text;
 }
 
 std::string uptime_text(int32_t seconds) {

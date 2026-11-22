@@ -133,10 +133,21 @@ void align_text_right(lv_obj_t* label, int32_t width, const lv_font_t* font) {
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_RIGHT, 0);
 }
 
+// The texts of the two border notes: the clock (net pane) and the battery
+// (mode pane).
+std::string clock_note_text(const model::HomeData& data) {
+    return home::clock_text(data.clock_minutes);
+}
+
+std::string battery_note_text(const model::HomeData& data) {
+    return home::battery_text(data.battery_percent, data.battery_state);
+}
+
 class TerminalHomeLayout final : public HomeLayout {
 public:
     void build(const HomeContext& context) override;
     void select(const HomeContext& context, int32_t index) override;
+    void update(const HomeContext& context) override;
 
 private:
     void build_net(const HomeContext& context);
@@ -151,6 +162,13 @@ private:
                            const uint8_t* history,
                            int32_t kbps,
                            lv_color_t color);
+
+    // The clock in the net pane's border and the battery in the mode
+    // pane's, and the text each shows; update() changes the text only.
+    lv_obj_t* clock_note_{nullptr};
+    std::string clock_shown_;
+    lv_obj_t* battery_note_{nullptr};
+    std::string battery_shown_;
 
     // One row of the clients table; select() restyles them.
     struct ClientRow {
@@ -201,8 +219,8 @@ void TerminalHomeLayout::build_net(const HomeContext& context) {
     const auto pane = view::style::pane(context.content, theme, "net", kNetWidth, kNetHeight,
                                         theme.colors.accent2, view::style::PaneDensity::Compact);
     lv_obj_set_pos(pane.root, kNetX, kNetY);
-    view::style::pane_note(pane, theme, home::clock_text(data.clock_minutes).c_str(),
-                           theme.colors.muted);
+    clock_shown_ = clock_note_text(data);
+    clock_note_ = view::style::pane_note(pane, theme, clock_shown_.c_str(), theme.colors.muted);
 
     build_traffic_row(context, pane.content, 0, "\u2193", data.down_history.data(), data.down_kbps,
                       theme.colors.accent2);
@@ -231,8 +249,8 @@ void TerminalHomeLayout::build_mode(const HomeContext& context) {
     const auto pane = view::style::pane(context.content, theme, "mode", kModeWidth, kModeHeight,
                                         theme.colors.accent, view::style::PaneDensity::Compact);
     lv_obj_set_pos(pane.root, kModeX, kModeY);
-    view::style::pane_note(pane, theme, home::percent_text(data.battery_percent).c_str(),
-                           theme.colors.muted);
+    battery_shown_ = battery_note_text(data);
+    battery_note_ = view::style::pane_note(pane, theme, battery_shown_.c_str(), theme.colors.muted);
 
     // The mode in bold with a round dot after it, drawn as a shape.
     const std::string word = home::lower_text(model::net_mode_name(data.mode));
@@ -329,10 +347,15 @@ void TerminalHomeLayout::build_clients(const HomeContext& context) {
 
 void TerminalHomeLayout::select(const HomeContext& context, int32_t index) {
     const auto& colors = context.theme.colors;
+    if (row_count_ == 0) {
+        return;
+    }
+    // Like the other layouts: an index past the rows marks the last row.
+    const int32_t marked = std::clamp<int32_t>(index, 0, row_count_ - 1);
 
     for (int32_t row_index = 0; row_index < row_count_; ++row_index) {
         const auto& slot = rows_[static_cast<std::size_t>(row_index)];
-        const bool selected = row_index == index;
+        const bool selected = row_index == marked;
 
         // Only colours change: every row keeps its height and every label
         // its place, selected or not. This layout is Terminal's own, and
@@ -350,6 +373,14 @@ void TerminalHomeLayout::select(const HomeContext& context, int32_t index) {
             lv_obj_set_style_text_color(slot.fresh, selected ? mark : colors.accent, 0);
         }
     }
+}
+
+// Only the two border notes follow the values for now. Each note keeps its
+// alignment to its pane's right end, so a wider text grows to the left and
+// the clock stays where it is.
+void TerminalHomeLayout::update(const HomeContext& context) {
+    set_text_if_changed(clock_note_, clock_shown_, clock_note_text(context.data));
+    set_text_if_changed(battery_note_, battery_shown_, battery_note_text(context.data));
 }
 
 } // namespace

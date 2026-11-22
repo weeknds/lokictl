@@ -36,13 +36,16 @@ namespace screen {
 // and 7 (Modes, Scan, Tools) are shown switched off until their pages exist,
 // and key 8 is empty. Holding ESC quits, as on every first page.
 //
-// The values come from the view model (home()), which takes them from the
-// model; for now they are sample values, and the page says so with a
-// "sample data" mark. The selection lives in the view model as well
+// The values come from the view model (home()), which the data layer fills
+// (see app::DataController). The clock and the battery follow it while the
+// page is open: when home_data_subject() counts a change, the layout's
+// update() retexts the labels that already exist, and the page is not built
+// again. Every other value is still the made-up sample, and the page says so
+// with a "sample data" mark. The selection lives in the view model as well
 // (home_selection_subject()), so it is kept when Settings is opened and
-// closed and across a theme switch, which builds the page again. Nothing on
-// the page reads the clock or the device, so the same state always gives
-// the same picture.
+// closed and across a theme switch, which builds the page again with the
+// current values. The page itself never reads the clock or the device, so
+// the same values always give the same picture.
 class HomeScreen : public BaseScreen {
 public:
     HomeScreen(viewmodel::BaseViewModel& view_model,
@@ -65,6 +68,11 @@ private:
 
     // What the layout draws with, made fresh for each call.
     HomeContext context();
+
+    // Shows new values in place (HomeLayout::update()). The user data is the
+    // screen; the observer is bound to the content area, so it goes when the
+    // screen goes.
+    static void data_observer(lv_observer_t* observer, lv_subject_t* subject);
 
     // Marks the selected client. The user data is the screen; the observer
     // is bound to the content area, so it goes when the screen goes.

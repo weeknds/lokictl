@@ -8,6 +8,8 @@
 
 #include "asset_manager.h"
 #include "base_viewmodel.h"
+#include "data_controller.h"
+#include "data_source.h"
 #include "key_controller.h"
 #include "linux_input.h"
 #include "logger.h"
@@ -40,6 +42,8 @@ constexpr uint32_t kMinSettleSteps = 4;
 constexpr uint32_t kKeyHoldMs = 60;
 constexpr uint32_t kLongKeyHoldMs = 1000;
 constexpr std::string_view kLongSuffix = ":long";
+// The --keys name that is not a key but one further reading.
+constexpr std::string_view kDataStepName = "data";
 
 struct NamedKey {
     const char* name;
@@ -186,17 +190,26 @@ bool parse_scripted_key(std::string_view text, ScriptedKey& key) {
         name.erase(colon);
     }
 
+    // A reading cannot be held.
+    if (name == kDataStepName) {
+        if (long_press) {
+            return false;
+        }
+        key = ScriptedKey{0, false, true};
+        return true;
+    }
+
     if (name.size() == 1) {
         const char character = name[0];
         if ((character >= '0' && character <= '9') || (character >= 'a' && character <= 'z')) {
-            key = ScriptedKey{static_cast<uint32_t>(character), long_press};
+            key = ScriptedKey{static_cast<uint32_t>(character), long_press, false};
             return true;
         }
         return false;
     }
     for (const auto& entry : kNamedKeys) {
         if (name == entry.name) {
-            key = ScriptedKey{entry.key, long_press};
+            key = ScriptedKey{entry.key, long_press, false};
             return true;
         }
     }
@@ -218,8 +231,9 @@ int run_snapshot(const SnapshotRequest& request) {
 #endif
 
     // Declaration order matters: objects are destroyed in reverse, so the
-    // screens go first, then the display, then the view model subjects, then
-    // the theme with its fonts, and the AssetManager last.
+    // screens go first, then the data controller, then the display, then the
+    // view model subjects, then the theme with its fonts, and the
+    // AssetManager last.
     AssetManager assets;
 
     view::ThemeEngine theme_engine(assets, request.theme);
@@ -245,6 +259,13 @@ int run_snapshot(const SnapshotRequest& request) {
     }
     theme_engine.attach_display(display);
 
+    // The values: the first reading is taken before the page is built, so
+    // the page shows it from the start. Further readings come from step()
+    // only; a snapshot never starts the background reader. Its log lines
+    // stay out of the output, because the logger only shows warnings here.
+    DataController data(view_model, platform::make_data_source(request.data_source, request.data_root));
+    data.read_first();
+
     ScreenManager screen_manager(view_model, assets, theme_engine);
     screen_manager.start();
 
@@ -253,6 +274,16 @@ int run_snapshot(const SnapshotRequest& request) {
     if (!page_is_shown(screen_manager)) {
         std::fprintf(stderr, "%s: the page did not load\n", APP_NAME);
         return 1;
+    }
+
+    // --data-steps: one reading after the other, each handed over and shown
+    // in place at once, then one settle for all of them, so even many steps
+    // take little time.
+    for (uint32_t step = 0; step < request.data_steps; ++step) {
+        data.step();
+    }
+    if (request.data_steps > 0) {
+        settle(request.settle_ms);
     }
 
     // Switches the theme for a pick on the Settings page and for
@@ -273,6 +304,13 @@ int run_snapshot(const SnapshotRequest& request) {
             // manager it uses.
             KeyController key_controller(view_model, theme_engine, screen_manager);
             for (const ScriptedKey& key : request.keys) {
+                // Not a key: one further reading, whichever page or panel is
+                // open, the same as a reading that arrives while the app runs.
+                if (key.data_step) {
+                    data.step();
+                    settle(request.settle_ms);
+                    continue;
+                }
                 platform::inject_key(key.key, true);
                 settle(key.long_press ? kLongKeyHoldMs : kKeyHoldMs);
                 platform::inject_key(key.key, false);

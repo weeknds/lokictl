@@ -571,7 +571,9 @@ cmp build/shots/home-terminal.png build/shots/home-switched.png && echo same
 
 Pages with a title bar show the current time in it, so if two pictures of
 such a page were taken on either side of a new minute, take both again.
-The home page has no title bar and no clock that runs.
+The home page has no title bar, and in a snapshot it shows the fixed
+sample values unless `--data` says otherwise, so its pictures never differ
+for that reason.
 
 To check that switching does not leak fonts, switch 30 times (10 full
 rounds) and count the `fonts loaded` lines. Each theme must show a single

@@ -16,6 +16,10 @@ const HomeData& BaseModel::home() const {
     return home_;
 }
 
+void BaseModel::set_home(const HomeData& data) {
+    home_ = data;
+}
+
 AppPage BaseModel::current_page() const {
     return pages_[depth_ - 1];
 }

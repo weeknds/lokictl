@@ -9,8 +9,9 @@ runs on older Python 3 versions (3.9 and newer).
 
 Output rules:
   - Messages for people go to stderr.
-  - stdout carries only the PNG data of "screen" and "snapshot", and the plain
-    text of "status", "stats" and "logs".
+  - stdout carries only the PNG data of "screen" and "snapshot", the plain
+    text of "status", "stats" and "logs", and the name=value lines of
+    "data".
   - Exit codes: 0 ok, 1 failed or refused, 2 usage error. Never 255, which
     device.sh reserves for "device unreachable".
 
@@ -20,8 +21,10 @@ parts that do not need the device.
 
 import argparse
 import array
+import contextlib
 import fcntl
 import hashlib
+import io
 import json
 import os
 import re
@@ -671,12 +674,14 @@ def start_launcher_and_wait(timeout=15.0):
     return ok
 
 
-def dev_unit_command(stats_path, launcher, theme=None):
+def dev_unit_command(stats_path, launcher, theme=None, data=None):
     """The systemd-run command line that starts LokiCTL for 'run'.
 
     theme, if given, is passed on as "--theme <theme>" after the program
-    path. It is not checked here: LokiCTL knows its theme names and exits
-    at once with a message if it does not know this one.
+    path, and data, if given, as "--data <data>" after that. Neither is
+    checked here: LokiCTL knows its theme and data source names and exits at
+    once with a message if it does not know one. Without data, LokiCTL on
+    the device reads live values.
     """
     cmd = ["systemd-run", "--user", "--unit=" + DEV_UNIT, "--collect", "--quiet",
            "-p", "TimeoutStopSec=5",
@@ -691,6 +696,8 @@ def dev_unit_command(stats_path, launcher, theme=None):
     cmd.append(BINARY)
     if theme is not None:
         cmd += ["--theme", theme]
+    if data is not None:
+        cmd += ["--data", data]
     return cmd
 
 
@@ -728,7 +735,7 @@ def cmd_run(args):
         remove_quietly(stats_path)
         remove_quietly(stats_path + ".tmp")
 
-        cmd = dev_unit_command(stats_path, launcher, args.theme)
+        cmd = dev_unit_command(stats_path, launcher, args.theme, args.data)
         attempt_started_at = time.time()
         result = run(cmd, timeout=30)
         if result.returncode != 0:
@@ -1303,16 +1310,24 @@ def cmd_stats(args):
 def snapshot_command(path, args):
     """The "lokictl --snapshot" command line for the "snapshot" arguments.
 
-    --page, --theme, --keys and --switch-to are passed on unchecked, in that
-    order; LokiCTL knows its page, theme and key names and exits with a
-    message for an unknown one. The keys are pressed inside that snapshot
-    run, not on the device's keyboard.
+    The options follow in the order --page, --theme, --data, --data-steps,
+    --keys, --switch-to, --settle-ms, each only when it was given. --page,
+    --theme, --data, --keys and --switch-to are passed on unchecked;
+    LokiCTL knows its page, theme, data source and key names and exits with
+    a message for an unknown one. The keys are pressed inside that snapshot
+    run, not on the device's keyboard; the name "data" among them takes one
+    further reading at that point. Without --data the picture shows the
+    fixed sample values.
     """
     cmd = [BINARY, "--snapshot", path]
     if args.page:
         cmd += ["--page", args.page]
     if args.theme:
         cmd += ["--theme", args.theme]
+    if args.data is not None:
+        cmd += ["--data", args.data]
+    if args.data_steps is not None:
+        cmd += ["--data-steps", str(args.data_steps)]
     if args.keys:
         cmd += ["--keys", args.keys]
     if args.switch_to:
@@ -1350,6 +1365,34 @@ def cmd_snapshot(args):
             os.rmdir(folder)
         except OSError:
             pass
+
+
+def data_command(args):
+    """The "lokictl --print-data" command line for the "data" arguments.
+
+    --data, if given, is passed on unchecked: LokiCTL knows its data source
+    names and exits with code 2 and a message for an unknown one.
+    """
+    cmd = [BINARY, "--print-data"]
+    if args.data is not None:
+        cmd += ["--data", args.data]
+    return cmd
+
+
+def cmd_data(args):
+    # --print-data reads no settings, opens no window and touches neither the
+    # screen nor the keyboard, so it does not matter whether LokiCTL or the
+    # launcher is running, and neither is touched.
+    if not os.path.isfile(BINARY):
+        raise Failure("LokiCTL is not installed. Run 'device.sh deploy' first.")
+    sys.stdout.flush()
+    # The name=value lines go straight to the caller's standard output and
+    # LokiCTL's messages to standard error.
+    result = run(data_command(args), timeout=60, stdout=sys.stdout, stderr=sys.stderr)
+    if result.returncode != 0:
+        say("lokictl --print-data failed (exit %d)." % result.returncode)
+        return result.returncode if 0 < result.returncode < 255 else 1
+    return 0
 
 
 def cmd_logs(args):
@@ -1466,6 +1509,76 @@ def cmd_selftest(args):
         "--keys", "8,esc:long", "--switch-to", "terminal", "--settle-ms", "0"], \
         snapshot_command(shot, everything)
 
+    def refused(argv):
+        # argparse reports a refused value with SystemExit(2) and a message
+        # on stderr, which is kept out of the selftest's output.
+        try:
+            with contextlib.redirect_stderr(io.StringIO()):
+                parser.parse_args(argv)
+        except SystemExit as exit_request:
+            return exit_request.code == 2
+        return False
+
+    # "run --data D" hands the source name to LokiCTL unchecked, after the
+    # program path and after any --theme.
+    assert parser.parse_args(["run"]).data is None, "run without --data"
+    assert parser.parse_args(["run", "--data", "demo"]).data == "demo"
+    assert parser.parse_args(["run", "--data=nope"]).data == "nope", "source names are not checked"
+    for launcher in (True, False):
+        plain = dev_unit_command(stats, launcher)
+        assert "--data" not in plain, plain
+        assert dev_unit_command(stats, launcher, None, None) == plain
+        sourced = dev_unit_command(stats, launcher, data="demo")
+        assert sourced[:-2] == plain, sourced
+        assert sourced[-3:] == [BINARY, "--data", "demo"], sourced
+        both = dev_unit_command(stats, launcher, "terminal", "live")
+        assert both[:-4] == plain, both
+        assert both[-5:] == [BINARY, "--theme", "terminal", "--data", "live"], both
+        assert both.count(BINARY) == 1, both
+    args = parser.parse_args(["run", "--data", "sample", "--theme", "instrument"])
+    assert (args.theme, args.data) == ("instrument", "sample"), args
+
+    # "snapshot --data D --data-steps N" hands both on after --theme and
+    # before --keys; --data-steps must be 0 to 100000, and 0 is kept.
+    unsourced = parser.parse_args(["snapshot", "--page", "home", "--keys", "c"])
+    assert unsourced.data is None and unsourced.data_steps is None, unsourced
+    assert snapshot_command(shot, unsourced) == [
+        BINARY, "--snapshot", shot, "--page", "home", "--keys", "c"], snapshot_command(shot, unsourced)
+    stepped = parser.parse_args(["snapshot", "--settle-ms", "0", "--switch-to", "terminal",
+                                 "--keys", "6,data,data,esc", "--data-steps", "181",
+                                 "--data", "demo", "--theme", "instrument", "--page", "home"])
+    assert stepped.data == "demo" and stepped.data_steps == 181, stepped
+    assert snapshot_command(shot, stepped) == [
+        BINARY, "--snapshot", shot, "--page", "home", "--theme", "instrument",
+        "--data", "demo", "--data-steps", "181", "--keys", "6,data,data,esc",
+        "--switch-to", "terminal", "--settle-ms", "0"], snapshot_command(shot, stepped)
+    zero = parser.parse_args(["snapshot", "--data-steps", "0"])
+    assert snapshot_command(shot, zero) == [BINARY, "--snapshot", shot, "--data-steps", "0"], \
+        snapshot_command(shot, zero)
+    sourced = parser.parse_args(["snapshot", "--data=nope"])
+    assert snapshot_command(shot, sourced) == [BINARY, "--snapshot", shot, "--data", "nope"], \
+        "source names are not checked"
+    assert parser.parse_args(["snapshot", "--data-steps", "100000"]).data_steps == 100000
+    for value in ("100001", "-1", "x", "1.5"):
+        assert refused(["snapshot", "--data-steps", value]), "--data-steps " + value
+
+    # "data [--data D]" runs --print-data, with the source when given.
+    plain_data = parser.parse_args(["data"])
+    assert plain_data.data is None, "data without --data"
+    assert data_command(plain_data) == [BINARY, "--print-data"], data_command(plain_data)
+    sourced_data = parser.parse_args(["data", "--data", "sample"])
+    assert data_command(sourced_data) == [BINARY, "--print-data", "--data", "sample"], \
+        data_command(sourced_data)
+    assert data_command(parser.parse_args(["data", "--data=nope"]))[-1] == "nope", \
+        "source names are not checked"
+
+    # "stats --seconds N" takes 1 to 60.
+    assert parser.parse_args(["stats"]).seconds == 3
+    assert parser.parse_args(["stats", "--seconds", "60"]).seconds == 60
+    assert parser.parse_args(["stats", "--seconds", "1"]).seconds == 1
+    assert refused(["stats", "--seconds", "61"]), "--seconds 61"
+    assert refused(["stats", "--seconds", "0"]), "--seconds 0"
+
     sys.stdout.write("selftest ok\n")
     return 0
 
@@ -1511,6 +1624,7 @@ def build_parser():
     commands.add_parser("remove", help="stop and remove LokiCTL").set_defaults(handler=cmd_remove)
     run_parser = commands.add_parser("run", help="start LokiCTL on the screen")
     run_parser.add_argument("--theme", help="theme for this run only (passed on to LokiCTL)")
+    run_parser.add_argument("--data", help="data source for this run only (passed on to LokiCTL)")
     run_parser.set_defaults(handler=cmd_run)
     commands.add_parser("stop", help="stop LokiCTL, bring back the launcher").set_defaults(handler=cmd_stop)
     commands.add_parser("status", help="show what is running").set_defaults(handler=cmd_status)
@@ -1528,16 +1642,23 @@ def build_parser():
     key.set_defaults(handler=cmd_key)
 
     stats = commands.add_parser("stats", help="memory, CPU and frame time")
-    stats.add_argument("--seconds", type=range_value(1, 30, "--seconds"), default=3)
+    stats.add_argument("--seconds", type=range_value(1, 60, "--seconds"), default=3)
     stats.set_defaults(handler=cmd_stats)
 
     snapshot = commands.add_parser("snapshot", help="lokictl --snapshot, PNG to stdout")
     snapshot.add_argument("--page")
     snapshot.add_argument("--theme")
+    snapshot.add_argument("--data", help="data source (passed on to LokiCTL; default: the sample)")
+    snapshot.add_argument("--data-steps", type=range_value(0, 100000, "--data-steps"),
+                          help="further readings before the keys")
     snapshot.add_argument("--keys", help="keys to press before the picture (passed on to LokiCTL)")
     snapshot.add_argument("--switch-to", help="themes to switch to live (passed on to LokiCTL)")
     snapshot.add_argument("--settle-ms", type=range_value(0, 60000, "--settle-ms"))
     snapshot.set_defaults(handler=cmd_snapshot)
+
+    data = commands.add_parser("data", help="lokictl --print-data, name=value lines to stdout")
+    data.add_argument("--data", help="data source (passed on to LokiCTL; default: live)")
+    data.set_defaults(handler=cmd_data)
 
     logs = commands.add_parser("logs", help="log of the latest 'run' only")
     logs.add_argument("-n", dest="lines", type=range_value(1, 10000, "-n"), default=50)

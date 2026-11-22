@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <limits>
 
 namespace viewmodel {
 namespace {
@@ -26,6 +27,7 @@ BaseViewModel::BaseViewModel()
       theme_request_subject_(0),
       settings_theme_selection_subject_(kSettingsThemeFollowsActive),
       home_selection_subject_(0),
+      home_data_subject_(0),
       key_test_selection_subject_(0),
       key_test_picked_subject_(-1),
       key_test_last_key_subject_("-"),
@@ -124,6 +126,31 @@ bool BaseViewModel::open_settings() {
 
 const model::HomeData& BaseViewModel::home() const {
     return model_.home();
+}
+
+bool BaseViewModel::set_home_data(const model::HomeData& data) {
+    if (data == model_.home()) {
+        return false;
+    }
+    model_.set_home(data);
+
+    // The selection stays on a client that is shown. Set before the count
+    // below, so the page marks a client that exists when it updates.
+    const auto shown = static_cast<int32_t>(
+        std::min<std::size_t>(data.clients.size(), static_cast<std::size_t>(kHomeClientRows)));
+    const int32_t last = std::max<int32_t>(shown - 1, 0);
+    if (home_selection_subject_.value() > last) {
+        home_selection_subject_.set(last);
+    }
+
+    // Starts again from 0 instead of overflowing; it still is a change.
+    const int32_t count = home_data_subject_.value();
+    home_data_subject_.set(count == std::numeric_limits<int32_t>::max() ? 0 : count + 1);
+    return true;
+}
+
+lv_subject_t* BaseViewModel::home_data_subject() {
+    return home_data_subject_.native();
 }
 
 lv_subject_t* BaseViewModel::home_selection_subject() {

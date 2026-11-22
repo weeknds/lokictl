@@ -15,10 +15,11 @@ Instrument, Constellation and Terminal.
 ## Status
 
 **Early development.** The app builds and runs in the desktop simulator. It
-opens on a home page that shows made-up sample data, drawn in each theme's
-own layout, and it has a Settings page where you pick the theme. None of
-the network features above exist yet; the home page marks its values as
-`sample data` until they do.
+opens on a home page drawn in each theme's own layout, and it has a
+Settings page where you pick the theme. On the device the home page shows
+the real time and battery charge; everything about the network on it is
+still made-up sample data. None of the network features above exist yet;
+the home page marks its values as `sample data` until they do.
 
 The device package also builds, and it installs and runs on a real
 CardputerZero. From your computer, `scripts/device.sh` installs and starts it
@@ -61,6 +62,11 @@ Notes:
   example `./build/darwin-arm64/Debug/lokictl --theme constellation`. The
   device frame drawn around the screen follows the theme: white for
   Instrument, black for the other two. See [Themes](#themes).
+- The simulator's home page shows moving demo values: the clock runs one
+  minute per second and the battery counts down, to show that the page
+  follows its data. `--data <name>` picks other values for the run:
+  `sample` (fixed values), `demo` or `live` (the Mac's own clock). See
+  [Live data](#live-data).
 - The simulator reads its settings from `config/lokictl.conf`. Picking a
   theme on the Settings page (opened with `6` on the home page) saves the
   choice and rewrites that file. To keep the repository's file as it is,
@@ -125,6 +131,7 @@ building:
 ./build/darwin-arm64/Debug/lokictl --snapshot build/shots/settings.png --page settings --theme terminal
 ./build/darwin-arm64/Debug/lokictl --snapshot build/shots/counter-terminal.png --page demo-counter --theme terminal
 ./build/darwin-arm64/Debug/lokictl --snapshot build/shots/keys.png --page demo-counter --keys 8,x
+./build/darwin-arm64/Debug/lokictl --snapshot build/shots/home-demo.png --data demo --data-steps 181
 ./build/darwin-arm64/Debug/lokictl --list-pages
 ```
 
@@ -149,12 +156,22 @@ Options:
   (before any `--switch-to`). Names: `0` to `9`, `a` to `z`, `esc`,
   `enter`, `space`, `backspace`, `up`, `down`, `left`, `right` and `help`.
   Add `:long` to hold a key for one second, for example `esc:long`. The
-  page from `--page` is the first page, so start at `home` to test going
-  back from Settings, and at `demo-counter` to test going back from the
-  key test page. If the keys made the app ask to quit, `quit requested` goes
-  to standard error. See
+  name `data` is not a key: it takes one further reading of the values at
+  that point (it has no `:long`). The page from `--page` is the first
+  page, so start at `home` to test going back from Settings, and at
+  `demo-counter` to test going back from the key test page. If the keys
+  made the app ask to quit, `quit requested` goes to standard error. See
   [Testing keys](docs/navigation.md#testing-keys-with---keys) in
   docs/navigation.md for the details.
+- `--data <name>`: where the values come from: `sample` (fixed made-up
+  values, the default for a snapshot), `demo` (the made-up values, moving
+  on a fixed script) or `live` (the real clock and battery). Any other name
+  is refused with a message that lists the three.
+- `--data-steps <n>`: takes `n` further readings, from 0 to 100000, right
+  after the page is built and before `--keys`. With `--data demo` each
+  reading is one step of the demo script, so
+  `--data demo --data-steps 181` shows `10:47` and `100%+`. See
+  [docs/data.md](docs/data.md).
 - `--settle-ms <n>`: how long LVGL's own clock runs before the picture is
   taken, from 0 to 60000. The default is 300. With `--keys`, the app also
   runs this long after every key. The program does not really wait that
@@ -186,8 +203,43 @@ Notes:
   of their own, so their look can still be checked.
 - Pages with a title bar show the current time in it, so two pictures of
   such a page taken a minute apart are not identical. The home page has no
-  title bar and shows a made-up clock with the rest of its sample data, so
-  its pictures are always the same file.
+  title bar, and a snapshot shows the fixed sample values unless `--data`
+  says otherwise, so its pictures are always the same file.
+
+## Live data
+
+The home page gets its values from a small data layer. A background reader
+collects them beside the screen, so reading never holds up drawing, and
+the page changes only the texts that changed, without being built again.
+So far the clock and the battery are real; the network values are still
+the made-up sample, and the page keeps its `sample data` mark.
+
+`--data <name>` picks the source: `sample`, `demo` or `live`. Without it, a
+snapshot uses `sample`, and a normal start uses `live` on the device and
+`demo` in the simulator.
+
+`--print-data` prints the values once as `name=value` lines, without a
+window and without reading the settings file:
+
+```sh
+./build/darwin-arm64/Debug/lokictl --print-data --data sample
+```
+
+```text
+source=sample
+sample=yes
+clock=07:46
+battery_percent=91
+battery_state=discharging
+```
+
+It takes `--data` and `--data-steps` and nothing else. The environment
+variable `LOKICTL_DATA_ROOT=<folder>` makes the `live` source read
+`<folder>/sys/class/power_supply/...` instead of the system's battery
+files, so every battery state can be tested on the Mac. On a device,
+`scripts/device.sh data` prints the device's own values.
+[docs/data.md](docs/data.md) explains the sources, the reader, how a page
+updates in place, how to add a value and every test option.
 
 ## Fonts
 
@@ -316,6 +368,7 @@ A typical session, from the repository root:
 
 ```sh
 scripts/device.sh deploy                         # build if needed, copy, install
+scripts/device.sh data                           # its clock and battery
 scripts/device.sh run --theme constellation      # start LokiCTL in one theme
 scripts/device.sh screen build/shots/device.png  # save the device's screen
 scripts/device.sh key c                          # select the next client
@@ -339,13 +392,14 @@ The commands:
   can name a package file. Afterwards it checks that the installed program
   matches the package and that the launcher entry and icon are in place, and
   deletes the copied file.
-- `run [--theme T]`: starts LokiCTL on the device's screen (see below).
-  `--theme` picks `instrument`, `constellation` or `terminal` for this run
-  only and does not save it; without it, the theme saved on the device
-  decides, or else the default theme. A theme picked on the Settings page
-  during the run is still saved. If LokiCTL does not know the name, it
-  exits at once: `run` then shows LokiCTL's message, brings the launcher
-  back and exits with code 1.
+- `run [--theme T] [--data D]`: starts LokiCTL on the device's screen (see
+  below). `--theme` picks `instrument`, `constellation` or `terminal` for
+  this run only and does not save it; without it, the theme saved on the
+  device decides, or else the default theme. A theme picked on the
+  Settings page during the run is still saved. `--data` picks `sample`,
+  `demo` or `live` for this run only; without it the device reads live
+  values. If LokiCTL does not know a name, it exits at once: `run` then
+  shows LokiCTL's message, brings the launcher back and exits with code 1.
 - `stop`: stops LokiCTL, however it was started, and brings the launcher back
   on HOME. Running it when nothing runs does no harm.
 - `status`: shows the installed version, whether LokiCTL runs and which
@@ -356,17 +410,25 @@ The commands:
 - `key <name>... [--long | --hold-ms N] [--launcher]`: presses keys, one after
   another (see below).
 - `stats [--seconds N]`: measures LokiCTL for N seconds (3 by default, up to
-  30) and prints the numbers explained below.
-- `snapshot <file.png> [--page P] [--theme T] [--keys K[,K...]]
-  [--switch-to T[,T...]] [--settle-ms N]`: runs `lokictl --snapshot` on the
-  device (see [Screenshots without a window](#screenshots-without-a-window))
-  and saves the picture. It works while LokiCTL is running and does not
-  touch the screen. `--keys` presses keys inside that snapshot run, not on
-  the device's keyboard, so LokiCTL does not need to be running; for
-  example `scripts/device.sh snapshot build/shots/keys.png --page
-  demo-counter --keys 8,x`. The `fonts loaded` lines of `--switch-to` and the
-  `quit requested` line of `--keys` appear on your computer's standard
-  error.
+  60) and prints the numbers explained below.
+- `snapshot <file.png> [--page P] [--theme T] [--data D] [--data-steps N]
+  [--keys K[,K...]] [--switch-to T[,T...]] [--settle-ms N]`: runs
+  `lokictl --snapshot` on the device (see
+  [Screenshots without a window](#screenshots-without-a-window)) and saves
+  the picture. It works while LokiCTL is running and does not touch the
+  screen. Without `--data` the picture shows the fixed sample values;
+  `--data-steps` takes further readings before the keys. `--keys` presses
+  keys inside that snapshot run, not on the device's keyboard, so LokiCTL
+  does not need to be running; for example `scripts/device.sh snapshot
+  build/shots/keys.png --page demo-counter --keys 8,x`. The name `data` in
+  `--keys` takes one more reading at that point. The `fonts loaded` lines
+  of `--switch-to` and the `quit requested` line of `--keys` appear on your
+  computer's standard error.
+- `data [--data D]`: runs `lokictl --print-data` on the device and prints
+  its `name=value` lines: the source, whether the values are sample data,
+  the clock and the battery's charge and state (see [Live data](#live-data)).
+  Without `--data` it reads the device's live values. It works while the
+  launcher is on screen and leaves the screen and a running LokiCTL alone.
 - `logs [-n N]`: shows the last N log lines (50 by default) of the latest
   `run` only, including systemd's lines about starting and stopping it.
   Earlier runs are left out. It also works after LokiCTL has stopped.
@@ -413,8 +475,8 @@ check off.
 
 The bar along the bottom of the screen names what the keys `4` to `8` do on
 the current page. Pages open on top of each other, and a short `esc` goes
-back one page. On the home page, which shows sample data for now (see
-[docs/home.md](docs/home.md)):
+back one page. On the home page, which shows the real time and battery
+but sample network data for now (see [docs/home.md](docs/home.md)):
 
 - `f`, `z`, `up` or `left` selects the previous client and `x`, `c`,
   `down` or `right` the next one; the selection stops at the first and the
@@ -508,8 +570,8 @@ cmake/
   templates/          inputs for the launcher entry, systemd unit and conffiles
   toolchains/         cross-compiler setup for the device
 config/               default settings file
-docs/                 notes on the bundled fonts, the themes, navigation and
-                      the home page
+docs/                 notes on the bundled fonts, the themes, navigation,
+                      the home page and the data layer
 screenshot/           simulator screenshots
 scripts/
   build-deb.sh        builds the device package in a Debian arm64 container
@@ -523,8 +585,9 @@ src/
   config/             LVGL configuration for desktop and device
   logger/             logging
   model/              application state
-  platform/           keyboard input, screenshots, frame statistics and other
-                      device services
+  platform/           keyboard input, screenshots, frame statistics, the data
+                      layer (data sources, battery reader, background
+                      reader) and other device services
   reactive/           helpers around LVGL observer subjects
   view/               themes (colour and font tables, theme engine), shared
                       style helpers and UI constants
@@ -552,7 +615,8 @@ constants at the top of `scripts/device-agent.py` (program path, unit and file
 names), the `dist/lokictl_*_arm64.deb` pattern in `scripts/device.sh`, the
 environment variable `LOKICTL_FRAME_STATS_FILE` (set in
 `scripts/device-agent.py`, read in `src/app/app.cpp`) and the environment
-variable `LOKICTL_CONFIG_FILE` (read in `src/app/app.cpp`).
+variables `LOKICTL_CONFIG_FILE` and `LOKICTL_DATA_ROOT` (read in
+`src/app/app.cpp`).
 The connection variables `LOKICTL_DEVICE` and `LOKICTL_SSH_OPTS` and the
 upload file name (`upload_name`) in `scripts/device.sh` contain it too, and
 so do the copyright holder in `LICENSE`, the SPDX headers of the project's own

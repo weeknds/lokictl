@@ -403,9 +403,9 @@ cmp build/shots/keys-x.png build/shots/keys-down.png && echo same
 
 Both pictures show the key test page with the second row selected, so `cmp`
 prints `same`. The demo pages have a title bar with the current time: if
-the minute changed between the two pictures, take both again. The home
-page has no clock that runs, so its pictures never differ for that
-reason.
+the minute changed between the two pictures, take both again. In a
+snapshot the home page shows the fixed sample values unless `--data` says
+otherwise, so its pictures never differ for that reason.
 
 How it works:
 
@@ -415,6 +415,13 @@ How it works:
 - Names: `0` to `9`, `a` to `z`, `esc`, `enter`, `space`, `backspace`, `up`,
   `down`, `left`, `right` and `help` (fn+H). Capitals are accepted, but a
   letter always arrives in lowercase, as the device's keyboard sends it.
+- The name `data` is not a key: it takes one further reading of the
+  values at that point, the way the data layer hands over new values in a
+  normal run. For example `--page home --data demo --keys 6,data,data,esc`
+  lets two readings arrive while Settings is open, and the home page shows
+  them when it comes back. It has no `:long`, and like the keys it takes
+  its turn after any `--data-steps`. [data.md](data.md#test-hooks)
+  explains the data layer's test options.
 - A key is held for 60 ms of LVGL time. Add `:long` to hold it for 1 second
   instead, for example `esc:long`. That is longer than the 700 ms long
   press.
@@ -473,8 +480,9 @@ scripts/device.sh snapshot build/shots/device-keys.png --page demo-counter --key
 
 To press keys on the real keyboard while LokiCTL runs on the screen, use
 `scripts/device.sh key` (see the README). Its names differ a little: it
-also knows `tab`, `screenshot` and the `fn+` combinations, and it holds a
-key with `--long` instead of `:long`.
+also knows `tab`, `screenshot` and the `fn+` combinations, it holds a key
+with `--long` instead of `:long`, and it does not know `data`, which is not
+a key.
 
 ```sh
 scripts/device.sh run

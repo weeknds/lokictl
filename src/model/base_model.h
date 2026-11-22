@@ -41,9 +41,11 @@ class BaseModel {
 public:
     const char* app_title() const;
 
-    // The values the home page shows. For now they are the sample values
-    // of sample_home_data(); the data layer will fill them with real ones.
+    // The values the home page shows. They start as the sample values of
+    // sample_home_data(); the data layer replaces them with set_home()
+    // whenever a new block of values arrives.
     const HomeData& home() const;
+    void set_home(const HomeData& data);
 
     // The path of open pages, from the first page to the one on top. Only
     // the top page is shown; the pages below it are rebuilt when the user

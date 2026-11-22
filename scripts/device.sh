@@ -8,12 +8,17 @@
 #   scripts/device.sh run           start LokiCTL on the device's screen
 #   scripts/device.sh run --theme constellation
 #                                   the same, in that theme for this run only
+#   scripts/device.sh run --data demo
+#                                   the same, with the moving demo values
+#   scripts/device.sh data          print LokiCTL's current values (name=value)
 #   scripts/device.sh screen x.png  save what the screen shows
 #   scripts/device.sh key 6         press keys on the device (6: opens Settings)
 #   scripts/device.sh snapshot x.png --theme instrument --switch-to terminal
 #                                   draw a page off screen, after a live switch
 #   scripts/device.sh snapshot x.png --page demo-counter --keys 8,x
 #                                   draw a page off screen after the keys 8, x
+#   scripts/device.sh snapshot x.png --data demo --data-steps 181
+#                                   the home page after 181 demo readings
 #   scripts/device.sh stats         memory, CPU and frame time
 #   scripts/device.sh stop          stop LokiCTL and bring the launcher back
 #
@@ -57,14 +62,17 @@ Commands:
                   missing libraries as well (by default it must install
                   nothing but LokiCTL).
   remove          Stop LokiCTL and uninstall it.
-  run [--theme T] Start LokiCTL on the device's screen. The launcher is
+  run [--theme T] [--data D]
+                  Start LokiCTL on the device's screen. The launcher is
                   paused while it runs and comes back when LokiCTL stops.
                   --theme uses theme T (instrument, constellation or
                   terminal) for this run only and does not save it; without
-                  it, LokiCTL's saved theme or its default decides. An
-                  unknown name makes LokiCTL exit at once with a message.
-                  A theme picked on the Settings page (6 on the home page)
-                  is saved, also after a --theme start.
+                  it, LokiCTL's saved theme or its default decides. A theme
+                  picked on the Settings page (6 on the home page) is
+                  saved, also after a --theme start. --data takes the
+                  values from D (sample, demo or live) for this run only;
+                  without it the device reads live values. An unknown name
+                  makes LokiCTL exit at once with a message.
   stop            Stop LokiCTL (however it was started) and bring the
                   launcher back on HOME. Safe to repeat.
   status          Show the installed version and what is running.
@@ -81,21 +89,34 @@ Commands:
                   fn+c (right).
   stats [--seconds N]
                   LokiCTL's memory and CPU use over N seconds (default 3,
-                  1 to 30), free memory and frame time.
-  snapshot <out.png> [--page P] [--theme T] [--keys K[,K...]]
-           [--switch-to T[,T...]] [--settle-ms N]
+                  1 to 60), free memory and frame time.
+  snapshot <out.png> [--page P] [--theme T] [--data D] [--data-steps N]
+           [--keys K[,K...]] [--switch-to T[,T...]] [--settle-ms N]
                   Run "lokictl --snapshot" on the device and save the PNG.
                   Without --theme the picture uses the default theme; the
-                  settings file is not read or written. --keys presses the
-                  listed keys before the picture (and before --switch-to).
-                  They are pressed inside that snapshot run, not on the
-                  device's keyboard, so LokiCTL need not be running.
+                  settings file is not read or written. Without --data the
+                  picture shows the fixed sample values; --data D (sample,
+                  demo or live) takes them from D. --data-steps takes N
+                  further readings (0 to 100000) after the page is built
+                  and before the keys. --keys presses the listed keys
+                  before the picture (and before --switch-to). They are
+                  pressed inside that snapshot run, not on the device's
+                  keyboard, so LokiCTL need not be running.
                   Names: 0-9, a-z, esc, enter, space, backspace, up, down,
                   left, right, help; add :long to hold one for 1 s (for
-                  example esc:long). --switch-to switches live through the
-                  listed themes, the way a pick on the Settings page does,
-                  before the picture is taken. The "fonts loaded" and "quit
-                  requested" lines appear on standard error.
+                  example esc:long). The name data is not a key: it takes
+                  one further reading at that point. --switch-to switches
+                  live through the listed themes, the way a pick on the
+                  Settings page does, before the picture is taken. The
+                  "fonts loaded" and "quit requested" lines appear on
+                  standard error.
+  data [--data D] Print LokiCTL's current values as name=value lines
+                  (source, sample, clock, battery_percent, battery_state),
+                  read on the device with "lokictl --print-data". Without
+                  --data the device reads live values; --data D (sample,
+                  demo or live) takes them from D. It works while the
+                  launcher is on screen and touches neither the screen nor
+                  a running LokiCTL.
   logs [-n N]     Show the last N log lines (default 50) of the latest
                   'run' only, also after LokiCTL has stopped.
 
@@ -315,7 +336,7 @@ main() {
     screen | snapshot)
       cmd_capture "${command}" "$@"
       ;;
-    remove | run | stop | status | key | stats | logs)
+    remove | run | stop | status | key | stats | data | logs)
       require_device
       agent "${command}" "$@"
       ;;

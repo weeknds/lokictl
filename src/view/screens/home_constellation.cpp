@@ -186,10 +186,20 @@ void ground_fill(lv_obj_t* label, const view::Theme& theme) {
     lv_obj_set_style_bg_opa(label, LV_OPA_COVER, 0);
 }
 
+// The panel's clock and battery texts.
+std::string clock_label_text(const model::HomeData& data) {
+    return home::clock_text(data.clock_minutes);
+}
+
+std::string battery_label_text(const model::HomeData& data) {
+    return home::battery_text(data.battery_percent, data.battery_state);
+}
+
 class ConstellationHomeLayout final : public HomeLayout {
 public:
     void build(const HomeContext& context) override;
     void select(const HomeContext& context, int32_t index) override;
+    void update(const HomeContext& context) override;
 
 private:
     void build_map(const HomeContext& context);
@@ -201,6 +211,13 @@ private:
     int32_t client_count_{0};
     lv_obj_t* left_bracket_{nullptr};
     lv_obj_t* right_bracket_{nullptr};
+
+    // The panel's clock and battery, and the text each shows; update()
+    // changes the text only.
+    lv_obj_t* clock_{nullptr};
+    std::string clock_shown_;
+    lv_obj_t* battery_{nullptr};
+    std::string battery_shown_;
 
     // The panel's lines about the selected client.
     lv_obj_t* selected_caption_{nullptr};
@@ -346,15 +363,17 @@ void ConstellationHomeLayout::build_panel(const HomeContext& context) {
     // LVGL places children from the inside of the left border.
     const int32_t left = kTextX - kPanelX - kPanelBorder;
 
-    auto* clock = plain_label(panel, home::clock_text(data.clock_minutes).c_str());
-    view::style::text(clock, theme, view::FontRole::Small, colors.muted);
-    lv_obj_set_pos(clock, left, kStatusY);
+    clock_shown_ = clock_label_text(data);
+    clock_ = plain_label(panel, clock_shown_.c_str());
+    view::style::text(clock_, theme, view::FontRole::Small, colors.muted);
+    lv_obj_set_pos(clock_, left, kStatusY);
 
-    auto* battery = plain_label(panel, home::percent_text(data.battery_percent).c_str());
-    view::style::text(battery, theme, view::FontRole::Small, colors.muted);
-    fix_width(battery, kBatteryWidth, small);
-    lv_obj_set_style_text_align(battery, LV_TEXT_ALIGN_RIGHT, 0);
-    lv_obj_set_pos(battery, left + kTextWidth - kBatteryWidth, kStatusY);
+    battery_shown_ = battery_label_text(data);
+    battery_ = plain_label(panel, battery_shown_.c_str());
+    view::style::text(battery_, theme, view::FontRole::Small, colors.muted);
+    fix_width(battery_, kBatteryWidth, small);
+    lv_obj_set_style_text_align(battery_, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_obj_set_pos(battery_, left + kTextWidth - kBatteryWidth, kStatusY);
 
     auto* mode_caption = plain_label(panel, "");
     view::style::caption(mode_caption, theme, "mode");
@@ -424,10 +443,15 @@ void ConstellationHomeLayout::select(const HomeContext& context, int32_t index) 
     const lv_font_t* small = theme.font(view::FontRole::Small);
     const lv_font_t* strong = theme.font(view::FontRole::Strong);
 
-    const std::string caption = "selected " + home::count_text(index, client_count_);
+    // The clients the map was built with, but never more than the list
+    // holds now, so a shorter list is never read past its end.
+    const auto listed = static_cast<int32_t>(
+        std::min<std::size_t>(static_cast<std::size_t>(client_count_), clients.size()));
+
+    const std::string caption = "selected " + home::count_text(index, listed);
     view::style::caption(selected_caption_, theme, caption.c_str());
 
-    if (client_count_ == 0) {
+    if (listed == 0) {
         lv_obj_add_flag(left_bracket_, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(right_bracket_, LV_OBJ_FLAG_HIDDEN);
         lv_label_set_text(selected_name_, "");
@@ -435,7 +459,7 @@ void ConstellationHomeLayout::select(const HomeContext& context, int32_t index) 
         lv_label_set_text(selected_address_, "");
         return;
     }
-    const int32_t selected = std::clamp<int32_t>(index, 0, client_count_ - 1);
+    const int32_t selected = std::clamp<int32_t>(index, 0, listed - 1);
 
     // The map: the selected name in the bold font, the others in Small; the
     // name keeps its baseline either way.
@@ -465,6 +489,13 @@ void ConstellationHomeLayout::select(const HomeContext& context, int32_t index) 
     lv_label_set_text(selected_name_, client.name.c_str());
     lv_label_set_text(selected_signal_, home::signal_text(client.signal_dbm).c_str());
     lv_label_set_text(selected_address_, client.address.c_str());
+}
+
+// Only the panel's clock and battery follow the values for now. The clock
+// keeps its place; the battery stays right-aligned in its box.
+void ConstellationHomeLayout::update(const HomeContext& context) {
+    set_text_if_changed(clock_, clock_shown_, clock_label_text(context.data));
+    set_text_if_changed(battery_, battery_shown_, battery_label_text(context.data));
 }
 
 } // namespace

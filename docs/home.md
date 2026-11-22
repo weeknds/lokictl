@@ -76,49 +76,69 @@ To see all three, take a snapshot of each (see
 
 ## Sample data
 
-There is no data layer yet, so every value on the page is made up: the
-mode, the addresses, the traffic, the clients, and also the clock and the
-battery. The page says so with a small `sample data` mark in every theme.
-Instrument and Constellation write it in capitals, like all their captions;
-Terminal writes it in lowercase. The mark matters on a network tool: nobody
-should take three made-up clients for a real reading.
+Most values on the page are still made up: the mode, the uplink, the
+access point, the addresses, the traffic and the clients. Only the clock
+and the battery are real, and only when the app reads live values, which
+it does on the device (the data layer decides this; see
+[data.md](data.md)). The page says that its values are made up with a
+small `sample data` mark in every theme. Instrument and Constellation write
+it in capitals, like all their captions; Terminal writes it in lowercase.
+The mark matters on a network tool: nobody should take three made-up
+clients for a real reading. So it stays on, also next to a real clock,
+until the network values are real too.
 
-Because nothing on the page reads the clock or the device, the same state
-always gives the same picture. Two snapshots of the home page are the same
-file, byte for byte, which makes the page easy to check by script. Pages
-with a title bar still show the real time there, so Settings shows a
-different clock from the home page for now.
+A snapshot uses the fixed sample values unless `--data` says otherwise, so
+the same state always gives the same picture. Two snapshots of the home
+page are the same file, byte for byte, which makes the page easy to check
+by script. Pages with a title bar show the real time there, so in a
+snapshot Settings shows a different clock from the home page.
 
 ## Where the values come from
 
 - `model::HomeData` in `src/model/home_data.h` holds everything the page
   shows. Numbers are stored as numbers, in the unit written next to each
   field: the clock in minutes since midnight, the uptime in seconds, rates
-  in kbit/s, the signal in dBm, the battery in per cent. Lists, such as the
-  clients and the two traffic histories, are plain C++ containers. Each
-  history value is a share (0 to 100) of that history's own recent peak,
-  not of a fixed rate, so the quieter upload graph fills its height as well
-  as the download graph does; the current rates give the real numbers.
+  in kbit/s, the signal in dBm, the battery in per cent (-1 when it is not
+  known). The battery's state is a `model::BatteryState`: unknown,
+  discharging, charging or idle. Lists, such as the clients and the two
+  traffic histories, are plain C++ containers. Each history value is a
+  share (0 to 100) of that history's own recent peak, not of a fixed rate,
+  so the quieter upload graph fills its height as well as the download
+  graph does; the current rates give the real numbers.
 - `model::sample_home_data()` in `src/model/home_data.cpp` fills it with the
   made-up values and sets `HomeData::sample` to true. It is the only place
   in the app that writes them; no value is written in `src/view` or
   `src/app`.
+- A data source fills in one whole `HomeData` block: `sample` (the sample
+  values), `demo` (the sample values, moving on a fixed script) or `live`
+  (the sample values with the real clock and battery put in). A background
+  reader asks the source and `app::DataController` hands every new block to
+  `viewmodel::BaseViewModel::set_home_data()`. [data.md](data.md) explains
+  the whole path.
 - `model::BaseModel` owns one `HomeData`, and
   `viewmodel::BaseViewModel::home()` hands it to the page.
 - A layout turns the numbers into text with the helpers in
   `src/view/screens/home_format.h`: `clock_text()` gives `07:46`,
-  `percent_text()` gives `91%`, `uptime_text()` gives `00:12:31`,
-  `rate_text()` gives `3.8` for 3800 kbit/s, `signal_text()` gives `−61 dBm`
-  with a real minus sign, and `count_text()` gives `1/3`. All layouts use
-  the same helpers, so a value reads the same in every theme, and a value
-  out of range is clamped instead of printed as garbage.
+  `battery_text()` gives `91%`, `91%+` while the battery charges and `--%`
+  when the charge is not known (it replaced the earlier `percent_text()`),
+  `uptime_text()` gives `00:12:31`, `rate_text()` gives `3.8` for 3800
+  kbit/s, `signal_text()` gives `−61 dBm` with a real minus sign, and
+  `count_text()` gives `1/3`. All layouts use the same helpers, so a value
+  reads the same in every theme, and a value out of range is clamped
+  instead of printed as garbage.
 
-Real values will replace the sample ones in the same place: the data layer
-will fill the same `HomeData` and set `sample` to false, which removes the
-mark. The layouts take every value from `HomeData` already, so none of
-them has to change for that. The page reads the values once, while it is
-built; redrawing it while it is open, when a value changes, comes with the
-data layer.
+The page is built from the values once. When a new block arrives while it
+is open, the layout's `update()` changes the clock and the battery text in
+place; the page is not built again (see
+[How a page updates in place](data.md#how-a-page-updates-in-place)). When
+the page is built again, after a theme switch or when coming back from
+Settings, it shows the current values at once.
+
+More real values will replace the sample ones in the same place: the live
+source will fill more of the same `HomeData`, and once the last made-up
+value is gone it sets `sample` to false, which removes the mark. The
+layouts take every value from `HomeData` already, so none of them has to
+change for that, apart from showing any new value in `update()`.
 
 ## The selected client
 
@@ -137,7 +157,9 @@ third. The client count on the page still shows how many there are.
 
 Because the selection lives in the view model, it is kept when Settings is
 opened and closed, and across a theme switch, which builds the page again
-in the new theme's layout.
+in the new theme's layout. When new values bring fewer clients than the
+selection's place, `set_home_data()` pulls the selection back to the last
+client shown.
 
 `screen::HomeScreen` adds one observer to `home_selection_subject()`,
 bound to the page's content area, so it goes away together with the page.
@@ -279,10 +301,19 @@ fonts. To give it its own:
 1. Write a class derived from `screen::HomeLayout` (`home_layout.h`) in a
    new file, `src/view/screens/home_<theme>.cpp`, inside an anonymous
    namespace, like the three that exist. `build()` draws the page into
-   `context.content`; `select()` marks the selected client.
+   `context.content`; `select()` marks the selected client; `update()`
+   shows new values on the page that is already built.
 2. Add a factory such as `make_<theme>_home_layout()` to `home_layout.h`,
    and define it at the end of the new file.
-3. Add a case for the theme's `view::ThemeId` to the switch in
+3. Write `update(context)`: for every value the data layer can change
+   (so far the clock and the battery), set the label's text with
+   `set_text_if_changed()` from `home_layout.h`. Make the text with the
+   same function `build()` uses, and keep a pointer to each label and the
+   text it shows. `update()` may only change the text and style of objects
+   `build()` made; it never creates or deletes anything. `HomeScreen`
+   calls it once right after `build()`, when nothing has changed yet, and again
+   whenever new values arrive (see [data.md](data.md)).
+4. Add a case for the theme's `view::ThemeId` to the switch in
    `HomeScreen::build_content()`, and a line to the class comment in
    `home_screen.h`.
 
@@ -299,11 +330,17 @@ The rules for a layout:
 - `lv_line_set_points()` keeps a pointer to the points instead of copying
   them, so the points must be a `static const` array at namespace scope,
   never a local array.
-- Keep pointers only to the objects `select()` changes. LVGL owns every
-  object, and they go when the page goes.
+- Keep pointers only to the objects `select()` and `update()` change.
+  LVGL owns every object, and they go when the page goes.
+- `select()` gets an index from the view model; keep it within the clients
+  shown, as the three layouts do.
+- A value that can change, such as the battery, must not move anything
+  else: give it a box of fixed width or align it so that it grows into
+  free space. Look at its widest text (`23:59` and `100%+`) and at `--%`.
 - Show the sample mark while `context.data.sample` is true.
 
-Then take pictures of the page in the new theme with each client selected,
+Then take pictures of the page in the new theme with each client selected
+and with moving values (see [Looking at the page](#looking-at-the-page)),
 look at them at normal size and enlarged, and add the theme to this page.
 
 ## Looking at the page
@@ -327,6 +364,20 @@ $B --snapshot build/shots/home-a.png --page home --keys c
 $B --snapshot build/shots/home-b.png --page home --keys right
 cmp build/shots/home-a.png build/shots/home-b.png && echo same
 ```
+
+To see the page follow its data, take the demo values a number of steps
+on (see [The demo script](data.md#the-demo-script)). A page updated in
+place must be the same file as one built fresh with the same values, which
+`--switch-to` checks by building the page again at the end:
+
+```sh
+$B --snapshot build/shots/home-181.png --page home --theme instrument --data demo --data-steps 181
+$B --snapshot build/shots/home-181-fresh.png --page home --theme instrument --data demo --data-steps 181 --switch-to terminal,instrument
+cmp build/shots/home-181.png build/shots/home-181-fresh.png && echo same
+```
+
+Step 181 shows `10:47` and `100%+`, the widest battery text; step 82
+shows `9%`. `--data live` shows the computer's own clock.
 
 `--page home` can be left out, because `home` is the default page. On a
 device, `scripts/device.sh snapshot build/shots/device-home.png --page home

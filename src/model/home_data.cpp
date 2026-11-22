@@ -39,14 +39,69 @@ const char* net_mode_name(NetMode mode) {
     return "Client";
 }
 
+const char* battery_state_name(BatteryState state) {
+    switch (state) {
+        case BatteryState::Unknown:
+            return "unknown";
+        case BatteryState::Discharging:
+            return "discharging";
+        case BatteryState::Charging:
+            return "charging";
+        case BatteryState::Idle:
+            return "idle";
+    }
+    return "unknown";
+}
+
+bool operator==(const HomeClient& left, const HomeClient& right) {
+    return left.name == right.name &&
+           left.address == right.address &&
+           left.signal_dbm == right.signal_dbm &&
+           left.rate_kbps == right.rate_kbps &&
+           left.is_new == right.is_new;
+}
+
+bool operator!=(const HomeClient& left, const HomeClient& right) {
+    return !(left == right);
+}
+
+// Every field of HomeData, in the order they are declared. A new field must
+// be added here too (see home_data.h).
+bool operator==(const HomeData& left, const HomeData& right) {
+    return left.sample == right.sample &&
+           left.clock_minutes == right.clock_minutes &&
+           left.battery_percent == right.battery_percent &&
+           left.battery_state == right.battery_state &&
+           left.mode == right.mode &&
+           left.mode_detail == right.mode_detail &&
+           left.uplink_name == right.uplink_name &&
+           left.uplink_address == right.uplink_address &&
+           left.uplink_speed_mbps == right.uplink_speed_mbps &&
+           left.ap_name == right.ap_name &&
+           left.ap_security == right.ap_security &&
+           left.uptime_seconds == right.uptime_seconds &&
+           left.down_kbps == right.down_kbps &&
+           left.up_kbps == right.up_kbps &&
+           left.down_history == right.down_history &&
+           left.up_history == right.up_history &&
+           left.clients == right.clients;
+}
+
+bool operator!=(const HomeData& left, const HomeData& right) {
+    return !(left == right);
+}
+
 // These are made-up example values, so the home page has something to show.
-// The data layer will replace them with real readings; nothing else in the
-// app writes sample values.
+// The data layer starts from them: the sample source hands them over as
+// they are, the demo source moves some of them, and the live source keeps
+// every value it does not read yet. Nothing else in the app writes sample
+// values.
 HomeData sample_home_data() {
     HomeData data;
     data.sample = true;
     data.clock_minutes = 7 * 60 + 46;
     data.battery_percent = 91;
+    data.battery_state = BatteryState::Discharging;
     data.mode = NetMode::Router;
     data.mode_detail = "eth0 \u2192 wi-fi ap \u00b7 nat \u00b7 dhcp";
     data.uplink_name = "eth0";

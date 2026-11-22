@@ -94,10 +94,17 @@ lv_obj_t* plain_label(lv_obj_t* parent, const char* text) {
     return label;
 }
 
+// The clock and the battery as the strip shows them, one text: "HH:MM · NN%".
+std::string status_text(const model::HomeData& data) {
+    return home::clock_text(data.clock_minutes) + " \u00b7 " +
+           home::battery_text(data.battery_percent, data.battery_state);
+}
+
 class InstrumentHomeLayout final : public HomeLayout {
 public:
     void build(const HomeContext& context) override;
     void select(const HomeContext& context, int32_t index) override;
+    void update(const HomeContext& context) override;
 
 private:
     void build_status_strip(const HomeContext& context);
@@ -106,6 +113,11 @@ private:
     void build_chips(const HomeContext& context);
     void build_access_point(const HomeContext& context);
     void build_client_line(const HomeContext& context);
+
+    // Clock and battery, one label in the strip, and the text it shows;
+    // update() changes the text only.
+    lv_obj_t* status_{nullptr};
+    std::string status_shown_;
 
     // The selected client's line; select() changes their text only.
     lv_obj_t* tag_{nullptr};
@@ -144,11 +156,12 @@ void InstrumentHomeLayout::build_status_strip(const HomeContext& context) {
         lv_obj_align(mark, LV_ALIGN_CENTER, 0, 0);
     }
 
-    const std::string status = home::clock_text(context.data.clock_minutes) + " \u00b7 " +
-                               home::percent_text(context.data.battery_percent);
-    auto* clock = plain_label(strip, status.c_str());
-    view::style::text(clock, theme, view::FontRole::Small);
-    lv_obj_align(clock, LV_ALIGN_RIGHT_MID, -kStripInset, 0);
+    // Right-aligned: a wider text grows to the left, its right end stays
+    // kStripInset from the edge.
+    status_shown_ = status_text(context.data);
+    status_ = plain_label(strip, status_shown_.c_str());
+    view::style::text(status_, theme, view::FontRole::Small);
+    lv_obj_align(status_, LV_ALIGN_RIGHT_MID, -kStripInset, 0);
 }
 
 void InstrumentHomeLayout::build_mode(const HomeContext& context) {
@@ -306,6 +319,13 @@ void InstrumentHomeLayout::select(const HomeContext& context, int32_t index) {
     lv_label_set_text(name_, client.name.c_str());
     lv_label_set_text(address_, client.address.c_str());
     lv_label_set_text(signal_, home::signal_text(client.signal_dbm).c_str());
+}
+
+// Only the strip's clock and battery follow the values for now. The label
+// keeps its alignment, so LVGL places a text of another width again at the
+// same right end.
+void InstrumentHomeLayout::update(const HomeContext& context) {
+    set_text_if_changed(status_, status_shown_, status_text(context.data));
 }
 
 } // namespace

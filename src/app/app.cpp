@@ -9,6 +9,9 @@
 #include "application_config.h"
 #include "asset_manager.h"
 #include "command_line.h"
+#include "data_controller.h"
+#include "data_readout.h"
+#include "data_source.h"
 #include "key_controller.h"
 #include "logger.h"
 #include "linux_input.h"
@@ -84,6 +87,34 @@ void report_frame_stats_error(const std::string& message) {
 // empty means off. Snapshot mode never reads or writes settings, so it
 // ignores the variable.
 constexpr const char* kConfigFileVariable = "LOKICTL_CONFIG_FILE";
+
+// Development and test tools set this variable to a folder that stands in
+// for the device's root: the live data source then reads <folder>/sys/...
+// instead of /sys/..., so every battery state can be tried on any machine.
+// Unset or empty means the real root. Only the live source reads files, so
+// the other sources ignore it.
+constexpr const char* kDataRootVariable = "LOKICTL_DATA_ROOT";
+
+// The data source used when --data is not given: a snapshot always shows
+// the fixed sample values, so its pictures never change; a start and
+// --print-data read the real values on the device and run the demo in the
+// simulator.
+platform::DataSourceKind default_data_source(LaunchMode mode) {
+    if (mode == LaunchMode::Snapshot) {
+        return platform::DataSourceKind::Sample;
+    }
+#if USE_DESKTOP
+    return platform::DataSourceKind::Demo;
+#else
+    return platform::DataSourceKind::Live;
+#endif
+}
+
+// The value of LOKICTL_DATA_ROOT, or an empty string when it is not set.
+std::string data_root_from_environment() {
+    const char* data_root = std::getenv(kDataRootVariable);
+    return data_root ? std::string(data_root) : std::string();
+}
 
 void quit_requested_observer(lv_observer_t* observer, lv_subject_t* subject) {
     auto* running = static_cast<bool*>(lv_observer_get_user_data(observer));
@@ -199,7 +230,8 @@ bool resolve_theme_option(const std::string& name,
 
 int Application::run(int argc, char** argv) {
     // Everything up to run_snapshot() or run_interactive() happens before the
-    // logger or LVGL start, so help, page names and errors print cleanly.
+    // logger or LVGL start, so help, page names, the data readout and errors
+    // print cleanly.
     const auto options = parse_command_line(argc, argv);
     switch (options.mode) {
         case LaunchMode::Help:
@@ -214,7 +246,21 @@ int Application::run(int argc, char** argv) {
             return 0;
         case LaunchMode::Snapshot:
         case LaunchMode::Interactive:
+        case LaunchMode::PrintData:
             break;
+    }
+
+    // Where the values come from: --data, or else the default of this mode.
+    platform::DataSourceKind data_source = default_data_source(options.mode);
+    if (!options.data.empty() && !platform::find_data_source(options.data, data_source)) {
+        return report_usage_error("unknown data source '" + options.data + "' (use one of: " +
+                                  platform::data_source_names() + ")");
+    }
+    const std::string data_root = data_root_from_environment();
+
+    // --print-data needs nothing else: no theme, no page, no screen.
+    if (options.mode == LaunchMode::PrintData) {
+        return run_data_readout(data_source, options.data_steps, data_root);
     }
 
     std::optional<view::ThemeId> theme;
@@ -244,7 +290,7 @@ int Application::run(int argc, char** argv) {
         ScriptedKey key{};
         if (!parse_scripted_key(name, key)) {
             return report_usage_error("unknown key '" + name + "' in --keys (use " +
-                                      kScriptedKeyNames + ", optionally followed by :long)");
+                                      kScriptedKeyNames + ")");
         }
         keys.push_back(key);
     }
@@ -261,10 +307,13 @@ int Application::run(int argc, char** argv) {
                                             theme.value_or(view::kDefaultThemeId),
                                             options.settle_ms,
                                             switch_to,
-                                            keys});
+                                            keys,
+                                            data_source,
+                                            options.data_steps,
+                                            data_root});
     }
 
-    const int exit_code = run_interactive(theme);
+    const int exit_code = run_interactive(theme, data_source, data_root);
     // Logged once run_interactive() has torn everything down, so these are
     // the last lines of a run.
     if (stop_signal != 0) {
@@ -274,7 +323,9 @@ int Application::run(int argc, char** argv) {
     return exit_code;
 }
 
-int Application::run_interactive(std::optional<view::ThemeId> theme_override) {
+int Application::run_interactive(std::optional<view::ThemeId> theme_override,
+                                 platform::DataSourceKind data_source,
+                                 const std::string& data_root) {
     logger::Logger::init();
     logger::Logger::set_tag(APP_NAME);
 
@@ -401,6 +452,13 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override) {
 
     theme_engine.attach_display(display);
 
+    // The values: the first reading is taken here, before the first page is
+    // built, so the page never shows values that are about to change. The
+    // background reader and its timer start right before the main loop and
+    // are stopped right after it, before anything else is torn down.
+    DataController data(view_model, platform::make_data_source(data_source, data_root));
+    data.read_first();
+
     ScreenManager screen_manager(view_model, assets, theme_engine);
     screen_manager.start();
     // Declared after the ScreenManager, so it is destroyed before it.
@@ -428,6 +486,7 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override) {
     LOG_INFO("{} {} started at {}x{}", APP_DISPLAY_NAME, APP_VERSION,
              lv_display_get_horizontal_resolution(display),
              lv_display_get_vertical_resolution(display));
+    data.start();
     while (running && stop_signal == 0
 #if USE_DESKTOP
            && simulator_frame.process_events()
@@ -436,6 +495,8 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override) {
         lv_timer_handler();
         lv_delay_ms(5);
     }
+    // First on the way out: no new values arrive while the rest is torn down.
+    data.stop();
 
     if (quit_observer) {
         lv_observer_remove(quit_observer);

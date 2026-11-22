@@ -83,8 +83,22 @@ public:
 
     // The home page.
     // The values it shows (see model::HomeData). The page reads them while
-    // it is built; they do not change while it is open yet.
+    // it is built, and they change while it is open: the data layer hands
+    // in new values with set_home_data(), and home_data_subject() tells the
+    // page.
     const model::HomeData& home() const;
+    // Replaces the values with `data`. Only ever called on the UI thread, by
+    // app::DataController. Returns false and changes nothing, and tells
+    // nobody, when `data` equals the values already held. Otherwise it
+    // stores them; if the new block has fewer clients than the selection's
+    // place, the selection is pulled back to the last client shown (at most
+    // kHomeClientRows; 0 without clients); then home_data_subject() counts
+    // one more change. Returns true then.
+    bool set_home_data(const model::HomeData& data);
+    // Counts every change of home(). It is a counter, like
+    // theme_request_subject(), so every new block reaches the observers;
+    // home() says what the values are. Starts at 0.
+    lv_subject_t* home_data_subject();
     // The index of the selected client in home().clients; starts at 0.
     lv_subject_t* home_selection_subject();
     int32_t home_selection() const;
@@ -127,6 +141,7 @@ private:
     int32_t requested_theme_{-1};
     reactive::IntSubject settings_theme_selection_subject_;
     reactive::IntSubject home_selection_subject_;
+    reactive::IntSubject home_data_subject_;
     reactive::IntSubject key_test_selection_subject_;
     reactive::IntSubject key_test_picked_subject_;
     reactive::StringSubject<16> key_test_last_key_subject_;

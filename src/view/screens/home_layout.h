@@ -13,6 +13,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <string>
 
 namespace screen {
 
@@ -28,8 +29,9 @@ struct HomeContext {
 // One way of drawing the home page; each theme has its own (see
 // HomeScreen). A layout places plain objects, labels and lines at fixed
 // positions, styled from context.theme, with every value taken from
-// context.data. It keeps pointers to the objects select() changes; LVGL owns
-// the objects, and they go when the page goes.
+// context.data. It keeps pointers to the objects select() and update()
+// change, and the text each label of update() shows; LVGL owns the
+// objects, and they go when the page goes.
 class HomeLayout {
 public:
     virtual ~HomeLayout() = default;
@@ -41,9 +43,32 @@ public:
     // build() and again whenever the selection changes; it may only restyle,
     // move and retext objects build() made.
     virtual void select(const HomeContext& context, int32_t index) = 0;
+
+    // Shows the values of context.data. Called once right after build(),
+    // when nothing has changed yet, and again whenever the values changed
+    // while the page is open. It may only change the text and the style of
+    // objects build() made; it never creates or deletes an object, and it
+    // sets a text only when that text really changed (see
+    // set_text_if_changed()), so nothing is redrawn for a value that stayed
+    // the same.
+    virtual void update(const HomeContext& context) = 0;
 };
 
 // Small helpers the layouts share.
+
+// Gives `label` the text `text`, but only when it differs from `shown`, the
+// text the layout last gave it; `shown` then becomes `text`. Returns true
+// when the text was set. Does nothing and returns false for a null label.
+// It compares with the layout's own copy and not with the label's text,
+// because LVGL rewrites the text a label holds when it ends it in dots.
+inline bool set_text_if_changed(lv_obj_t* label, std::string& shown, const std::string& text) {
+    if (!label || shown == text) {
+        return false;
+    }
+    shown = text;
+    lv_label_set_text(label, shown.c_str());
+    return true;
+}
 
 // Makes `label` one line of a fixed width: longer text ends in dots instead
 // of wrapping onto a second line.
