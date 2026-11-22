@@ -81,6 +81,14 @@ public:
     // the highlight always starts on the active theme.
     bool open_settings();
 
+    // Whether the screen dims when no key was pressed for a while (the
+    // Settings page's "Dim when idle" row); starts as true. The app sets the
+    // saved choice at start; app::PowerController follows the subject and
+    // saves every later change. Nothing is written when it stays the same.
+    lv_subject_t* screen_dimming_subject();
+    bool screen_dimming() const;
+    void set_screen_dimming(bool on);
+
     // The Status page.
     // The first row it shows, counted from the top of its list; starts at
     // 0. The page shows it clamped to the rows there are (the view model
@@ -155,6 +163,7 @@ private:
     reactive::IntSubject theme_request_subject_;
     int32_t requested_theme_{-1};
     reactive::IntSubject settings_theme_selection_subject_;
+    reactive::BoolSubject screen_dimming_subject_;
     reactive::IntSubject status_scroll_subject_;
     reactive::IntSubject home_selection_subject_;
     reactive::IntSubject home_data_subject_;

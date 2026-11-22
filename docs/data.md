@@ -290,7 +290,59 @@ On the page, `screen::home::battery_text()` in
 | 91, charging | `91%+` |
 | unknown, any state | `--%` |
 
-There is no colour change yet.
+At 15 % or less while discharging (`model::battery_low()`), the battery text
+takes the theme's warning colour: on all three home layouts, in the title
+bar of the other pages and in the Status page's battery heading. Only the
+charge in per cent counts, never the charge in mAh.
+
+## Battery care
+
+`app::PowerController` (`src/app/power_controller.h`) saves power while
+nobody looks at the screen, and warns before the battery runs out.
+
+- **Dim and dark:** 60 s after the last key the screen dims, and after
+  5 min it goes dark (the backlight is off). On the charger (charging or
+  idle) it only dims. Any key while the screen is dim or dark only brings it
+  back and does nothing else.
+- **The backlight:** `/sys/class/backlight/backlight/brightness` (0 to 100,
+  the `video` group may write it) is the only file on the device that
+  LokiCTL writes besides its settings. Its value is read when LokiCTL first
+  lowers it, so a backlight that is already off is left alone. Dim is a
+  fifth of that value, at least 10. Waking and quitting (hold ESC, SIGTERM,
+  SIGINT) put the value back, but only if the file still holds what LokiCTL
+  wrote; when something else changed it meanwhile, such as the launcher's
+  own sleep, it is left as it is. Snapshots and `--print-data` never open
+  the file. The simulator darkens its window instead.
+- **Slower reading:** only while the screen is dark. The traffic and the
+  Status page's details stop (`DataController::set_screen_dark()`), and they
+  start again at once when the screen wakes. Clock, battery and link keep
+  their pace. While the screen is dim everything keeps going, so a dim screen
+  on the charger still works as a monitor.
+- **Warnings:** once at 15 % ("Battery low") and once at 5 % ("Battery very
+  low") while discharging. Each message wakes the screen and logs
+  `battery: low warning at <n>%`. Being on the charger arms both again.
+- **The setting:** the Settings page's "Dim when idle" row (Enter or key 6)
+  switches dimming on or off. It is saved as `dim_when_idle=yes|no` in
+  `[application]`; the default is on.
+
+Log lines: `screen: dim`, `screen: dark`, `screen: awake (<why>)` and
+`backlight: <old> -> <new>`.
+
+Test hooks:
+
+- `LOKICTL_IDLE_SECONDS=<dim>,<dark>` (whole seconds, dim at least 1, dark
+  later) shortens the times in a normal start.
+- `LOKICTL_BACKLIGHT_FILE=<file>` uses a plain file instead of the
+  backlight, so the writes can be followed on any computer.
+- Snapshots count the times in LVGL time, so `--settle-ms` crosses them. A
+  stand-in backlight starts at 100 and prints each write as
+  `backlight: <n>` on standard error:
+
+```sh
+B=./build/darwin-arm64/Debug/lokictl
+$B --snapshot build/shots/woken.png --settle-ms 60000 --keys 6   # dims; 6 only wakes, Home stays
+$B --snapshot build/shots/settings.png --keys 6                  # 6 opens Settings
+```
 
 ## The network link
 

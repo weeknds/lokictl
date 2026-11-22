@@ -8,6 +8,7 @@
 
 #include "application_config.h"
 #include "asset_manager.h"
+#include "backlight.h"
 #include "command_line.h"
 #include "data_controller.h"
 #include "data_readout.h"
@@ -16,6 +17,7 @@
 #include "logger.h"
 #include "linux_input.h"
 #include "page_registry.h"
+#include "power_controller.h"
 #include "screen_manager.h"
 #include "snapshot.h"
 #include "base_viewmodel.h"
@@ -95,6 +97,17 @@ constexpr const char* kConfigFileVariable = "LOKICTL_CONFIG_FILE";
 // the other sources ignore it.
 constexpr const char* kDataRootVariable = "LOKICTL_DATA_ROOT";
 
+// Test tools set this variable to "<dim>,<dark>" in whole seconds to
+// shorten the times after which the screen dims and goes dark (see
+// PowerController::parse_times()). Unset or empty means the normal times.
+constexpr const char* kIdleSecondsVariable = "LOKICTL_IDLE_SECONDS";
+
+// Test tools set this variable to a plain file that stands in for the
+// device's backlight file, so dimming can be followed on any machine.
+// Unset or empty means the real backlight on the device and the darkened
+// window in the simulator.
+constexpr const char* kBacklightFileVariable = "LOKICTL_BACKLIGHT_FILE";
+
 // The data source used when --data is not given: a snapshot always shows
 // the fixed sample values, so its pictures never change; a start and
 // --print-data read the real values on the device and run the demo in the
@@ -158,6 +171,41 @@ bool save_theme_choice(const std::string& path, view::ThemeId id) {
     }
     LOG_INFO("saved theme={} to {}", name, path);
     return true;
+}
+
+// Saves the "Dim when idle" setting as the dim_when_idle= key of the
+// settings file at `path`, keeping every other line. A failure is logged
+// and reported to the caller.
+bool save_dimming_choice(const std::string& path, bool on) {
+    ApplicationConfig config;
+    config.dim_when_idle = on;
+    std::string error;
+    if (!save_application_config(path, config, error)) {
+        LOG_WARN("could not save dim_when_idle to {}: {}", path, error);
+        return false;
+    }
+    LOG_INFO("saved dim_when_idle={} to {}", on ? "yes" : "no", path);
+    return true;
+}
+
+// The idle times of this run: the normal ones, or those of
+// LOKICTL_IDLE_SECONDS.
+PowerController::Times idle_times_from_environment() {
+    PowerController::Times times = PowerController::kDefaultTimes;
+    const char* value = std::getenv(kIdleSecondsVariable);
+    if (value && value[0] != '\0') {
+        if (PowerController::parse_times(value, times)) {
+            LOG_INFO("idle times set by {}: dim after {} s, dark after {} s",
+                     kIdleSecondsVariable,
+                     times.dim_ms / 1000,
+                     times.dark_ms / 1000);
+        } else {
+            LOG_WARN("{} must be <dim>,<dark> in whole seconds (dim at least 1, dark later); "
+                     "using the normal times",
+                     kIdleSecondsVariable);
+        }
+    }
+    return times;
 }
 
 #if !USE_DESKTOP
@@ -376,6 +424,8 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override,
     if (config.dark_mode_invalid) {
         LOG_WARN("invalid dark_mode value in {}; it is ignored", loaded_config_path);
     }
+    // Dimming is on unless the user switched it off on the Settings page.
+    view_model.set_screen_dimming(config.dim_when_idle.value_or(true));
 
     // The saved choice: the theme= key, or else the old dark_mode key that
     // came before it (yes: Terminal, no: Instrument). An unknown theme name
@@ -461,8 +511,39 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override,
 
     ScreenManager screen_manager(view_model, assets, theme_engine);
     screen_manager.start();
+
+    // Battery care: dims the screen when no key is pressed, warns when the
+    // battery runs low. Only a normal start opens the backlight: snapshots
+    // and --print-data never touch it. Declared after the data controller,
+    // so it is destroyed before it; stopped right after the main loop.
+    std::unique_ptr<platform::Backlight> backlight;
+    if (const char* backlight_file = std::getenv(kBacklightFileVariable);
+        backlight_file && backlight_file[0] != '\0') {
+        LOG_INFO("backlight file set by {}", kBacklightFileVariable);
+        backlight = platform::make_file_backlight(backlight_file);
+    } else {
+#if USE_DESKTOP
+        // The simulator darkens its window instead.
+        backlight = platform::make_stand_in_backlight(
+            100, [&simulator_frame](int32_t level) { simulator_frame.set_screen_level(level); });
+#else
+        backlight = platform::make_file_backlight(platform::kBacklightFile);
+#endif
+    }
+    PowerController power(view_model, data, std::move(backlight), idle_times_from_environment());
+
     // Declared after the ScreenManager, so it is destroyed before it.
     KeyController key_controller(view_model, theme_engine, screen_manager);
+    key_controller.set_wake_handler([&power] { return power.on_key(); });
+    power.set_warning_listener([&key_controller](int32_t percent, bool very_low) {
+        key_controller.show_battery_warning(percent, very_low);
+    });
+    power.set_setting_listener([&key_controller, &user_config_path](bool on) {
+        if (!save_dimming_choice(user_config_path, on)) {
+            key_controller.show_dimming_not_saved();
+        }
+    });
+    power.start();
 
     // Declared after everything its listener uses, so it is destroyed before
     // them. When the user picks a theme in Settings, the theme switches
@@ -495,7 +576,9 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override,
         lv_timer_handler();
         lv_delay_ms(5);
     }
-    // First on the way out: no new values arrive while the rest is torn down.
+    // First on the way out: the backlight goes back to what it was, and no
+    // new values arrive while the rest is torn down.
+    power.stop();
     data.stop();
 
     if (quit_observer) {

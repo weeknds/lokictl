@@ -74,7 +74,11 @@ struct SnapshotRequest {
 // right before the first switch and after every switch. If the keys made the
 // app ask to quit, it prints "quit requested" on standard error and still
 // takes the picture. The picture shows the page only: the help panel and
-// messages float above it.
+// messages float above it. Battery care runs with its normal times in LVGL
+// time (app::PowerController): when the settles add up to 60 s without a
+// key, the screen dims and the next key only wakes it; each backlight write
+// it would make is printed as "backlight: <n>" on standard error (from 100;
+// the device's backlight is never touched).
 // Returns the process exit code.
 int run_snapshot(const SnapshotRequest& request);
 

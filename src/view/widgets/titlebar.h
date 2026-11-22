@@ -49,6 +49,7 @@ private:
     lv_obj_t* ethernet_label_{nullptr};
     lv_obj_t* battery_icon_label_{nullptr};
     lv_obj_t* battery_percent_label_{nullptr};
+    bool battery_low_shown_{false}; // the battery is drawn in the warning colour
 };
 
 } // namespace view::widgets

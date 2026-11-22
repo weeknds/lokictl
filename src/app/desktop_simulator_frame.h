@@ -41,6 +41,9 @@ public:
     bool process_events();
     // Picks the dark or the light shell art drawn around the screen.
     void set_dark_shell(bool dark);
+    // Shows the screen as bright as a backlight at `level` (0 off, 100
+    // full) would; the stand-in for the device's backlight.
+    void set_screen_level(int32_t level);
 
 private:
     static void flush_cb(lv_display_t* display, const lv_area_t* area, uint8_t* px_map);

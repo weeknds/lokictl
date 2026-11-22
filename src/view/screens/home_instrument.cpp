@@ -34,6 +34,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <iterator>
 #include <memory>
 #include <string>
@@ -121,9 +122,24 @@ lv_obj_t* plain_label(lv_obj_t* parent, const char* text) {
 }
 
 // The clock and the battery as the strip shows them, one text: "HH:MM · NN%".
-std::string status_text(const model::HomeData& data) {
-    return home::clock_text(data.clock_minutes) + " \u00b7 " +
-           home::battery_text(data.battery_percent, data.battery_state);
+// While the battery is low (model::battery_low()) the charge carries LVGL's
+// recolour command for the theme's warning colour, so only it changes
+// colour; the label has recolouring on.
+std::string status_text(const model::HomeData& data, const view::Theme& theme) {
+    const std::string battery = home::battery_text(data.battery_percent, data.battery_state);
+    std::string text = home::clock_text(data.clock_minutes) + " \u00b7 ";
+    if (!model::battery_low(data.battery_percent, data.battery_state)) {
+        return text + battery;
+    }
+    const lv_color_t warning = theme.colors.warning;
+    char color_hex[8]{};
+    std::snprintf(color_hex,
+                  sizeof(color_hex),
+                  "%02x%02x%02x",
+                  static_cast<unsigned int>(warning.red),
+                  static_cast<unsigned int>(warning.green),
+                  static_cast<unsigned int>(warning.blue));
+    return text + "#" + color_hex + " " + battery + "#";
 }
 
 // The texts of the link view. build() and update() both take them from
@@ -285,8 +301,9 @@ void InstrumentHomeLayout::build_status_strip(const HomeContext& context) {
 
     // Right-aligned: a wider text grows to the left, its right end stays
     // kStripInset from the edge.
-    status_shown_ = status_text(context.data);
+    status_shown_ = status_text(context.data, theme);
     status_ = plain_label(strip, status_shown_.c_str());
+    lv_label_set_recolor(status_, true);
     view::style::text(status_, theme, view::FontRole::Small);
     lv_obj_align(status_, LV_ALIGN_RIGHT_MID, -kStripInset, 0);
 }
@@ -536,7 +553,7 @@ void InstrumentHomeLayout::select(const HomeContext& context, int32_t index) {
 // set_text_if_changed() skips them.
 void InstrumentHomeLayout::update(const HomeContext& context) {
     const auto& data = context.data;
-    set_text_if_changed(status_, status_shown_, status_text(data));
+    set_text_if_changed(status_, status_shown_, status_text(data, context.theme));
     if (set_text_if_changed(down_number_, down_number_shown_, home::rate_text(data.down_kbps))) {
         place_caption(down_caption_, down_number_);
     }

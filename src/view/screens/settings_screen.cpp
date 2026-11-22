@@ -17,22 +17,25 @@ namespace screen {
 namespace {
 
 // Layout of the 320x110 area between the title bar and the soft-key bar: a
-// heading line at the top and the theme list under it, both 304 px wide.
+// heading line at the top and the list under it, both 304 px wide. The list
+// has one row per theme and then the "Dim when idle" row.
 constexpr int32_t kSideMargin    = 8;
 constexpr int32_t kWidth         = view::kScreenWidth - 2 * kSideMargin;
-constexpr int32_t kHeadingTop    = 4;
-constexpr int32_t kHeadingHeight = 24;
-constexpr int32_t kListTop       = 31;
-constexpr int32_t kRowHeight     = 23;
-constexpr int32_t kRowGap        = 2;
-constexpr int32_t kListHeight    = view::kThemeCount * kRowHeight + (view::kThemeCount - 1) * kRowGap;
+constexpr int32_t kHeadingTop    = 2;
+constexpr int32_t kHeadingHeight = 20;
+constexpr int32_t kListTop       = 24;
+constexpr int32_t kRowHeight     = 20;
+constexpr int32_t kRowGap        = 1;
+constexpr int32_t kDimRow        = view::kThemeCount;
+constexpr int32_t kRowCount      = view::kThemeCount + 1;
+constexpr int32_t kListHeight    = kRowCount * kRowHeight + (kRowCount - 1) * kRowGap;
 
 static_assert(view::kThemeCount <= 3,
-              "the Settings page has room for three theme rows; make the list scroll before "
-              "adding a fourth theme");
+              "the Settings page has room for three theme rows and the dimming row; make the "
+              "list scroll before adding a fourth theme");
 static_assert(kListTop + kListHeight <=
                   view::kScreenHeight - view::kTitleBarHeight - view::kSoftKeyBarHeight,
-              "the theme list must end above the soft-key bar");
+              "the list must end above the soft-key bar");
 
 // Each row shows four squares in that theme's colours. They end
 // kSwatchEndInset px before the row's right edge, so they stand in the same
@@ -48,6 +51,13 @@ constexpr int32_t kSwatchMaxRadius = 2;
 // Drawn at the right end of the active theme's row. The theme fonts that
 // lack it get it from their fallback font (see docs/fonts.md).
 constexpr const char* kActiveMark = "\u2713"; // check mark
+
+// The dimming row's name, and its value for on and off.
+constexpr const char* kDimRowName = "Dim when idle";
+
+const char* dimming_text(bool on) {
+    return on ? "on" : "off";
+}
 
 // Index 2 of the soft-key set is key 6.
 constexpr std::size_t kUseKeyIndex = 2;
@@ -86,12 +96,24 @@ view::widgets::SoftKey use_key(viewmodel::BaseViewModel& view_model, bool enable
     return {"Use",
             [&view_model] {
                 const int32_t row = view_model.settings_theme_selection();
-                if (row >= 0) {
+                if (row >= 0 && row < view::kThemeCount) {
                     view_model.request_theme(row);
                 }
             },
             true,
             enabled};
+}
+
+// Key 6 while the highlight is on the dimming row: "Off" switches dimming
+// off while it is on, "On" switches it on while it is off.
+view::widgets::SoftKey switch_key(viewmodel::BaseViewModel& view_model) {
+    return {view_model.screen_dimming() ? "Off" : "On",
+            [&view_model] { view_model.set_screen_dimming(!view_model.screen_dimming()); }};
+}
+
+// Key 6 for the highlighted row.
+view::widgets::SoftKey row_key(viewmodel::BaseViewModel& view_model, int32_t selected, int32_t active) {
+    return selected == kDimRow ? switch_key(view_model) : use_key(view_model, selected != active);
 }
 
 // "Settings" on the left and the caption "theme" on the right, on one
@@ -170,7 +192,7 @@ int32_t SettingsScreen::active_row() const {
 
 int32_t SettingsScreen::selected_row() const {
     const int32_t selection = view_model().settings_theme_selection();
-    if (selection >= 0 && selection < view::kThemeCount) {
+    if (selection >= 0 && selection < kRowCount) {
         return selection;
     }
     return active_row();
@@ -181,7 +203,7 @@ view::widgets::SoftKeySet SettingsScreen::soft_keys() {
     return {{
         back_key(view_model),
         {},
-        use_key(view_model, selected_row() != active_row()),
+        row_key(view_model, selected_row(), active_row()),
         {},
         {},
     }};
@@ -189,14 +211,15 @@ view::widgets::SoftKeySet SettingsScreen::soft_keys() {
 
 // Up and down move the highlight and stop at the first and the last row; a
 // move that changes nothing writes nothing. Enter switches to the
-// highlighted theme, unless it is already the active one.
+// highlighted theme, unless it is already the active one, or switches
+// dimming on the dimming row.
 bool SettingsScreen::on_key(uint32_t key) {
     switch (key) {
         case LV_KEY_UP:
         case LV_KEY_DOWN: {
             const int32_t current = selected_row();
             const int32_t step = key == LV_KEY_UP ? -1 : 1;
-            const int32_t next = std::clamp<int32_t>(current + step, 0, view::kThemeCount - 1);
+            const int32_t next = std::clamp<int32_t>(current + step, 0, kRowCount - 1);
             if (next != current) {
                 view_model().select_settings_theme(next);
             }
@@ -204,7 +227,9 @@ bool SettingsScreen::on_key(uint32_t key) {
         }
         case LV_KEY_ENTER: {
             const int32_t row = selected_row();
-            if (row != active_row()) {
+            if (row == kDimRow) {
+                view_model().set_screen_dimming(!view_model().screen_dimming());
+            } else if (row != active_row()) {
                 view_model().request_theme(row);
             }
             return true;
@@ -219,7 +244,7 @@ view::widgets::HelpContent SettingsScreen::help() const {
             {
                 {"ESC / 4", "Back"},
                 {"F / X", "Up / down"},
-                {"ENTER / 6", "Use the theme"},
+                {"ENTER / 6", "Use or switch"},
             }};
 }
 
@@ -256,8 +281,18 @@ void SettingsScreen::build_content(lv_obj_t* content) {
         }
     }
 
+    // The dimming row: its name, and on or off where the themes have their
+    // tick. The value follows the setting (it changes without a rebuild).
+    auto* dim_row = plain_object(list);
+    lv_obj_set_size(dim_row, LV_PCT(100), kRowHeight);
+    auto* dim_name = plain_label(dim_row, kDimRowName);
+    lv_obj_align(dim_name, LV_ALIGN_LEFT_MID, theme.metrics.space_sm, 0);
+    auto* dim_value = plain_label(dim_row, dimming_text(view_model().screen_dimming()));
+    lv_obj_align(dim_value, LV_ALIGN_RIGHT_MID, -theme.metrics.space_sm, 0);
+    lv_subject_add_observer_obj(view_model().screen_dimming_subject(), dimming_observer, dim_value, this);
+
     // Added last: LVGL calls the observer once right away, which styles the
-    // rows and the Use key for the current state.
+    // rows and key 6 for the current state.
     lv_subject_add_observer_obj(view_model().settings_theme_selection_subject(),
                                 selection_observer,
                                 list,
@@ -280,7 +315,22 @@ void SettingsScreen::selection_observer(lv_observer_t* observer, lv_subject_t* /
     }
 
     if (auto* bar = screen->soft_key_bar()) {
-        bar->set_key(kUseKeyIndex, use_key(screen->view_model(), selected != screen->active_row()));
+        bar->set_key(kUseKeyIndex, row_key(screen->view_model(), selected, screen->active_row()));
+    }
+}
+
+void SettingsScreen::dimming_observer(lv_observer_t* observer, lv_subject_t* /*subject*/) {
+    auto* value = lv_observer_get_target_obj(observer);
+    auto* screen = static_cast<SettingsScreen*>(lv_observer_get_user_data(observer));
+    if (!value || !screen) {
+        return;
+    }
+    lv_label_set_text(value, dimming_text(screen->view_model().screen_dimming()));
+    // Key 6 reads On or Off on the dimming row.
+    const int32_t selected = screen->selected_row();
+    auto* bar = screen->soft_key_bar();
+    if (bar && selected == kDimRow) {
+        bar->set_key(kUseKeyIndex, row_key(screen->view_model(), selected, screen->active_row()));
     }
 }
 

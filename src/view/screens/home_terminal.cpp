@@ -280,6 +280,7 @@ private:
     std::string clock_shown_;
     lv_obj_t* battery_note_{nullptr};
     std::string battery_shown_;
+    bool battery_low_shown_{false};
 
     // The download and upload rows of the net pane; update() changes the
     // rates' text and the bars' heights.
@@ -413,6 +414,7 @@ void TerminalHomeLayout::build_mode(const HomeContext& context) {
     lv_obj_set_pos(pane.root, kModeX, kModeY);
     battery_shown_ = battery_note_text(data);
     battery_note_ = view::style::pane_note(pane, theme, battery_shown_.c_str(), theme.colors.muted);
+    set_battery_color(battery_note_, battery_low_shown_, data, theme, theme.colors.muted);
     if (link_view_) {
         build_link_mode(context, pane.content);
         return;
@@ -644,6 +646,7 @@ void TerminalHomeLayout::update(const HomeContext& context) {
     const auto& data = context.data;
     set_text_if_changed(clock_note_, clock_shown_, clock_note_text(data));
     set_text_if_changed(battery_note_, battery_shown_, battery_note_text(data));
+    set_battery_color(battery_note_, battery_low_shown_, data, context.theme, context.theme.colors.muted);
     set_text_if_changed(down_row_.rate, down_row_.rate_shown, home::rate_short_text(data.down_kbps));
     set_text_if_changed(up_row_.rate, up_row_.rate_shown, home::rate_short_text(data.up_kbps));
     view::widgets::update_bar_graph(down_row_.graph, data.down_history.data(), data.down_history.size());

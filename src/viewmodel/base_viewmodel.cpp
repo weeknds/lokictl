@@ -26,6 +26,7 @@ BaseViewModel::BaseViewModel()
       quit_requested_subject_(false),
       theme_request_subject_(0),
       settings_theme_selection_subject_(kSettingsThemeFollowsActive),
+      screen_dimming_subject_(true),
       status_scroll_subject_(0),
       home_selection_subject_(0),
       home_data_subject_(0),
@@ -123,6 +124,20 @@ void BaseViewModel::select_settings_theme(int32_t row) {
 bool BaseViewModel::open_settings() {
     settings_theme_selection_subject_.set(kSettingsThemeFollowsActive);
     return open_page(model::AppPage::Settings);
+}
+
+lv_subject_t* BaseViewModel::screen_dimming_subject() {
+    return screen_dimming_subject_.native();
+}
+
+bool BaseViewModel::screen_dimming() const {
+    return screen_dimming_subject_.value();
+}
+
+void BaseViewModel::set_screen_dimming(bool on) {
+    if (on != screen_dimming_subject_.value()) {
+        screen_dimming_subject_.set(on);
+    }
 }
 
 lv_subject_t* BaseViewModel::status_scroll_subject() {

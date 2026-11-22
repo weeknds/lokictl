@@ -50,7 +50,8 @@ namespace app {
 // page, the only page that shows the traffic, is on top
 // (DataReader::set_traffic_shown()), so the live source reads the traffic
 // once a second only while it is seen; and the same for the Status page and
-// its details (DataReader::set_details_shown()).
+// its details (DataReader::set_details_shown()). While the screen is dark
+// (set_screen_dark()), neither counts as shown, whatever page is on top.
 //
 // Create it after the view model and destroy it before; like
 // app::ThemeController, it is not copied.
@@ -91,11 +92,20 @@ public:
     // more than once, and without start().
     void stop();
 
+    // Tells the controller whether the screen is dark (app::PowerController,
+    // F3.7). While it is, the reader is told that neither the traffic nor
+    // the Status page's details are shown, so the live source stops reading
+    // them; when the screen wakes, the page on top counts again at once.
+    void set_screen_dark(bool dark);
+
 private:
     static void poll_timer_cb(lv_timer_t* timer);
     // Tells the reader whether the page on top shows the traffic or the
     // details. The user data is the controller.
     static void page_observer_cb(lv_observer_t* observer, lv_subject_t* subject);
+    // Hands the reader the traffic and details flags for the page on top
+    // and the screen's state.
+    void update_shown();
 
     // Fetches the newest block from the reader, if one arrived since the
     // last time, and hands it over. Returns false when nothing new was there;
@@ -113,6 +123,7 @@ private:
     platform::DataReader reader_;
     lv_timer_t* poll_timer_{nullptr};
     lv_observer_t* page_observer_{nullptr};
+    bool screen_dark_{false};
     model::HomeData block_;  // the block fetched last; kept to reuse its memory
     bool battery_logged_{false};
     int32_t logged_percent_{model::kBatteryPercentUnknown};

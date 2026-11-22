@@ -7,12 +7,14 @@
 #include "snapshot.h"
 
 #include "asset_manager.h"
+#include "backlight.h"
 #include "base_viewmodel.h"
 #include "data_controller.h"
 #include "data_source.h"
 #include "key_controller.h"
 #include "linux_input.h"
 #include "logger.h"
+#include "power_controller.h"
 #include "screen_manager.h"
 #include "screenshot_service.h"
 #include "theme_controller.h"
@@ -269,6 +271,18 @@ int run_snapshot(const SnapshotRequest& request) {
     ScreenManager screen_manager(view_model, assets, theme_engine);
     screen_manager.start();
 
+    // Battery care with the normal times, counted in LVGL time, so
+    // --settle-ms can cross them. The device's backlight is never touched:
+    // a stand-in reports each write as "backlight: <n>" on standard error,
+    // starting from 100. Declared after the screen manager, so it is
+    // destroyed before it.
+    PowerController power(view_model,
+                          data,
+                          platform::make_stand_in_backlight(100, [](int32_t level) {
+                              std::fprintf(stderr, "backlight: %d\n", static_cast<int>(level));
+                          }));
+    power.start();
+
     settle(request.settle_ms);
 
     if (!page_is_shown(screen_manager)) {
@@ -303,6 +317,7 @@ int run_snapshot(const SnapshotRequest& request) {
             // before the picture, and it is destroyed before the screen
             // manager it uses.
             KeyController key_controller(view_model, theme_engine, screen_manager);
+            key_controller.set_wake_handler([&power] { return power.on_key(); });
             for (const ScriptedKey& key : request.keys) {
                 // Not a key: one further reading, whichever page or panel is
                 // open, the same as a reading that arrives while the app runs.

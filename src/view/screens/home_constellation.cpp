@@ -408,6 +408,7 @@ private:
     std::string clock_shown_;
     lv_obj_t* battery_{nullptr};
     std::string battery_shown_;
+    bool battery_low_shown_{false};
     lv_obj_t* traffic_{nullptr};
     std::string traffic_shown_;
 
@@ -714,6 +715,7 @@ void ConstellationHomeLayout::build_panel(const HomeContext& context) {
     fix_width(battery_, kBatteryWidth, small);
     lv_obj_set_style_text_align(battery_, LV_TEXT_ALIGN_RIGHT, 0);
     lv_obj_set_pos(battery_, left + kTextWidth - kBatteryWidth, kStatusY);
+    set_battery_color(battery_, battery_low_shown_, data, theme, colors.muted);
 
     auto* mode_caption = plain_label(panel, "");
     view::style::caption(mode_caption, theme, "mode");
@@ -909,6 +911,7 @@ void ConstellationHomeLayout::update(const HomeContext& context) {
     const auto& data = context.data;
     set_text_if_changed(clock_, clock_shown_, clock_label_text(data));
     set_text_if_changed(battery_, battery_shown_, battery_label_text(data));
+    set_battery_color(battery_, battery_low_shown_, data, context.theme, context.theme.colors.muted);
     set_text_if_changed(traffic_, traffic_shown_,
                         traffic_label_text(data, context.theme.font(view::FontRole::Small)));
     if (set_text_if_changed(uplink_, uplink_shown_, uplink_label_text(data))) {

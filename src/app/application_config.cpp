@@ -90,6 +90,13 @@ bool load_application_config(const std::string& path,
         const auto key = lowercase(trim(line.substr(0, separator)));
         if (section == "application" && key == "theme") {
             config.theme = lowercase(trim(line.substr(separator + 1)));
+        } else if (section == "application" && key == "dim_when_idle") {
+            bool dim_when_idle = false;
+            if (parse_bool(line.substr(separator + 1), dim_when_idle)) {
+                config.dim_when_idle = dim_when_idle;
+            } else {
+                config.dim_when_idle.reset();
+            }
         } else if (section == "application" && key == "dark_mode") {
             // A value that cannot be read is ignored instead of failing the
             // load, so the theme key of the same file still counts.
@@ -130,24 +137,44 @@ bool save_application_config(const std::string& path,
         lines.push_back(line);
     }
 
+    // The keys to write, in this order; a key that is not set is left alone.
+    struct KeyLine {
+        const char* key;
+        std::string line;
+        bool written;
+    };
+    std::vector<KeyLine> keys;
+    if (config.theme) {
+        keys.push_back({"theme", "theme=" + *config.theme, false});
+    }
+    if (config.dim_when_idle) {
+        keys.push_back({"dim_when_idle",
+                        std::string("dim_when_idle=") + (*config.dim_when_idle ? "yes" : "no"),
+                        false});
+    }
+
     std::vector<std::string> updated;
     bool in_application_section = false;
     bool found_application_section = false;
-    // With no theme to write, only the dark_mode lines are removed.
-    bool wrote_theme = !config.theme.has_value();
-    const std::string theme_line = "theme=" + config.theme.value_or(std::string());
 
-    // Puts the theme line at the end of the [application] section that
-    // `updated` currently ends with: after its last line with text, so blank
-    // lines before the next section stay where they are. The section header
-    // has text, so the line never lands above it.
-    const auto append_theme_to_section = [&]() {
+    // Puts the key lines not written yet at the end of the [application]
+    // section that `updated` currently ends with: after its last line with
+    // text, so blank lines before the next section stay where they are. The
+    // section header has text, so a line never lands above it.
+    const auto append_keys_to_section = [&]() {
         auto position = updated.end();
         while (position != updated.begin() && trim(*(position - 1)).empty()) {
             --position;
         }
-        updated.insert(position, theme_line);
-        wrote_theme = true;
+        for (auto& key : keys) {
+            if (!key.written) {
+                position = updated.insert(position, key.line) + 1;
+                key.written = true;
+            }
+        }
+    };
+    const auto all_written = [&]() {
+        return std::all_of(keys.begin(), keys.end(), [](const KeyLine& key) { return key.written; });
     };
 
     for (const auto& current_line : lines) {
@@ -155,8 +182,8 @@ bool save_application_config(const std::string& path,
         const bool section_header = normalized.size() >= 2 && normalized.front() == '[' &&
                                     normalized.back() == ']';
         if (section_header) {
-            if (in_application_section && !wrote_theme) {
-                append_theme_to_section();
+            if (in_application_section) {
+                append_keys_to_section();
             }
             in_application_section = is_section(current_line, "application");
             found_application_section = found_application_section || in_application_section;
@@ -168,22 +195,30 @@ bool save_application_config(const std::string& path,
             if (is_key(current_line, "dark_mode")) {
                 continue;
             }
-            if (config.theme && is_key(current_line, "theme")) {
-                // The first theme line is replaced; any further ones are dropped.
-                if (!wrote_theme) {
-                    updated.push_back(theme_line);
-                    wrote_theme = true;
+            bool replaced = false;
+            for (auto& key : keys) {
+                if (is_key(current_line, key.key)) {
+                    // The first line of the key is replaced; any further
+                    // ones are dropped.
+                    if (!key.written) {
+                        updated.push_back(key.line);
+                        key.written = true;
+                    }
+                    replaced = true;
+                    break;
                 }
+            }
+            if (replaced) {
                 continue;
             }
         }
         updated.push_back(current_line);
     }
 
-    if (!wrote_theme) {
+    if (!all_written()) {
         if (in_application_section) {
-            // [application] is the last section: the key goes at its end.
-            append_theme_to_section();
+            // [application] is the last section: the keys go at its end.
+            append_keys_to_section();
         } else {
             if (!updated.empty() && !trim(updated.back()).empty()) {
                 updated.emplace_back();
@@ -191,7 +226,12 @@ bool save_application_config(const std::string& path,
             if (!found_application_section) {
                 updated.emplace_back("[application]");
             }
-            updated.push_back(theme_line);
+            for (auto& key : keys) {
+                if (!key.written) {
+                    updated.push_back(key.line);
+                    key.written = true;
+                }
+            }
         }
     }
 

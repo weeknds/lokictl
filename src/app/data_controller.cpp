@@ -116,13 +116,25 @@ void DataController::poll_timer_cb(lv_timer_t* timer) {
     }
 }
 
-void DataController::page_observer_cb(lv_observer_t* observer, lv_subject_t* subject) {
+void DataController::page_observer_cb(lv_observer_t* observer, lv_subject_t* /*subject*/) {
     auto* controller = static_cast<DataController*>(lv_observer_get_user_data(observer));
     if (controller) {
-        const int32_t page = lv_subject_get_int(subject);
-        controller->reader_.set_traffic_shown(page == static_cast<int32_t>(model::AppPage::Home));
-        controller->reader_.set_details_shown(page == static_cast<int32_t>(model::AppPage::Status));
+        controller->update_shown();
     }
+}
+
+void DataController::set_screen_dark(bool dark) {
+    if (dark == screen_dark_) {
+        return;
+    }
+    screen_dark_ = dark;
+    update_shown();
+}
+
+void DataController::update_shown() {
+    const model::AppPage page = view_model_.current_page();
+    reader_.set_traffic_shown(!screen_dark_ && page == model::AppPage::Home);
+    reader_.set_details_shown(!screen_dark_ && page == model::AppPage::Status);
 }
 
 bool DataController::poll() {

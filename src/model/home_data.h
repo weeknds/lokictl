@@ -45,6 +45,19 @@ const char* battery_state_name(BatteryState state);
 // HomeData::battery_percent when the charge is not known.
 constexpr int32_t kBatteryPercentUnknown = -1;
 
+// The charges at which the battery counts as low and as very low.
+constexpr int32_t kBatteryLowPercent = 15;
+constexpr int32_t kBatteryVeryLowPercent = 5;
+
+// True while the device runs on the battery (Discharging) and the charge is
+// known and at most kBatteryLowPercent. Only the charge in per cent counts.
+// The pages show the battery text in the warning colour then.
+bool battery_low(int32_t percent, BatteryState state);
+// The same, at most kBatteryVeryLowPercent.
+bool battery_very_low(int32_t percent, BatteryState state);
+// True on the charger: Charging or Idle.
+bool on_charger(BatteryState state);
+
 // What kind of link the uplink is.
 enum class LinkKind {
     None = 0, // no link at all: no cable, no Wi-Fi network joined

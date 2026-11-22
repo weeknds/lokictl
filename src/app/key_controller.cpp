@@ -17,11 +17,14 @@
 #include "lvgl.h"
 
 #include <cstddef>
+#include <string>
+#include <utility>
 
 namespace app {
 namespace {
 
 constexpr uint32_t kThemeToastDurationMs = 2500;
+constexpr uint32_t kBatteryToastDurationMs = 5000;
 
 bool is_soft_key(uint32_t key) {
     return key >= '4' && key <= '8';
@@ -56,11 +59,34 @@ void KeyController::show_theme_switched(const char* display_name, bool saved) {
                              kThemeToastDurationMs);
 }
 
+void KeyController::show_battery_warning(int32_t percent, bool very_low) {
+    toast_->show_highlighted(very_low ? "Battery very low: " : "Battery low: ",
+                             std::to_string(percent) + "%",
+                             very_low ? ", charge soon" : "",
+                             very_low ? view::widgets::ToastTone::Error
+                                      : view::widgets::ToastTone::Warning,
+                             kBatteryToastDurationMs);
+}
+
+void KeyController::show_dimming_not_saved() {
+    toast_->show("Dim when idle: not saved", view::widgets::ToastTone::Warning, kThemeToastDurationMs);
+}
+
+void KeyController::set_wake_handler(std::function<bool()> handler) {
+    wake_handler_ = std::move(handler);
+}
+
 void KeyController::handle_press(uint32_t key) {
     // The platform follows one held key at a time: once another key goes
     // down, the release of the earlier one is never reported. A key that is
     // still followed here is therefore given up, and its exit hint with it.
     stop_tracking();
+
+    // 0. A key that only woke the screen does nothing else. It is not
+    // followed, so letting it go (or holding it) does nothing either.
+    if (wake_handler_ && wake_handler_()) {
+        return;
+    }
 
     // 1. and 2. Screenshot and help work on every page, also while typing.
     if (key == platform::kKeyPrintScreen) {

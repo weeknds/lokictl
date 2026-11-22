@@ -267,6 +267,15 @@ void DesktopSimulatorFrame::set_dark_shell(bool dark) {
     render();
 }
 
+void DesktopSimulatorFrame::set_screen_level(int32_t level) {
+    if (!lvgl_texture_) {
+        return;
+    }
+    const auto shade = static_cast<Uint8>(std::clamp<int32_t>(level, 0, 100) * 255 / 100);
+    SDL_SetTextureColorMod(lvgl_texture_, shade, shade, shade);
+    render();
+}
+
 void DesktopSimulatorFrame::flush_cb(lv_display_t* display, const lv_area_t* area, uint8_t* px_map) {
     LV_UNUSED(area);
     LV_UNUSED(px_map);

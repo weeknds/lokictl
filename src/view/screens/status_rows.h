@@ -23,6 +23,7 @@ enum class NoteTone {
     Plain, // the main text colour
     Good,  // a working link: the success colour
     Quiet, // nothing going on, or not known: the muted colour
+    Warning, // a low battery (model::battery_low()): the warning colour
 };
 
 struct StatusRow {
@@ -46,8 +47,9 @@ constexpr std::size_t kValueChars = 26;
 //   hardware; otherwise only hardware. Without any port: a heading
 //   "network" and one row "ports --".
 // - "dns": one "server" row per DNS server, or one "server --";
-// - "battery" with the charge as the note: state, voltage, current, temp,
-//   health, cycles, charge and time left;
+// - "battery" with the charge as the note (in the warning tone while the
+//   battery is low): state, voltage, current, temp, health, cycles, charge
+//   and time left;
 // - "device": processor, memory and uptime.
 std::vector<StatusRow> status_rows(const model::HomeData& data);
 

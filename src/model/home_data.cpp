@@ -81,6 +81,18 @@ const char* offline_state_name(OfflineState state) {
     return "unknown";
 }
 
+bool battery_low(int32_t percent, BatteryState state) {
+    return state == BatteryState::Discharging && percent >= 0 && percent <= kBatteryLowPercent;
+}
+
+bool battery_very_low(int32_t percent, BatteryState state) {
+    return state == BatteryState::Discharging && percent >= 0 && percent <= kBatteryVeryLowPercent;
+}
+
+bool on_charger(BatteryState state) {
+    return state == BatteryState::Charging || state == BatteryState::Idle;
+}
+
 const char* battery_state_name(BatteryState state) {
     switch (state) {
         case BatteryState::Unknown:

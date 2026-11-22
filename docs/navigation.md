@@ -357,14 +357,16 @@ opens the key test page.
 ## The Settings page
 
 `settings` is the Settings page, which key 6 (`SETUP`) on the home page
-opens. For now it holds only the theme picker: one row per theme, with
-the theme's name, four small squares in its colours and a tick on the theme
-that is active.
+opens. It holds the theme picker (one row per theme, with the theme's
+name, four small squares in its colours and a tick on the theme that is
+active) and, below it, the row "Dim when idle" with `on` or `off` (see
+[Battery care](data.md#battery-care)).
 
 | Key | What it does |
 |---|---|
 | `f`/`x` or up/down | move the highlight; it stops at the first and the last row |
 | `Enter` or `6` USE | switches to the highlighted theme and saves it; `USE` is switched off while the highlight is on the active theme, and picking that theme does nothing |
+| `Enter` or `6` OFF / ON | on the "Dim when idle" row: switches dimming off or on and saves it |
 | `4` BACK or a short ESC | goes back to the home page |
 
 Left and right and the keys 5, 7 and 8 do nothing here. The highlight starts

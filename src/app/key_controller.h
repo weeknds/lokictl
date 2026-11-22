@@ -7,6 +7,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 
 namespace viewmodel {
@@ -32,6 +33,8 @@ class ScreenManager;
 //
 // A key press goes through these steps, in this order, and the first one
 // that takes the key ends it:
+//  0. The wake handler (set_wake_handler()) sees every key first; when it
+//     says the key only woke the screen, the key does nothing else.
 //  1. fn+J takes a screenshot.
 //  2. fn+H opens or closes the help panel, with the rows the page that is
 //     shown gives (screen::BaseScreen::help()).
@@ -71,6 +74,17 @@ public:
     // could not be written to the settings file.
     void show_theme_switched(const char* display_name, bool saved);
 
+    // The message for a low battery at `percent`: "Battery low: 15%", or
+    // with `very_low` "Battery very low: 5%, charge soon".
+    void show_battery_warning(int32_t percent, bool very_low);
+
+    // The message after the "Dim when idle" setting could not be saved.
+    void show_dimming_not_saved();
+
+    // Called first for every key press (step 0). Returning true swallows
+    // the key. Empty: no step 0.
+    void set_wake_handler(std::function<bool()> handler);
+
 private:
     void handle_press(uint32_t key);
     void handle_long_press(uint32_t key);
@@ -94,6 +108,7 @@ private:
     ScreenManager& screen_manager_;
     std::unique_ptr<view::widgets::Toast> toast_;
     std::unique_ptr<view::widgets::HelpPopup> help_popup_;
+    std::function<bool()> wake_handler_;
     uint32_t tracked_key_{0};      // ESC while held; 0 for none
     bool exit_armed_{false};       // holding the tracked key quits the app
     bool tracked_held_long_{false};

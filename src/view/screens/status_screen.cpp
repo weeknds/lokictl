@@ -169,6 +169,8 @@ lv_color_t StatusScreen::tone_color(status::NoteTone tone) const {
             return theme().colors.success;
         case status::NoteTone::Quiet:
             return theme().colors.muted;
+        case status::NoteTone::Warning:
+            return theme().colors.warning;
         case status::NoteTone::Plain:
             break;
     }

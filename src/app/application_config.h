@@ -26,6 +26,11 @@ struct ApplicationConfig {
     // make the load fail, so a `theme` key in the same file still counts.
     // Like dark_mode, it is only read, never written.
     bool dark_mode_invalid{false};
+    // The `dim_when_idle` key of [application]: whether the screen dims
+    // when no key was pressed for a while. Unset when the file has no such
+    // key or its value is not yes/no, true/false or 1/0. When the key
+    // appears more than once, the last line counts.
+    std::optional<bool> dim_when_idle;
 };
 
 bool load_application_config(const std::string& path,
@@ -33,9 +38,11 @@ bool load_application_config(const std::string& path,
                              std::string& error);
 // Updates the [application] section of `path`, creating the file, its
 // folder and the section when needed:
-// - `theme=<name>` is written when config.theme is set. It replaces the
-//   first `theme` line of the section, and any further `theme` lines are
-//   dropped; with no such line it goes at the end of the section.
+// - `theme=<name>` is written when config.theme is set, and
+//   `dim_when_idle=yes|no` when config.dim_when_idle is set. Each replaces
+//   the first line of its key in the section, and any further lines of
+//   that key are dropped; with no such line it goes at the end of the
+//   section. A key that is not set is left as it is in the file.
 // - Every `dark_mode` line of the section is always removed;
 //   config.dark_mode is never written.
 // Every other line, comment and section is kept as it is.

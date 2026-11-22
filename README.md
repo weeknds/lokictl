@@ -194,8 +194,8 @@ The app has 15 pages. `--list-pages` prints them in this order:
 
 - `home`, the home page, where the app starts (see
   [docs/home.md](docs/home.md));
-- `settings`, the Settings page with the theme picker, which the home page
-  opens;
+- `settings`, the Settings page with the theme picker and the "Dim when
+  idle" switch, which the home page opens;
 - `status`, the Status page with every detail (ports, DNS, battery,
   device), which the home page's key 8 opens (see
   [docs/navigation.md](docs/navigation.md#the-status-page));
@@ -514,6 +514,12 @@ holds it for 20 to 2500 ms. Keys are only sent while LokiCTL runs, so they
 cannot open something on the launcher by accident; `--launcher` turns that
 check off.
 
+After 60 s without a key LokiCTL dims the screen, and the first key after
+that only brightens it again (see
+[Battery care](docs/data.md#battery-care)). After a wait, send one extra
+key first (any key: it only wakes the screen), or switch "Dim when idle" off
+on the Settings page.
+
 The bar along the bottom of the screen names what the keys `4` to `8` do on
 the current page. Pages open on top of each other, and a short `esc` goes
 back one page. On the home page, which shows the real time and battery
@@ -597,8 +603,11 @@ draws. Without the variable LokiCTL measures nothing.
 Nothing is installed besides the LokiCTL package. The device side of the
 script, `scripts/device-agent.py`, is sent to the device's `python3` with each
 command and is not stored there, and the copied package file is deleted after
-installing. LokiCTL keeps one file of its own there: picking a theme on the
-Settings page saves it in `~/.config/lokictl/lokictl.conf`. A saved picture
+installing. LokiCTL keeps one file of its own there: picking a theme or
+switching "Dim when idle" on the Settings page saves it in
+`~/.config/lokictl/lokictl.conf`. While it runs, LokiCTL dims the screen
+through `/sys/class/backlight/backlight/brightness` and puts the old value
+back when it quits (see [docs/data.md](docs/data.md#battery-care)). A saved picture
 shows exactly the pixels written to the screen, but how readable they are on
 the small 1.9-inch panel is something only your own eyes can judge.
 
@@ -659,8 +668,8 @@ constants at the top of `scripts/device-agent.py` (program path, unit and file
 names), the `dist/lokictl_*_arm64.deb` pattern in `scripts/device.sh`, the
 environment variable `LOKICTL_FRAME_STATS_FILE` (set in
 `scripts/device-agent.py`, read in `src/app/app.cpp`) and the environment
-variables `LOKICTL_CONFIG_FILE` and `LOKICTL_DATA_ROOT` (read in
-`src/app/app.cpp`).
+variables `LOKICTL_CONFIG_FILE`, `LOKICTL_DATA_ROOT`, `LOKICTL_IDLE_SECONDS`
+and `LOKICTL_BACKLIGHT_FILE` (read in `src/app/app.cpp`).
 The connection variables `LOKICTL_DEVICE` and `LOKICTL_SSH_OPTS` and the
 upload file name (`upload_name`) in `scripts/device.sh` contain it too, and
 so do the copyright holder in `LICENSE`, the SPDX headers of the project's own

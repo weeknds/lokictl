@@ -116,6 +116,24 @@ inline bool set_text_if_changed(lv_obj_t* label, std::string& shown, const std::
     return true;
 }
 
+// Gives the battery's `label` the theme's warning colour while the battery
+// is low (model::battery_low()) and `normal` otherwise. `shown_low` is the
+// layout's copy of what the label shows, false for a new label in `normal`;
+// only a change restyles, because the text alone may stay the same ("15%"
+// both idle and discharging).
+inline void set_battery_color(lv_obj_t* label,
+                              bool& shown_low,
+                              const model::HomeData& data,
+                              const view::Theme& theme,
+                              lv_color_t normal) {
+    const bool low = model::battery_low(data.battery_percent, data.battery_state);
+    if (!label || low == shown_low) {
+        return;
+    }
+    shown_low = low;
+    lv_obj_set_style_text_color(label, low ? theme.colors.warning : normal, 0);
+}
+
 // Makes `label` one line of a fixed width: longer text ends in dots instead
 // of wrapping onto a second line.
 inline void fix_width(lv_obj_t* label, int32_t width, const lv_font_t* font) {

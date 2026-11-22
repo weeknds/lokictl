@@ -236,7 +236,11 @@ std::vector<StatusRow> status_rows(const model::HomeData& data) {
         add_long_rows(rows, "server", server, ':');
     }
 
-    add_heading(rows, "battery", home::battery_text(data.battery_percent, data.battery_state), NoteTone::Plain);
+    add_heading(rows,
+                "battery",
+                home::battery_text(data.battery_percent, data.battery_state),
+                model::battery_low(data.battery_percent, data.battery_state) ? NoteTone::Warning
+                                                                              : NoteTone::Plain);
     add_row(rows, "state", battery_state_text(data.battery_state));
     add_row(rows, "voltage", voltage_text(details.battery_voltage_mv));
     add_row(rows, "current", current_text(details.battery_current_ma));

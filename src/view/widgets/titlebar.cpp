@@ -182,6 +182,17 @@ void TitleBar::refresh() {
     set_visible(battery_icon_label_, battery_known);
     set_visible(battery_percent_label_, battery_known);
 
+    // A low battery while discharging takes the warning colour; only a
+    // change restyles, so an unchanged value draws nothing.
+    const bool low = model::battery_low(data.battery_percent, data.battery_state);
+    if (low != battery_low_shown_) {
+        battery_low_shown_ = low;
+        const auto& colors = theme_engine_.theme().colors;
+        const lv_color_t color = low ? colors.warning : colors.text;
+        lv_obj_set_style_text_color(battery_icon_label_, color, 0);
+        lv_obj_set_style_text_color(battery_percent_label_, color, 0);
+    }
+
     const int32_t minutes = std::clamp<int32_t>(data.clock_minutes, 0, kMinutesPerDay - 1);
     std::array<char, 8> clock{};
     std::snprintf(clock.data(),
