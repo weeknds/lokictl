@@ -560,6 +560,8 @@ target_link_libraries(${PROJECT_NAME}_view
         lvgl
         ${PROJECT_NAME}_reactive
         ${PROJECT_NAME}_platform
+    PRIVATE
+        logger
 )
 
 # ====================================================

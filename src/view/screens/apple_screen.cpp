@@ -64,6 +64,21 @@ AppleScreen::AppleScreen(viewmodel::BaseViewModel& view_model,
     init();
 }
 
+view::widgets::SoftKeySet AppleScreen::soft_keys() {
+    // The view model outlives every screen. Key 4 itself never reaches the
+    // bar on this page: the app's shortcut handling takes it first (a short
+    // press shows "Hold ESC to exit", holding it quits). Clicking the Exit
+    // slot in the simulator still runs its action.
+    auto& view_model = this->view_model();
+    return {{
+        {"Exit", [&view_model] { view_model.request_quit(); }},
+        {"Size", [&view_model] { view_model.toggle_bold_text(); }},
+        {"Theme", [&view_model] { view_model.request_next_theme(); }, true},
+        {"Info", [&view_model] { view_model.toggle_info(); }},
+        {"Count", [&view_model] { view_model.toggle_page(); }},
+    }};
+}
+
 void AppleScreen::build_content(lv_obj_t* content) {
     const auto& theme = this->theme();
 

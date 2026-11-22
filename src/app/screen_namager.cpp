@@ -10,7 +10,9 @@
 #include "butter_screen.h"
 #include "dev_fonts_screen.h"
 #include "dev_overlays_screen.h"
+#include "dev_softkeys_screen.h"
 #include "dev_theme_screen.h"
+#include "linux_input.h"
 
 namespace app {
 namespace {
@@ -62,8 +64,7 @@ bool ScreenManager::show_apple_screen() {
     if (!load_screen(std::make_unique<screen::AppleScreen>(view_model_, assets_, theme_engine_))) {
         return false;
     }
-    loaded_page_ = model::AppPage::Apple;
-    has_loaded_page_ = true;
+    page_loaded(model::AppPage::Apple);
     return true;
 }
 
@@ -71,8 +72,7 @@ bool ScreenManager::show_butter_screen() {
     if (!load_screen(std::make_unique<screen::ButterScreen>(view_model_, assets_, theme_engine_))) {
         return false;
     }
-    loaded_page_ = model::AppPage::Butter;
-    has_loaded_page_ = true;
+    page_loaded(model::AppPage::Butter);
     return true;
 }
 
@@ -81,8 +81,7 @@ bool ScreenManager::show_dev_fonts_screen(model::AppPage page) {
             std::make_unique<screen::DevFontsScreen>(view_model_, assets_, theme_engine_, page))) {
         return false;
     }
-    loaded_page_ = page;
-    has_loaded_page_ = true;
+    page_loaded(page);
     return true;
 }
 
@@ -90,8 +89,7 @@ bool ScreenManager::show_dev_theme_screen() {
     if (!load_screen(std::make_unique<screen::DevThemeScreen>(view_model_, assets_, theme_engine_))) {
         return false;
     }
-    loaded_page_ = model::AppPage::DevTheme;
-    has_loaded_page_ = true;
+    page_loaded(model::AppPage::DevTheme);
     return true;
 }
 
@@ -100,8 +98,15 @@ bool ScreenManager::show_dev_overlays_screen(model::AppPage page) {
             std::make_unique<screen::DevOverlaysScreen>(view_model_, assets_, theme_engine_, page))) {
         return false;
     }
-    loaded_page_ = page;
-    has_loaded_page_ = true;
+    page_loaded(page);
+    return true;
+}
+
+bool ScreenManager::show_dev_softkeys_screen() {
+    if (!load_screen(std::make_unique<screen::DevSoftKeysScreen>(view_model_, assets_, theme_engine_))) {
+        return false;
+    }
+    page_loaded(model::AppPage::DevSoftKeys);
     return true;
 }
 
@@ -149,6 +154,10 @@ bool ScreenManager::show_page(model::AppPage page) {
         return show_dev_overlays_screen(page);
     }
 
+    if (screen::DevSoftKeysScreen::handles(page)) {
+        return show_dev_softkeys_screen();
+    }
+
     if (page == model::AppPage::Butter) {
         return show_butter_screen();
     }
@@ -170,6 +179,15 @@ bool ScreenManager::load_screen(std::unique_ptr<screen::BaseScreen> next_screen)
     lv_screen_load(next_screen->root());
     current_screen_ = std::move(next_screen);
     return true;
+}
+
+void ScreenManager::page_loaded(model::AppPage page) {
+    loaded_page_ = page;
+    has_loaded_page_ = true;
+    // Z/C and the arrow keys press soft keys 5 and 7 on the counter page
+    // only. Set here, after the new screen is in place and the old one is
+    // gone, so the order of a rebuild can never undo it.
+    platform::set_nav_shortcut_mode(page == model::AppPage::Butter);
 }
 
 } // namespace app

@@ -160,7 +160,8 @@ drawn this way and cannot be opened from the app itself:
 
 - `dev-fonts` and the `dev-fonts-<family>` pages show the raw fonts;
 - `dev-theme` shows a theme's colours, font roles, a card, a list and a pane;
-- `dev-help` and `dev-toast` show the help panel and the pop-up messages.
+- `dev-help` and `dev-toast` show the help panel and the pop-up messages;
+- `dev-softkeys` shows the soft-key bar in every state.
 
 ## Build the device package
 
@@ -353,12 +354,20 @@ holds it for 20 to 2500 ms. Keys are only sent while LokiCTL runs, so they
 cannot open something on the launcher by accident; `--launcher` turns that
 check off.
 
-On the home page of the current demo, `6` switches to the next theme at once
-and saves it on the device in `~/.config/lokictl/lokictl.conf` (a message
-names the theme), `5` switches the greeting between two text sizes, `8`
-opens the counter page and holding `esc` quits. On the counter page, `c` or
-`right` counts up, `z` or `left` counts down and `esc` goes back. `help`
-(fn+H) shows the key help on every page.
+The bar along the bottom of the screen names what the keys `4` to `8` do on
+the current page. On the home page of the current demo:
+
+- `4` EXIT: pressing `4` or `esc` shows the hint `Hold ESC to exit`, and
+  holding either one quits;
+- `5` SIZE switches the greeting between two text sizes;
+- `6` THEME switches to the next theme at once and saves it on the device in
+  `~/.config/lokictl/lokictl.conf` (a message names the theme);
+- `7` INFO shows the version line;
+- `8` COUNT opens the counter page.
+
+On the counter page, `4` or `esc` goes back, `5` (or `z` or `left`) counts
+down and `7` (or `c` or `right`) counts up. `6` and `8` do nothing there.
+`help` (fn+H) shows the key help on every page.
 
 ### What the stats mean
 

@@ -7,8 +7,8 @@ SPDX-License-Identifier: MIT
 
 LokiCTL has three looks, called themes: **Instrument**, **Constellation** and
 **Terminal**. This page explains what a theme is made of, how a screen gets
-its look, how the app picks a theme and switches it while running, and how
-to add a new one.
+its look, how the soft keys at the bottom of the screen take theirs, how the
+app picks a theme and switches it while running, and how to add a new one.
 
 ## What a theme is
 
@@ -132,9 +132,10 @@ view::style::caption(label, theme, "gateway");
 The rules:
 
 - **Use the helpers in `src/view/style.h`** where one fits: `screen`, `bar`,
-  `popup`, `text`, `caption`, `card`, `list_row` and `pane`. They already
-  follow the flags, so a list row is filled or outlined and a pane's title
-  sits in the border or inside the box without the screen having to check.
+  `popup`, `text`, `caption`, `card`, `list_row`, `pane` and `soft_key`.
+  They already follow the flags, so a list row is filled or outlined and a
+  pane's title sits in the border or inside the box without the screen
+  having to check.
 - **Never hard-code a colour or a text font.** No colour values and no
   `lv_color_hex()` outside `src/view/theme.cpp`, and no text font files
   loaded by a screen. Take colours from `theme.colors` and fonts from
@@ -143,10 +144,131 @@ The rules:
   more. If something does not fit, shorten the text or change the layout.
 - **Screens do not watch for theme changes.** When the theme changes, the
   screen is built again from scratch (see below).
-- **Icon fonts are not theme fonts.** The Phosphor icons and the key-cap
-  fonts are loaded by the widgets that use them, with
-  `AssetManager::load_font()`. They take their colour from the theme like
-  any other text.
+- **Icon fonts are not theme fonts.** The Phosphor icons of the title bar
+  and the key-cap fonts of the home page are loaded where they are used,
+  with `AssetManager::load_font()`. They take their colour from the theme
+  like any other text.
+
+## Soft keys
+
+The five keys `4` to `8` sit right under the screen. On every page with a
+title bar, the bar along the bottom edge of the screen says what each of
+them does on that page. The widget is `view::widgets::SoftKeyBar`, in
+`src/view/widgets/soft_key_bar.h`.
+
+- The bar is 30 px tall (y 140 to 169) and as wide as the screen, with a
+  1 px line in the border colour along its top edge.
+- It has five slots of 56 px, one above each key. Their centres are
+  x = 49, 105, 161, 217 and 273, exactly above the keys.
+- A used slot shows the key's number in a small box (13 x 14 px), a 4 px
+  gap and then a short word. The three together are centred in the slot,
+  on y = 153, and the number and the word stand on the same baseline.
+- A short line, 2 px wide and 5 px tall, runs from each used slot down to
+  its key.
+- The text is the theme's `Small` font (12 px), with no extra letter
+  spacing.
+
+**A word has at most 5 characters.** Text is never smaller than 12 px, and
+at that size one character is 7 px wide in all three themes. Box, gap and
+five characters take 52 of the 56 px. A longer word is cut to its first 5
+characters, and the app writes a warning to the log. So pick short words:
+`SCAN`, not `SCANNER`.
+
+### How a key looks
+
+| | Instrument | Constellation | Terminal |
+|---|---|---|---|
+| Word | CAPITALS | CAPITALS | lowercase |
+| Number box | filled, square corners | 1 px outline, corners rounded by 2 px | filled, square corners |
+| Normal key | ink box, paper number, ink word | grey-blue (`muted`) outline and number, light word | grey (`muted`) box, black number, light-grey word |
+| Main key | orange box, ink number, ink word | lime outline, number and word | amber box, black number, amber word |
+| Switched-off key | pale box (`border_subtle`), muted number and word | dark outline (`border`), muted number and word | near-black box (`border_subtle`), muted number and word |
+| Line to the key | same colour as the box | same colour as the outline | same colour as the box |
+| Empty key | nothing drawn, the key does nothing | the same | the same |
+
+The table is not stored anywhere. `view::style::soft_key()` works it out
+from colours and flags every theme already has, so a new theme needs no
+code for its soft keys:
+
+- The box is filled when the theme fills its selection
+  (`selection_filled`). Otherwise it is an outline as thick as
+  `border_width`.
+- The corners use the theme's `radius`, but never more than 2 px.
+- The word is written in capitals when the theme writes its captions in
+  capitals (`uppercase_captions`), otherwise in lowercase. Only the letters
+  A to Z change.
+- Normal key: the box is `text` on a light theme and `muted` on a dark one
+  (`dark`). The number is `background` on a filled box and the box colour on
+  an outline. The word is `text`.
+- Main key: the box is `accent`. The number is `on_accent` on a filled box
+  and `accent` on an outline. The word is `accent` on a dark theme and
+  `text` on a light one, because orange text on paper is hard to read.
+- Switched-off key: the box is `border_subtle` when it is filled and
+  `border` when it is an outline. The number and the word are `muted`.
+- The line to the key always has the colour of the box.
+
+### Giving a page its keys
+
+A page says which keys it uses by overriding `soft_keys()` from
+`screen::BaseScreen`. It returns five `view::widgets::SoftKey` values, for
+the keys 4 to 8 in that order. Each one has a word, an action, whether it is
+the page's main key (drawn in the accent colour) and whether it is switched
+on. A key written as `{}` stays empty. The home page of the demo does this:
+
+```cpp
+view::widgets::SoftKeySet AppleScreen::soft_keys() {
+    auto& view_model = this->view_model();
+    return {{
+        {"Exit", [&view_model] { view_model.request_quit(); }},
+        {"Size", [&view_model] { view_model.toggle_bold_text(); }},
+        {"Theme", [&view_model] { view_model.request_next_theme(); }, true},
+        {"Info", [&view_model] { view_model.toggle_info(); }},
+        {"Count", [&view_model] { view_model.toggle_page(); }},
+    }};
+}
+```
+
+Some things to know:
+
+- Write the word in normal letters, such as `"Exit"`. The bar writes it in
+  capitals or lowercase, as the theme asks.
+- A switched-off key, such as `{"Pcap", {}, false, false}`, is drawn dimmed
+  and does nothing until it is switched on.
+- `soft_keys()` is called once, from `init()`, before `build_content()`. A
+  page that needs its own members there sets them before it calls `init()`.
+  A page without the override gets a bar with five empty keys, and a
+  full-screen page has no bar at all.
+- **An action may only ask the view model for something**, as in the
+  example. It runs inside an LVGL click event, so it must never delete or
+  build a screen itself. The view model's page changes and theme switches
+  are already put off until LVGL has finished its callbacks, which is why
+  key 6 can rebuild the very page whose key was pressed.
+- To change a key later, for example to turn `SCAN` into `STOP` while a scan
+  runs, call `soft_key_bar()->set_key(index, key)`, with an index from 0 to
+  4 for the keys 4 to 8. Only that key is drawn again. It also works from
+  inside a key's own action.
+- The bar reads the theme once, when it is built, like every other part of
+  a screen. A theme switch builds the page, and the bar with it, again.
+- Keys 4 to 8 press the slots of the bar on the current page; an empty or
+  switched-off key does nothing. On the counter page `z` and `left` also
+  press key 5, and `c` and `right` key 7. On the home page the app's exit
+  handling takes key 4 first (a short press shows a hint, holding it
+  quits), so the `Exit` action only runs when its slot is clicked with the
+  mouse in the simulator.
+
+The developer page `dev-softkeys` shows all of this. Its own bar at the
+bottom has a main key (`TOOLS`), a switched-off key (`PCAP`) and an empty
+key. Above it, the bar at y 50 has five 5-letter words, the widest keys a
+bar can show, and the bar at y 100 was built with other keys and then
+changed key by key with `set_key()`. That one must come out exactly like
+the bar at the bottom.
+
+```sh
+B=./build/darwin-arm64/Debug/lokictl
+for t in instrument constellation terminal; do
+  $B --snapshot "build/shots/softkeys-$t.png" --page dev-softkeys --theme "$t"
+done
+```
 
 ## Symbols and the fallback font
 
@@ -248,9 +370,10 @@ running app.
 
 What happens inside, step by step:
 
-1. The key-6 button calls `BaseViewModel::request_next_theme()`. The view
-   model knows nothing about themes; it only counts the requests in a
-   subject, `next_theme_request_subject()`.
+1. The action of key 6, the home page's `THEME` soft key, calls
+   `BaseViewModel::request_next_theme()`. The view model knows nothing
+   about themes; it only counts the requests in a subject,
+   `next_theme_request_subject()`.
 2. `app::ThemeController` (`src/app/theme_controller.h`) observes that
    subject. It does not switch right away: it notes the target theme and
    schedules one `lv_async_call()`. Several requests before that call runs
@@ -346,6 +469,7 @@ pages exist for checking themes; they can only be drawn this way:
 | `dev-theme` | all 15 colours with their names, every font role with the symbols ↑↓●✓✕›, a card, and a pane with a list in which one row is selected |
 | `dev-help` | the keyboard help panel of the home page |
 | `dev-toast` | three messages: success, warning and a normal one |
+| `dev-softkeys` | the soft-key bar: a page's own bar with a main key, a switched-off key and an empty one, a bar of five 5-letter words, and a bar changed with `set_key()` after it was built (see [Soft keys](#soft-keys)) |
 
 From the repository root, after building the simulator:
 

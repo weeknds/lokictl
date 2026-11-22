@@ -49,11 +49,28 @@ struct EvdevKeypad {
 };
 #endif
 
+// Keys 4-8 always press the five soft keys. In shortcut mode (the counter
+// page) Z/left and C/right also press keys 5 and 7. Outside it ESC maps to
+// key 4, as it always has; the app's global key listener normally takes ESC
+// before it gets here.
 size_t nav_key_to_index(uint32_t key) {
+    switch (key) {
+        case '4':
+            return 0;
+        case '5':
+            return 1;
+        case '6':
+            return 2;
+        case '7':
+            return 3;
+        case '8':
+            return 4;
+        default:
+            break;
+    }
+
     if (nav_shortcut_mode) {
         switch (key) {
-            case LV_KEY_ESC:
-                return 4;
             case 'z':
             case 'Z':
             case LV_KEY_LEFT:
@@ -67,21 +84,7 @@ size_t nav_key_to_index(uint32_t key) {
         }
     }
 
-    switch (key) {
-        case '4':
-        case LV_KEY_ESC:
-            return 0;
-        case '5':
-            return 1;
-        case '6':
-            return 2;
-        case '7':
-            return 3;
-        case '8':
-            return 4;
-        default:
-            return kNavKeyCount;
-    }
+    return key == LV_KEY_ESC ? 0 : kNavKeyCount;
 }
 
 void dispatch_nav_key(uint32_t key) {

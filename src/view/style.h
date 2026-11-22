@@ -11,6 +11,8 @@
 #include "lvgl.h"
 
 #include <cstdint>
+#include <string>
+#include <string_view>
 
 // Shared building blocks that give LVGL objects the active theme's look.
 //
@@ -29,7 +31,7 @@ enum class Edge {
     Bottom,
 };
 
-// A bar along a screen edge (title bar, navigation bar): the ground colour,
+// A bar along a screen edge (title bar, soft-key bar): the ground colour,
 // a rule in the border colour and width on `rule_edge` only, and the main
 // text colour. Padding is left to the caller.
 void bar(lv_obj_t* obj, const Theme& theme, Edge rule_edge);
@@ -77,5 +79,40 @@ Pane pane(lv_obj_t* parent,
           int32_t width,
           int32_t height,
           lv_color_t title_color);
+
+// How one key of the soft-key bar is drawn; see widgets::SoftKeyBar.
+enum class SoftKeyState {
+    Normal,   // a key that does something
+    Primary,  // the page's main key
+    Disabled, // shown, but switched off for now
+};
+
+struct SoftKeyLook {
+    bool box_filled;   // false: the box is an outline of the theme's border width
+    lv_color_t box;    // fill or outline colour; also the colour of the line to the key
+    lv_color_t number; // the key number inside the box
+    lv_color_t label;  // the word
+    int32_t radius;    // box corners
+};
+
+// The look of a soft key, derived from tokens every theme already has, so a
+// new theme needs no code here:
+// - the number box is filled when the theme fills its selection
+//   (selection_filled), otherwise it is an outline of border_width;
+// - corners use the theme's radius, but never more than 2 px;
+// - Normal: the box is `text` on a light theme and `muted` on a dark one; the
+//   number is `background` on a filled box and the box colour on an outline;
+//   the word is `text`;
+// - Primary: the box is `accent`; the number is `on_accent` on a filled box
+//   and `accent` on an outline; the word is `accent` on a dark theme and
+//   `text` on a light one, where accent-coloured text would be hard to read;
+// - Disabled: the box is `border_subtle` when filled and `border` when
+//   outlined; number and word are `muted`.
+SoftKeyLook soft_key(const Theme& theme, SoftKeyState state);
+
+// The word as the theme writes it: capitals when the theme writes captions in
+// capitals (uppercase_captions), otherwise lowercase. ASCII letters only;
+// other bytes are kept.
+std::string soft_key_text(const Theme& theme, std::string_view text);
 
 } // namespace view::style

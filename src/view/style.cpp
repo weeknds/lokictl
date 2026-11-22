@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <string>
+#include <string_view>
 
 namespace view::style {
 namespace {
@@ -28,11 +29,22 @@ lv_obj_t* plain_label(lv_obj_t* parent) {
 
 // Only ASCII letters change; any other byte (including every byte of a
 // multi-byte UTF-8 character) is kept as it is.
-std::string ascii_upper(const char* text) {
-    std::string result = text ? text : "";
+std::string ascii_upper(std::string_view text) {
+    std::string result(text);
     for (char& character : result) {
         if (character >= 'a' && character <= 'z') {
             character = static_cast<char>(character - 'a' + 'A');
+        }
+    }
+    return result;
+}
+
+// The lowercase twin of ascii_upper(), with the same rules.
+std::string ascii_lower(std::string_view text) {
+    std::string result(text);
+    for (char& character : result) {
+        if (character >= 'A' && character <= 'Z') {
+            character = static_cast<char>(character - 'A' + 'a');
         }
     }
     return result;
@@ -95,7 +107,7 @@ void caption(lv_obj_t* label, const Theme& theme, const char* text) {
     lv_obj_set_style_text_color(label, theme.colors.muted, 0);
     lv_obj_set_style_text_letter_space(label, theme.metrics.caption_letter_space, 0);
     if (theme.metrics.uppercase_captions) {
-        lv_label_set_text(label, ascii_upper(text).c_str());
+        lv_label_set_text(label, ascii_upper(text ? text : "").c_str());
     } else {
         lv_label_set_text(label, text ? text : "");
     }
@@ -213,6 +225,38 @@ Pane pane(lv_obj_t* parent,
     result.root = root;
     result.content = content;
     return result;
+}
+
+SoftKeyLook soft_key(const Theme& theme, SoftKeyState state) {
+    const auto& colors = theme.colors;
+    const auto& metrics = theme.metrics;
+    SoftKeyLook look{};
+    look.box_filled = metrics.selection_filled;
+    look.radius = std::min<int32_t>(metrics.radius, 2);
+
+    switch (state) {
+        case SoftKeyState::Primary:
+            look.box = colors.accent;
+            look.number = look.box_filled ? colors.on_accent : colors.accent;
+            look.label = metrics.dark ? colors.accent : colors.text;
+            break;
+        case SoftKeyState::Disabled:
+            look.box = look.box_filled ? colors.border_subtle : colors.border;
+            look.number = colors.muted;
+            look.label = colors.muted;
+            break;
+        case SoftKeyState::Normal:
+        default:
+            look.box = metrics.dark ? colors.muted : colors.text;
+            look.number = look.box_filled ? colors.background : look.box;
+            look.label = colors.text;
+            break;
+    }
+    return look;
+}
+
+std::string soft_key_text(const Theme& theme, std::string_view text) {
+    return theme.metrics.uppercase_captions ? ascii_upper(text) : ascii_lower(text);
 }
 
 } // namespace view::style

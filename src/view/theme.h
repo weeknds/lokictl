@@ -14,10 +14,10 @@
 
 namespace view {
 
-constexpr int kScreenWidth    = 320;
-constexpr int kScreenHeight   = 170;
-constexpr int kTitleBarHeight = 30;
-constexpr int kNavBarHeight   = 30;
+constexpr int kScreenWidth      = 320;
+constexpr int kScreenHeight     = 170;
+constexpr int kTitleBarHeight   = 30;
+constexpr int kSoftKeyBarHeight = 30;
 
 // The three looks the app ships with. The values are positions in the theme
 // table in theme.cpp and are stored in ThemeEngine::subject().

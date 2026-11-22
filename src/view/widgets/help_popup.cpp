@@ -30,10 +30,11 @@ constexpr std::array<HelpRow, 5> kAppleRows = {{
     {"8", "Open counter"},
 }};
 
+// Left and right work like Z and C on this page.
 constexpr std::array<HelpRow, 3> kButterRows = {{
-    {"ESC", "Back to home"},
-    {"Z / LEFT", "Decrease"},
-    {"C / RIGHT", "Increase"},
+    {"ESC / 4", "Back to home"},
+    {"Z / 5", "Decrease"},
+    {"C / 7", "Increase"},
 }};
 
 // The panel is as tall as its text, which depends on the theme's fonts;

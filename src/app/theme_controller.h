@@ -42,8 +42,8 @@ class ScreenManager;
 //    only happens when step 2 worked: otherwise the old screen still uses
 //    them, and they stay loaded.
 //
-// Requests never switch at once. Key 6 arrives as a click on a navigation
-// button that the rebuild deletes, and the request also passes through an
+// Requests never switch at once. Key 6 arrives as a click on a soft key
+// that the rebuild deletes, and the request also passes through an
 // observer callback, which must not delete the screen it runs under. So a
 // request only records the target and schedules one lv_async_call(); the
 // switch runs from lv_timer_handler() afterwards, like a page change.

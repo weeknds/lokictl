@@ -38,6 +38,7 @@ public:
     bool show_dev_fonts_screen(model::AppPage page);
     bool show_dev_theme_screen();
     bool show_dev_overlays_screen(model::AppPage page);
+    bool show_dev_softkeys_screen();
     void request_page(model::AppPage page);
     void flush_requested_page();
     // Builds the current page again from scratch, after a theme change, and
@@ -53,6 +54,8 @@ public:
 private:
     bool show_page(model::AppPage page);
     bool load_screen(std::unique_ptr<screen::BaseScreen> next_screen);
+    // Records `page` as shown, after its screen has loaded.
+    void page_loaded(model::AppPage page);
 
     viewmodel::BaseViewModel& view_model_;
     AssetManager& assets_;

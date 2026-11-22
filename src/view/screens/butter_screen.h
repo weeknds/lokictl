@@ -18,6 +18,7 @@ public:
 
 private:
     void build_content(lv_obj_t* content) override;
+    view::widgets::SoftKeySet soft_keys() override;
 };
 
 } // namespace screen

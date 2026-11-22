@@ -20,7 +20,7 @@ BaseScreen::BaseScreen(viewmodel::BaseViewModel& view_model,
 
 BaseScreen::~BaseScreen() {
     title_bar_.reset();
-    nav_bar_.reset();
+    soft_key_bar_.reset();
 
     if (root_ && lv_obj_is_valid(root_)) {
         lv_obj_delete(root_);
@@ -49,12 +49,13 @@ void BaseScreen::init(Layout layout) {
         title_bar_ = std::make_unique<view::widgets::TitleBar>(root_, view_model_, assets_, theme_engine_);
         title_bar_->build();
 
-        nav_bar_ = std::make_unique<view::widgets::NavBar>(root_, view_model_, assets_, theme_engine_);
-        nav_bar_->build();
+        soft_key_bar_ = std::make_unique<view::widgets::SoftKeyBar>(
+            root_, theme_engine_, soft_keys(), view::widgets::SoftKeyBar::KeyInput::Bound);
+        soft_key_bar_->build();
 
         content_ = lv_obj_create(root_);
         lv_obj_remove_style_all(content_);
-        lv_obj_set_size(content_, LV_PCT(100), view::kScreenHeight - view::kTitleBarHeight - view::kNavBarHeight);
+        lv_obj_set_size(content_, LV_PCT(100), view::kScreenHeight - view::kTitleBarHeight - view::kSoftKeyBarHeight);
         lv_obj_align(content_, LV_ALIGN_TOP_MID, 0, view::kTitleBarHeight);
     }
 
@@ -67,6 +68,14 @@ void BaseScreen::init(Layout layout) {
 
 lv_obj_t* BaseScreen::root() const {
     return root_;
+}
+
+view::widgets::SoftKeySet BaseScreen::soft_keys() {
+    return {};
+}
+
+view::widgets::SoftKeyBar* BaseScreen::soft_key_bar() {
+    return soft_key_bar_.get();
 }
 
 viewmodel::BaseViewModel& BaseScreen::view_model() {

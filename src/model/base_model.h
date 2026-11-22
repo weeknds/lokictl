@@ -23,6 +23,7 @@ enum class AppPage {
     DevTheme,
     DevHelp,
     DevToast,
+    DevSoftKeys,
 };
 
 class BaseModel {
