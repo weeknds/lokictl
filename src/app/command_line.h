@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace app {
 
@@ -28,6 +29,7 @@ struct LaunchOptions {
     std::string page;                       // empty: default page
     std::string theme;                      // empty: not given on the command line
     uint32_t settle_ms{kDefaultSettleMs};
+    std::vector<std::string> switch_to;     // themes to switch to live, in order (snapshot only)
     std::string error;                      // set when mode == Invalid
 };
 

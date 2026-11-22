@@ -55,28 +55,42 @@ Notes:
   device frame drawn around the screen follows the theme: white for
   Instrument, black for the other two. See [Themes](#themes).
 - The simulator reads its settings from `config/lokictl.conf`. Pressing `6`
-  on the home page saves the theme for the next start, so it rewrites that
-  file.
+  on the home page switches the theme and saves the choice, so it rewrites
+  that file. To keep the repository's file as it is, set the environment
+  variable `LOKICTL_CONFIG_FILE` to another file, for example
+  `LOKICTL_CONFIG_FILE=build/simulator.conf ./build/darwin-arm64/Debug/lokictl`.
+  The app then reads and writes that file instead; it is created the first
+  time `6` saves a theme.
 
 ## Themes
 
 LokiCTL has three themes: Instrument, Constellation and Terminal. Each one
-sets the colours, fonts, spacing and borders of every screen. At startup the
-app picks the theme like this:
+sets the colours, fonts, spacing and borders of every screen.
+
+On the home page, `6` switches to the next theme at once, in the order
+Instrument, Constellation, Terminal. The page is drawn again in the new
+theme and keeps its state, and a short message names the theme. The choice
+is saved as `theme=<name>` in the `[application]` section of the settings
+file, and every other line of that file stays as it is.
+
+At startup the app picks the theme like this:
 
 1. `--theme instrument`, `--theme constellation` or `--theme terminal` on the
-   command line. On a normal start it counts for that run only and is not
-   saved.
-2. Otherwise the saved setting. For now, `6` on the home page switches it
-   between Terminal and Instrument; the running theme stays as it is and a
-   message names the theme the next start will use. Constellation can only
-   be picked with `--theme` until the theme choice is saved by name.
-3. Otherwise the default theme, Terminal. It is set in one place,
+   command line. On a normal start it counts for that run only and is never
+   written to the settings file, but pressing `6` during the run saves the
+   theme chosen then.
+2. Otherwise the saved `theme=` line. A name the app does not know is
+   reported in the log; the app then skips to step 4 and leaves the file
+   as it is.
+3. Otherwise an old `dark_mode=` line from an earlier version: `yes` means
+   Terminal, `no` means Instrument. The app replaces it with the matching
+   `theme=` line the first time it starts with that file.
+4. Otherwise the default theme, Constellation. It is set in one place,
    `view::kDefaultThemeId` in `src/view/theme.h`.
 
-Switching themes while the app runs is planned for a later version.
 [docs/themes.md](docs/themes.md) lists every colour, font and spacing value
-of the three themes and explains how screens use them.
+of the three themes and explains how screens use them, how a live switch
+works and how to check it.
 
 ## Screenshots without a window
 
@@ -89,6 +103,7 @@ building:
 ./build/darwin-arm64/Debug/lokictl --snapshot build/shots/home.png
 ./build/darwin-arm64/Debug/lokictl --snapshot build/shots/counter-terminal.png --page demo-counter --theme terminal
 ./build/darwin-arm64/Debug/lokictl --snapshot build/shots/home-instrument.png --theme instrument
+./build/darwin-arm64/Debug/lokictl --snapshot build/shots/home-switched.png --theme instrument --switch-to terminal
 ./build/darwin-arm64/Debug/lokictl --list-pages
 ```
 
@@ -98,8 +113,15 @@ Options:
 - `--page <name>`: which page to draw. The default is the first page, and
   `--list-pages` prints all page names.
 - `--theme <name>`: `instrument`, `constellation` or `terminal`. The default
-  is `terminal`, the app's default theme. Any other name is refused with a
-  message that lists the three.
+  is `constellation`, the app's default theme. Any other name is refused
+  with a message that lists the three.
+- `--switch-to <theme>[,<theme>...]`: after drawing the page, switch through
+  these themes in order while it is shown, the same way `6` does, and take
+  the picture after the last switch. After the first draw and after every
+  switch it prints `fonts loaded: <n> (<theme>)` to standard error. The
+  picture must be identical to one drawn directly in the last theme;
+  [docs/themes.md](docs/themes.md#checking-live-switching) shows how to
+  check that and how to look for leaking fonts.
 - `--settle-ms <n>`: how long LVGL's own clock runs before the picture is
   taken, from 0 to 60000. The default is 300. The program does not really
   wait that long; it finishes in a fraction of a second.
@@ -107,9 +129,9 @@ Options:
 
 Notes:
 
-- Snapshot mode does not read or change the settings file, so the theme you
-  saved with `6` does not affect the picture. Without `--theme` it always
-  uses the default theme.
+- Snapshot mode does not read or change the settings file (not even the one
+  named by `LOKICTL_CONFIG_FILE`), so the theme you saved with `6` does not
+  affect the picture. Without `--theme` it always uses the default theme.
 - Only the page itself is captured. Pop-up messages and the help overlay are
   not included. The developer pages `dev-help` and `dev-toast` show the same
   help panel and messages on a page of their own, so their look can still be
@@ -245,6 +267,7 @@ A typical session, from the repository root:
 scripts/device.sh deploy                         # build if needed, copy, install
 scripts/device.sh run --theme constellation      # start LokiCTL in one theme
 scripts/device.sh screen build/shots/device.png  # save the device's screen
+scripts/device.sh key 6                          # press 6 (next theme, saved)
 scripts/device.sh key 8                          # press 8 (counter page)
 scripts/device.sh screen build/shots/device-counter.png
 scripts/device.sh stats                          # memory, CPU and frame time
@@ -264,10 +287,11 @@ The commands:
   deletes the copied file.
 - `run [--theme T]`: starts LokiCTL on the device's screen (see below).
   `--theme` picks `instrument`, `constellation` or `terminal` for this run
-  only and saves nothing; without it, the setting saved on the device
-  decides, or else the default theme. If LokiCTL does not know the name, it
-  exits at once: `run` then shows LokiCTL's message, brings the launcher
-  back and exits with code 1.
+  only and does not save it; without it, the theme saved on the device
+  decides, or else the default theme. Pressing `6` during the run still
+  switches the theme and saves the one chosen then. If LokiCTL does not
+  know the name, it exits at once: `run` then shows LokiCTL's message,
+  brings the launcher back and exits with code 1.
 - `stop`: stops LokiCTL, however it was started, and brings the launcher back
   on HOME. Running it when nothing runs does no harm.
 - `status`: shows the installed version, whether LokiCTL runs and which
@@ -279,10 +303,12 @@ The commands:
   another (see below).
 - `stats [--seconds N]`: measures LokiCTL for N seconds (3 by default, up to
   30) and prints the numbers explained below.
-- `snapshot <file.png> [--page P] [--theme T] [--settle-ms N]`: runs
-  `lokictl --snapshot` on the device (see
+- `snapshot <file.png> [--page P] [--theme T] [--switch-to T[,T...]]
+  [--settle-ms N]`: runs `lokictl --snapshot` on the device (see
   [Screenshots without a window](#screenshots-without-a-window)) and saves the
   picture. It works while LokiCTL is running and does not touch the screen.
+  With `--switch-to`, the `fonts loaded` lines appear on your computer's
+  standard error.
 - `logs [-n N]`: shows the last N log lines (50 by default) of the latest
   `run` only, including systemd's lines about starting and stopping it.
   Earlier runs are left out. It also works after LokiCTL has stopped.
@@ -327,12 +353,12 @@ holds it for 20 to 2500 ms. Keys are only sent while LokiCTL runs, so they
 cannot open something on the launcher by accident; `--launcher` turns that
 check off.
 
-On the home page of the current demo, `6` picks the theme for the next start
-(it switches the saved setting between Terminal and Instrument and shows a
-message naming that theme), `5` switches the greeting between two text
-sizes, `8` opens the counter page and holding `esc` quits. On the counter
-page, `c` or `right` counts up, `z` or `left` counts down and `esc` goes back.
-`help` (fn+H) shows the key help on every page.
+On the home page of the current demo, `6` switches to the next theme at once
+and saves it on the device in `~/.config/lokictl/lokictl.conf` (a message
+names the theme), `5` switches the greeting between two text sizes, `8`
+opens the counter page and holding `esc` quits. On the counter page, `c` or
+`right` counts up, `z` or `left` counts down and `esc` goes back. `help`
+(fn+H) shows the key help on every page.
 
 ### What the stats mean
 
@@ -361,9 +387,10 @@ draws. Without the variable LokiCTL measures nothing.
 Nothing is installed besides the LokiCTL package. The device side of the
 script, `scripts/device-agent.py`, is sent to the device's `python3` with each
 command and is not stored there, and the copied package file is deleted after
-installing. A saved picture shows exactly the pixels written to the screen,
-but how readable they are on the small 1.9-inch panel is something only your
-own eyes can judge.
+installing. LokiCTL keeps one file of its own there: pressing `6` saves the
+theme in `~/.config/lokictl/lokictl.conf`. A saved picture shows exactly the
+pixels written to the screen, but how readable they are on the small
+1.9-inch panel is something only your own eyes can judge.
 
 ## Project layout
 
@@ -417,9 +444,10 @@ file names and the identity block disagree. The build image tag
 `lokictl-build:trixie` at the top of `scripts/build-deb.sh` carries the name
 too; renaming it is optional. The device scripts carry it as well: the
 constants at the top of `scripts/device-agent.py` (program path, unit and file
-names), the `dist/lokictl_*_arm64.deb` pattern in `scripts/device.sh`, and the
+names), the `dist/lokictl_*_arm64.deb` pattern in `scripts/device.sh`, the
 environment variable `LOKICTL_FRAME_STATS_FILE` (set in
-`scripts/device-agent.py`, read in `src/app/app.cpp`).
+`scripts/device-agent.py`, read in `src/app/app.cpp`) and the environment
+variable `LOKICTL_CONFIG_FILE` (read in `src/app/app.cpp`).
 The connection variables `LOKICTL_DEVICE` and `LOKICTL_SSH_OPTS` and the
 upload file name (`upload_name`) in `scripts/device.sh` contain it too, and
 so do the copyright holder in `LICENSE`, the SPDX headers of the project's own

@@ -120,6 +120,10 @@ AssetManager::LoadedFont* AssetManager::load_pinned(const std::filesystem::path&
     return loaded_font;
 }
 
+std::size_t AssetManager::loaded_font_count() const {
+    return loaded_fonts_.size();
+}
+
 lv_font_t* AssetManager::acquire_font(const std::filesystem::path& file_name,
                                       uint32_t size,
                                       const lv_font_t* fallback) {

@@ -9,7 +9,9 @@
 #   scripts/device.sh run --theme constellation
 #                                   the same, in that theme for this run only
 #   scripts/device.sh screen x.png  save what the screen shows
-#   scripts/device.sh key 6         press keys on the device
+#   scripts/device.sh key 6         press keys on the device (6: next theme)
+#   scripts/device.sh snapshot x.png --theme instrument --switch-to terminal
+#                                   draw a page off screen, after a live switch
 #   scripts/device.sh stats         memory, CPU and frame time
 #   scripts/device.sh stop          stop LokiCTL and bring the launcher back
 #
@@ -56,9 +58,11 @@ Commands:
   run [--theme T] Start LokiCTL on the device's screen. The launcher is
                   paused while it runs and comes back when LokiCTL stops.
                   --theme uses theme T (instrument, constellation or
-                  terminal) for this run only and saves nothing; without
-                  it, LokiCTL's saved setting or its default decides. An
+                  terminal) for this run only and does not save it; without
+                  it, LokiCTL's saved theme or its default decides. An
                   unknown name makes LokiCTL exit at once with a message.
+                  Pressing 6 on the home page switches the theme and saves
+                  the new choice, also after a --theme start.
   stop            Stop LokiCTL (however it was started) and bring the
                   launcher back on HOME. Safe to repeat.
   status          Show the installed version and what is running.
@@ -76,10 +80,14 @@ Commands:
   stats [--seconds N]
                   LokiCTL's memory and CPU use over N seconds (default 3,
                   1 to 30), free memory and frame time.
-  snapshot <out.png> [--page P] [--theme T] [--settle-ms N]
+  snapshot <out.png> [--page P] [--theme T] [--switch-to T[,T...]]
+           [--settle-ms N]
                   Run "lokictl --snapshot" on the device and save the PNG.
                   Without --theme the picture uses the default theme; the
-                  saved setting is not read.
+                  settings file is not read or written. --switch-to
+                  switches live through the listed themes, the way key 6
+                  does, before the picture is taken; the "fonts loaded"
+                  lines it prints appear on standard error.
   logs [-n N]     Show the last N log lines (default 50) of the latest
                   'run' only, also after LokiCTL has stopped.
 

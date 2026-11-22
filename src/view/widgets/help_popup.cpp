@@ -25,7 +25,7 @@ struct HelpRow {
 constexpr std::array<HelpRow, 5> kAppleRows = {{
     {"HOLD ESC / 4", "Exit"},
     {"5", "Text size"},
-    {"6", "Theme (next start)"},
+    {"6", "Next theme"},
     {"7", "Version info"},
     {"8", "Open counter"},
 }};

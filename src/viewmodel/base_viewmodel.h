@@ -23,16 +23,16 @@ public:
 
     lv_subject_t* title_subject();
     lv_subject_t* greeting_subject();
-    lv_subject_t* dark_mode_subject();
     lv_subject_t* current_page_subject();
     lv_subject_t* counter_subject();
     lv_subject_t* bold_text_subject();
     lv_subject_t* info_visible_subject();
     lv_subject_t* quit_requested_subject();
-
-    bool is_dark_mode() const;
-    void set_dark_mode(bool enabled);
-    void toggle_dark_mode();
+    // Counts how often the user asked for the next theme (key 6). The view
+    // model only passes the request on: the app applies it
+    // (app::ThemeController), and view::ThemeEngine::subject() publishes the
+    // theme that is active.
+    lv_subject_t* next_theme_request_subject();
 
     model::AppPage current_page() const;
     void show_page(model::AppPage page);
@@ -44,6 +44,7 @@ public:
     void toggle_bold_text();
     void toggle_info();
     void request_quit();
+    void request_next_theme();
 
 private:
     void publish_all();
@@ -51,12 +52,12 @@ private:
     model::BaseModel model_;
     reactive::StringSubject<32> title_subject_;
     reactive::StringSubject<32> greeting_subject_;
-    reactive::BoolSubject dark_mode_subject_;
     reactive::IntSubject current_page_subject_;
     reactive::IntSubject counter_subject_;
     reactive::BoolSubject bold_text_subject_;
     reactive::BoolSubject info_visible_subject_;
     reactive::BoolSubject quit_requested_subject_;
+    reactive::IntSubject next_theme_request_subject_;
 };
 
 } // namespace viewmodel

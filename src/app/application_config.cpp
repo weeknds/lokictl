@@ -71,9 +71,7 @@ bool load_application_config(const std::string& path,
 
     std::string section;
     std::string line;
-    std::size_t line_number = 0;
     while (std::getline(input, line)) {
-        ++line_number;
         line = trim(line);
         if (line.empty() || line.front() == '#' || line.front() == ';') {
             continue;
@@ -90,13 +88,19 @@ bool load_application_config(const std::string& path,
         }
 
         const auto key = lowercase(trim(line.substr(0, separator)));
-        if (section == "application" && key == "dark_mode") {
+        if (section == "application" && key == "theme") {
+            config.theme = lowercase(trim(line.substr(separator + 1)));
+        } else if (section == "application" && key == "dark_mode") {
+            // A value that cannot be read is ignored instead of failing the
+            // load, so the theme key of the same file still counts.
             bool dark_mode = false;
-            if (!parse_bool(line.substr(separator + 1), dark_mode)) {
-                error = "invalid dark_mode value at line " + std::to_string(line_number);
-                return false;
+            if (parse_bool(line.substr(separator + 1), dark_mode)) {
+                config.dark_mode = dark_mode;
+                config.dark_mode_invalid = false;
+            } else {
+                config.dark_mode.reset();
+                config.dark_mode_invalid = true;
             }
-            config.dark_mode = dark_mode;
         }
     }
 
@@ -129,46 +133,65 @@ bool save_application_config(const std::string& path,
     std::vector<std::string> updated;
     bool in_application_section = false;
     bool found_application_section = false;
-    // With no value to write, the file is written back unchanged.
-    bool wrote_dark_mode = !config.dark_mode.has_value();
-    const std::string dark_mode_line =
-        config.dark_mode.value_or(false) ? "dark_mode=yes" : "dark_mode=no";
+    // With no theme to write, only the dark_mode lines are removed.
+    bool wrote_theme = !config.theme.has_value();
+    const std::string theme_line = "theme=" + config.theme.value_or(std::string());
+
+    // Puts the theme line at the end of the [application] section that
+    // `updated` currently ends with: after its last line with text, so blank
+    // lines before the next section stay where they are. The section header
+    // has text, so the line never lands above it.
+    const auto append_theme_to_section = [&]() {
+        auto position = updated.end();
+        while (position != updated.begin() && trim(*(position - 1)).empty()) {
+            --position;
+        }
+        updated.insert(position, theme_line);
+        wrote_theme = true;
+    };
 
     for (const auto& current_line : lines) {
         const auto normalized = trim(current_line);
         const bool section_header = normalized.size() >= 2 && normalized.front() == '[' &&
                                     normalized.back() == ']';
         if (section_header) {
-            if (in_application_section && !wrote_dark_mode) {
-                updated.push_back(dark_mode_line);
-                wrote_dark_mode = true;
+            if (in_application_section && !wrote_theme) {
+                append_theme_to_section();
             }
             in_application_section = is_section(current_line, "application");
             found_application_section = found_application_section || in_application_section;
+            updated.push_back(current_line);
+            continue;
         }
 
-        if (config.dark_mode && in_application_section && is_key(current_line, "dark_mode")) {
-            if (!wrote_dark_mode) {
-                updated.push_back(dark_mode_line);
-                wrote_dark_mode = true;
+        if (in_application_section) {
+            if (is_key(current_line, "dark_mode")) {
+                continue;
             }
-            continue;
+            if (config.theme && is_key(current_line, "theme")) {
+                // The first theme line is replaced; any further ones are dropped.
+                if (!wrote_theme) {
+                    updated.push_back(theme_line);
+                    wrote_theme = true;
+                }
+                continue;
+            }
         }
         updated.push_back(current_line);
     }
 
-    if (!wrote_dark_mode) {
+    if (!wrote_theme) {
         if (in_application_section) {
             // [application] is the last section: the key goes at its end.
-            updated.push_back(dark_mode_line);
+            append_theme_to_section();
         } else {
-            if (!updated.empty() && !updated.back().empty()) {
+            if (!updated.empty() && !trim(updated.back()).empty()) {
                 updated.emplace_back();
             }
             if (!found_application_section) {
                 updated.emplace_back("[application]");
             }
-            updated.push_back(dark_mode_line);
+            updated.push_back(theme_line);
         }
     }
 

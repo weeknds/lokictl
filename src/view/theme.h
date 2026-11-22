@@ -30,7 +30,7 @@ constexpr int kThemeCount = 3;
 
 // The theme used when neither the command line nor a saved setting picks
 // one. This is the single place to change the default theme.
-constexpr ThemeId kDefaultThemeId = ThemeId::Terminal;
+constexpr ThemeId kDefaultThemeId = ThemeId::Constellation;
 
 // What a piece of text is for. Every theme maps each role to a font file and
 // a size; screens ask for a role, never for a file.
@@ -101,6 +101,9 @@ const ThemeSpec& theme_spec(ThemeId id);
 const ThemeSpec* find_theme(std::string_view name);
 // The theme names joined with ", ", for help and error messages.
 std::string theme_names();
+// The theme after `id` in table order, wrapping from the last back to the
+// first. This is the order key 6 cycles through.
+ThemeId next_theme(ThemeId id);
 
 // The same colours as ThemeColorSpec, ready for LVGL.
 struct ThemeColors {

@@ -10,8 +10,11 @@
 #include "theme.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace app {
 namespace {
@@ -43,6 +46,26 @@ bool parse_settle_ms(std::string_view text, uint32_t& value) {
     return true;
 }
 
+// Splits a comma-separated list of theme names. Returns false if any name
+// is empty ("a,,b", or a comma at either end).
+bool split_theme_list(std::string_view text, std::vector<std::string>& names) {
+    names.clear();
+    std::size_t start = 0;
+    while (true) {
+        const std::size_t comma = text.find(',', start);
+        const std::string_view name =
+            text.substr(start, comma == std::string_view::npos ? std::string_view::npos : comma - start);
+        if (name.empty()) {
+            return false;
+        }
+        names.emplace_back(name);
+        if (comma == std::string_view::npos) {
+            return true;
+        }
+        start = comma + 1;
+    }
+}
+
 std::string padded(std::string text, std::size_t width) {
     if (text.size() < width) {
         text.append(width - text.size(), ' ');
@@ -61,7 +84,8 @@ LaunchOptions parse_command_line(int argc, const char* const* argv) {
     bool list_pages = false;
     bool has_snapshot = false;
     bool has_theme = false;
-    // --page or --settle-ms, which only mean something for a snapshot.
+    // --page, --settle-ms or --switch-to, which only mean something for a
+    // snapshot.
     bool has_snapshot_option = false;
 
     for (int index = 1; index < argc; ++index) {
@@ -78,7 +102,8 @@ LaunchOptions parse_command_line(int argc, const char* const* argv) {
         }
 
         const bool takes_value = argument == "--snapshot" || argument == "--page" ||
-                                 argument == "--theme" || argument == "--settle-ms";
+                                 argument == "--theme" || argument == "--settle-ms" ||
+                                 argument == "--switch-to";
         if (!takes_value) {
             return invalid("unknown argument '" + std::string(argument) + "'");
         }
@@ -105,6 +130,11 @@ LaunchOptions parse_command_line(int argc, const char* const* argv) {
         has_snapshot_option = true;
         if (argument == "--page") {
             options.page = std::string(value);
+        } else if (argument == "--switch-to") {
+            if (!split_theme_list(value, options.switch_to)) {
+                return invalid("--switch-to needs theme names separated by commas, "
+                               "for example terminal,instrument");
+            }
         } else if (!parse_settle_ms(value, options.settle_ms)) {
             return invalid("--settle-ms must be a whole number from 0 to " +
                            std::to_string(kMaxSettleMs));
@@ -120,7 +150,8 @@ LaunchOptions parse_command_line(int argc, const char* const* argv) {
     }
     if (!has_snapshot) {
         if (has_snapshot_option) {
-            return invalid("--page and --settle-ms only work together with --snapshot");
+            return invalid(
+                "--page, --settle-ms and --switch-to only work together with --snapshot");
         }
         // A normal start, possibly with --theme for this run.
         options.mode = LaunchMode::Interactive;
@@ -143,7 +174,8 @@ std::string usage_text() {
     const std::string help_form = program + " --help";
     const std::size_t form_width =
         std::max({start_form.size(), list_form.size(), help_form.size()}) + 3;
-    const std::size_t option_width = 19;
+    const std::size_t option_width = 21;
+    const std::string indent = "  " + std::string(option_width, ' ');
 
     std::string text;
     text += "Usage:\n";
@@ -151,13 +183,11 @@ std::string usage_text() {
     text += "  " + padded(list_form, form_width) + "print the page names, one per line\n";
     text += "  " + padded(help_form, form_width) + "show this help\n";
     text += "  " + program + " --snapshot <out.png> [--page <name>] [--theme <name>]\n";
-    text += "  " + std::string(program.size() + 1, ' ') + "[--settle-ms <n>]\n";
+    text += "  " + std::string(program.size() + 1, ' ') + "[--settle-ms <n>] [--switch-to <names>]\n";
     text += "\n";
     text += "  " + padded("--theme <name>", option_width) + "one of: " + themes + "\n";
-    text += "  " + std::string(option_width, ' ') +
-            "When starting the app, the theme is used for this run\n";
-    text += "  " + std::string(option_width, ' ') +
-            "only and is not saved. Snapshot default: " + default_theme + "\n";
+    text += indent + "When starting the app, the theme is used for this run\n";
+    text += indent + "only and is not saved. Snapshot default: " + default_theme + "\n";
     text += "\n";
     text += "--snapshot draws one page into a PNG file of 320x170 pixels without\n";
     text += "opening a window, then exits. Snapshot options:\n";
@@ -166,6 +196,11 @@ std::string usage_text() {
     text += "  " + padded("--settle-ms <n>", option_width) +
             "LVGL time before capture, 0-" + std::to_string(kMaxSettleMs) +
             " ms (default: " + std::to_string(kDefaultSettleMs) + ")\n";
+    text += "  " + padded("--switch-to <names>", option_width) +
+            "themes to switch to while the app runs, in order and\n";
+    text += indent + "separated by commas, the same way key 6 switches. The\n";
+    text += indent + "picture is taken after the last switch, and the\n";
+    text += indent + "number of loaded fonts is printed to standard error.\n";
     return text;
 }
 

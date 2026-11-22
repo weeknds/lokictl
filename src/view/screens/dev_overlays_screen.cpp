@@ -26,11 +26,12 @@ struct ToastSample {
 };
 
 // Messages like the app's own, one per tone, from the top of the page down.
-// The Default one names the active theme only as sample text.
+// The Default one is the message key 6 shows after a theme switch; it names
+// the active theme.
 constexpr ToastSample kToastSamples[] = {
     {"Saved to ", "screenshot-0001.png", "", view::widgets::ToastTone::Success},
     {"Hold ", "ESC", " to exit", view::widgets::ToastTone::Warning},
-    {"Next start: ", nullptr, " theme", view::widgets::ToastTone::Default},
+    {"Theme: ", nullptr, "", view::widgets::ToastTone::Default},
 };
 
 // Distance of each toast's bottom edge from the bottom of the screen. Toasts

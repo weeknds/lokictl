@@ -146,6 +146,14 @@ std::string theme_names() {
     return names;
 }
 
+ThemeId next_theme(ThemeId id) {
+    int index = static_cast<int>(id);
+    if (index < 0 || index >= kThemeCount) {
+        index = static_cast<int>(kDefaultThemeId);
+    }
+    return kThemes[(index + 1) % kThemeCount].id;
+}
+
 ThemeColors to_colors(const ThemeColorSpec& spec) {
     return {
         lv_color_hex(spec.background),

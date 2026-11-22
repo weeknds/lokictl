@@ -39,7 +39,7 @@ private:
     void create_shortcut_hints();
     void update_icon_buttons();
 
-    static void toggle_theme_cb(lv_event_t* event);
+    static void next_theme_cb(lv_event_t* event);
     static void toggle_page_cb(lv_event_t* event);
     static void toggle_bold_text_cb(lv_event_t* event);
     static void increment_counter_cb(lv_event_t* event);

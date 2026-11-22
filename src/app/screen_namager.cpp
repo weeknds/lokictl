@@ -58,34 +58,51 @@ void ScreenManager::start() {
                                                          nullptr);
 }
 
-void ScreenManager::show_apple_screen() {
-    load_screen(std::make_unique<screen::AppleScreen>(view_model_, assets_, theme_engine_));
+bool ScreenManager::show_apple_screen() {
+    if (!load_screen(std::make_unique<screen::AppleScreen>(view_model_, assets_, theme_engine_))) {
+        return false;
+    }
     loaded_page_ = model::AppPage::Apple;
     has_loaded_page_ = true;
+    return true;
 }
 
-void ScreenManager::show_butter_screen() {
-    load_screen(std::make_unique<screen::ButterScreen>(view_model_, assets_, theme_engine_));
+bool ScreenManager::show_butter_screen() {
+    if (!load_screen(std::make_unique<screen::ButterScreen>(view_model_, assets_, theme_engine_))) {
+        return false;
+    }
     loaded_page_ = model::AppPage::Butter;
     has_loaded_page_ = true;
+    return true;
 }
 
-void ScreenManager::show_dev_fonts_screen(model::AppPage page) {
-    load_screen(std::make_unique<screen::DevFontsScreen>(view_model_, assets_, theme_engine_, page));
+bool ScreenManager::show_dev_fonts_screen(model::AppPage page) {
+    if (!load_screen(
+            std::make_unique<screen::DevFontsScreen>(view_model_, assets_, theme_engine_, page))) {
+        return false;
+    }
     loaded_page_ = page;
     has_loaded_page_ = true;
+    return true;
 }
 
-void ScreenManager::show_dev_theme_screen() {
-    load_screen(std::make_unique<screen::DevThemeScreen>(view_model_, assets_, theme_engine_));
+bool ScreenManager::show_dev_theme_screen() {
+    if (!load_screen(std::make_unique<screen::DevThemeScreen>(view_model_, assets_, theme_engine_))) {
+        return false;
+    }
     loaded_page_ = model::AppPage::DevTheme;
     has_loaded_page_ = true;
+    return true;
 }
 
-void ScreenManager::show_dev_overlays_screen(model::AppPage page) {
-    load_screen(std::make_unique<screen::DevOverlaysScreen>(view_model_, assets_, theme_engine_, page));
+bool ScreenManager::show_dev_overlays_screen(model::AppPage page) {
+    if (!load_screen(
+            std::make_unique<screen::DevOverlaysScreen>(view_model_, assets_, theme_engine_, page))) {
+        return false;
+    }
     loaded_page_ = page;
     has_loaded_page_ = true;
+    return true;
 }
 
 void ScreenManager::request_page(model::AppPage page) {
@@ -105,40 +122,54 @@ void ScreenManager::flush_requested_page() {
         return;
     }
 
-    if (screen::DevFontsScreen::handles(requested_page_)) {
-        show_dev_fonts_screen(requested_page_);
-        return;
+    show_page(requested_page_);
+}
+
+bool ScreenManager::rebuild_current_page() {
+    if (!has_loaded_page_) {
+        return true;
     }
 
-    if (screen::DevThemeScreen::handles(requested_page_)) {
-        show_dev_theme_screen();
-        return;
+    // requested_page_, not loaded_page_: if a page change is still waiting
+    // for its deferred flush, that page is built now and the flush then has
+    // nothing left to do.
+    return show_page(requested_page_);
+}
+
+bool ScreenManager::show_page(model::AppPage page) {
+    if (screen::DevFontsScreen::handles(page)) {
+        return show_dev_fonts_screen(page);
     }
 
-    if (screen::DevOverlaysScreen::handles(requested_page_)) {
-        show_dev_overlays_screen(requested_page_);
-        return;
+    if (screen::DevThemeScreen::handles(page)) {
+        return show_dev_theme_screen();
     }
 
-    if (requested_page_ == model::AppPage::Butter) {
-        show_butter_screen();
-        return;
+    if (screen::DevOverlaysScreen::handles(page)) {
+        return show_dev_overlays_screen(page);
     }
 
-    show_apple_screen();
+    if (page == model::AppPage::Butter) {
+        return show_butter_screen();
+    }
+
+    return show_apple_screen();
 }
 
 lv_obj_t* ScreenManager::current_screen() const {
     return current_screen_ ? current_screen_->root() : nullptr;
 }
 
-void ScreenManager::load_screen(std::unique_ptr<screen::BaseScreen> next_screen) {
+bool ScreenManager::load_screen(std::unique_ptr<screen::BaseScreen> next_screen) {
     if (!next_screen || !next_screen->root()) {
-        return;
+        return false;
     }
 
+    // The new screen is loaded first; replacing current_screen_ then deletes
+    // the old one, together with its LVGL objects.
     lv_screen_load(next_screen->root());
     current_screen_ = std::move(next_screen);
+    return true;
 }
 
 } // namespace app

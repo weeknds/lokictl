@@ -8,6 +8,7 @@
 
 #include "lvgl.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <memory>
@@ -52,6 +53,10 @@ public:
                             uint32_t size,
                             const lv_font_t* fallback = nullptr);
     void release_font(const lv_font_t* font);
+
+    // Number of font instances loaded right now, both the ones kept for
+    // good and the counted ones. Used by logs and leak checks.
+    std::size_t loaded_font_count() const;
 
 private:
     struct LoadedFont;

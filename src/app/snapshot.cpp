@@ -11,10 +11,12 @@
 #include "logger.h"
 #include "screen_manager.h"
 #include "screenshot_service.h"
+#include "theme_controller.h"
 #include "theme_engine.h"
 
 #include "lvgl.h"
 
+#include <cstddef>
 #include <cstdio>
 #include <filesystem>
 #include <system_error>
@@ -30,6 +32,34 @@ constexpr uint32_t kMinSettleSteps = 4;
 
 void advance_virtual_time(uint32_t ms) {
     lv_tick_inc(ms);
+}
+
+// Runs LVGL on the virtual clock until `settle_ms` have passed, and for at
+// least kMinSettleSteps steps, so deferred work such as a page load or a
+// theme switch has happened.
+void settle(uint32_t settle_ms) {
+    uint32_t elapsed = 0;
+    uint32_t steps = 0;
+    while (elapsed < settle_ms || steps < kMinSettleSteps) {
+        lv_tick_inc(kTickStepMs);
+        lv_timer_handler();
+        elapsed += kTickStepMs;
+        ++steps;
+    }
+}
+
+bool page_is_shown(const ScreenManager& screen_manager) {
+    auto* screen = screen_manager.current_screen();
+    return screen && screen == lv_screen_active();
+}
+
+// The leak check reads this line: the number must be the same every time the
+// same theme comes round again.
+void print_font_count(const AssetManager& assets, const view::ThemeEngine& theme_engine) {
+    std::fprintf(stderr,
+                 "fonts loaded: %zu (%s)\n",
+                 assets.loaded_font_count(),
+                 theme_engine.theme().name);
 }
 
 #if LV_USE_LOG
@@ -157,20 +187,47 @@ int run_snapshot(const SnapshotRequest& request) {
     ScreenManager screen_manager(view_model, assets, theme_engine);
     screen_manager.start();
 
-    // Run LVGL on the virtual clock until the requested time has passed.
-    uint32_t elapsed = 0;
-    uint32_t steps = 0;
-    while (elapsed < request.settle_ms || steps < kMinSettleSteps) {
-        lv_tick_inc(kTickStepMs);
-        lv_timer_handler();
-        elapsed += kTickStepMs;
-        ++steps;
-    }
+    settle(request.settle_ms);
 
-    auto* screen = screen_manager.current_screen();
-    if (!screen || screen != lv_screen_active()) {
+    if (!page_is_shown(screen_manager)) {
         std::fprintf(stderr, "%s: the page did not load\n", APP_NAME);
         return 1;
+    }
+
+    if (!request.switch_to.empty()) {
+        // The same path as key 6: each request is applied later, from
+        // lv_timer_handler(), with a rebuild of the page. The controller is
+        // destroyed at the end of this block, before the screen manager it
+        // uses. It has no listener, so nothing is saved.
+        ThemeController theme_controller(view_model, assets, theme_engine, screen_manager);
+        print_font_count(assets, theme_engine);
+
+        for (const view::ThemeId id : request.switch_to) {
+            theme_controller.request(id);
+            settle(request.settle_ms);
+
+            const char* name = view::theme_spec(id).name;
+            if (theme_engine.theme().id != id) {
+                std::fprintf(stderr, "%s: the switch to the %s theme did not happen\n", APP_NAME, name);
+                return 1;
+            }
+            if (!theme_engine.fonts_complete()) {
+                std::fprintf(stderr,
+                             "%s: some fonts of the %s theme could not be loaded; "
+                             "check that the font files are installed\n",
+                             APP_NAME,
+                             name);
+                return 1;
+            }
+            if (!page_is_shown(screen_manager)) {
+                std::fprintf(stderr,
+                             "%s: the page did not load again after the switch to the %s theme\n",
+                             APP_NAME,
+                             name);
+                return 1;
+            }
+            print_font_count(assets, theme_engine);
+        }
     }
 
     const auto result = platform::screenshot::capture_active_screen_to(request.output_path);

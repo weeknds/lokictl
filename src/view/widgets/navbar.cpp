@@ -145,8 +145,8 @@ void NavBar::update_icon_buttons() {
     const std::array<IconSpec, 5> apple_icons = {{
         {ICON_SIGN_OUT, request_quit_cb},
         {ICON_TEXT_SIZE, toggle_bold_text_cb},
-        // Key 6 picks the theme for the next start; one fixed icon for it.
-        {ICON_MOON, toggle_theme_cb},
+        // Key 6 switches to the next theme; one fixed icon for it.
+        {ICON_MOON, next_theme_cb},
         {ICON_INFO, show_info_cb},
         {ICON_SQUARE_ARROW_RIGHT, toggle_page_cb},
     }};
@@ -184,7 +184,7 @@ void NavBar::update_icon_buttons() {
             else {
                 lv_obj_remove_flag(button->root(), LV_OBJ_FLAG_HIDDEN);
             }
-            lv_obj_remove_event_cb(button->root(), toggle_theme_cb);
+            lv_obj_remove_event_cb(button->root(), next_theme_cb);
             lv_obj_remove_event_cb(button->root(), toggle_page_cb);
             lv_obj_remove_event_cb(button->root(), toggle_bold_text_cb);
             lv_obj_remove_event_cb(button->root(), increment_counter_cb);
@@ -202,10 +202,10 @@ void NavBar::update_icon_buttons() {
     }
 }
 
-void NavBar::toggle_theme_cb(lv_event_t* event) {
+void NavBar::next_theme_cb(lv_event_t* event) {
     auto* view_model = static_cast<viewmodel::BaseViewModel*>(lv_event_get_user_data(event));
     if (view_model) {
-        view_model->toggle_dark_mode();
+        view_model->request_next_theme();
     }
 }
 

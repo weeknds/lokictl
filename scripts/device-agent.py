@@ -1300,6 +1300,24 @@ def cmd_stats(args):
 # snapshot / logs
 
 
+def snapshot_command(path, args):
+    """The "lokictl --snapshot" command line for the "snapshot" arguments.
+
+    --page, --theme and --switch-to are passed on unchecked; LokiCTL knows
+    its page and theme names and exits with a message for an unknown one.
+    """
+    cmd = [BINARY, "--snapshot", path]
+    if args.page:
+        cmd += ["--page", args.page]
+    if args.theme:
+        cmd += ["--theme", args.theme]
+    if args.switch_to:
+        cmd += ["--switch-to", args.switch_to]
+    if args.settle_ms is not None:
+        cmd += ["--settle-ms", str(args.settle_ms)]
+    return cmd
+
+
 def cmd_snapshot(args):
     if not os.path.isfile(BINARY):
         raise Failure("LokiCTL is not installed. Run 'device.sh deploy' first.")
@@ -1309,14 +1327,10 @@ def cmd_snapshot(args):
     folder = tempfile.mkdtemp(prefix=APP + "-snapshot-", dir=base)
     path = os.path.join(folder, "snapshot.png")
     try:
-        cmd = [BINARY, "--snapshot", path]
-        if args.page:
-            cmd += ["--page", args.page]
-        if args.theme:
-            cmd += ["--theme", args.theme]
-        if args.settle_ms is not None:
-            cmd += ["--settle-ms", str(args.settle_ms)]
-        # The app logs to stdout, which is reserved for the picture here.
+        cmd = snapshot_command(path, args)
+        # The app logs to stdout, which is reserved for the picture here. Its
+        # standard error (the "fonts loaded" lines of --switch-to, for
+        # example) goes to the caller's standard error as well.
         result = run(cmd, timeout=60, stdout=sys.stderr, stderr=sys.stderr)
         if result.returncode != 0:
             say("lokictl --snapshot failed (exit %d)." % result.returncode)
@@ -1414,6 +1428,20 @@ def cmd_selftest(args):
     assert ("--working-directory=" + LAUNCHER_DIR) in dev_unit_command(stats, True)
     assert ("--working-directory=" + LAUNCHER_DIR) not in dev_unit_command(stats, False)
 
+    # "snapshot --switch-to T[,T...]" hands the list to LokiCTL unchecked as
+    # well, after --theme, the way --theme is handed on.
+    shot = "/run/user/1000/snapshot.png"
+    plain = parser.parse_args(["snapshot"])
+    assert plain.switch_to is None, "snapshot without --switch-to"
+    assert snapshot_command(shot, plain) == [BINARY, "--snapshot", shot], snapshot_command(shot, plain)
+    switched = parser.parse_args(["snapshot", "--page", "dev-theme", "--theme", "instrument",
+                                  "--switch-to", "terminal,constellation", "--settle-ms", "0"])
+    assert switched.switch_to == "terminal,constellation", switched.switch_to
+    assert parser.parse_args(["snapshot", "--switch-to=nope,,"]).switch_to == "nope,,", "lists are not checked"
+    assert snapshot_command(shot, switched) == [
+        BINARY, "--snapshot", shot, "--page", "dev-theme", "--theme", "instrument",
+        "--switch-to", "terminal,constellation", "--settle-ms", "0"], snapshot_command(shot, switched)
+
     sys.stdout.write("selftest ok\n")
     return 0
 
@@ -1482,6 +1510,7 @@ def build_parser():
     snapshot = commands.add_parser("snapshot", help="lokictl --snapshot, PNG to stdout")
     snapshot.add_argument("--page")
     snapshot.add_argument("--theme")
+    snapshot.add_argument("--switch-to", help="themes to switch to live (passed on to LokiCTL)")
     snapshot.add_argument("--settle-ms", type=range_value(0, 60000, "--settle-ms"))
     snapshot.set_defaults(handler=cmd_snapshot)
 

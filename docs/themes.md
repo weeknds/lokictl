@@ -7,7 +7,8 @@ SPDX-License-Identifier: MIT
 
 LokiCTL has three looks, called themes: **Instrument**, **Constellation** and
 **Terminal**. This page explains what a theme is made of, how a screen gets
-its look, how the app picks a theme, and how to add a new one.
+its look, how the app picks a theme and switches it while running, and how
+to add a new one.
 
 ## What a theme is
 
@@ -182,50 +183,136 @@ At startup the app takes the first of these that applies:
 
 1. **`--theme <name>`** on the command line: `instrument`, `constellation`
    or `terminal`. It works for snapshots and for a normal start. On a normal
-   start it is used for that run only and nothing is saved. Any other name
-   stops the app at once with a message that lists the three names.
-2. **The saved setting**, the key `dark_mode` in the `[application]` section
-   of the settings file: `yes` means Terminal, `no` means Instrument. Key 6
-   on the home page switches this setting between the two. The running
-   theme stays as it is, and a message says which theme the next start will
-   use ("Next start: Terminal theme"). Until the theme choice is saved by
-   name, Constellation can only be picked with `--theme`.
-3. **The default**, `view::kDefaultThemeId` in `src/view/theme.h`, which is
-   Terminal. That one line is the only place to change the default; the
+   start it is used for that run only and is never written to the settings
+   file. Any other name stops the app at once with a message that lists the
+   three names.
+2. **The saved choice**, the key `theme` in the `[application]` section of
+   the settings file, for example `theme=instrument`. Key 6 writes it every
+   time it switches the theme (see below). A name the app does not know
+   gives a warning in the log. The app then carries on as if no theme had
+   been saved (step 3 is skipped as well) and leaves the file exactly as it
+   is.
+3. **The old setting `dark_mode`**, which earlier versions wrote before
+   themes were saved by name: `yes` means Terminal, `no` means Instrument.
+   It only counts when the file has no `theme` line. A start that finds it
+   replaces it once: the app writes the theme it stands for as a `theme`
+   line and removes the `dark_mode` line. If both lines are there, `theme`
+   wins and the `dark_mode` line is simply removed. This also happens on a
+   start with `--theme`; what is written is the saved choice, never the
+   `--theme` value. A `dark_mode` value the app cannot read is ignored with
+   a warning in the log, and the file is left as it is.
+4. **The default**, `view::kDefaultThemeId` in `src/view/theme.h`, which is
+   Constellation. That one line is the only place to change the default; the
    help text, snapshots and a first start all follow it.
 
-Snapshot mode never reads the settings file, so without `--theme` a
-snapshot always uses the default theme. The settings file is
+If the settings file cannot be written, the app logs a warning and carries
+on in the theme it picked.
+
+Snapshot mode never reads or writes the settings file, so without `--theme`
+a snapshot always uses the default theme. The settings file is
 `config/lokictl.conf` in the simulator. On the device it is
 `/etc/lokictl.conf`, with your own changes saved to
-`~/.config/lokictl/lokictl.conf`. The shipped file has no `dark_mode` line,
-so a fresh install starts in the default theme.
+`~/.config/lokictl/lokictl.conf`; once that file exists, the app reads it
+instead. The shipped file has no `theme` line, so a fresh install starts in
+the default theme.
+
+The environment variable `LOKICTL_CONFIG_FILE` names a settings file that
+the app reads and writes instead of the normal ones, on any platform. It is
+meant for testing, above all in the simulator, where the normal settings
+file is the repository's own `config/lokictl.conf`. If the named file does
+not exist yet, the app logs that it could not load it, carries on as if no
+theme had been saved and creates the file when key 6 first saves a theme.
 
 The log says which theme was picked and why, for example
-`theme: terminal (from the default)`.
+`theme: constellation (from the default)`. The other reasons are
+`from the command line`, `from the saved setting` and
+`from the old dark_mode setting`.
 
-## How switching while the app runs will work
+## Switching while the app runs
 
-Switching themes without a restart is planned for a later version. The
-engine is already built for it:
+Key 6 on the home page switches to the next theme at once, in the order of
+the theme table: Instrument, Constellation, Terminal, then Instrument again.
+The page is built again in the new theme and keeps its state: the text size
+picked with key 5, the version line shown with key 7 and the counter value
+all stay. The message box and the help panel take the new look too, and in
+the desktop simulator so does the device frame around the screen. A short
+message says `Theme: <Name>`, or `Theme: <Name> (not saved)` when the
+settings file could not be written. Holding the key switches once. While
+the help panel is open, key 6 does nothing.
 
-1. `ThemeEngine::set_theme(id)` loads the new theme's fonts, makes it the
-   active theme and notifies `ThemeEngine::subject()`. The old fonts stay
-   loaded for now, because the screen still uses them.
-2. The current screen is built again from scratch with the new theme. A
+Every switch is saved as `theme=<name>` in the `[application]` section of
+the settings file. All other lines, comments and sections of the file stay
+as they are. After a start with `--theme`, key 6 goes on from the theme that
+is running and saves the new choice, because the user picked it in the
+running app.
+
+What happens inside, step by step:
+
+1. The key-6 button calls `BaseViewModel::request_next_theme()`. The view
+   model knows nothing about themes; it only counts the requests in a
+   subject, `next_theme_request_subject()`.
+2. `app::ThemeController` (`src/app/theme_controller.h`) observes that
+   subject. It does not switch right away: it notes the target theme and
+   schedules one `lv_async_call()`. Several requests before that call runs
+   fold into one switch, and a request for the active theme does nothing.
+3. Called from `lv_timer_handler()`, the controller first runs
+   `ThemeEngine::set_theme(id)`. It loads the new theme's fonts, makes it
+   the active theme and notifies `ThemeEngine::subject()`. The old fonts
+   stay loaded for now, because the old screen still uses them.
+4. `ScreenManager::rebuild_current_page()` builds the current page again
+   from scratch with the new theme, loads it and deletes the old screen. A
    rebuild is needed anyway, because some flags change which objects exist
    (a pane title in the border is a different object from a title inside
-   the box). The rebuild must not happen inside an observer callback; it is
-   done afterwards, the same way the screen manager already switches pages.
-3. `ThemeEngine::release_retired_fonts()` then frees the old theme's fonts.
+   the box). If a page change is still waiting, the new page is the one
+   that gets built.
+5. `ThemeEngine::release_retired_fonts()` frees the old theme's fonts, but
+   only when the rebuild worked. If it failed, the old screen is still
+   shown and still uses those fonts, so they stay loaded and the app logs
+   an error.
+6. The controller logs the switch and calls its listener. The listener, in
+   `src/app/app.cpp`, sets the simulator's device frame, saves the choice
+   and shows the message.
 
-The toast message and the help panel live on LVGL's top layer and outlive
-every screen. They observe `ThemeEngine::subject()` and restyle themselves,
-fonts included, when it changes.
+A switch adds two lines to the log:
 
-Objects are created and destroyed in a fixed order, so no label ever points
-at a font that has been freed: LVGL, then the asset manager, then the theme
-engine, then the display and the screens; on exit the same in reverse.
+```text
+theme: terminal (switched from constellation in <n> ms, <n> fonts loaded)
+saved theme=terminal to <path>
+```
+
+The time covers steps 3 to 5, which run on the UI thread, so it shows how
+long the screen was busy. The font count is the number of fonts the asset
+manager holds after the switch. It must be the same every time the same
+theme comes round again; a number that keeps growing means fonts are not
+freed.
+
+The rules that keep this safe:
+
+- **Screens do not watch for theme changes.** They read the theme once
+  while they are built, and a switch builds them again. Nothing restyles a
+  screen in place, so a page after a live switch is exactly the page a
+  fresh start in that theme would draw.
+- **Objects on LVGL's top layer outlive every screen.** The message box and
+  the help panel live there. They observe `ThemeEngine::subject()` and
+  restyle themselves, fonts included, during step 3, before the old fonts
+  are freed. Anything new on the top layer that uses a theme font must do
+  the same.
+- **A switch never runs inside an LVGL event or observer callback.** Key 6
+  arrives as a click on a soft-key button that the rebuild deletes, and the
+  request passes through an observer. That is why the controller defers
+  the switch, the same way the screen manager defers page changes.
+- **Fonts are freed only after the old screen is gone**, so no label ever
+  points at a font that has been freed.
+- **Objects are created and destroyed in a fixed order:** LVGL, then the
+  asset manager, then the theme engine, then the display and the screens,
+  then the theme controller; on exit the same in reverse. When the
+  controller is destroyed, it cancels a switch that is still waiting and
+  stops observing the view model.
+
+A future settings screen with a theme picker should not call
+`ThemeEngine::set_theme()` itself. It should ask through the view model,
+the way key 6 does, so that the controller stays the one place that
+switches, rebuilds the page, frees fonts and saves the choice.
 
 ## Adding a theme
 
@@ -240,10 +327,14 @@ engine, then the display and the screens; on exit the same in reverse.
    needs its files and license text in `assets/fonts/`, a constant in
    `bundled_fonts.h`, a line in `assets/fonts/LICENSE.txt` and a row in
    [fonts.md](fonts.md). Check its symbol coverage on the `dev-fonts` pages.
-4. Nothing else is needed for the command line: `--theme` and `--help` take
-   the names from the table.
+4. Nothing else is needed for the command line or for key 6: `--theme`,
+   `--switch-to` and `--help` take the names from the table, and key 6 goes
+   through the table in order, so it picks up the new theme by itself.
 5. Snapshot every page in the new theme (see below), look at each picture,
    and add the theme to the tables on this page.
+6. Check live switching for every page: with `--switch-to`, from every other
+   theme to the new one and from the new one to every other theme. Each
+   picture must be identical to one drawn directly in the target theme.
 
 ## Looking at the result
 
@@ -268,10 +359,12 @@ for t in instrument constellation terminal; do
 done
 ```
 
-To start the simulator in one theme for a single run:
+To start the simulator in one theme for a single run, with a settings file
+of its own so that key 6 leaves the repository's `config/lokictl.conf`
+alone:
 
 ```sh
-./build/darwin-arm64/Debug/lokictl --theme constellation
+LOKICTL_CONFIG_FILE=build/simulator.conf ./build/darwin-arm64/Debug/lokictl --theme constellation
 ```
 
 On a device, `scripts/device.sh snapshot <file.png> --page dev-theme --theme
@@ -282,3 +375,50 @@ screen (see the README).
 A picture shows the exact pixels, but not how readable they are on the small
 panel. Faint lines such as Constellation's dark-blue borders, and Instrument's
 orange text on the paper ground, are worth a look on the device itself.
+
+### Checking live switching
+
+`--switch-to <theme>[,<theme>...]` makes a snapshot switch themes while the
+page is shown, the same way key 6 does. The page is drawn in the starting
+theme (`--theme`, or the default), the app then switches through the listed
+themes in order, and the picture is taken after the last switch. After the
+first draw and after every switch it prints `fonts loaded: <n> (<theme>)`
+to standard error. Like every snapshot, it never reads or writes the
+settings file.
+
+The rule: **a picture taken after a live switch must be the same file, byte
+for byte, as a picture drawn directly in the last theme.** Any difference
+means that something on the page kept a piece of the old theme.
+
+```sh
+B=./build/darwin-arm64/Debug/lokictl
+mkdir -p build/shots
+$B --snapshot build/shots/home-terminal.png --page demo-home --theme terminal
+$B --snapshot build/shots/home-switched.png --page demo-home --theme instrument --switch-to terminal
+cmp build/shots/home-terminal.png build/shots/home-switched.png && echo same
+```
+
+The demo pages show the clock in the title bar, so if two pictures were
+taken on either side of a new minute, take both again.
+
+To check that switching does not leak fonts, switch 30 times (10 full
+rounds) and count the `fonts loaded` lines. Each theme must show a single
+number, the same in every round:
+
+```sh
+B=./build/darwin-arm64/Debug/lokictl
+mkdir -p build/shots
+R=$(printf 'terminal,instrument,constellation,%.0s' 1 2 3 4 5 6 7 8 9 10)
+$B --snapshot build/shots/cycle.png --page dev-theme --switch-to "${R%,}" 2> build/shots/cycle.txt
+grep '^fonts loaded' build/shots/cycle.txt | sort | uniq -c
+$B --snapshot build/shots/direct.png --page dev-theme --theme constellation
+cmp build/shots/cycle.png build/shots/direct.png && echo same
+```
+
+`uniq -c` should print three lines: 11 for Constellation (the first draw
+counts too, because the default theme is the starting theme) and 10 each
+for the other two. The last two commands draw the last theme of the list
+directly and compare the pictures.
+
+On a device, `scripts/device.sh snapshot` takes `--switch-to` as well, and
+the `fonts loaded` lines show up on your computer's standard error.

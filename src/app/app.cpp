@@ -19,6 +19,7 @@
 #include "base_viewmodel.h"
 #include "frame_stats.h"
 #include "theme.h"
+#include "theme_controller.h"
 #include "theme_engine.h"
 #include "toast.h"
 
@@ -31,6 +32,7 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <vector>
 
 #if USE_DESKTOP
 #include "desktop_simulator_frame.h"
@@ -79,17 +81,18 @@ void report_frame_stats_error(const std::string& message) {
     LOG_WARN("frame statistics stopped: {}", message);
 }
 
+// Development and test tools set this variable to a settings file that is
+// used instead of the normal ones, for reading and for writing. Unset or
+// empty means off. Snapshot mode never reads or writes settings, so it
+// ignores the variable.
+constexpr const char* kConfigFileVariable = "LOKICTL_CONFIG_FILE";
+
 void quit_requested_observer(lv_observer_t* observer, lv_subject_t* subject) {
     auto* running = static_cast<bool*>(lv_observer_get_user_data(observer));
     if (running && lv_subject_get_int(subject)) {
         *running = false;
     }
 }
-
-struct DarkModePersistence {
-    std::string config_path;
-    bool last_dark_mode;
-};
 
 std::string writable_config_path() {
 #if USE_DESKTOP
@@ -112,27 +115,20 @@ std::string writable_config_path() {
 #endif
 }
 
-void persist_dark_mode_observer(lv_observer_t* observer, lv_subject_t* subject) {
-    auto* persistence = static_cast<DarkModePersistence*>(lv_observer_get_user_data(observer));
-    if (!persistence) {
-        return;
-    }
-    const bool dark_mode = lv_subject_get_int(subject) != 0;
-    if (dark_mode == persistence->last_dark_mode) {
-        return;
-    }
-    persistence->last_dark_mode = dark_mode;
-
+// Saves `id` by name as the theme= key of the settings file at `path`.
+// Every other line of the file is kept, and an old dark_mode line is
+// removed. A failure is logged and reported to the caller.
+bool save_theme_choice(const std::string& path, view::ThemeId id) {
+    const char* name = view::theme_spec(id).name;
     ApplicationConfig config;
-    config.dark_mode = dark_mode;
+    config.theme = name;
     std::string error;
-    if (save_application_config(persistence->config_path, config, error)) {
-        LOG_INFO("saved config: {} (dark_mode={})",
-                 persistence->config_path,
-                 dark_mode ? "yes" : "no");
-    } else {
-        LOG_WARN("failed to save config {}: {}", persistence->config_path, error);
+    if (!save_application_config(path, config, error)) {
+        LOG_WARN("could not save the theme to {}: {}", path, error);
+        return false;
     }
+    LOG_INFO("saved theme={} to {}", name, path);
+    return true;
 }
 
 class ShortcutController {
@@ -140,14 +136,9 @@ public:
     ShortcutController(viewmodel::BaseViewModel& view_model, view::ThemeEngine& theme_engine)
         : view_model_(view_model),
           toast_(std::make_unique<view::widgets::Toast>(lv_layer_top(), theme_engine)),
-          help_popup_(std::make_unique<view::widgets::HelpPopup>(lv_layer_top(), theme_engine)),
-          last_dark_mode_(view_model.is_dark_mode()) {
+          help_popup_(std::make_unique<view::widgets::HelpPopup>(lv_layer_top(), theme_engine)) {
         toast_->build();
         help_popup_->build();
-        // LVGL calls the observer once right away; last_dark_mode_ already
-        // holds that value, so no toast appears at startup.
-        dark_mode_observer_ =
-            lv_subject_add_observer(view_model_.dark_mode_subject(), dark_mode_changed_cb, this);
         platform::set_global_key_listener(global_key_listener, this);
         platform::set_key_release_listener(key_release_listener, this);
     }
@@ -155,10 +146,18 @@ public:
     ~ShortcutController() {
         platform::clear_key_release_listener(key_release_listener, this);
         platform::clear_global_key_listener(global_key_listener, this);
-        if (dark_mode_observer_) {
-            lv_observer_remove(dark_mode_observer_);
-            dark_mode_observer_ = nullptr;
-        }
+    }
+
+    // The message after a theme switch with key 6. The toast has already
+    // taken the new theme's look by then. `saved` is false when the choice
+    // could not be written to the settings file.
+    void show_theme_switched(const char* display_name, bool saved) {
+        toast_->show_highlighted("Theme: ",
+                                 display_name,
+                                 saved ? "" : " (not saved)",
+                                 saved ? view::widgets::ToastTone::Default
+                                       : view::widgets::ToastTone::Warning,
+                                 kThemeToastDurationMs);
     }
 
 private:
@@ -248,30 +247,6 @@ private:
         exit_armed_ = false;
     }
 
-    // Key 6 flips the saved dark_mode setting, which picks the theme of the
-    // next start (Terminal for yes, Instrument for no). The running theme
-    // stays as it is, so a toast says what will change.
-    void handle_dark_mode_change(bool dark_mode) {
-        if (dark_mode == last_dark_mode_) {
-            return;
-        }
-        last_dark_mode_ = dark_mode;
-
-        const auto next_theme = dark_mode ? view::ThemeId::Terminal : view::ThemeId::Instrument;
-        toast_->show_highlighted("Next start: ",
-                                 view::theme_spec(next_theme).display_name,
-                                 " theme",
-                                 view::widgets::ToastTone::Default,
-                                 kThemeToastDurationMs);
-    }
-
-    static void dark_mode_changed_cb(lv_observer_t* observer, lv_subject_t* subject) {
-        auto* controller = static_cast<ShortcutController*>(lv_observer_get_user_data(observer));
-        if (controller) {
-            controller->handle_dark_mode_change(lv_subject_get_int(subject) != 0);
-        }
-    }
-
     static bool global_key_listener(uint32_t key,
                                     const char*,
                                     bool long_pressed,
@@ -287,13 +262,11 @@ private:
         }
     }
 
-    static constexpr uint32_t kThemeToastDurationMs = 4500;
+    static constexpr uint32_t kThemeToastDurationMs = 2500;
 
     viewmodel::BaseViewModel& view_model_;
     std::unique_ptr<view::widgets::Toast> toast_;
     std::unique_ptr<view::widgets::HelpPopup> help_popup_;
-    lv_observer_t* dark_mode_observer_{nullptr};
-    bool last_dark_mode_{false};
     uint32_t exit_key_pressed_{0};
     bool exit_armed_{false};
 };
@@ -364,13 +337,6 @@ bool resolve_theme_option(const std::string& name,
     return false;
 }
 
-const char* yes_no_unset(const std::optional<bool>& value) {
-    if (!value) {
-        return "unset";
-    }
-    return *value ? "yes" : "no";
-}
-
 } // namespace
 
 int Application::run(int argc, char** argv) {
@@ -399,6 +365,20 @@ int Application::run(int argc, char** argv) {
         return report_usage_error(theme_error);
     }
 
+    // The themes of --switch-to follow the same rules as --theme. The parser
+    // already refused empty names.
+    std::vector<view::ThemeId> switch_to;
+    for (const auto& name : options.switch_to) {
+        std::optional<view::ThemeId> switch_theme;
+        if (!resolve_theme_option(name, switch_theme, theme_error)) {
+            return report_usage_error(theme_error);
+        }
+        if (!switch_theme) {
+            return report_usage_error("--switch-to needs theme names separated by commas");
+        }
+        switch_to.push_back(*switch_theme);
+    }
+
     if (options.mode == LaunchMode::Snapshot) {
         const PageInfo* page =
             options.page.empty() ? &page_registry().front() : find_page(options.page);
@@ -409,7 +389,8 @@ int Application::run(int argc, char** argv) {
         return run_snapshot(SnapshotRequest{options.snapshot_path,
                                             page->page,
                                             theme.value_or(view::kDefaultThemeId),
-                                            options.settle_ms});
+                                            options.settle_ms,
+                                            switch_to});
     }
 
     const int exit_code = run_interactive(theme);
@@ -439,9 +420,18 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override) {
     }
 
     viewmodel::BaseViewModel view_model;
-    const std::string user_config_path = writable_config_path();
+
+    // The settings file: the user's own file is written, and read when it
+    // exists; otherwise the shipped file is read. LOKICTL_CONFIG_FILE
+    // replaces both.
+    std::string user_config_path = writable_config_path();
     std::string loaded_config_path = APP_CONFIG_FILE;
-    if (user_config_path != APP_CONFIG_FILE) {
+    if (const char* config_file = std::getenv(kConfigFileVariable);
+        config_file && config_file[0] != '\0') {
+        user_config_path = config_file;
+        loaded_config_path = config_file;
+        LOG_INFO("settings file set by {}", kConfigFileVariable);
+    } else if (user_config_path != APP_CONFIG_FILE) {
         std::error_code filesystem_error;
         if (std::filesystem::is_regular_file(user_config_path, filesystem_error)) {
             loaded_config_path = user_config_path;
@@ -451,30 +441,50 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override) {
     ApplicationConfig config;
     std::string config_error;
     if (load_application_config(loaded_config_path, config, config_error)) {
-        LOG_INFO("loaded config: {} (dark_mode={})",
+        LOG_INFO("loaded config: {} (theme={})",
                  loaded_config_path,
-                 yes_no_unset(config.dark_mode));
+                 config.theme ? *config.theme : std::string("unset"));
     } else {
         config = ApplicationConfig{};
         LOG_WARN("failed to load config {}: {}; using defaults", loaded_config_path, config_error);
     }
-    // The view model keeps the saved setting, not a --theme choice, so
-    // toggling it saves the right value for the next start.
-    view_model.set_dark_mode(
-        config.dark_mode.value_or(view::theme_spec(view::kDefaultThemeId).metrics.dark));
+    // Like an unknown theme name, a dark_mode value that cannot be read
+    // writes nothing at this start; the line goes away when key 6 saves.
+    if (config.dark_mode_invalid) {
+        LOG_WARN("invalid dark_mode value in {}; it is ignored", loaded_config_path);
+    }
 
-    // The theme for this run: --theme wins, then the saved setting, then the
+    // The saved choice: the theme= key, or else the old dark_mode key that
+    // came before it (yes: Terminal, no: Instrument). An unknown theme name
+    // counts as no choice at all; dark_mode is then ignored too, and the
+    // file is left alone until the user saves a theme with key 6.
+    std::optional<view::ThemeId> saved_theme;
+    const char* saved_theme_source = "the saved setting";
+    if (config.theme) {
+        if (const view::ThemeSpec* spec = view::find_theme(*config.theme)) {
+            saved_theme = spec->id;
+        } else if (theme_override) {
+            LOG_WARN("unknown theme '{}' in {}; it is ignored", *config.theme, loaded_config_path);
+        } else {
+            LOG_WARN("unknown theme '{}' in {}; using the default theme",
+                     *config.theme,
+                     loaded_config_path);
+        }
+    } else if (config.dark_mode) {
+        saved_theme = *config.dark_mode ? view::ThemeId::Terminal : view::ThemeId::Instrument;
+        saved_theme_source = "the old dark_mode setting";
+    }
+
+    // The theme for this run: --theme wins, then the saved choice, then the
     // default.
     view::ThemeId theme_id = view::kDefaultThemeId;
     const char* theme_source = "the default";
     if (theme_override) {
         theme_id = *theme_override;
         theme_source = "the command line";
-    } else if (config.dark_mode) {
-        // Interim mapping until the theme is saved by name: the old dark_mode
-        // setting picks Terminal (yes) or Instrument (no).
-        theme_id = *config.dark_mode ? view::ThemeId::Terminal : view::ThemeId::Instrument;
-        theme_source = "the saved setting";
+    } else if (saved_theme) {
+        theme_id = *saved_theme;
+        theme_source = saved_theme_source;
     }
 
     // Created before the display and destroyed after it, so every LVGL
@@ -484,6 +494,13 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override) {
     if (!theme_engine.fonts_complete()) {
         LOG_WARN("some fonts of the {} theme could not be loaded; built-in fonts are used instead",
                  theme_engine.theme().name);
+    }
+
+    // The old dark_mode key is replaced once by theme=, also on a --theme
+    // start. What is written is the saved choice, never the --theme value.
+    if (config.dark_mode && saved_theme && save_theme_choice(user_config_path, *saved_theme) &&
+        loaded_config_path == user_config_path) {
+        LOG_INFO("removed the old dark_mode setting from {}", user_config_path);
     }
 
 #if USE_DESKTOP
@@ -516,10 +533,19 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override) {
     screen_manager.start();
     ShortcutController shortcuts(view_model, theme_engine);
 
-    DarkModePersistence dark_mode_persistence{user_config_path, view_model.is_dark_mode()};
-    auto* dark_mode_observer = lv_subject_add_observer(view_model.dark_mode_subject(),
-                                                        persist_dark_mode_observer,
-                                                        &dark_mode_persistence);
+    // Declared after everything its listener uses, so it is destroyed before
+    // them. Key 6 switches the theme while the app runs, and every switch is
+    // saved.
+    ThemeController theme_controller(view_model, assets, theme_engine, screen_manager);
+    theme_controller.set_listener([&](const ThemeController::SwitchResult& result) {
+#if USE_DESKTOP
+        // Instrument has a light ground and gets the light shell art; the
+        // other themes get the dark one.
+        simulator_frame.set_dark_shell(theme_engine.theme().metrics.dark);
+#endif
+        const bool saved = save_theme_choice(user_config_path, result.current);
+        shortcuts.show_theme_switched(view::theme_spec(result.current).display_name, saved);
+    });
 
     bool running = true;
     auto* quit_observer = lv_subject_add_observer(view_model.quit_requested_subject(),
@@ -540,9 +566,6 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override) {
 
     if (quit_observer) {
         lv_observer_remove(quit_observer);
-    }
-    if (dark_mode_observer) {
-        lv_observer_remove(dark_mode_observer);
     }
 
     return 0;
