@@ -140,7 +140,8 @@ bool operator==(const HomeClient& left, const HomeClient& right) {
            left.signal_dbm == right.signal_dbm &&
            left.rate_kbps == right.rate_kbps &&
            left.connected_seconds == right.connected_seconds &&
-           left.is_new == right.is_new;
+           left.is_new == right.is_new &&
+           left.blocked == right.blocked;
 }
 
 bool operator!=(const HomeClient& left, const HomeClient& right) {
@@ -237,6 +238,8 @@ bool operator==(const HomeData& left, const HomeData& right) {
            left.down_history == right.down_history &&
            left.up_history == right.up_history &&
            left.clients == right.clients &&
+           left.block_failures == right.block_failures &&
+           left.block_message == right.block_message &&
            left.details == right.details;
 }
 

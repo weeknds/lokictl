@@ -607,6 +607,14 @@ home page's router view shows the same devices (at most three). `f`/`x`,
 The built-in Wi-Fi does not report each device's signal while it runs a
 hotspot, so the page leaves the signal out there.
 
+`8` BLOCK blocks the highlighted device: it stays joined to the hotspot and
+listed (with `blocked`), but gets no address, no internet and no answer
+from the Cardputer. `8` ALLOW lets it through again. The list of blocked
+devices is saved and applies again whenever Router runs; it goes by the
+device's hardware address, so a device that changes its address (many
+phones pick a new one per network) is a new device. If blocking fails, a
+message says why (`Block failed: helper not installed`).
+
 The package installs a polkit rule, `/usr/share/polkit-1/rules.d/60-lokictl.rules`,
 because apps started by the launcher may not change NetworkManager's
 settings on their own. It lets members of the `netdev` group control the
@@ -615,6 +623,20 @@ through a protected (WPA) hotspot. polkit cannot tell programs apart, so
 **every program of a `netdev` member gets these rights, not only
 LokiCTL**. Removing the package removes the rule. Router also needs
 `dnsmasq-base` and `nftables`, which the package depends on.
+
+Blocking needs one right the app itself does not have: changing the
+firewall. The package installs a small helper program for that,
+`/usr/libexec/lokictl/lokictl-helper` (source: `src/helper/lokictl_helper.c`).
+It is not setuid; the package's install script gives it the single Linux
+capability `CAP_NET_ADMIN` (with `setcap`, from `libcap2-bin`) and lets only
+root and the `netdev` group run it. It does one of four fixed commands
+(`block` and `unblock` with device addresses, `list`, `clear`) and exits,
+and it only ever changes its own nftables table, `inet lokictl`: a set of
+blocked addresses and two rules that drop what they send in through the
+hotspot's interface (`wlan0`). LokiCTL removes the table when Router stops
+and when it quits, and removing the package removes it too. Like the polkit
+rule, **every program of a `netdev` member may run the helper**, so it
+could block or unblock devices on the hotspot, and nothing else.
 
 The two demo pages, the counter and the key test page, are not opened from
 the home page. They are reached with `--page` in snapshot runs (see
@@ -676,8 +698,9 @@ command and is not stored there, and the copied package file is deleted after
 installing. LokiCTL keeps one file of its own there: picking a theme or
 switching "Dim when idle" on the Settings page saves it in
 `~/.config/lokictl/lokictl.conf`, and so do the first switch to Router
-(the hotspot's password) and a new name or password on the Hotspot page. The package also installs the polkit rule
-described above. Switching to Router changes the network (see the Modes
+(the hotspot's password), a new name or password on the Hotspot page and
+blocking a device (the `blocked_devices=` list). The package also installs
+the polkit rule and the firewall helper described above. Switching to Router changes the network (see the Modes
 page above); quitting LokiCTL switches back to Client. While it runs, LokiCTL dims the screen
 through `/sys/class/backlight/backlight/brightness` and puts the old value
 back when it quits (see [docs/data.md](docs/data.md#battery-care)). A saved picture

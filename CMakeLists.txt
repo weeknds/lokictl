@@ -514,6 +514,28 @@ if(APP_USE_LIBNM)
     target_link_libraries(${PROJECT_NAME}_platform PRIVATE PkgConfig::LIBNM)
 endif()
 
+# The firewall helper (src/helper): a small C program, the only part of the
+# app with the right to change the firewall (see the file). Device builds
+# only; the package installs it at APP_HELPER_PATH, where the app runs it to
+# block devices on the hotspot (src/platform/firewall.cpp).
+set(APP_HELPER_NAME "${APP_NAME}-helper")
+set(APP_HELPER_INSTALL_DIR "libexec/${APP_NAME}")
+set(APP_HELPER_PATH "/usr/${APP_HELPER_INSTALL_DIR}/${APP_HELPER_NAME}")
+target_compile_definitions(${PROJECT_NAME}_platform PRIVATE APP_HELPER_PATH="${APP_HELPER_PATH}")
+if(NOT USE_DESKTOP)
+    add_executable(${APP_HELPER_NAME} src/helper/lokictl_helper.c)
+    set_target_properties(${APP_HELPER_NAME} PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    target_compile_options(${APP_HELPER_NAME} PRIVATE
+        -Wall -Wextra -fstack-protector-strong
+        $<$<NOT:$<CONFIG:Debug>>:-D_FORTIFY_SOURCE=2>
+    )
+    target_link_options(${APP_HELPER_NAME} PRIVATE -Wl,-z,relro -Wl,-z,now)
+endif()
+
 # ====================================================
 # Model sources
 # ====================================================

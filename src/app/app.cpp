@@ -13,6 +13,7 @@
 #include "data_controller.h"
 #include "data_readout.h"
 #include "data_source.h"
+#include "firewall.h"
 #include "key_controller.h"
 #include "logger.h"
 #include "linux_input.h"
@@ -208,6 +209,21 @@ void save_hotspot_settings(const std::string& path,
         LOG_INFO("saved the hotspot's {} to {}", what, path);
     } else {
         LOG_WARN("could not save the hotspot's {} to {}: {}", what, path, error);
+    }
+}
+
+// Saves the list of blocked devices as the blocked_devices= key of the
+// settings file at `path` (which keeps every other line). A failure to
+// save is logged; the list is still used for this run. No address goes to
+// the log.
+void save_blocked_devices(const std::string& path, const std::vector<std::string>& addresses) {
+    ApplicationConfig config;
+    config.blocked_devices = platform::blocked_devices_text(addresses);
+    std::string error;
+    if (save_application_config(path, config, error)) {
+        LOG_INFO("saved the blocked devices to {}", path);
+    } else {
+        LOG_WARN("could not save the blocked devices to {}: {}", path, error);
     }
 }
 
@@ -565,6 +581,23 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override,
                                                const std::optional<std::string>& password) {
         save_hotspot_settings(user_config_path, name, password);
     });
+    // The devices blocked on the hotspot: the saved list on the device; the
+    // simulator starts with none and never writes one.
+#if !USE_DESKTOP
+    if (config.blocked_devices) {
+        std::size_t dropped = 0;
+        data.set_blocked_devices(platform::parse_blocked_devices(*config.blocked_devices, &dropped));
+        if (dropped > 0) {
+            LOG_WARN("{} entries of blocked_devices in {} are not device addresses, repeats or too many; "
+                     "they are ignored",
+                     dropped,
+                     loaded_config_path);
+        }
+    }
+#endif
+    data.set_blocked_saver([&user_config_path](const std::vector<std::string>& addresses) {
+        save_blocked_devices(user_config_path, addresses);
+    });
     data.read_first();
 
     ScreenManager screen_manager(view_model, assets, theme_engine);
@@ -602,6 +635,9 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override,
         }
     });
     power.start();
+    data.set_block_failure_listener([&key_controller](const std::string& message) {
+        key_controller.show_block_failed(message);
+    });
 
     // Declared after everything its listener uses, so it is destroyed before
     // them. When the user picks a theme in Settings, the theme switches
@@ -637,6 +673,7 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override,
     // First on the way out: the backlight goes back to what it was, and no
     // new values arrive while the rest is torn down.
     power.stop();
+    data.set_block_failure_listener({});
     data.stop();
 
     if (quit_observer) {

@@ -19,6 +19,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace viewmodel {
 class BaseViewModel;
@@ -81,6 +82,17 @@ std::string random_hotspot_password();
 // Requests while a switch runs are ignored. Log lines: "data: hotspot
 // renamed" and "data: new hotspot password" (never the values).
 //
+// Blocking devices on the hotspot: it keeps the list of blocked devices
+// (set_blocked_devices() at start, then the Devices page's requests,
+// BaseViewModel::request_block()), at most platform::kMaxBlockedDevices,
+// the oldest dropped first; has it saved (set_blocked_saver(), only when
+// the reader changes the real network) and hands the whole list to the
+// reader with each request, also one that changes nothing, so a change the
+// firewall refused is tried again. When the data layer reports a new failure
+// (HomeData::block_failures), it logs the message and tells the failure
+// listener. Log lines: "data: block a device (<n> blocked)", "data: unblock
+// a device (<n> blocked)" (never an address) and "data: <message>".
+//
 // Create it after the view model and destroy it before; like
 // app::ThemeController, it is not copied.
 class DataController {
@@ -133,6 +145,23 @@ public:
         std::function<void(const std::optional<std::string>& name, const std::optional<std::string>& password)>;
     void set_hotspot_saver(HotspotSaver saver);
 
+    // The blocked devices at start (the saved list, already checked). Call
+    // it before read_first(); the reader gets the list with the first
+    // reading.
+    void set_blocked_devices(const std::vector<std::string>& addresses);
+
+    // Saves the list of blocked devices after each change. Called on the UI
+    // thread, and only when the reader changes the real network; empty:
+    // nothing is saved.
+    using BlockedSaver = std::function<void(const std::vector<std::string>& addresses)>;
+    void set_blocked_saver(BlockedSaver saver);
+
+    // Told the message of each new failure to block or unblock a device
+    // ("Block failed: helper not installed"), on the UI thread. Empty:
+    // only the log says it.
+    using BlockFailureListener = std::function<void(const std::string& message)>;
+    void set_block_failure_listener(BlockFailureListener listener);
+
     // Tells the controller whether the screen is dark (app::PowerController,
     // F3.7). While it is, the reader is told that neither the traffic nor
     // the Status page's details are shown, so the live source stops reading
@@ -150,7 +179,11 @@ private:
     // Handles a change the Hotspot page asked for. The user data is the
     // controller.
     static void hotspot_request_cb(lv_observer_t* observer, lv_subject_t* subject);
+    // Handles a block or unblock the Devices page asked for. The user data
+    // is the controller.
+    static void block_request_cb(lv_observer_t* observer, lv_subject_t* subject);
     void request_mode(model::NetMode mode);
+    void change_blocked();
     void change_hotspot();
     // Hands `request` to the reader; without the background reader it is
     // taken with a reading right away.
@@ -184,6 +217,12 @@ private:
     int32_t hotspot_requests_seen_{0};
     std::function<std::string()> password_generator_;
     HotspotSaver hotspot_saver_;
+    lv_observer_t* block_observer_{nullptr};
+    int32_t block_requests_seen_{0};
+    std::vector<std::string> blocked_;  // the devices to block, oldest first
+    BlockedSaver blocked_saver_;
+    BlockFailureListener block_failure_listener_;
+    int32_t block_failures_seen_{0};    // the data layer's failure count handled last
     bool mode_logged_{false};
     model::NetMode logged_mode_{model::NetMode::Client};
     model::SwitchState logged_switch_{model::SwitchState::Idle};

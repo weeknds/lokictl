@@ -156,6 +156,7 @@ struct HomeClient {
     int32_t rate_kbps{kRateUnknown};    // current traffic, both ways together, kbit/s
     int32_t connected_seconds{kConnectedUnknown}; // time on the access point, seconds
     bool is_new{false};           // joined less than kClientNewSeconds ago
+    bool blocked{false};          // LokiCTL's firewall blocks it (see platform::DeviceBlocker)
 };
 
 // Every field is compared. A new field must be added here too: the data
@@ -271,6 +272,12 @@ struct HomeData {
     std::array<uint8_t, kHomeHistoryLength> down_history{}; // download rate history
     std::array<uint8_t, kHomeHistoryLength> up_history{};   // upload rate history
     std::vector<HomeClient> clients;   // connected devices, in the order they are shown
+    // Blocking devices on the hotspot (see platform::DeviceBlocker): how
+    // many changes of the firewall failed since the start, and what the
+    // last failure says ("Block failed: helper not installed"; empty before
+    // the first). The count tells a new failure from an old one.
+    int32_t block_failures{0};
+    std::string block_message;
     StatusDetails details;             // the Status page's extra values (see StatusDetails)
 };
 

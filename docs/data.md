@@ -617,6 +617,33 @@ change in place on the home page (see
 sources keep their own clients; the sample's three have made-up,
 locally administered hardware addresses (`02:5e:11:7a:c3:0n`).
 
+### Blocking a device
+
+Key 8 on the Devices page asks the view model to block or unblock the
+highlighted device (`request_block()`). `app::DataController` keeps the
+list of blocked hardware addresses (at most 16, the oldest dropped first),
+saves it on the device as `blocked_devices=` (addresses separated by commas)
+and hands the whole list to the reader (`DataReader::set_blocked()`), which
+wakes and takes a reading at once. Each source marks the listed clients
+(`HomeClient::blocked`; the Devices page then says `blocked`).
+
+Only the live source on the device, when it changes the network, blocks for
+real (`platform::DeviceBlocker`, in `src/platform/firewall.h`). It runs the
+helper `lokictl-helper` (see the README) on the reader thread and makes
+LokiCTL's own nftables table, `inet lokictl`, match the list: when the
+hotspot comes up (first clearing a table a killed run may have left), when
+the list changes (only the differences), and it removes the table when the
+hotspot stops, once after the start, and on the way out before the switch
+back to Client. It never runs the helper in the first reading (the UI
+thread's) or while a switch runs; each run is killed after 3 s. A device
+counts as blocked only once the helper said so. A failed change keeps the
+old state, raises `HomeData::block_failures` and sets
+`HomeData::block_message` (`Block failed: helper not installed`, `… no
+permission`, `… firewall refused`, …), which the app logs and shows as a
+message. Everywhere else (the made-up sources, test folders, the Mac,
+snapshots) every listed device counts as blocked at once and nothing runs,
+so `--keys 8` on the Devices page pictures a blocked device.
+
 ## The Status page's details
 
 The Status page (home page, key 8) shows the extra values of
@@ -1099,6 +1126,10 @@ In a normal run the data layer writes these lines:
   switch moves on. No network name and never the password;
 - `data: back to Client before quitting` when the app stops while Router is
   on or a switch runs (only where switches are real);
+- `data: block a device (<n> blocked)` and `data: unblock a device (<n>
+  blocked)` for each change of the list (never an address), and the
+  failure's message, for example `data: Block failed: no permission`, as a
+  warning;
 - `data: reader stopped` once on the way out.
 
 A snapshot logs only warnings, so these lines do not appear there, and

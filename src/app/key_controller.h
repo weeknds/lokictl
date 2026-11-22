@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <string>
 
 namespace viewmodel {
 class BaseViewModel;
@@ -80,6 +81,10 @@ public:
 
     // The message after the "Dim when idle" setting could not be saved.
     void show_dimming_not_saved();
+
+    // The message after a device could not be blocked or unblocked, as the
+    // data layer words it ("Block failed: helper not installed").
+    void show_block_failed(const std::string& message);
 
     // Called first for every key press (step 0). Returning true swallows
     // the key. Empty: no step 0.

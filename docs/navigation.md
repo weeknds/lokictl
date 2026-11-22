@@ -395,13 +395,18 @@ than two.
 |---|---|
 | `f`/`x`, `z`/`c`, the arrows, `5` UP, `6` DOWN | move the highlight; it stops at the first and the last device |
 | `7` QR | opens the Hotspot page with the join code |
+| `8` BLOCK / ALLOW | blocks the highlighted device, or lets a blocked one through again; off without devices |
 | `4` BACK or a short ESC | goes back |
+
+A blocked device says `blocked` at the right of its name (in the warning
+colour unless highlighted), in place of `new` and the signal; key 8 then
+reads ALLOW. See [data.md](data.md#blocking-a-device) for what blocking does.
 
 The highlight lives in the view model (`devices_selection_*`); the home
 page's Enter puts it on the selected client. The highlighted card is the top
 one unless the list ends. Only the two cards exist as LVGL objects: new
 values and the highlight retext and restyle them, nothing is built again.
-The help panel shows the badge `DEVICES` and three rows.
+The help panel shows the badge `DEVICES` and four rows.
 
 ## The Status page
 

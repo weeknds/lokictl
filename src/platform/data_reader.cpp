@@ -134,6 +134,15 @@ void DataReader::request_mode(const ModeRequest& request) {
     wake_.notify_all();
 }
 
+void DataReader::set_blocked(const std::vector<std::string>& addresses) {
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        blocked_ = addresses;
+        blocked_changed_ = true;
+    }
+    wake_.notify_all();
+}
+
 bool DataReader::changes_network() const {
     return source_ && source_->changes_network();
 }
@@ -143,6 +152,8 @@ bool DataReader::hand_over_shown() {
     bool details = false;
     bool requested = false;
     ModeRequest request;
+    bool blocked_changed = false;
+    std::vector<std::string> blocked;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         traffic = traffic_shown_;
@@ -153,6 +164,11 @@ bool DataReader::hand_over_shown() {
             request = std::move(mode_request_);
             mode_request_ = ModeRequest{};
             mode_requested_ = false;
+        }
+        if (blocked_changed_) {
+            blocked_changed = true;
+            blocked = blocked_;
+            blocked_changed_ = false;
         }
     }
     if (source_) {
@@ -165,8 +181,15 @@ bool DataReader::hand_over_shown() {
                 // A request that fails with an exception is dropped.
             }
         }
+        if (blocked_changed) {
+            try {
+                source_->set_blocked(blocked);
+            } catch (...) {
+                // A list that fails with an exception is dropped.
+            }
+        }
     }
-    return requested;
+    return requested || blocked_changed;
 }
 
 bool DataReader::take(model::HomeData& data) {
@@ -188,9 +211,10 @@ model::HomeData DataReader::latest() const {
 // take() never waits for a reading. A new traffic or details flag ends the
 // wait early: the loop then starts again, hands the flags over and asks the
 // source how long to sleep now (the live source asks for a reading at once).
-// A switch request ends the wait too, and is followed by a reading at once.
+// A switch request or a new list of devices to block ends the wait too, and
+// is followed by a reading at once.
 void DataReader::run() {
-    const auto woken = [this] { return stop_requested_ || shown_changed_ || mode_requested_; };
+    const auto woken = [this] { return stop_requested_ || shown_changed_ || mode_requested_ || blocked_changed_; };
     while (true) {
         {
             std::lock_guard<std::mutex> lock(mutex_);
@@ -198,8 +222,8 @@ void DataReader::run() {
                 break;
             }
         }
-        // A switch request is followed by a reading right away, so the page
-        // shows the switch's first state.
+        // A switch request or a new list of devices to block is followed by
+        // a reading right away, so the page shows the result.
         if (hand_over_shown()) {
             model::HomeData data;
             if (read_source(data)) {
@@ -233,7 +257,7 @@ void DataReader::run() {
             if (stop_requested_) {
                 break;
             }
-            if (shown_changed_ || mode_requested_) {
+            if (shown_changed_ || mode_requested_ || blocked_changed_) {
                 continue;
             }
         }

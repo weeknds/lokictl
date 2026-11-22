@@ -126,6 +126,16 @@ public:
     // Puts the highlight on the home page's selected client, then opens the
     // Devices page (see open_page()). The home page's Enter uses it.
     bool open_devices();
+    // Asks to block (`block` true) or unblock the device with the hardware
+    // address `address`. The view model only passes the request on:
+    // app::DataController keeps the list, saves it and hands it to the data
+    // layer, and each client's state comes back in home().clients
+    // (HomeClient::blocked). Counts every request, like request_mode();
+    // requested_block_address() and requested_block() say what was asked.
+    void request_block(const std::string& address, bool block);
+    lv_subject_t* block_request_subject();
+    const std::string& requested_block_address() const;
+    bool requested_block() const;
 
     // The Modes page.
     // The highlighted row (one row per model::NetMode, in its order), or
@@ -249,6 +259,9 @@ private:
     reactive::BoolSubject screen_dimming_subject_;
     reactive::IntSubject status_scroll_subject_;
     reactive::IntSubject devices_selection_subject_;
+    reactive::IntSubject block_request_subject_;
+    std::string requested_block_address_;
+    bool requested_block_{false};
     reactive::IntSubject modes_selection_subject_;
     reactive::IntSubject mode_request_subject_;
     model::NetMode requested_mode_{model::NetMode::Client};

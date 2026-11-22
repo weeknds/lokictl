@@ -44,6 +44,12 @@ struct ApplicationConfig {
     // appears more than once, the last line counts. It is not checked here
     // (see valid_hotspot_name()).
     std::optional<std::string> hotspot_name;
+    // The `blocked_devices` key of [application]: the hardware addresses of
+    // the devices LokiCTL blocks on its hotspot, separated by commas, as it
+    // stands after the '=' (trimmed); empty for none. Unset when the file
+    // has no such key; when it appears more than once, the last line
+    // counts. It is not checked here (see platform::parse_blocked_devices()).
+    std::optional<std::string> blocked_devices;
 };
 
 // True for a password a WPA2 hotspot takes: 8 to 63 printable ASCII
@@ -66,8 +72,9 @@ bool load_application_config(const std::string& path,
 // folder and the section when needed:
 // - `theme=<name>` is written when config.theme is set,
 //   `dim_when_idle=yes|no` when config.dim_when_idle is set,
-//   `hotspot_password=<password>` when config.hotspot_password is set and
-//   `hotspot_name=<name>` when config.hotspot_name is set. Each replaces
+//   `hotspot_password=<password>` when config.hotspot_password is set,
+//   `hotspot_name=<name>` when config.hotspot_name is set and
+//   `blocked_devices=<list>` when config.blocked_devices is set. Each replaces
 //   the first line of its key in the section, and any further lines of
 //   that key are dropped; with no such line it goes at the end of the
 //   section. A key that is not set is left as it is in the file.

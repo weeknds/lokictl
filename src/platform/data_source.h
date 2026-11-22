@@ -13,6 +13,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <vector>
 
 // Where the values of the home page come from. A source fills in a whole
 // model::HomeData block; platform::DataReader asks it for values and hands
@@ -88,16 +89,24 @@ public:
     // PretendModeSwitch), and this default ignores the request.
     virtual void request_mode(const ModeRequest& /*request*/) {}
 
+    // The devices on the hotspot that should be blocked, by hardware
+    // address (see DeviceBlocker), the whole list each time. Handed over
+    // like set_traffic_shown(), before a reading. The live source on the
+    // device, when it changes the network, makes LokiCTL's firewall table
+    // match it; every other source only pretends (each listed client counts
+    // as blocked at once). This default ignores it.
+    virtual void set_blocked(const std::vector<std::string>& /*addresses*/) {}
+
     // True when request_mode() and leave_modes() change the real network.
     virtual bool changes_network() const {
         return false;
     }
 
-    // On the way out: switches back to Client if this source's switches
-    // left the device in another mode, and waits at most `limit` for the
-    // system to accept that. Called once, on the reader's thread, after
-    // its last reading. A source that changes nothing keeps this default,
-    // which does nothing.
+    // On the way out: removes LokiCTL's firewall table, then switches back
+    // to Client if this source's switches left the device in another mode,
+    // and waits at most `limit` in all for the system to accept that.
+    // Called once, on the reader's thread, after its last reading. A source
+    // that changes nothing keeps this default, which does nothing.
     virtual void leave_modes(std::chrono::milliseconds /*limit*/) {}
 };
 

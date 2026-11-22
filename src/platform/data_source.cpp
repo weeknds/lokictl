@@ -6,6 +6,7 @@
 
 #include "data_source.h"
 
+#include "firewall.h"
 #include "home_examples.h"
 #include "live_data_source.h"
 
@@ -217,7 +218,8 @@ private:
 
 // A made-up source with the pretend switch between modes on top (see
 // PretendModeSwitch): it reads the source it wraps, then puts the pretend
-// mode and the switch's state into the block.
+// mode and the switch's state into the block, and marks the clients that
+// are to be blocked (a pretend DeviceBlocker).
 class PretendSwitchSource final : public DataSource {
 public:
     explicit PretendSwitchSource(std::unique_ptr<DataSource> source)
@@ -230,6 +232,7 @@ public:
     void read(model::HomeData& data) override {
         source_->read(data);
         pretend_.apply(data, PretendFailure{});
+        blocker_.apply(data, data.ap_active, false);
     }
 
     milliseconds next_read_delay() override {
@@ -252,9 +255,14 @@ public:
         pretend_.request(request);
     }
 
+    void set_blocked(const std::vector<std::string>& addresses) override {
+        blocker_.set_wanted(addresses);
+    }
+
 private:
     std::unique_ptr<DataSource> source_;
     PretendModeSwitch pretend_;
+    DeviceBlocker blocker_{false};
 };
 
 // The made-up source of `kind` (every kind but Live).

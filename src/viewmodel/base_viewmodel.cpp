@@ -36,6 +36,7 @@ BaseViewModel::BaseViewModel()
       screen_dimming_subject_(true),
       status_scroll_subject_(0),
       devices_selection_subject_(0),
+      block_request_subject_(0),
       modes_selection_subject_(kModesFollowsActive),
       mode_request_subject_(0),
       hotspot_subject_(0),
@@ -210,6 +211,25 @@ void BaseViewModel::select_mode_row(int32_t row) {
 bool BaseViewModel::open_modes() {
     select_mode_row(kModesFollowsActive);
     return open_page(model::AppPage::Modes);
+}
+
+void BaseViewModel::request_block(const std::string& address, bool block) {
+    // Stored first: the observers run inside set() and read it from there.
+    requested_block_address_ = address;
+    requested_block_ = block;
+    bump(block_request_subject_);
+}
+
+lv_subject_t* BaseViewModel::block_request_subject() {
+    return block_request_subject_.native();
+}
+
+const std::string& BaseViewModel::requested_block_address() const {
+    return requested_block_address_;
+}
+
+bool BaseViewModel::requested_block() const {
+    return requested_block_;
 }
 
 void BaseViewModel::request_mode(model::NetMode mode) {

@@ -8,6 +8,7 @@
 
 #include "application_config.h"
 #include "base_viewmodel.h"
+#include "firewall.h"
 #include "logger.h"
 
 #include <algorithm>
@@ -68,6 +69,8 @@ DataController::DataController(viewmodel::BaseViewModel& view_model,
     mode_observer_ = lv_subject_add_observer(view_model_.mode_request_subject(), mode_request_cb, this);
     hotspot_requests_seen_ = lv_subject_get_int(view_model_.hotspot_request_subject());
     hotspot_observer_ = lv_subject_add_observer(view_model_.hotspot_request_subject(), hotspot_request_cb, this);
+    block_requests_seen_ = lv_subject_get_int(view_model_.block_request_subject());
+    block_observer_ = lv_subject_add_observer(view_model_.block_request_subject(), block_request_cb, this);
 }
 
 DataController::~DataController() {
@@ -83,6 +86,10 @@ DataController::~DataController() {
     if (hotspot_observer_) {
         lv_observer_remove(hotspot_observer_);
         hotspot_observer_ = nullptr;
+    }
+    if (block_observer_) {
+        lv_observer_remove(block_observer_);
+        block_observer_ = nullptr;
     }
 }
 
@@ -190,6 +197,64 @@ void DataController::hotspot_request_cb(lv_observer_t* observer, lv_subject_t* s
     }
     controller->hotspot_requests_seen_ = count;
     controller->change_hotspot();
+}
+
+void DataController::block_request_cb(lv_observer_t* observer, lv_subject_t* subject) {
+    auto* controller = static_cast<DataController*>(lv_observer_get_user_data(observer));
+    if (!controller) {
+        return;
+    }
+    const int32_t count = lv_subject_get_int(subject);
+    if (count == controller->block_requests_seen_) {
+        return;
+    }
+    controller->block_requests_seen_ = count;
+    controller->change_blocked();
+}
+
+void DataController::set_blocked_devices(const std::vector<std::string>& addresses) {
+    blocked_ = addresses;
+    reader_.set_blocked(blocked_);
+}
+
+void DataController::set_blocked_saver(BlockedSaver saver) {
+    blocked_saver_ = std::move(saver);
+}
+
+void DataController::set_block_failure_listener(BlockFailureListener listener) {
+    block_failure_listener_ = std::move(listener);
+}
+
+void DataController::change_blocked() {
+    const std::string& address = view_model_.requested_block_address();
+    if (!platform::valid_device_address(address)) {
+        return;
+    }
+    // A list that already says so (a change the firewall refused before) is
+    // handed over again without saving, so the data layer tries once more.
+    const auto found = std::find(blocked_.begin(), blocked_.end(), address);
+    bool changed = false;
+    if (view_model_.requested_block() && found == blocked_.end()) {
+        blocked_.push_back(address);
+        if (blocked_.size() > platform::kMaxBlockedDevices) {
+            blocked_.erase(blocked_.begin());
+        }
+        changed = true;
+        LOG_INFO("data: block a device ({} blocked)", blocked_.size());
+    } else if (!view_model_.requested_block() && found != blocked_.end()) {
+        blocked_.erase(found);
+        changed = true;
+        LOG_INFO("data: unblock a device ({} blocked)", blocked_.size());
+    }
+    if (changed && blocked_saver_ && reader_.changes_network()) {
+        blocked_saver_(blocked_);
+    }
+    reader_.set_blocked(blocked_);
+    if (!reader_.running()) {
+        // Snapshots: the list is taken with a reading right away.
+        reader_.read_now();
+        poll();
+    }
 }
 
 void DataController::set_password_generator(std::function<std::string()> generator) {
@@ -306,6 +371,14 @@ bool DataController::poll() {
 
 void DataController::deliver(const model::HomeData& data) {
     view_model_.set_home_data(data);
+
+    if (data.block_failures != block_failures_seen_) {
+        block_failures_seen_ = data.block_failures;
+        LOG_WARN("data: {}", data.block_message);
+        if (block_failure_listener_) {
+            block_failure_listener_(data.block_message);
+        }
+    }
 
     const int32_t charge = logged_charge(data.battery_percent);
     if (!battery_logged_ || charge != logged_percent_ || data.battery_state != logged_state_) {

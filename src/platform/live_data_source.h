@@ -8,6 +8,7 @@
 
 #include "battery.h"
 #include "data_source.h"
+#include "firewall.h"
 #include "hotspot_clients.h"
 #include "mode_switch.h"
 #include "network.h"
@@ -42,6 +43,12 @@ namespace platform {
 // Everywhere else (test folders, the Mac, snapshots, --print-data) the
 // switch only pretends (PretendModeSwitch), and a test folder's
 // "networkmanager" file can make it fail.
+//
+// Blocking devices (set_blocked()) works the same way: on the device, when
+// the source changes the network, a real DeviceBlocker makes LokiCTL's
+// firewall table match the list (never in the first reading, which the app
+// takes on the UI thread, and never while a switch runs); everywhere else
+// it only pretends.
 class LiveDataSource final : public DataSource {
 public:
     // `data_root` stands in for the root of the file system (see
@@ -110,7 +117,10 @@ public:
     void wait_until_ready(std::chrono::milliseconds limit) override;
 
     void request_mode(const ModeRequest& request) override;
+    void set_blocked(const std::vector<std::string>& addresses) override;
     bool changes_network() const override;
+    // Removes the firewall table first (DeviceBlocker::leave()), then asks
+    // the network service to go back to Client with the time that is left.
     void leave_modes(std::chrono::milliseconds limit) override;
 
     static constexpr std::chrono::milliseconds kBatteryInterval{10000};
@@ -152,6 +162,8 @@ private:
     bool network_read_{false};
     std::chrono::steady_clock::time_point network_read_at_{};
     HotspotClients clients_;
+    DeviceBlocker blocker_;
+    bool first_read_done_{false}; // the first reading (on the UI thread) is over
 
     // The Status page's details.
     bool details_shown_{false};      // the flag set_details_shown() gave last

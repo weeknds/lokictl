@@ -31,7 +31,11 @@ namespace screen {
 //
 // Up and down (F/X), left and right (Z/C) and keys 5 and 6 (Up, Down) move
 // the highlight and stop at the first and the last device. Key 7 (QR)
-// opens the Hotspot page with the join code. Key 4 or a short ESC goes
+// opens the Hotspot page with the join code. Key 8 blocks the highlighted
+// device (Block) or lets it through again (Allow; see
+// BaseViewModel::request_block()); a blocked device says "blocked" at the
+// right of its name, in the warning colour, in place of "new" and the
+// signal. Without devices key 8 is off. Key 4 or a short ESC goes
 // back. The highlight lives in the view model (devices_selection_*), so it
 // is kept across a theme switch; the page shows it clamped to the devices
 // there are. Only the card slots exist; when the values or the highlight
@@ -72,6 +76,14 @@ private:
         std::string hardware_shown;
         std::string joined_shown;
         int32_t style_shown{-1}; // -1 hidden, 0 plain, 1 highlighted
+        int32_t tone_shown{-1};  // the right-hand text's colour: 0 the card's, 1 text, 2 warning
+    };
+
+    // What key 8 shows: off (no devices), Block or Allow.
+    enum class BlockKey {
+        Off = 0,
+        Block,
+        Allow,
     };
 
     void build_content(lv_obj_t* content) override;
@@ -82,6 +94,10 @@ private:
     int32_t selected() const;
     // Moves the highlight by `delta` devices; it stops at both ends.
     void move(int32_t delta);
+    // Key 8 for the highlighted device, and what it does.
+    BlockKey block_key() const;
+    view::widgets::SoftKey block_soft_key(BlockKey key);
+    void toggle_block();
 
     // Shows the values and the highlight.
     void refresh();
@@ -93,6 +109,7 @@ private:
     static void selection_observer(lv_observer_t* observer, lv_subject_t* subject);
 
     std::array<Card, kVisibleCards> cards_{};
+    BlockKey block_key_shown_{BlockKey::Off};
     lv_obj_t* track_{nullptr};
     lv_obj_t* thumb_{nullptr};
     // The box shown without devices, its two lines and their texts.

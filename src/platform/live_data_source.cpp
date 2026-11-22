@@ -41,7 +41,8 @@ LiveDataSource::LiveDataSource(std::string data_root, bool may_change_network)
       root_(test_folder_ ? std::filesystem::path(data_root) : std::filesystem::path("/")),
       addresses_file_(test_folder_ ? root_ / "addresses" : std::filesystem::path()),
       changes_network_(may_change_network && data_root.empty() && NetworkManagerClient::can_change_network()),
-      clients_(root_, addresses_file_, test_folder_) {
+      clients_(root_, addresses_file_, test_folder_),
+      blocker_(changes_network_) {
     // Reads the time zone once, so localtime_r() below shows local time.
     tzset();
     // Relative on purpose: an absolute path on the right would drop the root.
@@ -101,9 +102,16 @@ void LiveDataSource::request_mode(const ModeRequest& request) {
     }
 }
 
+void LiveDataSource::set_blocked(const std::vector<std::string>& addresses) {
+    blocker_.set_wanted(addresses);
+}
+
 void LiveDataSource::leave_modes(milliseconds limit) {
     if (changes_network_) {
-        network_manager_->leave(limit);
+        const auto started = std::chrono::steady_clock::now();
+        blocker_.leave();
+        const auto spent = std::chrono::duration_cast<milliseconds>(std::chrono::steady_clock::now() - started);
+        network_manager_->leave(std::max(limit - spent, milliseconds(0)));
     }
 }
 
@@ -185,6 +193,14 @@ void LiveDataSource::read(model::HomeData& data) {
     } else {
         pretend_.apply(data, service.switch_failure);
     }
+
+    // Blocked devices: after the pretend switch, which may replace the
+    // clients. The helper never runs in the first reading (the UI thread's)
+    // nor while a switch runs.
+    const bool hotspot_up = service.available && service.hotspot.active && !hotspot_interface.empty();
+    const bool switching = network_manager_ && network_manager_->busy();
+    blocker_.apply(data, hotspot_up, first_read_done_ && !switching);
+    first_read_done_ = true;
     if (details_shown_) {
         data.details = details_;
         apply_network_manager(service, data.details.ports);

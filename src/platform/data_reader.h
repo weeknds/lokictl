@@ -13,7 +13,9 @@
 #include <condition_variable>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <thread>
+#include <vector>
 
 namespace platform {
 
@@ -93,6 +95,15 @@ public:
     // newer request replaces one that was not handed over yet.
     void request_mode(const ModeRequest& request);
 
+    // Hands the list of devices to block to the source (DataSource::
+    // set_blocked()), the whole list each time. It never waits: while the
+    // background thread runs, it wakes up, hands the list over and takes a
+    // reading at once, so the page shows the result quickly. Without the
+    // background thread the list reaches the source with the next
+    // read_now(). A newer list replaces one that was not handed over yet,
+    // which loses nothing, because each list is the whole wanted state.
+    void set_blocked(const std::vector<std::string>& addresses);
+
     // Whether the source changes the real network (DataSource::
     // changes_network()).
     bool changes_network() const;
@@ -118,16 +129,17 @@ private:
     // Stores the block as the newest one, unless it equals the newest one.
     void publish(model::HomeData data);
     // Gives the source the newest traffic and details flags, and a waiting
-    // switch request. Called on the thread that asks the source. Returns
-    // true when it handed over a request.
+    // switch request or list of devices to block. Called on the thread that
+    // asks the source. Returns true when it handed over a request or a
+    // list.
     bool hand_over_shown();
 
     std::unique_ptr<DataSource> source_;
     const DataSourceKind kind_;
     std::thread thread_;
 
-    // The hand-over slot, the stop flag, the two page flags and the switch
-    // request; the mutex guards all of them.
+    // The hand-over slot, the stop flag, the two page flags, the switch
+    // request and the devices to block; the mutex guards all of them.
     mutable std::mutex mutex_;
     std::condition_variable wake_;
     bool stop_requested_{false};
@@ -139,6 +151,8 @@ private:
     bool shown_changed_{false};    // a flag changed since the source got them
     bool mode_requested_{false};   // mode_request_ waits for the source
     ModeRequest mode_request_;
+    bool blocked_changed_{false};  // blocked_ waits for the source
+    std::vector<std::string> blocked_;
 };
 
 } // namespace platform

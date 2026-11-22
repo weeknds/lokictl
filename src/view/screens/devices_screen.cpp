@@ -98,6 +98,7 @@ view::widgets::HelpContent DevicesScreen::help_content() {
                 {"ESC / 4", "Back"},
                 {"F X / 5 6", "Previous / next device"},
                 {"7", "Hotspot: join code"},
+                {"8", "Block / allow the device"},
             }};
 }
 
@@ -113,8 +114,36 @@ view::widgets::SoftKeySet DevicesScreen::soft_keys() {
         {"Up", [this] { move(-1); }},
         {"Down", [this] { move(1); }},
         {"QR", [&view_model] { view_model.open_hotspot(); }},
-        {},
+        block_soft_key(block_key_shown_ = block_key()),
     }};
+}
+
+DevicesScreen::BlockKey DevicesScreen::block_key() const {
+    const auto& clients = view_model().home().clients;
+    if (clients.empty()) {
+        return BlockKey::Off;
+    }
+    const model::HomeClient& client = clients[static_cast<std::size_t>(selected())];
+    if (client.hardware_address.empty()) {
+        return BlockKey::Off;
+    }
+    return client.blocked ? BlockKey::Allow : BlockKey::Block;
+}
+
+view::widgets::SoftKey DevicesScreen::block_soft_key(BlockKey key) {
+    return {key == BlockKey::Allow ? "Allow" : "Block", [this] { toggle_block(); }, false, key != BlockKey::Off};
+}
+
+void DevicesScreen::toggle_block() {
+    const auto& clients = view_model().home().clients;
+    if (clients.empty()) {
+        return;
+    }
+    const model::HomeClient& client = clients[static_cast<std::size_t>(selected())];
+    if (client.hardware_address.empty()) {
+        return;
+    }
+    view_model().request_block(client.hardware_address, !client.blocked);
 }
 
 bool DevicesScreen::on_key(uint32_t key) {
@@ -228,14 +257,12 @@ void DevicesScreen::style_card(Card& card, int32_t style) {
     view::style::list_row(card.card, theme, highlighted);
     // On the highlight every line takes the card's colour; otherwise the
     // address is in the address colour and the hardware address and the
-    // time are muted.
-    lv_obj_t* const plain[] = {card.signal, card.rate};
-    for (lv_obj_t* label : plain) {
-        if (highlighted) {
-            lv_obj_remove_local_style_prop(label, LV_STYLE_TEXT_COLOR, 0);
-        } else {
-            lv_obj_set_style_text_color(label, theme.colors.text, 0);
-        }
+    // time are muted. The right-hand text of the first line is coloured in
+    // refresh(), because it depends on the device too.
+    if (highlighted) {
+        lv_obj_remove_local_style_prop(card.rate, LV_STYLE_TEXT_COLOR, 0);
+    } else {
+        lv_obj_set_style_text_color(card.rate, theme.colors.text, 0);
     }
     if (highlighted) {
         lv_obj_remove_local_style_prop(card.address, LV_STYLE_TEXT_COLOR, 0);
@@ -266,16 +293,34 @@ void DevicesScreen::refresh() {
         const model::HomeClient& client = clients[static_cast<std::size_t>(position)];
         set_text_if_changed(card.name, card.name_shown, home::client_name_text(client));
         // A signal that is not known is left out here: some Wi-Fi chips
-        // never tell it for the devices on their access point.
+        // never tell it for the devices on their access point. A blocked
+        // device says only that.
         const bool signal_known = client.signal_dbm != model::kSignalUnknown;
         set_text_if_changed(card.signal, card.signal_shown,
-                            home::join_parts({client.is_new ? "new" : "",
-                                              signal_known ? home::signal_text(client.signal_dbm) : ""}));
+                            client.blocked ? std::string("blocked")
+                                           : home::join_parts({client.is_new ? "new" : "",
+                                                               signal_known ? home::signal_text(client.signal_dbm)
+                                                                            : ""}));
         set_text_if_changed(card.address, card.address_shown, home::text_or_unknown(client.address));
         set_text_if_changed(card.rate, card.rate_shown, home::client_rate_text(client.rate_kbps));
         set_text_if_changed(card.hardware, card.hardware_shown, home::text_or_unknown(client.hardware_address));
         set_text_if_changed(card.joined, card.joined_shown, home::joined_text(client.connected_seconds));
         style_card(card, position == chosen ? 1 : 0);
+        const int32_t tone = position == chosen ? 0 : (client.blocked ? 2 : 1);
+        if (card.tone_shown != tone) {
+            card.tone_shown = tone;
+            if (tone == 0) {
+                lv_obj_remove_local_style_prop(card.signal, LV_STYLE_TEXT_COLOR, 0);
+            } else {
+                lv_obj_set_style_text_color(card.signal, tone == 2 ? theme().colors.warning : theme().colors.text, 0);
+            }
+        }
+    }
+
+    const BlockKey key = block_key();
+    if (key != block_key_shown_ && soft_key_bar()) {
+        block_key_shown_ = key;
+        soft_key_bar()->set_key(4, block_soft_key(key));
     }
 
     // The scroll mark, only when there are more devices than cards.

@@ -1,0 +1,15 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: 2026 LokiCTL contributors
+# SPDX-License-Identifier: MIT
+#
+# On removal, takes @APP_DISPLAY_NAME@'s own firewall table away (blocked devices
+# on the hotspot), so nothing it made stays behind. No other table is
+# touched.
+
+set -e
+
+if [ "$1" = "remove" ] && [ -x /usr/sbin/nft ]; then
+    printf 'add table inet lokictl\ndelete table inet lokictl\n' | /usr/sbin/nft -f - || true
+fi
+
+exit 0

@@ -25,6 +25,7 @@ namespace {
 
 constexpr uint32_t kThemeToastDurationMs = 2500;
 constexpr uint32_t kBatteryToastDurationMs = 5000;
+constexpr uint32_t kBlockToastDurationMs = 4000;
 
 bool is_soft_key(uint32_t key) {
     return key >= '4' && key <= '8';
@@ -70,6 +71,10 @@ void KeyController::show_battery_warning(int32_t percent, bool very_low) {
 
 void KeyController::show_dimming_not_saved() {
     toast_->show("Dim when idle: not saved", view::widgets::ToastTone::Warning, kThemeToastDurationMs);
+}
+
+void KeyController::show_block_failed(const std::string& message) {
+    toast_->show(message, view::widgets::ToastTone::Error, kBlockToastDurationMs);
 }
 
 void KeyController::set_wake_handler(std::function<bool()> handler) {

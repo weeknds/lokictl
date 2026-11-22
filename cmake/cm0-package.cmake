@@ -33,6 +33,16 @@ install(TARGETS ${PROJECT_NAME}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
+# The firewall helper (device builds only). It is installed for root alone;
+# postinst gives it to the netdev group and its capability (see
+# templates/postinst.in).
+if(TARGET ${APP_HELPER_NAME})
+    install(TARGETS ${APP_HELPER_NAME}
+        RUNTIME DESTINATION ${APP_HELPER_INSTALL_DIR}
+        PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE
+    )
+endif()
+
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/config/${APP_CONFIG_NAME}.conf"
     DESTINATION "/etc"
 )
@@ -122,11 +132,20 @@ set(CPACK_DEBIAN_PACKAGE_PRIORITY "optional")
 # hand-written list below.
 #
 # Router uses NetworkManager's shared mode, which runs dnsmasq (addresses
-# for the hotspot's devices) and nft (sharing the link). Neither is a
-# library, so they are named by hand on both routes.
+# for the hotspot's devices) and nft (sharing the link). The firewall
+# helper runs nft too, and postinst gives it its capability with setcap
+# (libcap2-bin). None of them is a library, so they are named by hand on
+# both routes.
 set(APP_DEBIAN_TOOL_DEPENDS "")
 if(APP_USE_LIBNM)
     set(APP_DEBIAN_TOOL_DEPENDS "dnsmasq-base, nftables")
+endif()
+if(TARGET ${APP_HELPER_NAME})
+    if(APP_DEBIAN_TOOL_DEPENDS)
+        string(APPEND APP_DEBIAN_TOOL_DEPENDS ", libcap2-bin")
+    else()
+        set(APP_DEBIAN_TOOL_DEPENDS "nftables, libcap2-bin")
+    endif()
 endif()
 if(NOT USE_DESKTOP AND NOT CMAKE_CROSSCOMPILING)
     set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
@@ -138,7 +157,10 @@ else()
         string(APPEND APP_DEBIAN_DEPENDS ", libfmt10")
     endif()
     if(APP_USE_LIBNM)
-        string(APPEND APP_DEBIAN_DEPENDS ", libnm0, libglib2.0-0t64, ${APP_DEBIAN_TOOL_DEPENDS}")
+        string(APPEND APP_DEBIAN_DEPENDS ", libnm0, libglib2.0-0t64")
+    endif()
+    if(APP_DEBIAN_TOOL_DEPENDS)
+        string(APPEND APP_DEBIAN_DEPENDS ", ${APP_DEBIAN_TOOL_DEPENDS}")
     endif()
     set(CPACK_DEBIAN_PACKAGE_DEPENDS "${APP_DEBIAN_DEPENDS}")
     set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS OFF)
@@ -151,5 +173,18 @@ configure_file(
     @ONLY
 )
 set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${APP_GENERATED_DIR}/conffiles")
+# With the helper: postinst gives it its capability, prerm removes the
+# firewall table on removal. Strict permissions want them executable.
+if(TARGET ${APP_HELPER_NAME})
+    foreach(script IN ITEMS postinst prerm)
+        configure_file(
+            "${CMAKE_CURRENT_LIST_DIR}/templates/${script}.in"
+            "${APP_GENERATED_DIR}/${script}"
+            @ONLY
+            FILE_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
+        )
+        list(APPEND CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${APP_GENERATED_DIR}/${script}")
+    endforeach()
+endif()
 
 include(CPack)
