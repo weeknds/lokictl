@@ -22,14 +22,10 @@
 namespace platform {
 namespace {
 
-std::array<lv_obj_t*, kNavKeyCount> nav_buttons{};
-uint32_t last_key = 0;
-bool last_key_pressed = false;
-bool nav_shortcut_mode = false;
-uint32_t pressed_key = 0;
+std::array<lv_obj_t*, kSoftKeySlotCount> soft_key_slots{};
+uint32_t pressed_key = 0;   // the key being followed; 0 while none is held
 uint32_t press_started_at = 0;
 bool long_press_sent = false;
-bool pressed_key_consumed = false;
 lv_timer_t* long_press_timer = nullptr;
 KeyReleaseListener key_release_listener = nullptr;
 void* key_release_listener_user_data = nullptr;
@@ -49,61 +45,10 @@ struct EvdevKeypad {
 };
 #endif
 
-// Keys 4-8 always press the five soft keys. In shortcut mode (the counter
-// page) Z/left and C/right also press keys 5 and 7. Outside it ESC maps to
-// key 4, as it always has; the app's global key listener normally takes ESC
-// before it gets here.
-size_t nav_key_to_index(uint32_t key) {
-    switch (key) {
-        case '4':
-            return 0;
-        case '5':
-            return 1;
-        case '6':
-            return 2;
-        case '7':
-            return 3;
-        case '8':
-            return 4;
-        default:
-            break;
+void emit_global_key(uint32_t key, bool long_pressed) {
+    if (global_key_listener) {
+        global_key_listener(key, describe_key(key), long_pressed, global_key_listener_user_data);
     }
-
-    if (nav_shortcut_mode) {
-        switch (key) {
-            case 'z':
-            case 'Z':
-            case LV_KEY_LEFT:
-                return 1;
-            case 'c':
-            case 'C':
-            case LV_KEY_RIGHT:
-                return 3;
-            default:
-                return kNavKeyCount;
-        }
-    }
-
-    return key == LV_KEY_ESC ? 0 : kNavKeyCount;
-}
-
-void dispatch_nav_key(uint32_t key) {
-    const auto index = nav_key_to_index(key);
-    if (index >= nav_buttons.size()) {
-        return;
-    }
-
-    auto* button = nav_buttons[index];
-    if (!button || !lv_obj_is_valid(button) || !lv_obj_has_flag(button, LV_OBJ_FLAG_CLICKABLE)) {
-        return;
-    }
-
-    lv_obj_send_event(button, LV_EVENT_CLICKED, nullptr);
-}
-
-bool emit_global_key(uint32_t key, bool long_pressed) {
-    return global_key_listener &&
-           global_key_listener(key, describe_key(key), long_pressed, global_key_listener_user_data);
 }
 
 void long_press_timer_cb(lv_timer_t*) {
@@ -112,9 +57,7 @@ void long_press_timer_cb(lv_timer_t*) {
     }
 
     long_press_sent = true;
-    if (emit_global_key(pressed_key, true)) {
-        pressed_key_consumed = true;
-    }
+    emit_global_key(pressed_key, true);
 }
 
 void ensure_long_press_timer() {
@@ -127,31 +70,34 @@ void ensure_long_press_timer() {
     }
 }
 
+// Only one key is followed at a time: a new key going down replaces the one
+// held before, whose release is then not reported. The release of the
+// followed key is matched by its code, so letting go of an earlier key while
+// a later one is still held neither ends the later one nor loses its release.
 void route_key_state(uint32_t key, bool pressed) {
-    const bool new_hold = pressed && (!last_key_pressed || pressed_key != key);
-    if (new_hold) {
+    if (key == 0) {
+        return;
+    }
+
+    if (pressed) {
+        if (pressed_key == key) {
+            return;
+        }
         pressed_key = key;
         press_started_at = lv_tick_get();
         long_press_sent = false;
-        pressed_key_consumed = emit_global_key(key, false);
+        emit_global_key(key, false);
         ensure_long_press_timer();
-        if (!pressed_key_consumed) {
-            dispatch_nav_key(key);
-        }
     }
-    else if (!pressed && last_key_pressed && pressed_key == key) {
+    else if (pressed_key == key) {
         if (key_release_listener) {
             key_release_listener(key, describe_key(key), key_release_listener_user_data);
         }
         pressed_key = 0;
-        pressed_key_consumed = false;
         if (long_press_timer) {
             lv_timer_pause(long_press_timer);
         }
     }
-
-    last_key = key;
-    last_key_pressed = pressed;
 }
 
 void key_event_cb(lv_event_t* event) {
@@ -186,35 +132,56 @@ void key_event_cb(lv_event_t* event) {
 }
 
 #if !USE_DESKTOP
+// Letters come through in lowercase: shift and sym are not handled yet. The
+// keyboard driver resolves fn itself, so fn+F/X/Z/C arrive as the arrow keys,
+// fn+J as SysRq and fn+H as Help. Keys not listed here are ignored.
 uint32_t map_evdev_key(uint16_t code) {
     switch (code) {
         case KEY_ESC:
             return LV_KEY_ESC;
+        case KEY_UP:
+            return LV_KEY_UP;
+        case KEY_DOWN:
+            return LV_KEY_DOWN;
         case KEY_LEFT:
             return LV_KEY_LEFT;
         case KEY_RIGHT:
             return LV_KEY_RIGHT;
-        case KEY_Z:
-            return 'z';
-        case KEY_C:
-            return 'c';
-        case KEY_4:
-            return '4';
-        case KEY_5:
-            return '5';
-        case KEY_6:
-            return '6';
-        case KEY_7:
-            return '7';
-        case KEY_8:
-            return '8';
+        case KEY_ENTER:
+        case KEY_KPENTER:
+            return LV_KEY_ENTER;
+        case KEY_BACKSPACE:
+            return LV_KEY_BACKSPACE;
+        case KEY_SPACE:
+            return ' ';
         case KEY_SYSRQ:
             return kKeyPrintScreen;
         case KEY_HELP:
             return kKeyHelp;
         default:
-            return 0;
+            break;
     }
+
+    // The evdev codes of letters follow the keyboard rows (Q-P, A-L, Z-M),
+    // not the alphabet, so they are looked up one by one.
+    struct CodeChar {
+        uint16_t code;
+        char character;
+    };
+    static constexpr CodeChar kCharacterKeys[] = {
+        {KEY_A, 'a'}, {KEY_B, 'b'}, {KEY_C, 'c'}, {KEY_D, 'd'}, {KEY_E, 'e'}, {KEY_F, 'f'},
+        {KEY_G, 'g'}, {KEY_H, 'h'}, {KEY_I, 'i'}, {KEY_J, 'j'}, {KEY_K, 'k'}, {KEY_L, 'l'},
+        {KEY_M, 'm'}, {KEY_N, 'n'}, {KEY_O, 'o'}, {KEY_P, 'p'}, {KEY_Q, 'q'}, {KEY_R, 'r'},
+        {KEY_S, 's'}, {KEY_T, 't'}, {KEY_U, 'u'}, {KEY_V, 'v'}, {KEY_W, 'w'}, {KEY_X, 'x'},
+        {KEY_Y, 'y'}, {KEY_Z, 'z'}, {KEY_0, '0'}, {KEY_1, '1'}, {KEY_2, '2'}, {KEY_3, '3'},
+        {KEY_4, '4'}, {KEY_5, '5'}, {KEY_6, '6'}, {KEY_7, '7'}, {KEY_8, '8'}, {KEY_9, '9'},
+    };
+    for (const auto& entry : kCharacterKeys) {
+        if (entry.code == code) {
+            return static_cast<uint32_t>(entry.character);
+        }
+    }
+    return 0;
 }
 
 bool has_nav_keys(int fd) {
@@ -228,9 +195,10 @@ bool has_nav_keys(int fd) {
         return (key_bits[code / bits_per_word] & (1UL << (code % bits_per_word))) != 0;
     };
 
-    return has_key(KEY_ESC) || has_key(KEY_LEFT) || has_key(KEY_RIGHT) || has_key(KEY_Z) ||
-           has_key(KEY_C) || has_key(KEY_4) || has_key(KEY_5) || has_key(KEY_6) ||
-           has_key(KEY_7) || has_key(KEY_8) || has_key(KEY_SYSRQ) || has_key(KEY_HELP);
+    return has_key(KEY_ESC) || has_key(KEY_UP) || has_key(KEY_DOWN) || has_key(KEY_LEFT) ||
+           has_key(KEY_RIGHT) || has_key(KEY_ENTER) || has_key(KEY_Z) || has_key(KEY_C) ||
+           has_key(KEY_4) || has_key(KEY_5) || has_key(KEY_6) || has_key(KEY_7) ||
+           has_key(KEY_8) || has_key(KEY_SYSRQ) || has_key(KEY_HELP);
 }
 
 void evdev_read_cb(lv_indev_t* indev, lv_indev_data_t* data) {
@@ -247,6 +215,7 @@ void evdev_read_cb(lv_indev_t* indev, lv_indev_data_t* data) {
             continue;
         }
 
+        // Value 2 is the keyboard's own autorepeat; a held key acts once.
         const auto key = map_evdev_key(input.code);
         if (!key || input.value == 2) {
             continue;
@@ -368,26 +337,59 @@ void attach_key_router(lv_indev_t* indev) {
     lv_indev_add_event_cb(indev, key_event_cb, LV_EVENT_KEY, nullptr);
 }
 
-void set_nav_shortcut_mode(bool enabled) {
-    nav_shortcut_mode = enabled;
-}
-
-void register_nav_button(size_t index, lv_obj_t* button) {
-    if (index >= nav_buttons.size()) {
+void register_soft_key(std::size_t index, lv_obj_t* slot) {
+    if (index >= soft_key_slots.size()) {
         return;
     }
 
-    nav_buttons[index] = button;
+    soft_key_slots[index] = slot;
 }
 
-void unregister_nav_button(size_t index, lv_obj_t* button) {
-    if (index >= nav_buttons.size()) {
+void unregister_soft_key(std::size_t index, lv_obj_t* slot) {
+    if (index >= soft_key_slots.size()) {
         return;
     }
 
-    if (!button || nav_buttons[index] == button) {
-        nav_buttons[index] = nullptr;
+    if (!slot || soft_key_slots[index] == slot) {
+        soft_key_slots[index] = nullptr;
     }
+}
+
+bool press_soft_key(std::size_t index) {
+    if (index >= soft_key_slots.size()) {
+        return false;
+    }
+
+    auto* slot = soft_key_slots[index];
+    if (!slot || !lv_obj_is_valid(slot) || !lv_obj_has_flag(slot, LV_OBJ_FLAG_CLICKABLE)) {
+        return false;
+    }
+
+    lv_obj_send_event(slot, LV_EVENT_CLICKED, nullptr);
+    return true;
+}
+
+uint32_t arrow_for_letter(uint32_t key) {
+    switch (key) {
+        case 'f':
+        case 'F':
+            return LV_KEY_UP;
+        case 'x':
+        case 'X':
+            return LV_KEY_DOWN;
+        case 'z':
+        case 'Z':
+            return LV_KEY_LEFT;
+        case 'c':
+        case 'C':
+            return LV_KEY_RIGHT;
+        default:
+            return key;
+    }
+}
+
+void inject_key(uint32_t key, bool pressed) {
+    route_key_state(key, pressed);
 }
 
 void set_key_release_listener(KeyReleaseListener listener, void* user_data) {
@@ -418,6 +420,14 @@ const char* describe_key(uint32_t key) {
     switch (key) {
         case LV_KEY_ESC:
             return "Esc";
+        case LV_KEY_UP:
+            return "Up";
+        case LV_KEY_DOWN:
+            return "Down";
+        case LV_KEY_ENTER:
+            return "Enter";
+        case LV_KEY_BACKSPACE:
+            return "Backspace";
         case LV_KEY_LEFT:
             return "Left";
         case LV_KEY_RIGHT:

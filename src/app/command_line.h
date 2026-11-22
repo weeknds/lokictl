@@ -30,11 +30,12 @@ struct LaunchOptions {
     std::string theme;                      // empty: not given on the command line
     uint32_t settle_ms{kDefaultSettleMs};
     std::vector<std::string> switch_to;     // themes to switch to live, in order (snapshot only)
+    std::vector<std::string> keys;          // keys to press, in order (snapshot only)
     std::string error;                      // set when mode == Invalid
 };
 
-// Turns the program arguments into launch options. Does no I/O; page and
-// theme names are checked later against their tables.
+// Turns the program arguments into launch options. Does no I/O; page, theme
+// and key names are checked later against their tables.
 LaunchOptions parse_command_line(int argc, const char* const* argv);
 
 // Short help text listing every option, ending with a newline.

@@ -64,18 +64,33 @@ AppleScreen::AppleScreen(viewmodel::BaseViewModel& view_model,
     init();
 }
 
+view::widgets::HelpContent AppleScreen::help_content() {
+    return {"HOME",
+            {
+                {"HOLD ESC / 4", "Exit"},
+                {"5", "Text size"},
+                {"6", "Next theme"},
+                {"7", "Version info"},
+                {"8", "Open counter"},
+            }};
+}
+
+view::widgets::HelpContent AppleScreen::help() const {
+    return help_content();
+}
+
 view::widgets::SoftKeySet AppleScreen::soft_keys() {
     // The view model outlives every screen. Key 4 itself never reaches the
-    // bar on this page: the app's shortcut handling takes it first (a short
-    // press shows "Hold ESC to exit", holding it quits). Clicking the Exit
-    // slot in the simulator still runs its action.
+    // bar on this page: app::KeyController takes it first (a short press
+    // shows "Hold ESC to exit", holding it quits). Clicking the Exit slot in
+    // the simulator still runs its action.
     auto& view_model = this->view_model();
     return {{
         {"Exit", [&view_model] { view_model.request_quit(); }},
         {"Size", [&view_model] { view_model.toggle_bold_text(); }},
         {"Theme", [&view_model] { view_model.request_next_theme(); }, true},
         {"Info", [&view_model] { view_model.toggle_info(); }},
-        {"Count", [&view_model] { view_model.toggle_page(); }},
+        {"Count", [&view_model] { view_model.open_page(model::AppPage::Butter); }},
     }};
 }
 

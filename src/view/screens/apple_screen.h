@@ -16,6 +16,10 @@ public:
                 app::AssetManager& assets,
                 view::ThemeEngine& theme_engine);
 
+    // The page's help, also shown by the dev-help page.
+    static view::widgets::HelpContent help_content();
+    view::widgets::HelpContent help() const override;
+
 private:
     void build_content(lv_obj_t* content) override;
     view::widgets::SoftKeySet soft_keys() override;

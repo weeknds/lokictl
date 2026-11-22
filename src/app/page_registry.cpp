@@ -14,6 +14,7 @@ const std::vector<PageInfo>& page_registry() {
     static const std::vector<PageInfo> pages{
         {"demo-home", model::AppPage::Apple},
         {"demo-counter", model::AppPage::Butter},
+        {"demo-keys", model::AppPage::KeyTest},
         // Pages starting with "dev-" are for developers only; nothing in the
         // app links to them.
         {"dev-fonts", model::AppPage::DevFonts},
@@ -37,6 +38,15 @@ const PageInfo* find_page(std::string_view name) {
         }
     }
     return nullptr;
+}
+
+const char* page_name(model::AppPage page) {
+    for (const auto& entry : page_registry()) {
+        if (entry.page == page) {
+            return entry.name;
+        }
+    }
+    return "unknown";
 }
 
 } // namespace app

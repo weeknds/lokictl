@@ -16,6 +16,9 @@ public:
                  app::AssetManager& assets,
                  view::ThemeEngine& theme_engine);
 
+    bool on_key(uint32_t key) override;
+    view::widgets::HelpContent help() const override;
+
 private:
     void build_content(lv_obj_t* content) override;
     view::widgets::SoftKeySet soft_keys() override;

@@ -223,7 +223,7 @@ view::widgets::SoftKeySet AppleScreen::soft_keys() {
         {"Size", [&view_model] { view_model.toggle_bold_text(); }},
         {"Theme", [&view_model] { view_model.request_next_theme(); }, true},
         {"Info", [&view_model] { view_model.toggle_info(); }},
-        {"Count", [&view_model] { view_model.toggle_page(); }},
+        {"Count", [&view_model] { view_model.open_page(model::AppPage::Butter); }},
     }};
 }
 ```
@@ -250,11 +250,18 @@ Some things to know:
 - The bar reads the theme once, when it is built, like every other part of
   a screen. A theme switch builds the page, and the bar with it, again.
 - Keys 4 to 8 press the slots of the bar on the current page; an empty or
-  switched-off key does nothing. On the counter page `z` and `left` also
-  press key 5, and `c` and `right` key 7. On the home page the app's exit
-  handling takes key 4 first (a short press shows a hint, holding it
-  quits), so the `Exit` action only runs when its slot is clicked with the
-  mouse in the simulator.
+  switched-off key does nothing. The only exception is a page in typing
+  mode: then keys 4 to 8 arrive at the page as the digits `4` to `8`, and
+  the bar is not pressed. Letters and arrow keys never press a slot. They go
+  to the page, which handles them in its `on_key()`; the counter page, for
+  example, counts down on left (`z`) and up on right (`c`). See
+  [navigation.md](navigation.md) for the order in which keys are handled.
+- A page in typing mode should draw its keys switched off, because they
+  cannot be pressed then. The key test page (`demo-keys`) does this with
+  `set_key()` when typing starts and ends.
+- On the home page the app's exit handling takes key 4 first (a short press
+  shows a hint, holding it quits), so the `Exit` action only runs when its
+  slot is clicked with the mouse in the simulator.
 
 The developer page `dev-softkeys` shows all of this. Its own bar at the
 bottom has a main key (`TOOLS`), a switched-off key (`PCAP`) and an empty
@@ -428,9 +435,9 @@ The rules that keep this safe:
   points at a font that has been freed.
 - **Objects are created and destroyed in a fixed order:** LVGL, then the
   asset manager, then the theme engine, then the display and the screens,
-  then the theme controller; on exit the same in reverse. When the
-  controller is destroyed, it cancels a switch that is still waiting and
-  stops observing the view model.
+  then the key controller, then the theme controller; on exit the same in
+  reverse. When the theme controller is destroyed, it cancels a switch that
+  is still waiting and stops observing the view model.
 
 A future settings screen with a theme picker should not call
 `ThemeEngine::set_theme()` itself. It should ask through the view model,

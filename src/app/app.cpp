@@ -9,11 +9,10 @@
 #include "application_config.h"
 #include "asset_manager.h"
 #include "command_line.h"
-#include "help_popup.h"
+#include "key_controller.h"
 #include "logger.h"
 #include "linux_input.h"
 #include "page_registry.h"
-#include "screenshot_service.h"
 #include "screen_manager.h"
 #include "snapshot.h"
 #include "base_viewmodel.h"
@@ -21,7 +20,6 @@
 #include "theme.h"
 #include "theme_controller.h"
 #include "theme_engine.h"
-#include "toast.h"
 
 #include <chrono>
 #include <csignal>
@@ -131,146 +129,6 @@ bool save_theme_choice(const std::string& path, view::ThemeId id) {
     return true;
 }
 
-class ShortcutController {
-public:
-    ShortcutController(viewmodel::BaseViewModel& view_model, view::ThemeEngine& theme_engine)
-        : view_model_(view_model),
-          toast_(std::make_unique<view::widgets::Toast>(lv_layer_top(), theme_engine)),
-          help_popup_(std::make_unique<view::widgets::HelpPopup>(lv_layer_top(), theme_engine)) {
-        toast_->build();
-        help_popup_->build();
-        platform::set_global_key_listener(global_key_listener, this);
-        platform::set_key_release_listener(key_release_listener, this);
-    }
-
-    ~ShortcutController() {
-        platform::clear_key_release_listener(key_release_listener, this);
-        platform::clear_global_key_listener(global_key_listener, this);
-    }
-
-    // The message after a theme switch with key 6. The toast has already
-    // taken the new theme's look by then. `saved` is false when the choice
-    // could not be written to the settings file.
-    void show_theme_switched(const char* display_name, bool saved) {
-        toast_->show_highlighted("Theme: ",
-                                 display_name,
-                                 saved ? "" : " (not saved)",
-                                 saved ? view::widgets::ToastTone::Default
-                                       : view::widgets::ToastTone::Warning,
-                                 kThemeToastDurationMs);
-    }
-
-private:
-    bool handle_key(uint32_t key, bool long_pressed) {
-        if (key == platform::kKeyPrintScreen) {
-            if (!long_pressed) {
-                const auto result = platform::screenshot::capture_active_screen();
-                if (result.success) {
-                    LOG_INFO("screenshot saved: {}", result.path);
-                    toast_->show_highlighted("Saved to ",
-                                             result.path,
-                                             "",
-                                             view::widgets::ToastTone::Success,
-                                             5200,
-                                             true);
-                }
-                else {
-                    LOG_WARN("screenshot failed: {}", result.error);
-                    toast_->show("Screenshot failed: " + result.error,
-                                 view::widgets::ToastTone::Error,
-                                 3200);
-                }
-            }
-            return true;
-        }
-
-        if (key == platform::kKeyHelp) {
-            if (!long_pressed) {
-                toast_->hide();
-                if (help_popup_->visible()) {
-                    help_popup_->hide();
-                }
-                else {
-                    help_popup_->show(view_model_.current_page());
-                }
-            }
-            return true;
-        }
-
-        if (help_popup_->visible()) {
-            if (key == LV_KEY_ESC && !long_pressed) {
-                help_popup_->hide();
-            }
-            return true;
-        }
-
-        const bool is_escape = key == LV_KEY_ESC;
-        const bool is_home_exit_key =
-            key == '4' &&
-            ((!long_pressed && view_model_.current_page() == model::AppPage::Apple) ||
-             (long_pressed && exit_key_pressed_ == key));
-        if (!is_escape && !is_home_exit_key) {
-            return false;
-        }
-
-        if (long_pressed) {
-            if (exit_key_pressed_ == key && exit_armed_) {
-                toast_->hide();
-                view_model_.request_quit();
-            }
-        }
-        else {
-            exit_key_pressed_ = key;
-            exit_armed_ = view_model_.current_page() == model::AppPage::Apple;
-            if (exit_armed_) {
-                toast_->show_persistent_highlighted("Hold ",
-                                                    "ESC",
-                                                    " to exit",
-                                                    view::widgets::ToastTone::Warning);
-            }
-        }
-        return true;
-    }
-
-    void handle_release(uint32_t key) {
-        if (key != exit_key_pressed_) {
-            return;
-        }
-
-        if (exit_armed_) {
-            toast_->hide();
-        } else if (key == LV_KEY_ESC &&
-                   view_model_.current_page() == model::AppPage::Butter) {
-            view_model_.show_apple_page();
-        }
-        exit_key_pressed_ = 0;
-        exit_armed_ = false;
-    }
-
-    static bool global_key_listener(uint32_t key,
-                                    const char*,
-                                    bool long_pressed,
-                                    void* user_data) {
-        auto* controller = static_cast<ShortcutController*>(user_data);
-        return controller && controller->handle_key(key, long_pressed);
-    }
-
-    static void key_release_listener(uint32_t key, const char*, void* user_data) {
-        auto* controller = static_cast<ShortcutController*>(user_data);
-        if (controller) {
-            controller->handle_release(key);
-        }
-    }
-
-    static constexpr uint32_t kThemeToastDurationMs = 2500;
-
-    viewmodel::BaseViewModel& view_model_;
-    std::unique_ptr<view::widgets::Toast> toast_;
-    std::unique_ptr<view::widgets::HelpPopup> help_popup_;
-    uint32_t exit_key_pressed_{0};
-    bool exit_armed_{false};
-};
-
 #if !USE_DESKTOP
 // LVGL's Linux display drivers set a tick source but no delay function, and
 // without one lv_delay_ms() busy-waits, keeping a CPU core fully loaded.
@@ -379,6 +237,18 @@ int Application::run(int argc, char** argv) {
         switch_to.push_back(*switch_theme);
     }
 
+    // The keys of --keys, checked before anything starts. The parser already
+    // refused empty names.
+    std::vector<ScriptedKey> keys;
+    for (const auto& name : options.keys) {
+        ScriptedKey key{};
+        if (!parse_scripted_key(name, key)) {
+            return report_usage_error("unknown key '" + name + "' in --keys (use " +
+                                      kScriptedKeyNames + ", optionally followed by :long)");
+        }
+        keys.push_back(key);
+    }
+
     if (options.mode == LaunchMode::Snapshot) {
         const PageInfo* page =
             options.page.empty() ? &page_registry().front() : find_page(options.page);
@@ -390,7 +260,8 @@ int Application::run(int argc, char** argv) {
                                             page->page,
                                             theme.value_or(view::kDefaultThemeId),
                                             options.settle_ms,
-                                            switch_to});
+                                            switch_to,
+                                            keys});
     }
 
     const int exit_code = run_interactive(theme);
@@ -531,7 +402,8 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override) {
 
     ScreenManager screen_manager(view_model, assets, theme_engine);
     screen_manager.start();
-    ShortcutController shortcuts(view_model, theme_engine);
+    // Declared after the ScreenManager, so it is destroyed before it.
+    KeyController key_controller(view_model, theme_engine, screen_manager);
 
     // Declared after everything its listener uses, so it is destroyed before
     // them. Key 6 switches the theme while the app runs, and every switch is
@@ -544,7 +416,7 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override) {
         simulator_frame.set_dark_shell(theme_engine.theme().metrics.dark);
 #endif
         const bool saved = save_theme_choice(user_config_path, result.current);
-        shortcuts.show_theme_switched(view::theme_spec(result.current).display_name, saved);
+        key_controller.show_theme_switched(view::theme_spec(result.current).display_name, saved);
     });
 
     bool running = true;

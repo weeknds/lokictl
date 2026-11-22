@@ -70,6 +70,22 @@ lv_obj_t* BaseScreen::root() const {
     return root_;
 }
 
+bool BaseScreen::on_key(uint32_t) {
+    return false;
+}
+
+bool BaseScreen::on_back() {
+    return false;
+}
+
+bool BaseScreen::text_entry() const {
+    return false;
+}
+
+view::widgets::HelpContent BaseScreen::help() const {
+    return {};
+}
+
 view::widgets::SoftKeySet BaseScreen::soft_keys() {
     return {};
 }
@@ -79,6 +95,10 @@ view::widgets::SoftKeyBar* BaseScreen::soft_key_bar() {
 }
 
 viewmodel::BaseViewModel& BaseScreen::view_model() {
+    return view_model_;
+}
+
+const viewmodel::BaseViewModel& BaseScreen::view_model() const {
     return view_model_;
 }
 

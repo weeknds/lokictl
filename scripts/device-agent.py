@@ -1303,14 +1303,18 @@ def cmd_stats(args):
 def snapshot_command(path, args):
     """The "lokictl --snapshot" command line for the "snapshot" arguments.
 
-    --page, --theme and --switch-to are passed on unchecked; LokiCTL knows
-    its page and theme names and exits with a message for an unknown one.
+    --page, --theme, --keys and --switch-to are passed on unchecked, in that
+    order; LokiCTL knows its page, theme and key names and exits with a
+    message for an unknown one. The keys are pressed inside that snapshot
+    run, not on the device's keyboard.
     """
     cmd = [BINARY, "--snapshot", path]
     if args.page:
         cmd += ["--page", args.page]
     if args.theme:
         cmd += ["--theme", args.theme]
+    if args.keys:
+        cmd += ["--keys", args.keys]
     if args.switch_to:
         cmd += ["--switch-to", args.switch_to]
     if args.settle_ms is not None:
@@ -1329,8 +1333,9 @@ def cmd_snapshot(args):
     try:
         cmd = snapshot_command(path, args)
         # The app logs to stdout, which is reserved for the picture here. Its
-        # standard error (the "fonts loaded" lines of --switch-to, for
-        # example) goes to the caller's standard error as well.
+        # standard error (the "fonts loaded" lines of --switch-to or the
+        # "quit requested" line of --keys, for example) goes to the caller's
+        # standard error as well.
         result = run(cmd, timeout=60, stdout=sys.stderr, stderr=sys.stderr)
         if result.returncode != 0:
             say("lokictl --snapshot failed (exit %d)." % result.returncode)
@@ -1442,6 +1447,25 @@ def cmd_selftest(args):
         BINARY, "--snapshot", shot, "--page", "dev-theme", "--theme", "instrument",
         "--switch-to", "terminal,constellation", "--settle-ms", "0"], snapshot_command(shot, switched)
 
+    # "snapshot --keys K[,K...]" is handed on unchecked too, after --theme and
+    # before --switch-to. LokiCTL presses the keys inside the snapshot run.
+    assert plain.keys is None, "snapshot without --keys"
+    assert switched.keys is None, "--keys is only there when given"
+    assert "--keys" not in snapshot_command(shot, switched), snapshot_command(shot, switched)
+    keyed = parser.parse_args(["snapshot", "--page", "demo-home", "--keys", "8,8,x"])
+    assert keyed.keys == "8,8,x", keyed.keys
+    assert snapshot_command(shot, keyed) == [
+        BINARY, "--snapshot", shot, "--page", "demo-home", "--keys", "8,8,x"], snapshot_command(shot, keyed)
+    assert parser.parse_args(["snapshot", "--keys=nope,,esc:short"]).keys == "nope,,esc:short", \
+        "key names are not checked"
+    everything = parser.parse_args(["snapshot", "--settle-ms", "0", "--switch-to", "terminal",
+                                    "--keys", "8,esc:long", "--theme", "instrument",
+                                    "--page", "demo-home"])
+    assert snapshot_command(shot, everything) == [
+        BINARY, "--snapshot", shot, "--page", "demo-home", "--theme", "instrument",
+        "--keys", "8,esc:long", "--switch-to", "terminal", "--settle-ms", "0"], \
+        snapshot_command(shot, everything)
+
     sys.stdout.write("selftest ok\n")
     return 0
 
@@ -1510,6 +1534,7 @@ def build_parser():
     snapshot = commands.add_parser("snapshot", help="lokictl --snapshot, PNG to stdout")
     snapshot.add_argument("--page")
     snapshot.add_argument("--theme")
+    snapshot.add_argument("--keys", help="keys to press before the picture (passed on to LokiCTL)")
     snapshot.add_argument("--switch-to", help="themes to switch to live (passed on to LokiCTL)")
     snapshot.add_argument("--settle-ms", type=range_value(0, 60000, "--settle-ms"))
     snapshot.set_defaults(handler=cmd_snapshot)

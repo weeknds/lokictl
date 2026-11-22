@@ -19,16 +19,41 @@ ButterScreen::ButterScreen(viewmodel::BaseViewModel& view_model,
 }
 
 view::widgets::SoftKeySet ButterScreen::soft_keys() {
-    // The view model outlives every screen. Z/C and the arrow keys reach
-    // keys 5 and 7 on this page as well.
+    // The view model outlives every screen. A short ESC goes back as well;
+    // Z/C and the arrow keys reach the page as left and right (on_key()).
+    // Key 8 opens the key test page on top of this one.
     auto& view_model = this->view_model();
     return {{
-        {"Back", [&view_model] { view_model.toggle_page(); }},
+        {"Back", [&view_model] { view_model.go_back(); }},
         {"Less", [&view_model] { view_model.decrement_counter(); }},
         {},
         {"More", [&view_model] { view_model.increment_counter(); }},
-        {},
+        {"Keys", [&view_model] { view_model.open_page(model::AppPage::KeyTest); }},
     }};
+}
+
+// Left counts down and right counts up, like keys 5 and 7.
+bool ButterScreen::on_key(uint32_t key) {
+    switch (key) {
+        case LV_KEY_LEFT:
+            view_model().decrement_counter();
+            return true;
+        case LV_KEY_RIGHT:
+            view_model().increment_counter();
+            return true;
+        default:
+            return false;
+    }
+}
+
+view::widgets::HelpContent ButterScreen::help() const {
+    return {"COUNTER",
+            {
+                {"ESC / 4", "Back"},
+                {"Z / 5", "Decrease"},
+                {"C / 7", "Increase"},
+                {"8", "Key test"},
+            }};
 }
 
 void ButterScreen::build_content(lv_obj_t* content) {

@@ -46,9 +46,9 @@ bool parse_settle_ms(std::string_view text, uint32_t& value) {
     return true;
 }
 
-// Splits a comma-separated list of theme names. Returns false if any name
-// is empty ("a,,b", or a comma at either end).
-bool split_theme_list(std::string_view text, std::vector<std::string>& names) {
+// Splits a comma-separated list of names. Returns false if any name is
+// empty ("a,,b", or a comma at either end).
+bool split_name_list(std::string_view text, std::vector<std::string>& names) {
     names.clear();
     std::size_t start = 0;
     while (true) {
@@ -84,8 +84,8 @@ LaunchOptions parse_command_line(int argc, const char* const* argv) {
     bool list_pages = false;
     bool has_snapshot = false;
     bool has_theme = false;
-    // --page, --settle-ms or --switch-to, which only mean something for a
-    // snapshot.
+    // --page, --settle-ms, --switch-to or --keys, which only mean something
+    // for a snapshot.
     bool has_snapshot_option = false;
 
     for (int index = 1; index < argc; ++index) {
@@ -103,7 +103,7 @@ LaunchOptions parse_command_line(int argc, const char* const* argv) {
 
         const bool takes_value = argument == "--snapshot" || argument == "--page" ||
                                  argument == "--theme" || argument == "--settle-ms" ||
-                                 argument == "--switch-to";
+                                 argument == "--switch-to" || argument == "--keys";
         if (!takes_value) {
             return invalid("unknown argument '" + std::string(argument) + "'");
         }
@@ -131,9 +131,14 @@ LaunchOptions parse_command_line(int argc, const char* const* argv) {
         if (argument == "--page") {
             options.page = std::string(value);
         } else if (argument == "--switch-to") {
-            if (!split_theme_list(value, options.switch_to)) {
+            if (!split_name_list(value, options.switch_to)) {
                 return invalid("--switch-to needs theme names separated by commas, "
                                "for example terminal,instrument");
+            }
+        } else if (argument == "--keys") {
+            if (!split_name_list(value, options.keys)) {
+                return invalid("--keys needs key names separated by commas, "
+                               "for example 8,down,esc");
             }
         } else if (!parse_settle_ms(value, options.settle_ms)) {
             return invalid("--settle-ms must be a whole number from 0 to " +
@@ -150,8 +155,8 @@ LaunchOptions parse_command_line(int argc, const char* const* argv) {
     }
     if (!has_snapshot) {
         if (has_snapshot_option) {
-            return invalid(
-                "--page, --settle-ms and --switch-to only work together with --snapshot");
+            return invalid("--page, --settle-ms, --switch-to and --keys only work together "
+                           "with --snapshot");
         }
         // A normal start, possibly with --theme for this run.
         options.mode = LaunchMode::Interactive;
@@ -183,7 +188,8 @@ std::string usage_text() {
     text += "  " + padded(list_form, form_width) + "print the page names, one per line\n";
     text += "  " + padded(help_form, form_width) + "show this help\n";
     text += "  " + program + " --snapshot <out.png> [--page <name>] [--theme <name>]\n";
-    text += "  " + std::string(program.size() + 1, ' ') + "[--settle-ms <n>] [--switch-to <names>]\n";
+    text += "  " + std::string(program.size() + 1, ' ') +
+            "[--settle-ms <n>] [--switch-to <names>] [--keys <names>]\n";
     text += "\n";
     text += "  " + padded("--theme <name>", option_width) + "one of: " + themes + "\n";
     text += indent + "When starting the app, the theme is used for this run\n";
@@ -201,6 +207,13 @@ std::string usage_text() {
     text += indent + "separated by commas, the same way key 6 switches. The\n";
     text += indent + "picture is taken after the last switch, and the\n";
     text += indent + "number of loaded fonts is printed to standard error.\n";
+    text += "  " + padded("--keys <names>", option_width) +
+            "keys to press before the picture (and before any\n";
+    text += indent + "--switch-to), in order and separated by commas,\n";
+    text += indent + "pressed the way the keyboard does. Names: 0-9, a-z,\n";
+    text += indent + "esc, enter, space, backspace, up, down, left, right,\n";
+    text += indent + "help. :long after a name holds that key for one\n";
+    text += indent + "second, for example esc:long.\n";
     return text;
 }
 

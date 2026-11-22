@@ -8,6 +8,8 @@
 
 #include "asset_manager.h"
 #include "base_viewmodel.h"
+#include "key_controller.h"
+#include "linux_input.h"
 #include "logger.h"
 #include "screen_manager.h"
 #include "screenshot_service.h"
@@ -16,9 +18,12 @@
 
 #include "lvgl.h"
 
+#include <cctype>
 #include <cstddef>
 #include <cstdio>
 #include <filesystem>
+#include <optional>
+#include <string>
 #include <system_error>
 #include <vector>
 
@@ -29,6 +34,29 @@ namespace {
 // deferred first screen load always happens, even with --settle-ms 0.
 constexpr uint32_t kTickStepMs = 5;
 constexpr uint32_t kMinSettleSteps = 4;
+
+// How long a scripted key is held: a short press, and a long one that is well
+// past the 700 ms long press (and far below the launcher's 3 s).
+constexpr uint32_t kKeyHoldMs = 60;
+constexpr uint32_t kLongKeyHoldMs = 1000;
+constexpr std::string_view kLongSuffix = ":long";
+
+struct NamedKey {
+    const char* name;
+    uint32_t key;
+};
+
+constexpr NamedKey kNamedKeys[] = {
+    {"esc", LV_KEY_ESC},
+    {"enter", LV_KEY_ENTER},
+    {"space", ' '},
+    {"backspace", LV_KEY_BACKSPACE},
+    {"up", LV_KEY_UP},
+    {"down", LV_KEY_DOWN},
+    {"left", LV_KEY_LEFT},
+    {"right", LV_KEY_RIGHT},
+    {"help", platform::kKeyHelp},
+};
 
 void advance_virtual_time(uint32_t ms) {
     lv_tick_inc(ms);
@@ -142,6 +170,39 @@ private:
 
 } // namespace
 
+bool parse_scripted_key(std::string_view text, ScriptedKey& key) {
+    std::string name;
+    for (const char character : text) {
+        name += static_cast<char>(std::tolower(static_cast<unsigned char>(character)));
+    }
+
+    bool long_press = false;
+    const std::size_t colon = name.find(':');
+    if (colon != std::string::npos) {
+        if (std::string_view(name).substr(colon) != kLongSuffix) {
+            return false;
+        }
+        long_press = true;
+        name.erase(colon);
+    }
+
+    if (name.size() == 1) {
+        const char character = name[0];
+        if ((character >= '0' && character <= '9') || (character >= 'a' && character <= 'z')) {
+            key = ScriptedKey{static_cast<uint32_t>(character), long_press};
+            return true;
+        }
+        return false;
+    }
+    for (const auto& entry : kNamedKeys) {
+        if (name == entry.name) {
+            key = ScriptedKey{entry.key, long_press};
+            return true;
+        }
+    }
+    return false;
+}
+
 int run_snapshot(const SnapshotRequest& request) {
     logger::Logger::init();
     logger::Logger::set_tag(APP_NAME);
@@ -194,16 +255,45 @@ int run_snapshot(const SnapshotRequest& request) {
         return 1;
     }
 
+    // Switches the theme for key 6 and for --switch-to: each request is
+    // applied later, from lv_timer_handler(), with a rebuild of the page, the
+    // same path as in a normal run. Declared after the screen manager, so it
+    // is destroyed before it. It has no listener, so nothing is saved. A
+    // plain snapshot creates none.
+    std::optional<ThemeController> theme_controller;
+    if (!request.keys.empty() || !request.switch_to.empty()) {
+        theme_controller.emplace(view_model, assets, theme_engine, screen_manager);
+    }
+
+    if (!request.keys.empty()) {
+        {
+            // The same key handling as a normal run. It lives only while the
+            // keys are pressed, so its help panel and messages are gone
+            // before the picture, and it is destroyed before the screen
+            // manager it uses.
+            KeyController key_controller(view_model, theme_engine, screen_manager);
+            for (const ScriptedKey& key : request.keys) {
+                platform::inject_key(key.key, true);
+                settle(key.long_press ? kLongKeyHoldMs : kKeyHoldMs);
+                platform::inject_key(key.key, false);
+                settle(request.settle_ms);
+            }
+        }
+
+        if (!page_is_shown(screen_manager)) {
+            std::fprintf(stderr, "%s: the page did not load after the keys\n", APP_NAME);
+            return 1;
+        }
+        if (lv_subject_get_int(view_model.quit_requested_subject())) {
+            std::fputs("quit requested\n", stderr);
+        }
+    }
+
     if (!request.switch_to.empty()) {
-        // The same path as key 6: each request is applied later, from
-        // lv_timer_handler(), with a rebuild of the page. The controller is
-        // destroyed at the end of this block, before the screen manager it
-        // uses. It has no listener, so nothing is saved.
-        ThemeController theme_controller(view_model, assets, theme_engine, screen_manager);
         print_font_count(assets, theme_engine);
 
         for (const view::ThemeId id : request.switch_to) {
-            theme_controller.request(id);
+            theme_controller->request(id);
             settle(request.settle_ms);
 
             const char* name = view::theme_spec(id).name;

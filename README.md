@@ -48,8 +48,13 @@ Notes:
   `-DCMAKE_PREFIX_PATH="$(brew --prefix jpeg)"` to the configure command.
 - Intel Macs use the `darwin-x86-64` presets instead. The presets for Linux and
   Windows desktops are carried over but untested.
-- Keys: `4` to `8` are the five soft keys under the screen and `ESC` goes back.
-  Hold `ESC` on the first page (or close the window) to quit.
+- Keys: type on your Mac's keyboard or click the keys of the keyboard drawn
+  below the screen. `4` to `8` are the five soft keys under the screen.
+  `F`, `X`, `Z` and `C` work as up, down, left and right, like the arrow
+  keys. A short `ESC` goes back one page; on the first page, hold `ESC` (or
+  close the window) to quit. For the help panel (fn+H), click `fn` and then
+  `H` on the drawn keyboard. [docs/navigation.md](docs/navigation.md)
+  explains every key.
 - `--theme <name>` starts the simulator in one theme for this run only, for
   example `./build/darwin-arm64/Debug/lokictl --theme constellation`. The
   device frame drawn around the screen follows the theme: white for
@@ -90,7 +95,9 @@ At startup the app picks the theme like this:
 
 [docs/themes.md](docs/themes.md) lists every colour, font and spacing value
 of the three themes and explains how screens use them, how a live switch
-works and how to check it.
+works and how to check it. [docs/navigation.md](docs/navigation.md) explains
+how pages open on top of each other, what every key does and how a page
+handles keys.
 
 ## Screenshots without a window
 
@@ -104,6 +111,7 @@ building:
 ./build/darwin-arm64/Debug/lokictl --snapshot build/shots/counter-terminal.png --page demo-counter --theme terminal
 ./build/darwin-arm64/Debug/lokictl --snapshot build/shots/home-instrument.png --theme instrument
 ./build/darwin-arm64/Debug/lokictl --snapshot build/shots/home-switched.png --theme instrument --switch-to terminal
+./build/darwin-arm64/Debug/lokictl --snapshot build/shots/keys.png --page demo-home --keys 8,8,x
 ./build/darwin-arm64/Debug/lokictl --list-pages
 ```
 
@@ -111,7 +119,7 @@ Options:
 
 - `--snapshot <file>`: where to save the PNG. Missing folders are created.
 - `--page <name>`: which page to draw. The default is the first page, and
-  `--list-pages` prints all page names.
+  `--list-pages` prints all page names (see the list below).
 - `--theme <name>`: `instrument`, `constellation` or `terminal`. The default
   is `constellation`, the app's default theme. Any other name is refused
   with a message that lists the three.
@@ -122,10 +130,28 @@ Options:
   picture must be identical to one drawn directly in the last theme;
   [docs/themes.md](docs/themes.md#checking-live-switching) shows how to
   check that and how to look for leaking fonts.
+- `--keys <key>[,<key>...]`: after drawing the page, press these keys one
+  after another, the way the keyboard does, and take the picture afterwards
+  (before any `--switch-to`). Names: `0` to `9`, `a` to `z`, `esc`,
+  `enter`, `space`, `backspace`, `up`, `down`, `left`, `right` and `help`.
+  Add `:long` to hold a key for one second, for example `esc:long`. The
+  page from `--page` is the first page, so start at `demo-home` to test
+  going back. If the keys made the app ask to quit, `quit requested` goes
+  to standard error. See
+  [Testing keys](docs/navigation.md#testing-keys-with---keys) in
+  docs/navigation.md for the details.
 - `--settle-ms <n>`: how long LVGL's own clock runs before the picture is
-  taken, from 0 to 60000. The default is 300. The program does not really
-  wait that long; it finishes in a fraction of a second.
+  taken, from 0 to 60000. The default is 300. With `--keys`, the app also
+  runs this long after every key. The program does not really wait that
+  long; it finishes in a fraction of a second.
 - `--help`: shows a short summary of all options.
+
+The app has 13 pages. `--list-pages` prints them in this order:
+
+- `demo-home`, `demo-counter` and `demo-keys`, the three demo pages: the
+  home page, a counter and a key test page. The app opens them itself (see
+  [Pressing keys](#pressing-keys));
+- ten developer pages whose names start with `dev-` (see [Fonts](#fonts)).
 
 Notes:
 
@@ -133,9 +159,9 @@ Notes:
   named by `LOKICTL_CONFIG_FILE`), so the theme you saved with `6` does not
   affect the picture. Without `--theme` it always uses the default theme.
 - Only the page itself is captured. Pop-up messages and the help overlay are
-  not included. The developer pages `dev-help` and `dev-toast` show the same
-  help panel and messages on a page of their own, so their look can still be
-  checked.
+  not included, also not when `--keys` opens them. The developer pages
+  `dev-help` and `dev-toast` show the same help panel and messages on a page
+  of their own, so their look can still be checked.
 - The clock in the title bar shows the current time, so two pictures taken a
   minute apart are not identical.
 
@@ -304,12 +330,16 @@ The commands:
   another (see below).
 - `stats [--seconds N]`: measures LokiCTL for N seconds (3 by default, up to
   30) and prints the numbers explained below.
-- `snapshot <file.png> [--page P] [--theme T] [--switch-to T[,T...]]
-  [--settle-ms N]`: runs `lokictl --snapshot` on the device (see
-  [Screenshots without a window](#screenshots-without-a-window)) and saves the
-  picture. It works while LokiCTL is running and does not touch the screen.
-  With `--switch-to`, the `fonts loaded` lines appear on your computer's
-  standard error.
+- `snapshot <file.png> [--page P] [--theme T] [--keys K[,K...]]
+  [--switch-to T[,T...]] [--settle-ms N]`: runs `lokictl --snapshot` on the
+  device (see [Screenshots without a window](#screenshots-without-a-window))
+  and saves the picture. It works while LokiCTL is running and does not
+  touch the screen. `--keys` presses keys inside that snapshot run, not on
+  the device's keyboard, so LokiCTL does not need to be running; for
+  example `scripts/device.sh snapshot build/shots/keys.png --page demo-home
+  --keys 8,8,x`. The `fonts loaded` lines of `--switch-to` and the
+  `quit requested` line of `--keys` appear on your computer's standard
+  error.
 - `logs [-n N]`: shows the last N log lines (50 by default) of the latest
   `run` only, including systemd's lines about starting and stopping it.
   Earlier runs are left out. It also works after LokiCTL has stopped.
@@ -355,7 +385,8 @@ cannot open something on the launcher by accident; `--launcher` turns that
 check off.
 
 The bar along the bottom of the screen names what the keys `4` to `8` do on
-the current page. On the home page of the current demo:
+the current page. Pages open on top of each other, and a short `esc` goes
+back one page. On the home page of the current demo:
 
 - `4` EXIT: pressing `4` or `esc` shows the hint `Hold ESC to exit`, and
   holding either one quits;
@@ -365,9 +396,28 @@ the current page. On the home page of the current demo:
 - `7` INFO shows the version line;
 - `8` COUNT opens the counter page.
 
-On the counter page, `4` or `esc` goes back, `5` (or `z` or `left`) counts
-down and `7` (or `c` or `right`) counts up. `6` and `8` do nothing there.
-`help` (fn+H) shows the key help on every page.
+On the counter page, `4` or a short `esc` goes back to the home page, `5`
+(or `z` or `left`) counts down and `7` (or `c` or `right`) counts up. `8`
+KEYS opens the key test page. `6` does nothing there.
+
+The key test page shows what a page gets from the keyboard. It has a list
+of four rows and a box that names the last key the page got:
+
+- `f` or `up` moves the selection up, `x` or `down` moves it down; it stops
+  at the first and the last row;
+- `z`, `c`, `left` and `right` only show their name (`LEFT`, `RIGHT`);
+- `enter` picks the selected row and marks it;
+- `5` TYPE turns typing mode on: letters and the keys `4` to `8` then
+  arrive as characters (the box shows `f` instead of `UP`), the soft keys
+  are dimmed, and the arrow keys and `enter` still work. A short `esc` ends
+  typing mode;
+- `4` BACK or a short `esc` goes back to the counter page.
+
+The pages keep what they show when you leave them and come back, and when
+the theme changes. `help` (fn+H) shows the keys of the page that is open;
+`esc` or `help` closes it again. A long `esc` (`key esc --long`) only quits
+on the first page, the home page; on the other pages it does nothing,
+because holding ESC for 3 seconds is how the launcher closes an app.
 
 ### What the stats mean
 
@@ -413,7 +463,7 @@ cmake/
   templates/          inputs for the launcher entry, systemd unit and conffiles
   toolchains/         cross-compiler setup for the device
 config/               default settings file
-docs/                 notes on the bundled fonts and the themes
+docs/                 notes on the bundled fonts, the themes and navigation
 screenshot/           simulator screenshots
 scripts/
   build-deb.sh        builds the device package in a Debian arm64 container
@@ -422,8 +472,8 @@ scripts/
   device.sh           installs, runs and tests LokiCTL on a device over SSH
   device-agent.py     the device side of device.sh
 src/
-  app/                startup, command line, snapshot mode, main loop, screen
-                      switching, assets, simulator window
+  app/                startup, command line, snapshot mode, main loop, page
+                      switching, key handling, assets, simulator window
   config/             LVGL configuration for desktop and device
   logger/             logging
   model/              application state

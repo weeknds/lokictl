@@ -12,7 +12,9 @@
 #include "dev_overlays_screen.h"
 #include "dev_softkeys_screen.h"
 #include "dev_theme_screen.h"
-#include "linux_input.h"
+#include "key_test_screen.h"
+#include "logger.h"
+#include "page_registry.h"
 
 namespace app {
 namespace {
@@ -73,6 +75,14 @@ bool ScreenManager::show_butter_screen() {
         return false;
     }
     page_loaded(model::AppPage::Butter);
+    return true;
+}
+
+bool ScreenManager::show_key_test_screen() {
+    if (!load_screen(std::make_unique<screen::KeyTestScreen>(view_model_, assets_, theme_engine_))) {
+        return false;
+    }
+    page_loaded(model::AppPage::KeyTest);
     return true;
 }
 
@@ -162,11 +172,31 @@ bool ScreenManager::show_page(model::AppPage page) {
         return show_butter_screen();
     }
 
+    if (screen::KeyTestScreen::handles(page)) {
+        return show_key_test_screen();
+    }
+
     return show_apple_screen();
 }
 
 lv_obj_t* ScreenManager::current_screen() const {
     return current_screen_ ? current_screen_->root() : nullptr;
+}
+
+bool ScreenManager::dispatch_key(uint32_t key) {
+    return current_screen_ && current_screen_->on_key(key);
+}
+
+bool ScreenManager::dispatch_back() {
+    return current_screen_ && current_screen_->on_back();
+}
+
+bool ScreenManager::text_entry_active() const {
+    return current_screen_ && current_screen_->text_entry();
+}
+
+view::widgets::HelpContent ScreenManager::help() const {
+    return current_screen_ ? current_screen_->help() : view::widgets::HelpContent{};
 }
 
 bool ScreenManager::load_screen(std::unique_ptr<screen::BaseScreen> next_screen) {
@@ -182,12 +212,22 @@ bool ScreenManager::load_screen(std::unique_ptr<screen::BaseScreen> next_screen)
 }
 
 void ScreenManager::page_loaded(model::AppPage page) {
+    // The depth is read now, when the deferred load happens, so it always
+    // belongs to the page that is shown. The same page built again (after a
+    // theme switch) is not a page change and logs nothing.
+    const std::size_t depth = view_model_.page_depth();
+    if (!has_loaded_page_) {
+        LOG_INFO("page: {} (start, depth {})", page_name(page), depth);
+    } else if (page != loaded_page_) {
+        const char* how = depth > loaded_depth_   ? "opened"
+                          : depth < loaded_depth_ ? "back"
+                                                  : "shown";
+        LOG_INFO("page: {} ({}, depth {})", page_name(page), how, depth);
+    }
+
     loaded_page_ = page;
+    loaded_depth_ = depth;
     has_loaded_page_ = true;
-    // Z/C and the arrow keys press soft keys 5 and 7 on the counter page
-    // only. Set here, after the new screen is in place and the old one is
-    // gone, so the order of a rebuild can never undo it.
-    platform::set_nav_shortcut_mode(page == model::AppPage::Butter);
 }
 
 } // namespace app

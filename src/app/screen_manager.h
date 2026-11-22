@@ -11,6 +11,8 @@
 #include "base_viewmodel.h"
 #include "lvgl.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 
 namespace view {
@@ -35,6 +37,7 @@ public:
     // old screen then stays.
     bool show_apple_screen();
     bool show_butter_screen();
+    bool show_key_test_screen();
     bool show_dev_fonts_screen(model::AppPage page);
     bool show_dev_theme_screen();
     bool show_dev_overlays_screen(model::AppPage page);
@@ -51,10 +54,19 @@ public:
     bool rebuild_current_page();
     lv_obj_t* current_screen() const;
 
+    // Hand a key, a short ESC or a question on to the page that is shown
+    // (see screen::BaseScreen::on_key(), on_back(), text_entry() and
+    // help()). Each returns false, or empty help, while no page is shown.
+    bool dispatch_key(uint32_t key);
+    bool dispatch_back();
+    bool text_entry_active() const;
+    view::widgets::HelpContent help() const;
+
 private:
     bool show_page(model::AppPage page);
     bool load_screen(std::unique_ptr<screen::BaseScreen> next_screen);
-    // Records `page` as shown, after its screen has loaded.
+    // Records `page` as shown, after its screen has loaded, and logs the
+    // page change.
     void page_loaded(model::AppPage page);
 
     viewmodel::BaseViewModel& view_model_;
@@ -64,6 +76,7 @@ private:
     lv_observer_t* page_observer_ = nullptr;
     model::AppPage requested_page_ = model::AppPage::Apple;
     model::AppPage loaded_page_ = model::AppPage::Apple;
+    std::size_t loaded_depth_ = 0;   // page_depth() when loaded_page_ loaded
     bool has_loaded_page_ = false;
     bool page_switch_scheduled_ = false;
 };

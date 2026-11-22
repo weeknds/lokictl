@@ -10,35 +10,18 @@
 #include "theme.h"
 #include "theme_engine.h"
 
+#include "logger.h"
+
 #include <algorithm>
-#include <array>
 #include <cstddef>
+#include <cstdint>
 
 namespace view::widgets {
 namespace {
 
-struct HelpRow {
-    const char* key;
-    const char* action;
-};
-
-constexpr std::array<HelpRow, 5> kAppleRows = {{
-    {"HOLD ESC / 4", "Exit"},
-    {"5", "Text size"},
-    {"6", "Next theme"},
-    {"7", "Version info"},
-    {"8", "Open counter"},
-}};
-
-// Left and right work like Z and C on this page.
-constexpr std::array<HelpRow, 3> kButterRows = {{
-    {"ESC / 4", "Back to home"},
-    {"Z / 5", "Decrease"},
-    {"C / 7", "Increase"},
-}};
-
 // The panel is as tall as its text, which depends on the theme's fonts;
-// with five rows it stays well inside the 170 px screen in every theme.
+// with kHelpRowMax rows it stays well inside the 170 px screen in every
+// theme.
 constexpr int32_t kPanelWidth = view::kScreenWidth - 16;
 
 lv_obj_t* plain_object(lv_obj_t* parent) {
@@ -48,22 +31,10 @@ lv_obj_t* plain_object(lv_obj_t* parent) {
     return obj;
 }
 
-// Width of the widest key text of both pages in `font`, so the action column
-// lines up in every theme.
-int32_t key_column_width(const lv_font_t* font) {
-    int32_t widest = 0;
-    const auto measure = [&](const char* text) {
-        lv_point_t size{};
-        lv_text_get_size(&size, text, font, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
-        widest = std::max(widest, size.x);
-    };
-    for (const auto& row : kAppleRows) {
-        measure(row.key);
-    }
-    for (const auto& row : kButterRows) {
-        measure(row.key);
-    }
-    return widest;
+int32_t text_width(const std::string& text, const lv_font_t* font) {
+    lv_point_t size{};
+    lv_text_get_size(&size, text.c_str(), font, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+    return size.x;
 }
 
 } // namespace
@@ -127,14 +98,25 @@ void HelpPopup::build() {
     hide();
 }
 
-void HelpPopup::show(model::AppPage page) {
+void HelpPopup::show(const HelpContent& content) {
     if (!core_obj_) {
         build();
     }
     if (!core_obj_) {
         return;
     }
-    update_rows(page);
+
+    content_ = content;
+    if (content_.rows.size() > kHelpRowMax) {
+        LOG_WARN("help \"{}\": {} rows, only the first {} fit; the rest are left out",
+                 content_.badge,
+                 content_.rows.size(),
+                 kHelpRowMax);
+        content_.rows.resize(kHelpRowMax);
+    }
+
+    update_rows();
+    update_key_column();
     lv_obj_move_foreground(core_obj_);
     lv_obj_remove_flag(core_obj_, LV_OBJ_FLAG_HIDDEN);
 }
@@ -150,19 +132,45 @@ bool HelpPopup::visible() const {
            !lv_obj_has_flag(core_obj_, LV_OBJ_FLAG_HIDDEN);
 }
 
-void HelpPopup::update_rows(model::AppPage page) {
-    const bool butter = page == model::AppPage::Butter;
-    lv_label_set_text(page_badge_, butter ? "COUNTER" : "HOME");
+void HelpPopup::update_rows() {
+    if (content_.badge.empty()) {
+        lv_label_set_text(page_badge_, "");
+        lv_obj_add_flag(page_badge_, LV_OBJ_FLAG_HIDDEN);
+    }
+    else {
+        lv_label_set_text(page_badge_, content_.badge.c_str());
+        lv_obj_remove_flag(page_badge_, LV_OBJ_FLAG_HIDDEN);
+    }
+
     for (std::size_t i = 0; i < rows_.size(); ++i) {
-        const bool row_visible = butter ? i < kButterRows.size() : i < kAppleRows.size();
-        if (!row_visible) {
+        if (i >= content_.rows.size()) {
             lv_obj_add_flag(rows_[i].row, LV_OBJ_FLAG_HIDDEN);
             continue;
         }
         lv_obj_remove_flag(rows_[i].row, LV_OBJ_FLAG_HIDDEN);
-        const auto& row = butter ? kButterRows[i] : kAppleRows[i];
-        lv_label_set_text(rows_[i].key, row.key);
-        lv_label_set_text(rows_[i].action, row.action);
+        lv_label_set_text(rows_[i].key, content_.rows[i].keys.c_str());
+        lv_label_set_text(rows_[i].action, content_.rows[i].action.c_str());
+    }
+}
+
+// The key column is as wide as the widest key text shown, in the Strong font
+// the keys are drawn in, plus a gap before the action column. Called again
+// after a theme change, because the width depends on the theme's font.
+void HelpPopup::update_key_column() {
+    if (!panel_) {
+        return;
+    }
+
+    const auto& theme = theme_engine_.theme();
+    const lv_font_t* key_font = theme.font(view::FontRole::Strong);
+    int32_t widest = 0;
+    for (const auto& row : content_.rows) {
+        widest = std::max(widest, text_width(row.keys, key_font));
+    }
+
+    const int32_t key_width = widest + theme.metrics.space_md;
+    for (auto& row : rows_) {
+        lv_obj_set_width(row.key, key_width);
     }
 }
 
@@ -196,13 +204,11 @@ void HelpPopup::apply_theme() {
     lv_obj_set_style_pad_hor(page_badge_, metrics.space_sm, 0);
     lv_obj_set_style_pad_ver(page_badge_, 0, 0);
 
-    const lv_font_t* key_font = theme.font(view::FontRole::Strong);
-    const int32_t key_width = key_column_width(key_font) + metrics.space_md;
     for (auto& row : rows_) {
         view::style::text(row.key, theme, view::FontRole::Strong, colors.accent);
-        lv_obj_set_width(row.key, key_width);
         view::style::text(row.action, theme, view::FontRole::Body);
     }
+    update_key_column();
 
     view::style::text(footer_, theme, view::FontRole::Small, colors.muted);
 }

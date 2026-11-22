@@ -63,7 +63,7 @@ static_assert(kLineTop + kLineHeight == view::kSoftKeyBarHeight,
               "the line to the key must reach the bar's last row");
 static_assert(kBoxTop + kBoxHeight <= kSlotHeight, "the number box must fit its slot");
 static_assert(kSlotTop + kBoxTop + kBoxHeight / 2 == 13, "the number box is centred on row 13 (y 153)");
-static_assert(kSoftKeyCount == platform::kNavKeyCount,
+static_assert(kSoftKeyCount == platform::kSoftKeySlotCount,
               "every soft key needs a slot in the key registry");
 
 constexpr const char* kKeyNumbers[kSoftKeyCount] = {"4", "5", "6", "7", "8"};
@@ -152,7 +152,7 @@ SoftKeyBar::~SoftKeyBar() {
     // is rebuilt, the new screen registers its keys before this one goes.
     for (std::size_t index = 0; index < slots_.size(); ++index) {
         if (slots_[index].slot) {
-            platform::unregister_nav_button(index, slots_[index].slot);
+            platform::unregister_soft_key(index, slots_[index].slot);
         }
     }
 }
@@ -180,7 +180,7 @@ void SoftKeyBar::build() {
 
     if (key_input_ == KeyInput::Bound) {
         for (std::size_t index = 0; index < slots_.size(); ++index) {
-            platform::register_nav_button(index, slots_[index].slot);
+            platform::register_soft_key(index, slots_[index].slot);
         }
     }
 }
@@ -239,7 +239,7 @@ void SoftKeyBar::apply_key(std::size_t index) {
     set_visible(slot.number, used);
     set_visible(slot.word, used);
     set_visible(slot.line, used);
-    // The key dispatch only clicks a slot that has this flag.
+    // platform::press_soft_key() only clicks a slot that has this flag.
     set_clickable(slot.slot, used && key.enabled);
     if (!used) {
         lv_label_set_text(slot.word, "");

@@ -6,6 +6,8 @@
 
 #include "base_viewmodel.h"
 
+#include <algorithm>
+
 namespace viewmodel {
 namespace {
 
@@ -23,7 +25,11 @@ BaseViewModel::BaseViewModel()
       bold_text_subject_(false),
       info_visible_subject_(false),
       quit_requested_subject_(false),
-      next_theme_request_subject_(0) {}
+      next_theme_request_subject_(0),
+      key_test_selection_subject_(0),
+      key_test_picked_subject_(-1),
+      key_test_last_key_subject_("-"),
+      key_test_typing_subject_(false) {}
 
 BaseViewModel::~BaseViewModel() = default;
 
@@ -63,22 +69,29 @@ model::AppPage BaseViewModel::current_page() const {
     return model_.current_page();
 }
 
+std::size_t BaseViewModel::page_depth() const {
+    return model_.page_depth();
+}
+
 void BaseViewModel::show_page(model::AppPage page) {
-    model_.set_current_page(page);
+    model_.reset_pages(page);
     publish_all();
 }
 
-void BaseViewModel::show_apple_page() {
-    show_page(model::AppPage::Apple);
-}
-
-void BaseViewModel::show_butter_page() {
-    show_page(model::AppPage::Butter);
-}
-
-void BaseViewModel::toggle_page() {
-    model_.toggle_page();
+bool BaseViewModel::open_page(model::AppPage page) {
+    if (!model_.open_page(page)) {
+        return false;
+    }
     publish_all();
+    return true;
+}
+
+bool BaseViewModel::go_back() {
+    if (!model_.go_back()) {
+        return false;
+    }
+    publish_all();
+    return true;
 }
 
 void BaseViewModel::increment_counter() {
@@ -104,6 +117,45 @@ void BaseViewModel::request_quit() {
 
 void BaseViewModel::request_next_theme() {
     next_theme_request_subject_.set(next_theme_request_subject_.value() + 1);
+}
+
+lv_subject_t* BaseViewModel::key_test_selection_subject() {
+    return key_test_selection_subject_.native();
+}
+
+lv_subject_t* BaseViewModel::key_test_picked_subject() {
+    return key_test_picked_subject_.native();
+}
+
+lv_subject_t* BaseViewModel::key_test_last_key_subject() {
+    return key_test_last_key_subject_.native();
+}
+
+lv_subject_t* BaseViewModel::key_test_typing_subject() {
+    return key_test_typing_subject_.native();
+}
+
+bool BaseViewModel::key_test_typing() const {
+    return key_test_typing_subject_.value();
+}
+
+void BaseViewModel::key_test_move(int32_t delta) {
+    const int32_t next = std::clamp<int32_t>(key_test_selection_subject_.value() + delta,
+                                             0,
+                                             kKeyTestRowCount - 1);
+    key_test_selection_subject_.set(next);
+}
+
+void BaseViewModel::key_test_pick() {
+    key_test_picked_subject_.set(key_test_selection_subject_.value());
+}
+
+void BaseViewModel::key_test_note_key(const char* name) {
+    key_test_last_key_subject_.set(name);
+}
+
+void BaseViewModel::key_test_set_typing(bool typing) {
+    key_test_typing_subject_.set(typing);
 }
 
 void BaseViewModel::publish_all() {
