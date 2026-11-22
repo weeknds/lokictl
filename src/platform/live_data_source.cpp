@@ -9,7 +9,9 @@
 #include "device_info.h"
 
 #include <algorithm>
+#include <cctype>
 #include <ctime>
+#include <fstream>
 #include <limits>
 #include <time.h>
 #include <utility>
@@ -47,9 +49,10 @@ int32_t rate_kbps(uint64_t bytes, int64_t elapsed_ms) {
 
 } // namespace
 
-LiveDataSource::LiveDataSource(std::string data_root)
+LiveDataSource::LiveDataSource(std::string data_root, bool may_change_network)
     : sample_(model::sample_home_data()),
-      test_folder_(!data_root.empty()) {
+      test_folder_(!data_root.empty()),
+      changes_network_(may_change_network && data_root.empty() && NetworkManagerClient::can_change_network()) {
     // Reads the time zone once, so localtime_r() below shows local time.
     tzset();
     root_ = test_folder_ ? std::filesystem::path(std::move(data_root)) : std::filesystem::path("/");
@@ -78,6 +81,53 @@ void LiveDataSource::set_details_shown(bool shown) {
 void LiveDataSource::wait_until_ready(milliseconds limit) {
     if (network_manager_) {
         network_manager_->wait_started(limit);
+    }
+}
+
+bool LiveDataSource::changes_network() const {
+    return changes_network_;
+}
+
+std::string LiveDataSource::hotspot_name() const {
+    std::ifstream file(root_ / "sys/class/net" / kHotspotInterface / "address");
+    std::string address;
+    std::string digits;
+    if (file >> address) {
+        for (const char character : address) {
+            if (std::isxdigit(static_cast<unsigned char>(character)) != 0) {
+                digits += static_cast<char>(std::toupper(static_cast<unsigned char>(character)));
+            }
+        }
+    }
+    return "LokiCTL-" + (digits.size() >= 4 ? digits.substr(digits.size() - 4) : std::string("0000"));
+}
+
+void LiveDataSource::request_mode(const ModeRequest& request) {
+    if (!changes_network_) {
+        pretend_.request(request.mode);
+        return;
+    }
+    refused_ = false;
+    if (request.mode == model::NetMode::Router) {
+        // Decided on a fresh look at the kernel's uplink: Router shares a
+        // cable, never the Wi-Fi it is about to take over.
+        if (read_network(root_, addresses_file_).kind != model::LinkKind::Cable) {
+            refused_ = true;
+            refusal_ = model::ModeSwitch{};
+            refusal_.target = model::NetMode::Router;
+            refusal_.state = model::SwitchState::Failed;
+            refusal_.error = model::SwitchError::NoCable;
+            return;
+        }
+        network_manager_->start_router(RouterRequest{kHotspotInterface, hotspot_name(), request.password});
+    } else if (request.mode == model::NetMode::Client) {
+        network_manager_->start_client();
+    }
+}
+
+void LiveDataSource::leave_modes(milliseconds limit) {
+    if (changes_network_) {
+        network_manager_->leave(limit);
     }
 }
 
@@ -139,6 +189,11 @@ void LiveDataSource::read(model::HomeData& data) {
         service = read_network_manager_file(network_manager_file_);
     }
     apply_network_manager(service, data);
+    if (changes_network_) {
+        data.mode_switch = refused_ ? refusal_ : service.mode_switch;
+    } else {
+        pretend_.apply(data, service.switch_failure);
+    }
     if (details_shown_) {
         data.details = details_;
         apply_network_manager(service, data.details.ports);
@@ -241,9 +296,10 @@ milliseconds LiveDataSource::next_read_delay() {
             const auto traffic_due = traffic_tried_ ? traffic_tried_at_ + kTrafficInterval : now;
             delay = std::min(delay, ceil<milliseconds>(traffic_due - now));
         }
-        if (network_manager_ && network_manager_->starting()) {
+        if (network_manager_ && (network_manager_->starting() || network_manager_->busy())) {
             delay = std::min(delay, kServiceStartInterval);
         }
+        delay = std::min(delay, pretend_.next_delay());
     }
     return std::max(delay, kMinimumDelay);
 }

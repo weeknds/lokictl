@@ -93,6 +93,10 @@ void apply_network_manager(const NetworkManagerReading& reading, model::HomeData
         }
     }
 
+    if (reading.hotspot.active) {
+        show_router(data, reading.hotspot.name, reading.hotspot.security, reading.hotspot.uptime_seconds);
+    }
+
     if (data.uplink_kind != model::LinkKind::None) {
         data.internet = reading.internet;
         data.offline_state = model::OfflineState::Unknown;
@@ -115,6 +119,12 @@ void apply_network_manager(const NetworkManagerReading& reading, std::vector<mod
         return;
     }
     for (model::StatusPort& port : ports) {
+        if (reading.hotspot.active && port.name == reading.hotspot.interface_name) {
+            port.state = model::PortState::AccessPoint;
+            port.network = reading.hotspot.name;
+            port.security = reading.hotspot.security;
+            continue;
+        }
         if (port.kind != model::LinkKind::Wifi || port.state != model::PortState::Connected) {
             continue;
         }
@@ -180,6 +190,27 @@ NetworkManagerReading read_network_manager_file(const std::filesystem::path& pat
             link.security = security == "-" ? std::string() : security;
             link.name = clean_network_name(rest_of_line(fields));
             reading.wifi_links.push_back(link);
+            continue;
+        }
+        if (key == "ap") {
+            NetworkManagerReading::Hotspot hotspot;
+            std::string security;
+            if (!(fields >> hotspot.interface_name >> security)) {
+                continue;
+            }
+            hotspot.active = true;
+            hotspot.security = security == "-" ? std::string() : security;
+            hotspot.name = clean_network_name(rest_of_line(fields));
+            reading.hotspot = hotspot;
+            continue;
+        }
+        if (key == "fail") {
+            const std::string reason = rest_of_line(fields);
+            if (reason == "permission") {
+                reading.switch_failure = PretendFailure{model::SwitchError::NotAllowed, {}};
+            } else if (!reason.empty()) {
+                reading.switch_failure = PretendFailure{model::SwitchError::Failed, reason};
+            }
             continue;
         }
         std::string value;

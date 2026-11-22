@@ -28,6 +28,8 @@ BaseViewModel::BaseViewModel()
       settings_theme_selection_subject_(kSettingsThemeFollowsActive),
       screen_dimming_subject_(true),
       status_scroll_subject_(0),
+      modes_selection_subject_(kModesFollowsActive),
+      mode_request_subject_(0),
       home_selection_subject_(0),
       home_data_subject_(0),
       key_test_selection_subject_(0),
@@ -158,6 +160,48 @@ void BaseViewModel::set_status_scroll(int32_t row) {
 bool BaseViewModel::open_status() {
     set_status_scroll(0);
     return open_page(model::AppPage::Status);
+}
+
+lv_subject_t* BaseViewModel::modes_selection_subject() {
+    return modes_selection_subject_.native();
+}
+
+int32_t BaseViewModel::modes_selection() const {
+    return modes_selection_subject_.value();
+}
+
+void BaseViewModel::select_mode_row(int32_t row) {
+    if (row != modes_selection_subject_.value()) {
+        modes_selection_subject_.set(row);
+    }
+}
+
+bool BaseViewModel::open_modes() {
+    select_mode_row(kModesFollowsActive);
+    return open_page(model::AppPage::Modes);
+}
+
+void BaseViewModel::request_mode(model::NetMode mode) {
+    // Stored first: the observers run inside set() and read it from there.
+    requested_mode_ = mode;
+    const int32_t count = mode_request_subject_.value();
+    mode_request_subject_.set(count == std::numeric_limits<int32_t>::max() ? 1 : count + 1);
+}
+
+lv_subject_t* BaseViewModel::mode_request_subject() {
+    return mode_request_subject_.native();
+}
+
+model::NetMode BaseViewModel::requested_mode() const {
+    return requested_mode_;
+}
+
+const std::string& BaseViewModel::hotspot_password() const {
+    return hotspot_password_;
+}
+
+void BaseViewModel::set_hotspot_password(const std::string& password) {
+    hotspot_password_ = password;
 }
 
 const model::HomeData& BaseViewModel::home() const {

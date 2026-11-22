@@ -412,6 +412,11 @@ private:
     lv_obj_t* traffic_{nullptr};
     std::string traffic_shown_;
 
+    // The router view's uptime and the text it shows; update() changes the
+    // text only. It stays null in the link view.
+    lv_obj_t* uptime_{nullptr};
+    std::string uptime_shown_;
+
     // The panel's lines about the selected client.
     lv_obj_t* selected_caption_{nullptr};
     lv_obj_t* selected_name_{nullptr};
@@ -765,6 +770,8 @@ void ConstellationHomeLayout::build_client_rows(const HomeContext& context, lv_o
     view::style::text(up, theme, view::FontRole::Small, colors.muted);
     fix_width(up, kTextWidth, small);
     lv_obj_set_pos(up, left, kUptimeY);
+    uptime_ = up;
+    uptime_shown_ = uptime;
 
     auto* rule = plain_object(panel);
     lv_obj_set_pos(rule, left, kRuleY);
@@ -923,6 +930,7 @@ void ConstellationHomeLayout::update(const HomeContext& context) {
     set_text_if_changed(link_value_, link_value_shown_, link_value_text(data));
     set_text_if_changed(address_, address_shown_, address_text(data));
     set_text_if_changed(router_address_, router_address_shown_, router_address_text(data));
+    set_text_if_changed(uptime_, uptime_shown_, "up " + home::uptime_text(data.uptime_seconds));
 }
 
 } // namespace

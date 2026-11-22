@@ -55,6 +55,15 @@ install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/assets/images/"
     PATTERN "${APP_ICON_NAME}*.png"
 )
 
+# Router and the other modes change NetworkManager's settings, which apps
+# started by the launcher may not do on their own: this polkit rule grants
+# the netdev group the few actions they need (see the file).
+if(APP_USE_LIBNM)
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/config/polkit/60-${APP_PACKAGE_NAME}.rules"
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/polkit-1/rules.d"
+    )
+endif()
+
 install(FILES "${APP_GENERATED_DIR}/${PROJECT_NAME}.desktop"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/APPLaunch/applications"
 )
@@ -102,15 +111,25 @@ set(CPACK_DEBIAN_PACKAGE_PRIORITY "optional")
 # finished program. A cross build has no package database for the target, and
 # the desktop build's program is not an arm64 Linux binary, so both keep the
 # hand-written list below.
+#
+# Router uses NetworkManager's shared mode, which runs dnsmasq (addresses
+# for the hotspot's devices) and nft (sharing the link). Neither is a
+# library, so they are named by hand on both routes.
+set(APP_DEBIAN_TOOL_DEPENDS "")
+if(APP_USE_LIBNM)
+    set(APP_DEBIAN_TOOL_DEPENDS "dnsmasq-base, nftables")
+endif()
 if(NOT USE_DESKTOP AND NOT CMAKE_CROSSCOMPILING)
     set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+    # CPack adds the libraries dpkg-shlibdeps finds to this list.
+    set(CPACK_DEBIAN_PACKAGE_DEPENDS "${APP_DEBIAN_TOOL_DEPENDS}")
 else()
     set(APP_DEBIAN_DEPENDS "libc6, libstdc++6, libgcc-s1, libfreetype6, libpng16-16, libjpeg62-turbo, zlib1g")
     if(FMT_INCLUDE_DIR AND FMT_LIBRARY)
         string(APPEND APP_DEBIAN_DEPENDS ", libfmt10")
     endif()
     if(APP_USE_LIBNM)
-        string(APPEND APP_DEBIAN_DEPENDS ", libnm0, libglib2.0-0t64")
+        string(APPEND APP_DEBIAN_DEPENDS ", libnm0, libglib2.0-0t64, ${APP_DEBIAN_TOOL_DEPENDS}")
     endif()
     set(CPACK_DEBIAN_PACKAGE_DEPENDS "${APP_DEBIAN_DEPENDS}")
     set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS OFF)

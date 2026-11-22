@@ -59,6 +59,15 @@ bool is_key(const std::string& line, const std::string& expected) {
 
 } // namespace
 
+bool valid_hotspot_password(const std::string& password) {
+    if (password.size() < 8 || password.size() > 63 || password.front() == ' ' || password.back() == ' ') {
+        return false;
+    }
+    return std::all_of(password.begin(), password.end(), [](char character) {
+        return character >= 0x20 && character <= 0x7E;
+    });
+}
+
 bool load_application_config(const std::string& path,
                              ApplicationConfig& config,
                              std::string& error) {
@@ -97,6 +106,8 @@ bool load_application_config(const std::string& path,
             } else {
                 config.dim_when_idle.reset();
             }
+        } else if (section == "application" && key == "hotspot_password") {
+            config.hotspot_password = trim(line.substr(separator + 1));
         } else if (section == "application" && key == "dark_mode") {
             // A value that cannot be read is ignored instead of failing the
             // load, so the theme key of the same file still counts.
@@ -151,6 +162,9 @@ bool save_application_config(const std::string& path,
         keys.push_back({"dim_when_idle",
                         std::string("dim_when_idle=") + (*config.dim_when_idle ? "yes" : "no"),
                         false});
+    }
+    if (config.hotspot_password) {
+        keys.push_back({"hotspot_password", "hotspot_password=" + *config.hotspot_password, false});
     }
 
     std::vector<std::string> updated;
@@ -232,6 +246,24 @@ bool save_application_config(const std::string& path,
                     key.written = true;
                 }
             }
+        }
+    }
+
+    if (config.hotspot_password) {
+        // Made private before the password goes in, and before the old
+        // content is dropped, so a failure here changes nothing but an
+        // empty new file.
+        if (!std::filesystem::exists(config_path)) {
+            std::ofstream create(path, std::ios::app);
+        }
+        std::error_code permissions_error;
+        std::filesystem::permissions(config_path,
+                                     std::filesystem::perms::owner_read | std::filesystem::perms::owner_write,
+                                     std::filesystem::perm_options::replace,
+                                     permissions_error);
+        if (permissions_error) {
+            error = "could not make the file private: " + permissions_error.message();
+            return false;
         }
     }
 

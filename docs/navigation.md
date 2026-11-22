@@ -313,12 +313,40 @@ it. Its keys are the same in every theme:
 | `c`/`x` or right/down | selects the next client; it stops at the last one shown |
 | `6` SETUP | opens the Settings page |
 | `8` INFO | opens the Status page |
-| `4` MODES, `5` SCAN, `7` TOOLS | shown switched off; they do nothing yet |
+| `4` MODES | opens the Modes page |
+| `5` SCAN, `7` TOOLS | shown switched off; they do nothing yet |
 | `Enter` | nothing |
 | ESC | the ESC rule for the first page: a short press shows `Hold ESC to exit`, holding it for 700 ms quits |
 
 The selection lives in the view model, so it is kept when Settings is
 opened and closed and when the theme changes.
+
+## The Modes page
+
+`modes` switches the device between its modes. It has a title bar, four
+rows and a status line, and it is drawn the same way in every theme:
+
+- one row per mode, Client, Router, Share and VPN, each with a short hint
+  and a tick on the mode that is on (it comes from NetworkManager: an
+  active `LokiCTL hotspot` profile means Router). Share and VPN come later
+  and are drawn muted;
+- the status line: `Switching…` while a switch runs; after one
+  failed, `Plug in a cable first` (warning colour), `Not allowed: permission
+  missing` or `Failed: <reason>` (error colour); while Router runs, the
+  hotspot's name and, at the right, its password; in Client the current
+  link, muted.
+
+| Key | What it does |
+|---|---|
+| `f`/`x` or up/down | moves the highlight; it stops at the first and the last row |
+| `Enter` or `6` USE | switches to the highlighted mode; USE is dimmed on the mode that is on, on Share and VPN, and while a switch runs |
+| `4` BACK or a short ESC | goes back |
+
+The page only asks (`BaseViewModel::request_mode()`); the data layer does
+the switch (see [data.md](data.md#switching-modes)), so the page never
+waits, and it follows the values as they arrive. The highlight lives in the
+view model and starts on the mode that is on each time the page is opened
+from the home page. The help panel shows the badge `MODES` and three rows.
 
 ## The Status page
 

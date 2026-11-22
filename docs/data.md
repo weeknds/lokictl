@@ -36,8 +36,9 @@ Where the values come from is called the source. There are seven:
 battery (`91%`) as the sample, and all of them keep the `sample data` mark.
 Their values are in one place, `src/model/home_examples.cpp`, and are all
 made up. `demo` is still the same script on the router sample, and keeps
-the mark too. `live` shows the device as it is: in the Client mode, with
-its real link and traffic, and without the mark.
+the mark too. `live` shows the device as it is: in its real mode (Client,
+or Router while LokiCTL's hotspot runs), with its real link and traffic,
+and without the mark.
 
 Which one is used:
 
@@ -70,8 +71,9 @@ With `live`:
   speed, whether the internet answers, and why there is no link (see
   [Names and state from NetworkManager](#names-and-state-from-networkmanager)).
 
-The device is shown in the Client mode, without an access point and without
-clients (those come with the modes). What NetworkManager does not tell (in
+The device is shown in the Client mode, or in Router while LokiCTL's
+hotspot runs (see [Switching modes](#switching-modes)); there are no
+clients yet. What NetworkManager does not tell (in
 the simulator, or when it is not running) shows `wi-fi network` and `--`,
 never a made-up name.
 
@@ -226,8 +228,10 @@ new block needs, with `home_values_only()` in
 
 - **In place**, when the new block differs only in the clock, the battery,
   the uplink's interface, address and link speed, the router's address,
-  the Wi-Fi network's name, security and signal, or the two rates and their
-  histories: `HomeScreen` calls `update()`.
+  the Wi-Fi network's name, security and signal, the router view's
+  uptime, or the two rates and their histories (or in values the home page
+  does not show: the Status page's details and the switch between modes):
+  `HomeScreen` calls `update()`.
 - **Built again**, for any other difference (the kind of link, the access
   point, the mode, the clients, the sample mark, or a field added
   later): `HomeScreen` throws the layout away, empties the page's
@@ -399,8 +403,11 @@ a stand-in that is never available, so there these values stay unknown
 - Devices NetworkManager does not manage (the USB Wi-Fi stick) and devices
   that are neither Wi-Fi nor cable are skipped.
 
-It only reads: every libnm function the app calls is a getter, apart from
-making and releasing the client. It has no thread of its own. The client
+Reading only reads: every libnm function a reading calls is a getter,
+apart from making and releasing the client. The only calls that change
+anything are the switch between modes (see
+[Switching modes](#switching-modes)), kept in one marked block of
+`src/platform/network_manager_client.cpp`. It has no thread of its own. The client
 starts without waiting (and without asking polkit which actions the app may
 take) on its own GLib main context; NetworkManager's change messages queue
 up there, and the live source applies them, without waiting, at each of its
@@ -413,6 +420,88 @@ its context run until libnm has let go (at most half a second).
 
 The internet and offline states change seldom, so a change of either
 builds the page again instead of updating it in place.
+
+## Switching modes
+
+The Modes page (key 4 on the home page) switches between Client and
+Router. The page only asks: `BaseViewModel::request_mode()` counts a
+request, `app::DataController` hands it with the hotspot's password to the
+reader (`DataReader::request_mode()`), and the reader hands it to the
+source on its own thread and takes a reading at once. The switch's state
+comes back in `HomeData::mode_switch` (idle, switching or failed, the mode
+asked for, and why it failed), and the mode itself in `HomeData::mode`. The
+UI thread never waits.
+
+**The mode comes from NetworkManager, not from memory.** An active profile
+named `LokiCTL hotspot` that carries LokiCTL's own user-data mark means
+Router: `mode`, `ap_active`, `ap_name`, `ap_security` and `uptime_seconds`
+are filled in from it, and `mode_detail` reads `eth0 → wi-fi ap · nat ·
+dhcp`. So a restarted LokiCTL shows Router and can undo it, and a restart
+of the device always lands in Client.
+
+Who really switches: only the `live` source on the device's real root, in a
+normal start (`make_data_source(..., may_change_network = true)`). Every
+other case pretends (`platform::PretendModeSwitch`): the made-up sources,
+test folders, the Mac, snapshots and `--print-data`. Snapshots never
+change anything.
+
+- **Router** (`NetworkManagerClient::start_router()`): only when the
+  kernel's uplink is a cable (a link and the default route), checked again
+  at the request; otherwise it fails at once with `Plug in a cable first`.
+  LokiCTL adds the profile `LokiCTL hotspot` in memory only (never written
+  to disk, autoconnect off, not tied to the app, so it survives a crash):
+  an access point on `wlan0`, 2.4 GHz, WPA2-PSK (CCMP), IPv4 shared, IPv6
+  off. NetworkManager's shared mode hands out addresses (its own
+  `dnsmasq`) and shares the link (`nft`). The name is `LokiCTL-` and the
+  last four hex digits of `wlan0`'s hardware address. The UUID of the
+  Wi-Fi profile `wlan0` was on, and the time the profile was made, go into
+  its user data (`lokictl.restore`, `lokictl.started`). A leftover profile
+  of LokiCTL's that is not active is deleted first. The switch is done when
+  the hotspot is active; if it fails, or is not done after 20 s, it is
+  undone (as Client below) and the page shows `Failed: <reason>`, or `Not
+  allowed: permission missing` when polkit refused (the rule is missing).
+- **Client** (`start_client()`): deletes every profile of LokiCTL's
+  hotspot, then activates the Wi-Fi profile recorded in it on `wlan0`.
+  Without one, NetworkManager's autoconnect picks. It is done when
+  NetworkManager has answered both; the Wi-Fi join itself then follows as
+  usual. In plain Client nothing is sent.
+- **Every quit returns to Client** for now: hold-ESC, SIGTERM and SIGINT.
+  Before the reader stops it calls `DataSource::leave_modes()`, which waits
+  for an add still on its way, sends the Client requests and waits at most
+  3 s (`DataReader::kLeaveModesLimit`) for NetworkManager to answer, well
+  under the 5 s `scripts/device.sh stop` gives before SIGKILL. The Wi-Fi
+  join finishes after the app has gone. A quit in plain Client sends
+  nothing. Keeping a mode after quitting comes later.
+- While a switch is busy the live source reads every 100 ms, so the
+  answers are handled soon.
+
+**The pretend switch** counts readings, not time, so a snapshot always
+gives the same picture: a request is taken at the next reading (a mode that
+is already on does nothing; Router without a cable uplink fails at once),
+`Switching` shows for that reading, and the next one ends it. In a window
+the source asks to be read again a second later. Once it has finished, the
+pretend mode replaces the source's own: Router shows the sample's made-up
+hotspot (`LokiCTL-7F`), Client shows no access point and no clients. For
+example:
+
+```sh
+B=./build/darwin-arm64/Debug/lokictl
+$B --snapshot build/shots/modes-switching.png --page modes --data cable --keys down,6
+$B --snapshot build/shots/modes-router.png --page modes --data cable --keys down,6,data
+$B --snapshot build/shots/modes-no-cable.png --page modes --data wifi --keys down,6
+```
+
+**The hotspot's password** never goes into `HomeData`, the log or
+`--print-data`. On the device it is the `hotspot_password=` key of the
+settings file: made at the first switch to Router (12 characters from a
+set without look-alikes such as `0`/`o` and `1`/`l`), saved with the file
+made readable by its owner only (mode 0600) before the line goes in, and
+kept. The shipped `/etc/lokictl.conf` has no such line. The simulator and
+snapshots show a fixed made-up password and never write one.
+
+The rights come from the package's polkit rule (see the README): apps
+started by the launcher are not an active login session, so without it
+NetworkManager refuses with "not allowed".
 
 ## The traffic
 
@@ -787,6 +876,11 @@ link wlan0 WPA2 72 Harbour-Cafe
 gives `network=Harbour-Cafe`, `security=WPA2`, `speed_mbps=72` and
 `internet=portal` on a Wi-Fi uplink `wlan0`. Other lines: `networking on|off`,
 `wifi on|off` and `connecting yes|no`; in a `link` line `-` means not known.
+`ap wlan0 WPA2 LokiCTL-1A2B` says LokiCTL's hotspot runs on `wlan0`
+(Router, with that name and security). In a test folder a switch on the
+Modes page only pretends (see [Switching modes](#switching-modes)), and
+`fail permission` or `fail <reason>` makes it fail as not allowed or with
+that reason.
 
 A small test folder with a charger and a battery (all made up):
 
@@ -895,6 +989,12 @@ In a normal run the data layer writes these lines:
   clients`, and then only when the kind of link, the access point or the
   number of clients changes. So the tour logs a new line at most stops, but
   none at stops 14 to 17, 19, 20 and 22, which change only values;
+- `data: mode <client|router>` for the first reading and whenever the mode
+  changes; `data: switching to Router`, `data: switch to Router done` and
+  `data: switch to Router failed: <no cable|not allowed|reason>` as a
+  switch moves on. No network name and never the password;
+- `data: back to Client before quitting` when the app stops while Router is
+  on or a switch runs (only where switches are real);
 - `data: reader stopped` once on the way out.
 
 A snapshot logs only warnings, so these lines do not appear there, and
@@ -905,6 +1005,8 @@ A snapshot logs only warnings, so these lines do not appear there, and
 On quit (holding ESC, closing the simulator window) and on SIGTERM or
 SIGINT, the main loop ends. Right after it, before anything else is torn
 down, `app::DataController::stop()` deletes its timer, wakes the reader and
-waits for it to end, and the log says `data: reader stopped`. The reader
+waits for it to end, and the log says `data: reader stopped`. Before the
+reader ends it switches back to Client if a mode is on (at most 3 s; see
+[Switching modes](#switching-modes)). The reader
 wakes at once, also from a long sleep, so the app never hangs on the way
 out. Then the fonts are released and the log ends with `LokiCTL stopped`.

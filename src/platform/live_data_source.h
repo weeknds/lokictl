@@ -8,6 +8,7 @@
 
 #include "battery.h"
 #include "data_source.h"
+#include "mode_switch.h"
 #include "network.h"
 #include "network_manager.h"
 #include "rate_history.h"
@@ -24,10 +25,18 @@ namespace platform {
 // Real readings: the local time, the battery, the uplink (see
 // read_network()) and its traffic (see read_traffic_counters()), with the
 // names and state the system's network service adds (see
-// apply_network_manager()). The device is shown in the Client mode, without
-// an access point and without clients. Nothing is made up, so
+// apply_network_manager()). The mode is Client unless LokiCTL's hotspot is
+// active (Router, still without clients). Nothing is made up, so
 // HomeData::sample is false (unless the system cannot tell the time; see
 // read()).
+//
+// Switching modes: on the real root of a device build, and only when the
+// source may change the network (a normal start), request_mode() and
+// leave_modes() go to NetworkManagerClient's actions; Router is refused at
+// once ("Plug in a cable first") unless the kernel's uplink is a cable.
+// Everywhere else (test folders, the Mac, snapshots, --print-data) the
+// switch only pretends (PretendModeSwitch), and a test folder's
+// "networkmanager" file can make it fail.
 class LiveDataSource final : public DataSource {
 public:
     // `data_root` stands in for the root of the file system (see
@@ -36,7 +45,8 @@ public:
     // and "<data_root>/networkmanager" stands in for the network service
     // (see read_network_manager_file()). On the real root the connection to
     // the service starts here, without waiting.
-    explicit LiveDataSource(std::string data_root);
+    // `may_change_network`: see make_data_source().
+    LiveDataSource(std::string data_root, bool may_change_network);
 
     DataSourceKind kind() const override;
 
@@ -77,7 +87,8 @@ public:
     // away (kMinimumDelay) when the traffic or the details flag changed since
     // the last read(), so the page gets the new state at once. At most
     // kServiceStartInterval while the connection to the network service
-    // starts, so its first values follow soon.
+    // starts or a switch between modes is busy, so its values follow soon;
+    // at most PretendModeSwitch::next_delay() while a pretend switch runs.
     std::chrono::milliseconds next_read_delay() override;
 
     void set_traffic_shown(bool shown) override;
@@ -86,6 +97,10 @@ public:
     // Waits until the connection to the network service has started, at
     // most `limit`.
     void wait_until_ready(std::chrono::milliseconds limit) override;
+
+    void request_mode(const ModeRequest& request) override;
+    bool changes_network() const override;
+    void leave_modes(std::chrono::milliseconds limit) override;
 
     static constexpr std::chrono::milliseconds kBatteryInterval{10000};
     static constexpr std::chrono::milliseconds kNetworkInterval{5000};
@@ -97,6 +112,10 @@ public:
     static constexpr std::chrono::milliseconds kServiceStartInterval{100};
 
 private:
+    // The hotspot's network name: "LokiCTL-" and the last four hex digits
+    // of kHotspotInterface's hardware address, in capitals.
+    std::string hotspot_name() const;
+
     // Forgets the traffic: no counters, rates not known, empty histories.
     void forget_traffic();
     // Reads the uplink's counters and works out the rates (see read()).
@@ -113,6 +132,12 @@ private:
     // file in a test folder (the other one is empty).
     std::unique_ptr<NetworkManagerClient> network_manager_;
     std::filesystem::path network_manager_file_;
+    // True when switches go to the network service (see the class comment).
+    const bool changes_network_;
+    PretendModeSwitch pretend_;
+    // A refusal decided here (no cable), shown until the next request.
+    bool refused_{false};
+    model::ModeSwitch refusal_;
     BatteryReading battery_;
     bool battery_read_{false};
     std::chrono::steady_clock::time_point battery_read_at_{};

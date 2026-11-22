@@ -7,6 +7,7 @@
 #pragma once
 
 #include "home_data.h"
+#include "mode_switch.h"
 
 #include <chrono>
 #include <memory>
@@ -78,12 +79,37 @@ public:
     // readout). Every other source keeps this default, which returns at
     // once.
     virtual void wait_until_ready(std::chrono::milliseconds /*limit*/) {}
+
+    // A switch between modes the user asked for (see ModeRequest). Called
+    // on the thread that calls read(), right before a reading, which then
+    // shows the switch's first state in HomeData::mode_switch. It never
+    // waits. Only the live source on the device, in a normal start, changes
+    // the network (changes_network()); every other source pretends (see
+    // PretendModeSwitch), and this default ignores the request.
+    virtual void request_mode(const ModeRequest& /*request*/) {}
+
+    // True when request_mode() and leave_modes() change the real network.
+    virtual bool changes_network() const {
+        return false;
+    }
+
+    // On the way out: switches back to Client if this source's switches
+    // left the device in another mode, and waits at most `limit` for the
+    // system to accept that. Called once, on the reader's thread, after
+    // its last reading. A source that changes nothing keeps this default,
+    // which does nothing.
+    virtual void leave_modes(std::chrono::milliseconds /*limit*/) {}
 };
 
 // Creates a source. `data_root` only matters for the live source: it is a
 // folder that stands in for the root of the file system, so that
 // "<data_root>/sys/..." is read in place of "/sys/...". Empty means the
-// real root.
-std::unique_ptr<DataSource> make_data_source(DataSourceKind kind, const std::string& data_root);
+// real root. `may_change_network` is true only for a normal start: then the
+// live source on the real root of a device build switches modes for real;
+// every other source, and every snapshot and readout, only pretends (see
+// PretendModeSwitch). The made-up sources get the pretend switch here.
+std::unique_ptr<DataSource> make_data_source(DataSourceKind kind,
+                                             const std::string& data_root,
+                                             bool may_change_network = false);
 
 } // namespace platform

@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 
 namespace platform {
 namespace {
@@ -214,6 +215,68 @@ private:
     uint64_t step_{0};
 };
 
+// A made-up source with the pretend switch between modes on top (see
+// PretendModeSwitch): it reads the source it wraps, then puts the pretend
+// mode and the switch's state into the block.
+class PretendSwitchSource final : public DataSource {
+public:
+    explicit PretendSwitchSource(std::unique_ptr<DataSource> source)
+        : source_(std::move(source)) {}
+
+    DataSourceKind kind() const override {
+        return source_->kind();
+    }
+
+    void read(model::HomeData& data) override {
+        source_->read(data);
+        pretend_.apply(data, PretendFailure{});
+    }
+
+    milliseconds next_read_delay() override {
+        return std::min(source_->next_read_delay(), pretend_.next_delay());
+    }
+
+    void set_traffic_shown(bool shown) override {
+        source_->set_traffic_shown(shown);
+    }
+
+    void set_details_shown(bool shown) override {
+        source_->set_details_shown(shown);
+    }
+
+    void wait_until_ready(milliseconds limit) override {
+        source_->wait_until_ready(limit);
+    }
+
+    void request_mode(const ModeRequest& request) override {
+        pretend_.request(request.mode);
+    }
+
+private:
+    std::unique_ptr<DataSource> source_;
+    PretendModeSwitch pretend_;
+};
+
+// The made-up source of `kind` (every kind but Live).
+std::unique_ptr<DataSource> make_made_up_source(DataSourceKind kind) {
+    switch (kind) {
+        case DataSourceKind::Sample:
+        case DataSourceKind::Live:
+            break;
+        case DataSourceKind::Demo:
+            return std::make_unique<DemoDataSource>();
+        case DataSourceKind::Wifi:
+            return std::make_unique<ExampleDataSource>(kind, &model::wifi_home_data);
+        case DataSourceKind::Cable:
+            return std::make_unique<ExampleDataSource>(kind, &model::cable_home_data);
+        case DataSourceKind::Offline:
+            return std::make_unique<ExampleDataSource>(kind, &model::offline_home_data);
+        case DataSourceKind::Tour:
+            return std::make_unique<TourDataSource>();
+    }
+    return std::make_unique<SampleDataSource>();
+}
+
 } // namespace
 
 const char* data_source_name(DataSourceKind kind) {
@@ -246,24 +309,13 @@ std::string data_source_names() {
     return names;
 }
 
-std::unique_ptr<DataSource> make_data_source(DataSourceKind kind, const std::string& data_root) {
-    switch (kind) {
-        case DataSourceKind::Sample:
-            break;
-        case DataSourceKind::Demo:
-            return std::make_unique<DemoDataSource>();
-        case DataSourceKind::Live:
-            return std::make_unique<LiveDataSource>(data_root);
-        case DataSourceKind::Wifi:
-            return std::make_unique<ExampleDataSource>(kind, &model::wifi_home_data);
-        case DataSourceKind::Cable:
-            return std::make_unique<ExampleDataSource>(kind, &model::cable_home_data);
-        case DataSourceKind::Offline:
-            return std::make_unique<ExampleDataSource>(kind, &model::offline_home_data);
-        case DataSourceKind::Tour:
-            return std::make_unique<TourDataSource>();
+std::unique_ptr<DataSource> make_data_source(DataSourceKind kind,
+                                             const std::string& data_root,
+                                             bool may_change_network) {
+    if (kind == DataSourceKind::Live) {
+        return std::make_unique<LiveDataSource>(data_root, may_change_network);
     }
-    return std::make_unique<SampleDataSource>();
+    return std::make_unique<PretendSwitchSource>(make_made_up_source(kind));
 }
 
 } // namespace platform

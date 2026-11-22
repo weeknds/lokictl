@@ -236,6 +236,11 @@ private:
     lv_obj_t* address_{nullptr};
     lv_obj_t* signal_{nullptr};
 
+    // The router view's uptime and the text it shows; update() changes the
+    // text only. It stays null in the link view.
+    lv_obj_t* uptime_{nullptr};
+    std::string uptime_shown_;
+
     // The link view's labels that show values update() follows, and the
     // text each shows. They stay null in the router view. When the first
     // number changes, update() moves its caption with it.
@@ -443,6 +448,8 @@ void InstrumentHomeLayout::build_access_point(const HomeContext& context) {
     auto* right = plain_label(context.content, uptime.c_str());
     view::style::text(right, theme, view::FontRole::Small, theme.colors.muted);
     lv_obj_align(right, LV_ALIGN_TOP_RIGHT, kRightEnd - kContentWidth, kApY);
+    uptime_ = right;
+    uptime_shown_ = uptime;
 }
 
 void InstrumentHomeLayout::build_client_line(const HomeContext& context) {
@@ -568,6 +575,7 @@ void InstrumentHomeLayout::update(const HomeContext& context) {
     set_text_if_changed(link_speed_, link_speed_shown_, link_speed_text(data));
     set_text_if_changed(link_address_, link_address_shown_, address_text(data));
     set_text_if_changed(router_address_, router_address_shown_, router_address_text(data));
+    set_text_if_changed(uptime_, uptime_shown_, "UP " + home::uptime_text(data.uptime_seconds));
 }
 
 } // namespace

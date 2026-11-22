@@ -6,12 +6,18 @@
 
 // The connection to NetworkManager. Device builds (APP_USE_LIBNM) talk to it
 // through libnm; every other build gets the stand-in at the end of this
-// file, which is never available.
+// file, which is never available and changes nothing.
 //
-// Reads only: every libnm function used here is a getter, apart from
-// creating and releasing the client and the GLib calls that run its main
-// context. Nothing here activates, changes or deletes a connection,
-// switches a radio, asks for a scan or asks for an internet check.
+// Reading uses only getters, apart from creating and releasing the client
+// and the GLib calls that run its main context: read() never activates,
+// changes or deletes a connection, switches a radio, asks for a scan or
+// asks for an internet check.
+//
+// Every call that changes the network is in the block marked "Actions"
+// below: adding and activating the in-memory hotspot profile, deleting
+// LokiCTL's hotspot profiles and activating the Wi-Fi profile the hotspot
+// interface was on before. Nothing else is ever added, changed or deleted,
+// and only kHotspotInterface is touched.
 
 #include "network_manager.h"
 
@@ -19,7 +25,15 @@
 #include <NetworkManager.h>
 #endif
 
+#include <algorithm>
+#include <climits>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <ctime>
+#include <string>
 #include <utility>
+#include <vector>
 
 namespace platform {
 
@@ -108,6 +122,105 @@ gboolean end_wait(gpointer /*unused*/) {
     return G_SOURCE_REMOVE;
 }
 
+// The user-data keys of LokiCTL's hotspot profile: the time it was made
+// (seconds since 1970, also the mark that the profile is LokiCTL's) and the
+// UUID of the Wi-Fi profile to bring back.
+constexpr const char* kStartedKey = "lokictl.started";
+constexpr const char* kRestoreKey = "lokictl.restore";
+
+// The longest reason a failed switch shows.
+constexpr std::size_t kMaxReason = 60;
+
+const char* user_data(NMConnection* connection, const char* key) {
+    if (connection == nullptr) {
+        return nullptr;
+    }
+    auto* user = NM_SETTING_USER(nm_connection_get_setting_by_name(connection, NM_SETTING_USER_SETTING_NAME));
+    return user != nullptr ? nm_setting_user_get_data(user, key) : nullptr;
+}
+
+// True for a profile LokiCTL made: its name and its own user-data mark.
+bool is_hotspot_profile(NMConnection* connection) {
+    if (connection == nullptr) {
+        return false;
+    }
+    const char* id = nm_connection_get_id(connection);
+    return id != nullptr && std::strcmp(id, kHotspotProfile) == 0 && user_data(connection, kStartedKey) != nullptr;
+}
+
+// Every profile LokiCTL made, as the client knows them now.
+std::vector<NMRemoteConnection*> hotspot_profiles(NMClient* client) {
+    std::vector<NMRemoteConnection*> profiles;
+    const GPtrArray* connections = nm_client_get_connections(client);
+    for (guint index = 0; connections != nullptr && index < connections->len; ++index) {
+        auto* connection = static_cast<NMRemoteConnection*>(g_ptr_array_index(connections, index));
+        if (is_hotspot_profile(NM_CONNECTION(connection))) {
+            profiles.push_back(connection);
+        }
+    }
+    return profiles;
+}
+
+// True when the service refused for lack of permission. The error domains
+// are compared by name: libnm's headers declare their quark functions
+// without C linkage, so C++ cannot link to them.
+bool permission_denied(const GError* error) {
+    if (error == nullptr) {
+        return false;
+    }
+    const char* domain = g_quark_to_string(error->domain);
+    if (domain != nullptr &&
+        ((std::strcmp(domain, "nm-manager-error-quark") == 0 && error->code == NM_MANAGER_ERROR_PERMISSION_DENIED) ||
+         (std::strcmp(domain, "nm-settings-error-quark") == 0 && error->code == NM_SETTINGS_ERROR_PERMISSION_DENIED))) {
+        return true;
+    }
+    gchar* remote = g_dbus_error_get_remote_error(error);
+    const bool denied = remote != nullptr && std::strstr(remote, "PermissionDenied") != nullptr;
+    g_free(remote);
+    return denied;
+}
+
+// A short, plain reason from an error: its message without the D-Bus
+// prefix, one line, at most kMaxReason bytes.
+std::string reason_of(GError* error) {
+    if (error == nullptr || error->message == nullptr) {
+        return "unknown error";
+    }
+    g_dbus_error_strip_remote_error(error);
+    std::string reason;
+    for (const char* character = error->message; *character != '\0' && *character != '\n'; ++character) {
+        if (reason.size() >= kMaxReason) {
+            break;
+        }
+        const auto byte = static_cast<unsigned char>(*character);
+        reason += byte < 0x20 || byte == 0x7F ? '?' : *character;
+    }
+    return reason.empty() ? std::string("unknown error") : reason;
+}
+
+std::string reason_of(NMActiveConnectionStateReason reason) {
+    switch (reason) {
+        case NM_ACTIVE_CONNECTION_STATE_REASON_NO_SECRETS:
+            return "password refused";
+        case NM_ACTIVE_CONNECTION_STATE_REASON_CONNECT_TIMEOUT:
+            return "timed out";
+        case NM_ACTIVE_CONNECTION_STATE_REASON_IP_CONFIG_INVALID:
+            return "address setup failed";
+        case NM_ACTIVE_CONNECTION_STATE_REASON_DEVICE_DISCONNECTED:
+            return "the hotspot did not start";
+        case NM_ACTIVE_CONNECTION_STATE_REASON_DEVICE_REMOVED:
+            return "Wi-Fi device removed";
+        case NM_ACTIVE_CONNECTION_STATE_REASON_CONNECTION_REMOVED:
+            return "hotspot removed";
+        default:
+            return "hotspot stopped (reason " + std::to_string(static_cast<int>(reason)) + ")";
+    }
+}
+
+int64_t wall_clock_seconds() {
+    return static_cast<int64_t>(std::time(nullptr));
+}
+
 } // namespace
 
 struct NetworkManagerClient::Impl {
@@ -115,6 +228,31 @@ struct NetworkManagerClient::Impl {
     GCancellable* cancellable{nullptr};
     NMClient* client{nullptr};
     bool starting{false};
+
+    // The switch between modes (see the Actions block).
+    GCancellable* action_cancellable{nullptr};
+    model::ModeSwitch status;            // what read() reports
+    Clock::time_point switch_started{};
+    bool router_waiting{false};          // a Router switch waits for its hotspot to be active
+    bool add_pending{false};             // the hotspot's add-and-activate is not answered yet
+    bool undo_when_added{false};         // undo the Router switch once the add is answered
+    NMActiveConnection* activation{nullptr}; // the hotspot's activation (a reference)
+    bool client_waiting{false};          // a Client switch waits for its answers
+    int pending{0};                      // requests sent and not answered yet
+    int deletes_pending{0};              // deletes of hotspot profiles not answered yet
+    std::string restore_uuid;            // activated once those deletes are answered
+    std::string restore_interface;
+    bool closing{false};                 // no new requests: the client is going away
+
+    // Actions; see the block below.
+    void fail(model::SwitchError error, std::string reason);
+    void release_activation();
+    void delete_profiles_and_restore();
+    void check_progress();
+    static void on_router_added(GObject* source, GAsyncResult* result, gpointer user_data);
+    static void on_profile_deleted(GObject* source, GAsyncResult* result, gpointer user_data);
+    static void on_leftover_deleted(GObject* source, GAsyncResult* result, gpointer user_data);
+    static void on_restored(GObject* source, GAsyncResult* result, gpointer user_data);
 
     // Called in `context` when the start has ended, well or not.
     static void on_started(GObject* source, GAsyncResult* result, gpointer user_data) {
@@ -164,6 +302,7 @@ NetworkManagerClient::NetworkManagerClient()
     Impl& self = *impl_;
     self.context = g_main_context_new();
     self.cancellable = g_cancellable_new();
+    self.action_cancellable = g_cancellable_new();
     self.starting = true;
     // The client keeps the main context that is the thread's default while
     // it is made. It starts without waiting, and without asking which
@@ -177,6 +316,14 @@ NetworkManagerClient::NetworkManagerClient()
 
 NetworkManagerClient::~NetworkManagerClient() {
     Impl& self = *impl_;
+    // Requests still waiting for an answer are given up; their callbacks
+    // run with "cancelled" and only count down.
+    self.closing = true;
+    if (self.pending > 0) {
+        g_cancellable_cancel(self.action_cancellable);
+        self.handle_until([&self] { return self.pending == 0; }, kReleaseLimit);
+    }
+    self.release_activation();
     if (self.starting) {
         g_cancellable_cancel(self.cancellable);
         self.handle_until([&self] { return !self.starting; }, kReleaseLimit);
@@ -195,13 +342,15 @@ NetworkManagerClient::~NetworkManagerClient() {
             g_object_remove_weak_pointer(G_OBJECT(watcher), &watcher);
         }
     }
-    if (self.starting) {
-        // The start did not end in time, so its callback still points at
-        // `self`. Nothing runs the context again, but `self` and the context
-        // are kept all the same: a small, one-time leak on the way out.
+    if (self.starting || self.pending > 0) {
+        // The start or a request did not end in time, so its callback still
+        // points at `self`. Nothing runs the context again, but `self` and
+        // the context are kept all the same: a small, one-time leak on the
+        // way out.
         static_cast<void>(impl_.release());
         return;
     }
+    g_object_unref(self.action_cancellable);
     g_object_unref(self.cancellable);
     g_main_context_unref(self.context);
 }
@@ -210,6 +359,8 @@ void NetworkManagerClient::read(NetworkManagerReading& reading) {
     reading = NetworkManagerReading{};
     Impl& self = *impl_;
     self.handle_queued(kMaxEventsPerRead);
+    self.check_progress();
+    reading.mode_switch = self.status;
     NMClient* client = self.client;
     if (client == nullptr || !nm_client_get_nm_running(client)) {
         return;
@@ -254,6 +405,44 @@ void NetworkManagerClient::read(NetworkManagerReading& reading) {
         }
         reading.wifi_links.push_back(std::move(link));
     }
+
+    // LokiCTL's hotspot, while its profile is active.
+    const GPtrArray* actives = nm_client_get_active_connections(client);
+    for (guint index = 0; actives != nullptr && index < actives->len; ++index) {
+        auto* active = static_cast<NMActiveConnection*>(g_ptr_array_index(actives, index));
+        auto* profile = NM_CONNECTION(nm_active_connection_get_connection(active));
+        if (!is_hotspot_profile(profile) || nm_active_connection_get_state(active) != NM_ACTIVE_CONNECTION_STATE_ACTIVATED) {
+            continue;
+        }
+        NetworkManagerReading::Hotspot& hotspot = reading.hotspot;
+        hotspot.active = true;
+        const GPtrArray* active_devices = nm_active_connection_get_devices(active);
+        if (active_devices != nullptr && active_devices->len > 0) {
+            const char* name = nm_device_get_iface(static_cast<NMDevice*>(g_ptr_array_index(active_devices, 0)));
+            hotspot.interface_name = name != nullptr ? name : "";
+        }
+        if (NMSettingWireless* wireless = nm_connection_get_setting_wireless(profile)) {
+            if (GBytes* ssid = nm_setting_wireless_get_ssid(wireless)) {
+                gsize size = 0;
+                const auto* bytes = static_cast<const guint8*>(g_bytes_get_data(ssid, &size));
+                if (bytes != nullptr && size > 0) {
+                    if (char* text = nm_utils_ssid_to_utf8(bytes, size)) {
+                        hotspot.name = clean_network_name(text);
+                        g_free(text);
+                    }
+                }
+            }
+        }
+        hotspot.security = nm_connection_get_setting_wireless_security(profile) != nullptr ? "WPA2" : "open";
+        if (const char* started = user_data(profile, kStartedKey)) {
+            const int64_t since = g_ascii_strtoll(started, nullptr, 10);
+            const int64_t uptime = wall_clock_seconds() - since;
+            if (since > 0 && uptime >= 0 && uptime < INT32_MAX) {
+                hotspot.uptime_seconds = static_cast<int32_t>(uptime);
+            }
+        }
+        break;
+    }
 }
 
 bool NetworkManagerClient::starting() const {
@@ -265,6 +454,338 @@ void NetworkManagerClient::wait_started(std::chrono::milliseconds limit) {
     if (self.starting) {
         self.handle_until([&self] { return !self.starting; }, limit);
     }
+}
+
+
+bool NetworkManagerClient::can_change_network() {
+    return true;
+}
+
+bool NetworkManagerClient::busy() const {
+    const Impl& self = *impl_;
+    return self.pending > 0 || self.status.state == model::SwitchState::Switching;
+}
+
+// ---------------------------------------------------------------------------
+// Actions: the only calls that change the network. Each request runs with
+// the client's context as the thread's default, so its answer arrives there
+// and is handled by a later read() (or by leave()).
+// ---------------------------------------------------------------------------
+
+void NetworkManagerClient::Impl::fail(model::SwitchError error, std::string reason) {
+    status.state = model::SwitchState::Failed;
+    status.error = error;
+    status.reason = error == model::SwitchError::Failed ? std::move(reason) : std::string();
+}
+
+void NetworkManagerClient::Impl::release_activation() {
+    if (activation != nullptr) {
+        g_object_unref(activation);
+        activation = nullptr;
+    }
+}
+
+void NetworkManagerClient::start_router(const RouterRequest& request) {
+    Impl& self = *impl_;
+    if (busy() || self.closing) {
+        return;
+    }
+    self.status = model::ModeSwitch{};
+    self.status.target = model::NetMode::Router;
+    NMClient* client = self.client;
+    if (client == nullptr || !nm_client_get_nm_running(client)) {
+        self.fail(model::SwitchError::Failed, "network service not running");
+        return;
+    }
+    NMDevice* device = nm_client_get_device_by_iface(client, request.interface_name.c_str());
+    if (device == nullptr || !NM_IS_DEVICE_WIFI(device)) {
+        self.fail(model::SwitchError::Failed, "no Wi-Fi device " + request.interface_name);
+        return;
+    }
+
+    // Already on: nothing to do. A leftover profile that is not active is
+    // deleted first (the answer only counts down).
+    g_main_context_push_thread_default(self.context);
+    for (NMRemoteConnection* profile : hotspot_profiles(client)) {
+        bool active = false;
+        const GPtrArray* actives = nm_client_get_active_connections(client);
+        for (guint index = 0; actives != nullptr && index < actives->len; ++index) {
+            auto* candidate = static_cast<NMActiveConnection*>(g_ptr_array_index(actives, index));
+            active = active || nm_active_connection_get_connection(candidate) == profile;
+        }
+        if (active) {
+            g_main_context_pop_thread_default(self.context);
+            return;
+        }
+        ++self.pending;
+        nm_remote_connection_delete_async(profile, self.action_cancellable, &Impl::on_leftover_deleted, &self);
+    }
+
+    // The Wi-Fi profile the interface is on now, to bring back later.
+    std::string restore;
+    if (NMActiveConnection* current = nm_device_get_active_connection(device)) {
+        auto* profile = NM_CONNECTION(nm_active_connection_get_connection(current));
+        const char* type = profile != nullptr ? nm_connection_get_connection_type(profile) : nullptr;
+        if (type != nullptr && std::strcmp(type, NM_SETTING_WIRELESS_SETTING_NAME) == 0 &&
+            !is_hotspot_profile(profile)) {
+            const char* uuid = nm_connection_get_uuid(profile);
+            restore = uuid != nullptr ? uuid : "";
+        }
+    }
+
+    NMConnection* connection = nm_simple_connection_new();
+    char* uuid = nm_utils_uuid_generate();
+    auto* setting_connection = NM_SETTING_CONNECTION(nm_setting_connection_new());
+    g_object_set(setting_connection,
+                 NM_SETTING_CONNECTION_ID, kHotspotProfile,
+                 NM_SETTING_CONNECTION_UUID, uuid,
+                 NM_SETTING_CONNECTION_TYPE, NM_SETTING_WIRELESS_SETTING_NAME,
+                 NM_SETTING_CONNECTION_INTERFACE_NAME, request.interface_name.c_str(),
+                 NM_SETTING_CONNECTION_AUTOCONNECT, FALSE,
+                 nullptr);
+    g_free(uuid);
+    nm_connection_add_setting(connection, NM_SETTING(setting_connection));
+
+    auto* user = NM_SETTING_USER(nm_setting_user_new());
+    const std::string started = std::to_string(wall_clock_seconds());
+    nm_setting_user_set_data(user, kStartedKey, started.c_str(), nullptr);
+    if (!restore.empty()) {
+        nm_setting_user_set_data(user, kRestoreKey, restore.c_str(), nullptr);
+    }
+    nm_connection_add_setting(connection, NM_SETTING(user));
+
+    auto* wireless = NM_SETTING_WIRELESS(nm_setting_wireless_new());
+    GBytes* ssid = g_bytes_new(request.name.data(), request.name.size());
+    g_object_set(wireless,
+                 NM_SETTING_WIRELESS_SSID, ssid,
+                 NM_SETTING_WIRELESS_MODE, NM_SETTING_WIRELESS_MODE_AP,
+                 NM_SETTING_WIRELESS_BAND, "bg",
+                 nullptr);
+    g_bytes_unref(ssid);
+    nm_connection_add_setting(connection, NM_SETTING(wireless));
+
+    auto* security = NM_SETTING_WIRELESS_SECURITY(nm_setting_wireless_security_new());
+    g_object_set(security,
+                 NM_SETTING_WIRELESS_SECURITY_KEY_MGMT, "wpa-psk",
+                 NM_SETTING_WIRELESS_SECURITY_PSK, request.password.c_str(),
+                 nullptr);
+    nm_setting_wireless_security_add_proto(security, "rsn");
+    nm_setting_wireless_security_add_pairwise(security, "ccmp");
+    nm_setting_wireless_security_add_group(security, "ccmp");
+    nm_connection_add_setting(connection, NM_SETTING(security));
+
+    auto* ipv4 = NM_SETTING_IP_CONFIG(nm_setting_ip4_config_new());
+    g_object_set(ipv4, NM_SETTING_IP_CONFIG_METHOD, NM_SETTING_IP4_CONFIG_METHOD_SHARED, nullptr);
+    nm_connection_add_setting(connection, NM_SETTING(ipv4));
+    auto* ipv6 = NM_SETTING_IP_CONFIG(nm_setting_ip6_config_new());
+    g_object_set(ipv6, NM_SETTING_IP_CONFIG_METHOD, NM_SETTING_IP6_CONFIG_METHOD_DISABLED, nullptr);
+    nm_connection_add_setting(connection, NM_SETTING(ipv6));
+
+    // Kept in memory only, never written to disk, and not tied to this
+    // program: the hotspot stays up if LokiCTL is killed, and the next start
+    // shows Router and can undo it.
+    GVariantBuilder options;
+    g_variant_builder_init(&options, G_VARIANT_TYPE_VARDICT);
+    g_variant_builder_add(&options, "{sv}", "persist", g_variant_new_string("memory"));
+
+    self.switch_started = Clock::now();
+    self.status.state = model::SwitchState::Switching;
+    self.router_waiting = true;
+    self.add_pending = true;
+    self.undo_when_added = false;
+    self.restore_interface = request.interface_name;
+    ++self.pending;
+    nm_client_add_and_activate_connection2(client, connection, device, nullptr, g_variant_builder_end(&options),
+                                           self.action_cancellable, &Impl::on_router_added, &self);
+    g_main_context_pop_thread_default(self.context);
+    g_object_unref(connection);
+}
+
+void NetworkManagerClient::start_client() {
+    Impl& self = *impl_;
+    if (busy() || self.closing) {
+        return;
+    }
+    self.status = model::ModeSwitch{};
+    self.status.target = model::NetMode::Client;
+    if (self.client == nullptr || hotspot_profiles(self.client).empty()) {
+        return;  // already Client: nothing is sent
+    }
+    self.switch_started = Clock::now();
+    self.status.state = model::SwitchState::Switching;
+    self.client_waiting = true;
+    self.restore_interface = kHotspotInterface;
+    self.delete_profiles_and_restore();
+}
+
+// Deletes every profile of LokiCTL's hotspot; once all deletes are
+// answered, on_profile_deleted() activates the recorded Wi-Fi profile.
+void NetworkManagerClient::Impl::delete_profiles_and_restore() {
+    if (client == nullptr || closing) {
+        return;
+    }
+    const std::vector<NMRemoteConnection*> profiles = hotspot_profiles(client);
+    restore_uuid.clear();
+    for (NMRemoteConnection* profile : profiles) {
+        const char* uuid = user_data(NM_CONNECTION(profile), kRestoreKey);
+        if (uuid != nullptr && restore_uuid.empty()) {
+            restore_uuid = uuid;
+        }
+    }
+    if (restore_interface.empty()) {
+        restore_interface = kHotspotInterface;
+    }
+    g_main_context_push_thread_default(context);
+    for (NMRemoteConnection* profile : profiles) {
+        ++pending;
+        ++deletes_pending;
+        nm_remote_connection_delete_async(profile, action_cancellable, &Impl::on_profile_deleted, this);
+    }
+    g_main_context_pop_thread_default(context);
+}
+
+void NetworkManagerClient::Impl::on_router_added(GObject* source, GAsyncResult* result, gpointer user_data) {
+    auto* self = static_cast<Impl*>(user_data);
+    GError* error = nullptr;
+    NMActiveConnection* active =
+        nm_client_add_and_activate_connection2_finish(NM_CLIENT(source), result, nullptr, &error);
+    --self->pending;
+    self->add_pending = false;
+    if (error != nullptr && g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
+        g_clear_error(&error);
+        return;
+    }
+    if (active == nullptr) {
+        self->router_waiting = false;
+        if (self->status.state == model::SwitchState::Switching) {
+            self->fail(permission_denied(error) ? model::SwitchError::NotAllowed : model::SwitchError::Failed,
+                       reason_of(error));
+        }
+        g_clear_error(&error);
+        // The profile may have been added all the same.
+        self->delete_profiles_and_restore();
+        return;
+    }
+    g_clear_error(&error);
+    self->release_activation();
+    self->activation = active;
+    if (self->undo_when_added) {
+        self->undo_when_added = false;
+        self->router_waiting = false;
+        self->release_activation();
+        self->delete_profiles_and_restore();
+    }
+}
+
+void NetworkManagerClient::Impl::on_profile_deleted(GObject* source, GAsyncResult* result, gpointer user_data) {
+    auto* self = static_cast<Impl*>(user_data);
+    GError* error = nullptr;
+    nm_remote_connection_delete_finish(NM_REMOTE_CONNECTION(source), result, &error);
+    --self->pending;
+    if (error != nullptr && g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
+        g_clear_error(&error);
+        return;
+    }
+    if (error != nullptr && self->client_waiting && self->status.state == model::SwitchState::Switching) {
+        self->fail(permission_denied(error) ? model::SwitchError::NotAllowed : model::SwitchError::Failed,
+                   reason_of(error));
+    }
+    g_clear_error(&error);
+    if (--self->deletes_pending > 0 || self->restore_uuid.empty() || self->closing) {
+        return;
+    }
+    NMRemoteConnection* restore = nm_client_get_connection_by_uuid(self->client, self->restore_uuid.c_str());
+    NMDevice* device = nm_client_get_device_by_iface(self->client, self->restore_interface.c_str());
+    self->restore_uuid.clear();
+    if (restore == nullptr) {
+        return;  // gone meanwhile: the service's autoconnect picks
+    }
+    g_main_context_push_thread_default(self->context);
+    ++self->pending;
+    nm_client_activate_connection_async(self->client, NM_CONNECTION(restore), device, nullptr,
+                                        self->action_cancellable, &Impl::on_restored, self);
+    g_main_context_pop_thread_default(self->context);
+}
+
+// A leftover profile deleted before a Router switch: only counted down; a
+// failure shows up when the new profile is added.
+void NetworkManagerClient::Impl::on_leftover_deleted(GObject* source, GAsyncResult* result, gpointer user_data) {
+    auto* self = static_cast<Impl*>(user_data);
+    nm_remote_connection_delete_finish(NM_REMOTE_CONNECTION(source), result, nullptr);
+    --self->pending;
+}
+
+void NetworkManagerClient::Impl::on_restored(GObject* source, GAsyncResult* result, gpointer user_data) {
+    auto* self = static_cast<Impl*>(user_data);
+    GError* error = nullptr;
+    NMActiveConnection* active = nm_client_activate_connection_finish(NM_CLIENT(source), result, &error);
+    --self->pending;
+    if (active != nullptr) {
+        g_object_unref(active);
+    }
+    if (error != nullptr && !g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED) && self->client_waiting &&
+        self->status.state == model::SwitchState::Switching) {
+        self->fail(permission_denied(error) ? model::SwitchError::NotAllowed : model::SwitchError::Failed,
+                   reason_of(error));
+    }
+    g_clear_error(&error);
+}
+
+// Called by read(): ends a switch that has finished, failed or run too long.
+void NetworkManagerClient::Impl::check_progress() {
+    if (router_waiting && activation != nullptr) {
+        const NMActiveConnectionState state = nm_active_connection_get_state(activation);
+        if (state == NM_ACTIVE_CONNECTION_STATE_ACTIVATED) {
+            router_waiting = false;
+            release_activation();
+            status.state = model::SwitchState::Idle;
+        } else if (state == NM_ACTIVE_CONNECTION_STATE_DEACTIVATING ||
+                   state == NM_ACTIVE_CONNECTION_STATE_DEACTIVATED) {
+            router_waiting = false;
+            fail(model::SwitchError::Failed, reason_of(nm_active_connection_get_state_reason(activation)));
+            release_activation();
+            delete_profiles_and_restore();
+        }
+    }
+    if (router_waiting && Clock::now() - switch_started >= NetworkManagerClient::kSwitchLimit) {
+        router_waiting = false;
+        fail(model::SwitchError::Failed, "no hotspot after 20 s");
+        release_activation();
+        if (add_pending) {
+            undo_when_added = true;
+        } else {
+            delete_profiles_and_restore();
+        }
+    }
+    if (client_waiting && pending == 0) {
+        client_waiting = false;
+        if (status.state == model::SwitchState::Switching) {
+            status.state = model::SwitchState::Idle;
+        }
+    }
+    if (client_waiting && Clock::now() - switch_started >= NetworkManagerClient::kSwitchLimit &&
+        status.state == model::SwitchState::Switching) {
+        fail(model::SwitchError::Failed, "no answer in 20 s");
+    }
+}
+
+void NetworkManagerClient::leave(std::chrono::milliseconds limit) {
+    Impl& self = *impl_;
+    if (self.client == nullptr || (!self.add_pending && hotspot_profiles(self.client).empty())) {
+        return;  // plain Client: nothing is sent
+    }
+    const auto deadline = Clock::now() + limit;
+    const auto left = [deadline] {
+        return std::max(milliseconds(0), std::chrono::duration_cast<milliseconds>(deadline - Clock::now()));
+    };
+    // An add that is still on its way must be answered first, or the
+    // hotspot could come up after LokiCTL has gone.
+    self.handle_until([&self] { return !self.add_pending; }, left());
+    self.router_waiting = false;
+    self.release_activation();
+    self.handle_until([&self] { return self.deletes_pending == 0; }, left());
+    self.delete_profiles_and_restore();
+    self.handle_until([&self] { return self.pending == 0; }, left());
 }
 
 #else // !APP_USE_LIBNM
@@ -285,6 +806,20 @@ bool NetworkManagerClient::starting() const {
 }
 
 void NetworkManagerClient::wait_started(std::chrono::milliseconds /*limit*/) {}
+
+bool NetworkManagerClient::can_change_network() {
+    return false;
+}
+
+void NetworkManagerClient::start_router(const RouterRequest& /*request*/) {}
+
+void NetworkManagerClient::start_client() {}
+
+bool NetworkManagerClient::busy() const {
+    return false;
+}
+
+void NetworkManagerClient::leave(std::chrono::milliseconds /*limit*/) {}
 
 #endif // APP_USE_LIBNM
 

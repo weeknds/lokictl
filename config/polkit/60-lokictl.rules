@@ -1,0 +1,22 @@
+// SPDX-FileCopyrightText: 2026 LokiCTL contributors
+//
+// SPDX-License-Identifier: MIT
+//
+// Lets LokiCTL switch the network between its modes (Client and Router).
+// Apps started by the CardputerZero launcher do not run in an active login
+// session, so NetworkManager would otherwise refuse these actions. This rule
+// grants exactly three of them to members of the netdev group: control of
+// the network, changes to system-wide connection profiles, and sharing the
+// network through a protected (WPA) hotspot. An open hotspot is not allowed.
+//
+// polkit cannot tell programs apart, so every process of a netdev member
+// gets these rights, not only LokiCTL. Removing the package removes the rule.
+
+polkit.addRule(function(action, subject) {
+    if ((action.id == "org.freedesktop.NetworkManager.network-control" ||
+         action.id == "org.freedesktop.NetworkManager.settings.modify.system" ||
+         action.id == "org.freedesktop.NetworkManager.wifi.share.protected") &&
+        subject.isInGroup("netdev")) {
+        return polkit.Result.YES;
+    }
+});

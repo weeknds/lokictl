@@ -13,6 +13,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 
 namespace viewmodel {
 
@@ -26,6 +27,9 @@ constexpr int32_t kSettingsThemeFollowsActive = -1;
 // The home page shows at most this many clients; the selection never goes
 // past the last of them.
 constexpr int32_t kHomeClientRows = 3;
+
+// The highlighted row of the Modes page while it follows the active mode.
+constexpr int32_t kModesFollowsActive = -1;
 
 class BaseViewModel {
 public:
@@ -104,6 +108,30 @@ public:
     // at the top.
     bool open_status();
 
+    // The Modes page.
+    // The highlighted row (one row per model::NetMode, in its order), or
+    // kModesFollowsActive while the highlight is on the active mode; starts
+    // as kModesFollowsActive.
+    lv_subject_t* modes_selection_subject();
+    int32_t modes_selection() const;
+    void select_mode_row(int32_t row);
+    // Sets the highlight back to kModesFollowsActive, then opens the Modes
+    // page (see open_page()). The home page's key 4 uses it.
+    bool open_modes();
+    // Asks for a switch to `mode`. The view model only passes the request
+    // on: app::DataController hands it to the data layer, and the switch's
+    // state comes back in home().mode_switch. Counts every request, like
+    // theme_request_subject(); requested_mode() says which one.
+    void request_mode(model::NetMode mode);
+    lv_subject_t* mode_request_subject();
+    model::NetMode requested_mode() const;
+    // The hotspot's password, for the Modes page to show while Router runs.
+    // The app sets it (from the settings file on the device, a made-up one
+    // in the simulator and in snapshots); empty when there is none yet. It
+    // never goes to the log.
+    const std::string& hotspot_password() const;
+    void set_hotspot_password(const std::string& password);
+
     // The home page.
     // The values it shows (see model::HomeData). The page reads them while
     // it is built, and they change while it is open: the data layer hands
@@ -165,6 +193,10 @@ private:
     reactive::IntSubject settings_theme_selection_subject_;
     reactive::BoolSubject screen_dimming_subject_;
     reactive::IntSubject status_scroll_subject_;
+    reactive::IntSubject modes_selection_subject_;
+    reactive::IntSubject mode_request_subject_;
+    model::NetMode requested_mode_{model::NetMode::Client};
+    std::string hotspot_password_;
     reactive::IntSubject home_selection_subject_;
     reactive::IntSubject home_data_subject_;
     reactive::IntSubject key_test_selection_subject_;

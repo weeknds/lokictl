@@ -30,6 +30,38 @@ constexpr int kNetModeCount = 4;
 // "VPN". Pages write it in capitals or lowercase as their theme asks.
 const char* net_mode_name(NetMode mode);
 
+// What the switch between modes is doing (see HomeData::mode_switch).
+enum class SwitchState {
+    Idle = 0,  // nothing asked for, or the last switch finished
+    Switching, // a switch is under way
+    Failed,    // the last switch failed; ModeSwitch::error says why
+};
+
+// The name of a switch state in lowercase: "idle", "switching" or
+// "failed". Used by the log and the --print-data readout.
+const char* switch_state_name(SwitchState state);
+
+// Why the last switch failed.
+enum class SwitchError {
+    None = 0,
+    NoCable,    // Router needs a cable that leads to the internet
+    NotAllowed, // the system refused: the permission rule is missing
+    Failed,     // anything else; ModeSwitch::reason says what
+};
+
+// The last switch between modes the user asked for, and where it stands.
+// The mode the device is in is HomeData::mode; this only says what a
+// switch is doing.
+struct ModeSwitch {
+    SwitchState state{SwitchState::Idle};
+    NetMode target{NetMode::Client};    // the mode asked for last
+    SwitchError error{SwitchError::None};
+    std::string reason;                 // with SwitchError::Failed: a short reason
+};
+
+bool operator==(const ModeSwitch& left, const ModeSwitch& right);
+bool operator!=(const ModeSwitch& left, const ModeSwitch& right);
+
 // What the battery is doing, as the system reports it.
 enum class BatteryState {
     Unknown = 0, // not reported, or a report the app does not know
@@ -216,6 +248,7 @@ struct HomeData {
     std::string ap_name;               // network name (SSID) of the access point
     std::string ap_security;           // security of the access point, for example "WPA2"
     int32_t uptime_seconds{0};         // time since the mode started, seconds
+    ModeSwitch mode_switch;            // the last switch between modes (see ModeSwitch)
     // The current rates, kbit/s; kRateUnknown (or any negative value) when
     // not known.
     int32_t down_kbps{0};              // current download rate, kbit/s

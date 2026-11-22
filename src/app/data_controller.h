@@ -15,7 +15,9 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
+#include <string>
 
 namespace viewmodel {
 class BaseViewModel;
@@ -52,6 +54,18 @@ namespace app {
 // once a second only while it is seen; and the same for the Status page and
 // its details (DataReader::set_details_shown()). While the screen is dark
 // (set_screen_dark()), neither counts as shown, whatever page is on top.
+//
+// Switching modes: it follows the view model's mode requests
+// (BaseViewModel::request_mode(), from the Modes page) and hands each to the
+// reader with the hotspot's password, so the UI thread never waits on the
+// network. Without the background reader (snapshots) it takes a reading
+// right after the request, so the page shows the switch's first state at
+// once. Log lines: "data: mode <client|router>" for the first reading and
+// whenever the mode changes; "data: switching to <mode>", "data: switch to
+// <mode> failed: <why>" and "data: switch to <mode> done" as the switch
+// moves on (never a name or the password); "data: back to Client before
+// quitting" when a reader that changes the network stops while a mode other
+// than Client is on or a switch runs.
 //
 // Create it after the view model and destroy it before; like
 // app::ThemeController, it is not copied.
@@ -92,6 +106,12 @@ public:
     // more than once, and without start().
     void stop();
 
+    // Called on the UI thread when Router is asked for while the view
+    // model holds no hotspot password and the reader changes the real
+    // network: it makes one, saves it, gives it to the view model and
+    // returns it. Empty: the view model's password is used as it is.
+    void set_password_maker(std::function<std::string()> maker);
+
     // Tells the controller whether the screen is dark (app::PowerController,
     // F3.7). While it is, the reader is told that neither the traffic nor
     // the Status page's details are shown, so the live source stops reading
@@ -103,6 +123,11 @@ private:
     // Tells the reader whether the page on top shows the traffic or the
     // details. The user data is the controller.
     static void page_observer_cb(lv_observer_t* observer, lv_subject_t* subject);
+    // Hands a mode request of the view model to the reader. The user data
+    // is the controller.
+    static void mode_request_cb(lv_observer_t* observer, lv_subject_t* subject);
+    void request_mode(model::NetMode mode);
+    void log_mode(const model::HomeData& data);
     // Hands the reader the traffic and details flags for the page on top
     // and the screen's state.
     void update_shown();
@@ -123,6 +148,12 @@ private:
     platform::DataReader reader_;
     lv_timer_t* poll_timer_{nullptr};
     lv_observer_t* page_observer_{nullptr};
+    lv_observer_t* mode_observer_{nullptr};
+    int32_t mode_requests_seen_{0};  // the view model's request count handed on last
+    std::function<std::string()> password_maker_;
+    bool mode_logged_{false};
+    model::NetMode logged_mode_{model::NetMode::Client};
+    model::SwitchState logged_switch_{model::SwitchState::Idle};
     bool screen_dark_{false};
     model::HomeData block_;  // the block fetched last; kept to reuse its memory
     bool battery_logged_{false};

@@ -50,4 +50,9 @@ HomeData home_tour_stop(int index);
 // HomeData::details with it, after all its other values are set.
 StatusDetails example_status_details(const HomeData& data);
 
+// The made-up password of the made-up hotspot (the sample's access point,
+// and the one the pretend switch to Router starts). The simulator and
+// snapshots show it; it is never written to a settings file.
+constexpr const char* kExampleHotspotPassword = "fx7kq2mv9tpa";
+
 } // namespace model

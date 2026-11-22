@@ -28,9 +28,9 @@ view::widgets::HelpContent HomeScreen::help_content() {
             {
                 {"HOLD ESC", "Exit"},
                 {"F Z / X C", "Previous / next client"},
-                {"6", "Settings"},
-                {"8", "Status"},
-                {"4 / 5 / 7", "Not available yet"},
+                {"4", "Modes"},
+                {"6 / 8", "Settings / Status"},
+                {"5 / 7", "Not available yet"},
             }};
 }
 
@@ -40,11 +40,11 @@ view::widgets::HelpContent HomeScreen::help() const {
 
 view::widgets::SoftKeySet HomeScreen::soft_keys() {
     // Called from init(), before build_content(): it uses nothing but the
-    // view model, which outlives every screen. Modes, Scan and Tools open
-    // pages that do not exist yet, so they are shown switched off.
+    // view model, which outlives every screen. Scan and Tools open pages
+    // that do not exist yet, so they are shown switched off.
     auto& view_model = this->view_model();
     return {{
-        {"Modes", {}, false, false},
+        {"Modes", [&view_model] { view_model.open_modes(); }},
         {"Scan", {}, false, false},
         {"Setup", [&view_model] { view_model.open_settings(); }, true},
         {"Tools", {}, false, false},

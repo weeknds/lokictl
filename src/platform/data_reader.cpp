@@ -43,7 +43,7 @@ void DataReader::read_now() {
     if (thread_.joinable()) {
         return;
     }
-    hand_over_shown();
+    static_cast<void>(hand_over_shown());
     model::HomeData data;
     if (read_source(data)) {
         publish(std::move(data));
@@ -125,19 +125,48 @@ void DataReader::set_details_shown(bool shown) {
     wake_.notify_all();
 }
 
-void DataReader::hand_over_shown() {
+void DataReader::request_mode(const ModeRequest& request) {
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        mode_request_ = request;
+        mode_requested_ = true;
+    }
+    wake_.notify_all();
+}
+
+bool DataReader::changes_network() const {
+    return source_ && source_->changes_network();
+}
+
+bool DataReader::hand_over_shown() {
     bool traffic = true;
     bool details = false;
+    bool requested = false;
+    ModeRequest request;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         traffic = traffic_shown_;
         details = details_shown_;
         shown_changed_ = false;
+        if (mode_requested_) {
+            requested = true;
+            request = std::move(mode_request_);
+            mode_request_ = ModeRequest{};
+            mode_requested_ = false;
+        }
     }
     if (source_) {
         source_->set_traffic_shown(traffic);
         source_->set_details_shown(details);
+        if (requested) {
+            try {
+                source_->request_mode(request);
+            } catch (...) {
+                // A request that fails with an exception is dropped.
+            }
+        }
     }
+    return requested;
 }
 
 bool DataReader::take(model::HomeData& data) {
@@ -159,10 +188,25 @@ model::HomeData DataReader::latest() const {
 // take() never waits for a reading. A new traffic or details flag ends the
 // wait early: the loop then starts again, hands the flags over and asks the
 // source how long to sleep now (the live source asks for a reading at once).
+// A switch request ends the wait too, and is followed by a reading at once.
 void DataReader::run() {
-    const auto woken = [this] { return stop_requested_ || shown_changed_; };
+    const auto woken = [this] { return stop_requested_ || shown_changed_ || mode_requested_; };
     while (true) {
-        hand_over_shown();
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (stop_requested_) {
+                break;
+            }
+        }
+        // A switch request is followed by a reading right away, so the page
+        // shows the switch's first state.
+        if (hand_over_shown()) {
+            model::HomeData data;
+            if (read_source(data)) {
+                publish(std::move(data));
+            }
+            continue;
+        }
         milliseconds delay = DataSource::kNever;
         try {
             delay = source_->next_read_delay();
@@ -187,9 +231,9 @@ void DataReader::run() {
                 wake_.wait_for(lock, std::clamp(delay, kShortestWait, kLongestWait), woken);
             }
             if (stop_requested_) {
-                return;
+                break;
             }
-            if (shown_changed_) {
+            if (shown_changed_ || mode_requested_) {
                 continue;
             }
         }
@@ -198,6 +242,14 @@ void DataReader::run() {
         if (read_source(data)) {
             publish(std::move(data));
         }
+    }
+
+    // On the way out: back to Client if a switch left another mode on (see
+    // stop()). Nothing reads the values any more, so none is taken.
+    try {
+        source_->leave_modes(kLeaveModesLimit);
+    } catch (...) {
+        // Nothing more can be done on the way out.
     }
 }
 

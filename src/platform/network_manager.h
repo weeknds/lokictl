@@ -7,6 +7,7 @@
 #pragma once
 
 #include "home_data.h"
+#include "mode_switch.h"
 
 #include <chrono>
 #include <cstdint>
@@ -19,7 +20,9 @@ namespace platform {
 
 // What the system's network service (NetworkManager) says, as far as the
 // home page needs it. It adds names and state on top of what the kernel
-// says (see read_network()); it never picks the uplink itself.
+// says (see read_network()); it never picks the uplink itself. It also
+// says whether LokiCTL's hotspot runs, which is what makes the mode Router
+// (the mode comes from the service, not from the app's memory).
 struct NetworkManagerReading {
     bool available{false};       // the service runs and answered; nothing below counts without it
     bool networking_on{true};    // networking as a whole is switched on
@@ -35,7 +38,28 @@ struct NetworkManagerReading {
         int32_t speed_mbps{model::kSpeedUnknown}; // the device's current bit rate
     };
     std::vector<WifiLink> wifi_links;
+
+    // LokiCTL's own hotspot (the profile kHotspotProfile), while it is
+    // active. Router is on exactly then.
+    struct Hotspot {
+        bool active{false};
+        std::string interface_name; // for example "wlan0"
+        std::string name;           // the network name (SSID) it sends
+        std::string security;       // for example "WPA2"
+        int32_t uptime_seconds{0};  // since the profile was made; 0 when not known
+    };
+    Hotspot hotspot;
+
+    // The connection's own switch between modes (see
+    // NetworkManagerClient::start_router()); idle in a test folder.
+    model::ModeSwitch mode_switch;
+
+    // Test folder only: how a pretend switch ends (a "fail" line).
+    PretendFailure switch_failure;
 };
+
+// The name of LokiCTL's hotspot profile. It is only ever kept in memory.
+constexpr const char* kHotspotProfile = "LokiCTL hotspot";
 
 // Adds `reading` to `data`, whose uplink the kernel's values have already
 // set. Does nothing when the service is not available, so every value keeps
@@ -46,12 +70,15 @@ struct NetworkManagerReading {
 // - Without a link: HomeData::offline_state is NetworkOff when networking is
 //   switched off, else Connecting while a device is being connected, else
 //   WifiOff when the Wi-Fi radio is off, else Unknown (plainly no network).
+// - While the hotspot is active: the mode is Router, with the hotspot's
+//   name, security and uptime (see show_router()).
 void apply_network_manager(const NetworkManagerReading& reading, model::HomeData& data);
 
 // Adds `reading` to the Status page's ports (see read_ports()): each
 // connected Wi-Fi port gets the name, security and speed of the Wi-Fi link
-// with its interface (a speed that is not known stays unknown). Does
-// nothing when the service is not available.
+// with its interface (a speed that is not known stays unknown), and the
+// port that runs the hotspot becomes an access point with the hotspot's
+// name and security. Does nothing when the service is not available.
 void apply_network_manager(const NetworkManagerReading& reading, std::vector<model::StatusPort>& ports);
 
 // A network name as the page may show it: every control character (below
@@ -68,15 +95,33 @@ std::string clean_network_name(const std::string& name);
 //   connecting yes|no
 //   internet unknown|none|portal|limited|full
 //   link <interface> <security|-> <speed_mbps|-> <network name ...>
+//   ap <interface> <security|-> <network name ...>
+//   fail permission | fail <reason ...>
 // A "link" line adds a Wi-Fi link; "-" means not known, and the name is the
-// rest of the line (it may hold spaces; it may be missing). A line that
-// cannot be read is skipped. A missing file gives a reading that is not
-// available, like a system without the service. Never throws.
+// rest of the line (it may hold spaces; it may be missing). An "ap" line
+// says LokiCTL's hotspot is active on that interface (Router). A "fail"
+// line makes a pretend switch fail: as not allowed, or with that reason. A
+// line that cannot be read is skipped. A missing file gives a reading that
+// is not available, like a system without the service. Never throws.
 NetworkManagerReading read_network_manager_file(const std::filesystem::path& path);
 
-// A connection to the system's network service that only reads. Device
-// builds use libnm (APP_USE_LIBNM); other builds (the Mac simulator) get a
-// stand-in that is never available.
+// What start_router() needs.
+struct RouterRequest {
+    std::string interface_name; // kHotspotInterface
+    std::string name;           // the network name (SSID) to send
+    std::string password;       // WPA2 password; never logged
+};
+
+// A connection to the system's network service. Device builds use libnm
+// (APP_USE_LIBNM); other builds (the Mac simulator) get a stand-in that is
+// never available and changes nothing (can_change_network() is false).
+//
+// It reads, and only the action calls below change anything:
+// start_router(), start_client() and leave(). They add, activate and delete
+// only the in-memory profile kHotspotProfile, and activate only the Wi-Fi
+// profile its interface was on before, on that interface. They never wait:
+// each sends its requests and returns, and the answers are handled by
+// later read() calls (leave() waits, on the way out only).
 //
 // It has no thread of its own. It starts without waiting and keeps its own
 // GLib main context; the service's change messages queue up there and are
@@ -105,6 +150,38 @@ public:
     // Waits until the client has started, at most `limit`. Returns at once
     // when it is not starting. For one-shot readouts only: it blocks.
     void wait_started(std::chrono::milliseconds limit);
+
+    // True when this build can change the network (libnm); the stand-in
+    // returns false, and its action calls do nothing.
+    static bool can_change_network();
+
+    // How long a switch may take before it counts as failed and is undone.
+    static constexpr std::chrono::milliseconds kSwitchLimit{20000};
+
+    // Actions. Each is ignored while a switch runs.
+    //
+    // Router: adds kHotspotProfile in memory (autoconnect off): an access
+    // point on `request.interface_name`, 2.4 GHz, WPA2-PSK, IPv4 shared,
+    // IPv6 off, and activates it there. The UUID of the Wi-Fi profile the
+    // interface was on and the time it was made go into the profile's own
+    // user data (lokictl.restore, lokictl.started). A leftover profile of
+    // LokiCTL's that is not active is deleted first. The switch ends when
+    // the hotspot is active; when it fails, or takes longer than
+    // kSwitchLimit, it is undone as by start_client().
+    void start_router(const RouterRequest& request);
+    // Client: deletes every profile of LokiCTL's hotspot, then activates
+    // the Wi-Fi profile recorded in it, if there is one (otherwise the
+    // service's own autoconnect picks). The switch ends when the service
+    // has answered both. Nothing is sent when there is no such profile.
+    void start_client();
+    // True while an action waits for an answer or a switch runs; the
+    // reader then reads every 100 ms.
+    bool busy() const;
+    // On the way out: if a profile of LokiCTL's hotspot exists or is being
+    // added, waits for the add to be answered, then switches back to Client
+    // as start_client() does and waits until the service has answered, at
+    // most `limit` in all. Sends nothing in plain Client. It blocks.
+    void leave(std::chrono::milliseconds limit);
 
 private:
     struct Impl;

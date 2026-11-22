@@ -252,7 +252,7 @@ home page.
   for one.
 - A data source fills in one whole `HomeData` block: `sample`, `demo` (the
   sample, moving on a fixed script), `live` (the real clock, battery, link
-  and traffic, in the Client mode), `wifi`, `cable`,
+  and traffic, in Client or Router), `wifi`, `cable`,
   `offline` or `tour`. A background
   reader asks the source and `app::DataController` hands every new block to
   `viewmodel::BaseViewModel::set_home_data()`. [data.md](data.md) explains
@@ -295,7 +295,9 @@ can show it in place or whether the page's content is built again.
 **Changed in place**, by the layout's `update()`, in both views: the
 clock, the battery (charge and state), the uplink's interface, the
 device's address, the router's address, the link speed, the Wi-Fi
-network's name, security and signal, and the two rates with their graphs.
+network's name, security and signal, the router view's uptime, and the two
+rates with their graphs (and the Status page's details and the switch
+between modes, which the home page does not show).
 These are values that change while the situation stays the same, and each
 sits in a box of its own, so a new text moves nothing else. The
 exceptions: Instrument's captions follow their numbers, Terminal's bars
@@ -305,7 +307,7 @@ come too close to it.
 
 **Built again** for any other change: the kind of link, the access point
 switched on or off, the mode, the list of clients, the access point's
-name, the uptime, the sample mark, and any field added to `HomeData`
+name, the sample mark, and any field added to `HomeData`
 later. Such a change can need other objects, so the
 content is built again, once.
 
@@ -381,14 +383,15 @@ The keys are the same in every theme and in both views:
 | `c`, `x`, right or down | select the next client (nothing without clients) |
 | `6` SETUP | opens the Settings page |
 | `8` INFO | opens the Status page (see [navigation.md](navigation.md#the-status-page)) |
-| `4` MODES, `5` SCAN, `7` TOOLS | shown switched off; their pages do not exist yet |
+| `4` MODES | opens the Modes page (see [navigation.md](navigation.md#the-modes-page)) |
+| `5` SCAN, `7` TOOLS | shown switched off; their pages do not exist yet |
 | Enter | nothing |
 | ESC | shows `Hold ESC to exit` while it is held; letting go sooner only hides it |
 | ESC held for 700 ms | quits the app |
 
 The help panel (fn+H) shows the badge `HOME` and five rows: `HOLD ESC`
-Exit, `F Z / X C` Previous / next client, `6` Settings, `8` Status and
-`4 / 5 / 7` Not available yet. It is the same in both views. [navigation.md](navigation.md)
+Exit, `F Z / X C` Previous / next client, `4` Modes, `6 / 8` Settings /
+Status and `5 / 7` Not available yet. It is the same in both views. [navigation.md](navigation.md)
 explains how keys travel through the app.
 
 The soft keys are set in `HomeScreen::soft_keys()`:
@@ -396,15 +399,15 @@ The soft keys are set in `HomeScreen::soft_keys()`:
 ```cpp
 view::widgets::SoftKeySet HomeScreen::soft_keys() {
     // Called from init(), before build_content(): it uses nothing but the
-    // view model, which outlives every screen. Modes, Scan and Tools open
-    // pages that do not exist yet, so they are shown switched off.
+    // view model, which outlives every screen. Scan and Tools open pages
+    // that do not exist yet, so they are shown switched off.
     auto& view_model = this->view_model();
     return {{
-        {"Modes", {}, false, false},
+        {"Modes", [&view_model] { view_model.open_modes(); }},
         {"Scan", {}, false, false},
         {"Setup", [&view_model] { view_model.open_settings(); }, true},
         {"Tools", {}, false, false},
-        {},
+        {"Info", [&view_model] { view_model.open_status(); }},
     }};
 }
 ```

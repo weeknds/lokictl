@@ -22,6 +22,17 @@ namespace {
 // times a second. A look that finds nothing new does nothing else.
 constexpr uint32_t kPollPeriodMs = 250;
 
+// A mode's name in lowercase, as the log writes it.
+std::string lowercase_mode_name(model::NetMode mode) {
+    std::string name = model::net_mode_name(mode);
+    for (char& character : name) {
+        if (character >= 'A' && character <= 'Z') {
+            character = static_cast<char>(character - 'A' + 'a');
+        }
+    }
+    return name;
+}
+
 // The charge as the log and the comparison use it: unknown for any negative
 // number, at most 100 otherwise, as the page shows it.
 int32_t logged_charge(int32_t percent) {
@@ -37,6 +48,10 @@ DataController::DataController(viewmodel::BaseViewModel& view_model,
     // LVGL calls the observer once right away, so the reader knows the
     // first page before the first reading.
     page_observer_ = lv_subject_add_observer(view_model_.current_page_subject(), page_observer_cb, this);
+    // LVGL calls this observer once right away too; the count it holds then
+    // is no request.
+    mode_requests_seen_ = lv_subject_get_int(view_model_.mode_request_subject());
+    mode_observer_ = lv_subject_add_observer(view_model_.mode_request_subject(), mode_request_cb, this);
 }
 
 DataController::~DataController() {
@@ -44,6 +59,10 @@ DataController::~DataController() {
     if (page_observer_) {
         lv_observer_remove(page_observer_);
         page_observer_ = nullptr;
+    }
+    if (mode_observer_) {
+        lv_observer_remove(mode_observer_);
+        mode_observer_ = nullptr;
     }
 }
 
@@ -103,6 +122,10 @@ void DataController::stop() {
     }
 
     const bool was_running = reader_.running();
+    if (was_running && reader_.changes_network() &&
+        (block_.mode != model::NetMode::Client || block_.mode_switch.state == model::SwitchState::Switching)) {
+        LOG_INFO("data: back to Client before quitting");
+    }
     reader_.stop();
     if (was_running) {
         LOG_INFO("data: reader stopped");
@@ -120,6 +143,40 @@ void DataController::page_observer_cb(lv_observer_t* observer, lv_subject_t* /*s
     auto* controller = static_cast<DataController*>(lv_observer_get_user_data(observer));
     if (controller) {
         controller->update_shown();
+    }
+}
+
+void DataController::mode_request_cb(lv_observer_t* observer, lv_subject_t* subject) {
+    auto* controller = static_cast<DataController*>(lv_observer_get_user_data(observer));
+    if (!controller) {
+        return;
+    }
+    const int32_t count = lv_subject_get_int(subject);
+    if (count == controller->mode_requests_seen_) {
+        return;
+    }
+    controller->mode_requests_seen_ = count;
+    controller->request_mode(controller->view_model_.requested_mode());
+}
+
+void DataController::set_password_maker(std::function<std::string()> maker) {
+    password_maker_ = std::move(maker);
+}
+
+void DataController::request_mode(model::NetMode mode) {
+    platform::ModeRequest request;
+    request.mode = mode;
+    if (mode == model::NetMode::Router) {
+        request.password = view_model_.hotspot_password();
+        if (request.password.empty() && password_maker_ && reader_.changes_network()) {
+            request.password = password_maker_();
+        }
+    }
+    reader_.request_mode(request);
+    if (!reader_.running()) {
+        // Snapshots: the request is taken with a reading right away.
+        reader_.read_now();
+        poll();
     }
 }
 
@@ -153,6 +210,8 @@ void DataController::deliver(const model::HomeData& data) {
         log_battery(charge, data.battery_state);
     }
 
+    log_mode(data);
+
     const std::size_t clients = data.clients.size();
     if (!link_logged_ || data.uplink_kind != logged_kind_ || data.ap_active != logged_ap_active_ ||
         clients != logged_clients_) {
@@ -171,6 +230,35 @@ void DataController::log_battery(int32_t percent, model::BatteryState state) {
     }
     const std::string charge = percent < 0 ? std::string("--%") : std::to_string(percent) + "%";
     LOG_INFO("data: battery {} {}", charge, model::battery_state_name(state));
+}
+
+void DataController::log_mode(const model::HomeData& data) {
+    const char* target = model::net_mode_name(data.mode_switch.target);
+    if (data.mode_switch.state != logged_switch_ || !mode_logged_) {
+        switch (data.mode_switch.state) {
+            case model::SwitchState::Switching:
+                LOG_INFO("data: switching to {}", target);
+                break;
+            case model::SwitchState::Failed:
+                LOG_INFO("data: switch to {} failed: {}",
+                         target,
+                         data.mode_switch.error == model::SwitchError::NoCable      ? "no cable"
+                         : data.mode_switch.error == model::SwitchError::NotAllowed ? "not allowed"
+                                                                                    : data.mode_switch.reason);
+                break;
+            case model::SwitchState::Idle:
+                if (mode_logged_ && logged_switch_ == model::SwitchState::Switching) {
+                    LOG_INFO("data: switch to {} done", target);
+                }
+                break;
+        }
+        logged_switch_ = data.mode_switch.state;
+    }
+    if (!mode_logged_ || data.mode != logged_mode_) {
+        LOG_INFO("data: mode {}", lowercase_mode_name(data.mode));
+        logged_mode_ = data.mode;
+    }
+    mode_logged_ = true;
 }
 
 void DataController::log_link(model::LinkKind kind, bool ap_active, std::size_t clients) {

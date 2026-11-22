@@ -35,8 +35,9 @@ namespace screen {
 // Keys are the same in every theme. Left and up (Z/F) select the previous
 // client and right and down (C/X) the next one; the selection stops at the
 // first and the last client shown, and without clients they do nothing. Key
-// 6 (Setup) opens Settings and key 8 (Info) the Status page. Keys 4, 5 and
-// 7 (Modes, Scan, Tools) are shown switched off until their pages exist.
+// 4 (Modes) opens the Modes page, key 6 (Setup) Settings and key 8 (Info)
+// the Status page. Keys 5 and 7 (Scan, Tools) are shown switched off until
+// their pages exist.
 // Holding ESC quits, as on every first page.
 //
 // The values come from the view model (home()), which the data layer fills

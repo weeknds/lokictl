@@ -62,8 +62,11 @@ public:
     // signals are always handled by the other threads of the app.
     void start();
 
-    // Wakes the background thread and waits until it has ended. Safe to call
-    // more than once, and without start().
+    // Wakes the background thread and waits until it has ended. Before it
+    // ends, the thread lets the source switch back to Client
+    // (DataSource::leave_modes(), at most kLeaveModesLimit), so a normal
+    // quit never leaves a mode on. Safe to call more than once, and without
+    // start(); without the background thread nothing is left.
     void stop();
 
     // Whether the background thread runs.
@@ -82,6 +85,22 @@ public:
     // the same way as the traffic flag.
     void set_details_shown(bool shown);
 
+    // Hands a switch between modes to the source (DataSource::
+    // request_mode()). It never waits: while the background thread runs,
+    // it wakes up, hands the request over and takes a reading at once, so
+    // the switch's first state follows quickly. Without the background
+    // thread the request reaches the source with the next read_now(). A
+    // newer request replaces one that was not handed over yet.
+    void request_mode(const ModeRequest& request);
+
+    // Whether the source changes the real network (DataSource::
+    // changes_network()).
+    bool changes_network() const;
+
+    // How long the background thread, on its way out, lets the source
+    // switch back to Client (DataSource::leave_modes()).
+    static constexpr std::chrono::milliseconds kLeaveModesLimit{3000};
+
     // Copies the newest block into `data` and returns true, but only if it
     // changed since the last take(); otherwise leaves `data` alone and
     // returns false.
@@ -98,16 +117,17 @@ private:
     bool read_source(model::HomeData& data);
     // Stores the block as the newest one, unless it equals the newest one.
     void publish(model::HomeData data);
-    // Gives the source the newest traffic and details flags. Called on the
-    // thread that asks the source.
-    void hand_over_shown();
+    // Gives the source the newest traffic and details flags, and a waiting
+    // switch request. Called on the thread that asks the source. Returns
+    // true when it handed over a request.
+    bool hand_over_shown();
 
     std::unique_ptr<DataSource> source_;
     const DataSourceKind kind_;
     std::thread thread_;
 
-    // The hand-over slot, the stop flag and the two page flags; the mutex
-    // guards all seven.
+    // The hand-over slot, the stop flag, the two page flags and the switch
+    // request; the mutex guards all of them.
     mutable std::mutex mutex_;
     std::condition_variable wake_;
     bool stop_requested_{false};
@@ -117,6 +137,8 @@ private:
     bool traffic_shown_{true};     // see set_traffic_shown()
     bool details_shown_{false};    // see set_details_shown()
     bool shown_changed_{false};    // a flag changed since the source got them
+    bool mode_requested_{false};   // mode_request_ waits for the source
+    ModeRequest mode_request_;
 };
 
 } // namespace platform

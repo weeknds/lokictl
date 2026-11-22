@@ -39,6 +39,29 @@ const char* net_mode_name(NetMode mode) {
     return "Client";
 }
 
+const char* switch_state_name(SwitchState state) {
+    switch (state) {
+        case SwitchState::Idle:
+            return "idle";
+        case SwitchState::Switching:
+            return "switching";
+        case SwitchState::Failed:
+            return "failed";
+    }
+    return "idle";
+}
+
+bool operator==(const ModeSwitch& left, const ModeSwitch& right) {
+    return left.state == right.state &&
+           left.target == right.target &&
+           left.error == right.error &&
+           left.reason == right.reason;
+}
+
+bool operator!=(const ModeSwitch& left, const ModeSwitch& right) {
+    return !(left == right);
+}
+
 const char* link_kind_name(LinkKind kind) {
     switch (kind) {
         case LinkKind::None:
@@ -202,6 +225,7 @@ bool operator==(const HomeData& left, const HomeData& right) {
            left.ap_name == right.ap_name &&
            left.ap_security == right.ap_security &&
            left.uptime_seconds == right.uptime_seconds &&
+           left.mode_switch == right.mode_switch &&
            left.down_kbps == right.down_kbps &&
            left.up_kbps == right.up_kbps &&
            left.down_history == right.down_history &&

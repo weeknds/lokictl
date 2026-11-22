@@ -11,6 +11,7 @@
 #include "base_viewmodel.h"
 #include "data_controller.h"
 #include "data_source.h"
+#include "home_examples.h"
 #include "key_controller.h"
 #include "linux_input.h"
 #include "logger.h"
@@ -250,8 +251,10 @@ int run_snapshot(const SnapshotRequest& request) {
 
     viewmodel::BaseViewModel view_model;
     // Set before any screen or observer exists. The user's settings file is
-    // neither read nor written in snapshot mode.
+    // neither read nor written in snapshot mode, so the hotspot's password
+    // is the made-up one.
     view_model.show_page(request.page);
+    view_model.set_hotspot_password(model::kExampleHotspotPassword);
 
     HeadlessDisplay headless;
     auto* display = headless.display();

@@ -18,9 +18,10 @@ Instrument, Constellation and Terminal.
 opens on a home page drawn in each theme's own layout, and it has a
 Settings page where you pick the theme. On the device the home page shows
 the real time, battery charge, network link and traffic (download and
-upload speed with a moving graph). None of the network features above
-exist yet; the made-up example data used in the simulator and in
-screenshots is marked `sample data`.
+upload speed with a moving graph). Of the network features above, the
+Modes page with Client and Router (sharing the cable's internet through a
+hotspot) works; the others do not exist yet. The made-up example data used
+in the simulator and in screenshots is marked `sample data`.
 
 The device package also builds, and it installs and runs on a real
 CardputerZero. From your computer, `scripts/device.sh` installs and starts it
@@ -234,8 +235,9 @@ pages shows the same clock, battery and link.
 `--data <name>` picks the source: `sample`, `demo`, `live`, `wifi`,
 `cable`, `offline` or `tour`. Without it, a snapshot uses `sample`, and a
 normal start uses `live` on the device and `demo` in the simulator. `live`
-shows the device in the Client mode with its real link, and on the device
-the Wi-Fi network's name and state from NetworkManager.
+shows the device's real mode (Client, or Router while LokiCTL's hotspot
+runs) with its real link, and on the device the Wi-Fi network's name and
+state from NetworkManager.
 `--data wifi`, `--data cable` and `--data offline` are fixed made-up
 examples of the device joined to a Wi-Fi network, on a cable and with no
 network, and `--data tour` walks through every situation, one stop every
@@ -532,8 +534,9 @@ but sample network data for now (see [docs/home.md](docs/home.md)):
 - `8` INFO opens the Status page, a list of every detail (every network
   port, DNS, battery, processor, memory) that scrolls with `f`/`x` and
   jumps between its parts with `z`/`c` or `5`/`6`;
-- `4` MODES, `5` SCAN and `7` TOOLS are dimmed and do nothing yet; `enter`
-  does nothing either;
+- `4` MODES opens the Modes page (below);
+- `5` SCAN and `7` TOOLS are dimmed and do nothing yet; `enter` does
+  nothing either;
 - a short `esc` shows the hint `Hold ESC to exit`, and holding `esc` quits.
 
 The Settings page lists the three themes; a tick marks the active one:
@@ -545,6 +548,41 @@ The Settings page lists the three themes; a tick marks the active one:
   theme). USE is dimmed while the highlight is on the active theme, and
   picking that theme does nothing;
 - `4` BACK or a short `esc` goes back to the home page.
+
+The Modes page switches the device between its modes. A tick marks the
+mode that is on:
+
+- **Client** joins a Wi-Fi network, like a phone. This is how the device
+  normally runs.
+- **Router** shares the cable's internet through a hotspot of its own on
+  the built-in Wi-Fi. It needs a network cable that leads to the internet;
+  without one the page says `Plug in a cable first` and nothing changes.
+  The hotspot is called `LokiCTL-` and four characters of the Wi-Fi's
+  hardware address. Its password is made once, at the first switch to
+  Router, and saved in `~/.config/lokictl/lokictl.conf` (readable only by
+  you). The page shows the name and the password while Router runs.
+- **Share** and **VPN** come later and are dimmed.
+
+`f` or `up` and `x` or `down` move the highlight; `enter` or `6` USE
+switches to the highlighted mode, and a line under the list says
+`Switching…`, then shows the hotspot or what went wrong. USE is
+dimmed on the mode that is on and while a switch runs. `4` BACK or a short
+`esc` goes back. **Whenever LokiCTL quits, the device goes back to
+Client**: the hotspot is removed and the Wi-Fi network it was on before
+comes back. The hotspot's profile is only ever kept in memory, so a
+restart of the device always ends in Client too. If LokiCTL is killed
+instead of quitting, the hotspot stays on until LokiCTL starts again; the
+Modes page then shows Router and can switch back. On the Mac the switch
+only pretends, so the pages can be tried.
+
+The package installs a polkit rule, `/usr/share/polkit-1/rules.d/60-lokictl.rules`,
+because apps started by the launcher may not change NetworkManager's
+settings on their own. It lets members of the `netdev` group control the
+network, change system-wide connection profiles and share the network
+through a protected (WPA) hotspot. polkit cannot tell programs apart, so
+**every program of a `netdev` member gets these rights, not only
+LokiCTL**. Removing the package removes the rule. Router also needs
+`dnsmasq-base` and `nftables`, which the package depends on.
 
 The two demo pages, the counter and the key test page, are not opened from
 the home page. They are reached with `--page` in snapshot runs (see
@@ -605,7 +643,10 @@ script, `scripts/device-agent.py`, is sent to the device's `python3` with each
 command and is not stored there, and the copied package file is deleted after
 installing. LokiCTL keeps one file of its own there: picking a theme or
 switching "Dim when idle" on the Settings page saves it in
-`~/.config/lokictl/lokictl.conf`. While it runs, LokiCTL dims the screen
+`~/.config/lokictl/lokictl.conf`, and so does the first switch to Router
+(the hotspot's password). The package also installs the polkit rule
+described above. Switching to Router changes the network (see the Modes
+page above); quitting LokiCTL switches back to Client. While it runs, LokiCTL dims the screen
 through `/sys/class/backlight/backlight/brightness` and puts the old value
 back when it quits (see [docs/data.md](docs/data.md#battery-care)). A saved picture
 shows exactly the pixels written to the screen, but how readable they are on

@@ -14,6 +14,7 @@
 #include "home_screen.h"
 #include "key_test_screen.h"
 #include "logger.h"
+#include "modes_screen.h"
 #include "page_registry.h"
 #include "settings_screen.h"
 #include "status_screen.h"
@@ -101,6 +102,14 @@ bool ScreenManager::show_status_screen() {
         return false;
     }
     page_loaded(model::AppPage::Status);
+    return true;
+}
+
+bool ScreenManager::show_modes_screen() {
+    if (!load_screen(std::make_unique<screen::ModesScreen>(view_model_, assets_, theme_engine_))) {
+        return false;
+    }
+    page_loaded(model::AppPage::Modes);
     return true;
 }
 
@@ -200,6 +209,10 @@ bool ScreenManager::show_page(model::AppPage page) {
 
     if (screen::StatusScreen::handles(page)) {
         return show_status_screen();
+    }
+
+    if (screen::ModesScreen::handles(page)) {
+        return show_modes_screen();
     }
 
     return show_home_screen();

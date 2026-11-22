@@ -296,6 +296,11 @@ private:
     lv_obj_t* uplink_speed_{nullptr};
     std::string uplink_speed_shown_;
 
+    // The router view's uptime in the mode pane, and the text it shows;
+    // update() changes the text only. It stays null in the link view.
+    lv_obj_t* uptime_{nullptr};
+    std::string uptime_shown_;
+
     // One row of the clients table; select() restyles them.
     struct ClientRow {
         lv_obj_t* row{nullptr};
@@ -433,8 +438,8 @@ void TerminalHomeLayout::build_mode(const HomeContext& context) {
     fix_width(access_point, kModeValueWidth, small);
 
     small_label(pane.content, theme, "up", theme.colors.muted, 0, 2 * kRowStep);
-    small_label(pane.content, theme, home::uptime_text(data.uptime_seconds).c_str(),
-                theme.colors.text, kModeValueX, 2 * kRowStep);
+    uptime_shown_ = home::uptime_text(data.uptime_seconds);
+    uptime_ = small_label(pane.content, theme, uptime_shown_.c_str(), theme.colors.text, kModeValueX, 2 * kRowStep);
 }
 
 // The mode pane of the link view: the mode, the access point "off" and the
@@ -660,6 +665,7 @@ void TerminalHomeLayout::update(const HomeContext& context) {
     set_text_if_changed(address_, address_shown_, address_value_text(data));
     set_text_if_changed(speed_, speed_shown_, speed_value_text(data));
     set_text_if_changed(router_, router_shown_, router_value_text(data));
+    set_text_if_changed(uptime_, uptime_shown_, home::uptime_text(data.uptime_seconds));
 }
 
 } // namespace
