@@ -252,7 +252,7 @@ home page.
   for one.
 - A data source fills in one whole `HomeData` block: `sample`, `demo` (the
   sample, moving on a fixed script), `live` (the real clock, battery, link
-  and traffic, in Client or Router), `wifi`, `cable`,
+  and traffic, in Client, Router or Share), `wifi`, `cable`,
   `offline` or `tour`. A background
   reader asks the source and `app::DataController` hands every new block to
   `viewmodel::BaseViewModel::set_home_data()`. [data.md](data.md) explains

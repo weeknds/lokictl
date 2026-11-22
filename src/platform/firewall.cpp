@@ -47,6 +47,10 @@ const char* helper_exit_reason(int code) {
             return "firewall refused";
         case 5:
             return "nft not found";
+        case 6:
+            return "Wi-Fi driver refused";
+        case 7:
+            return "iw not found";
         default:
             return "helper failed";
     }
@@ -125,6 +129,14 @@ std::string run_helper(const std::vector<std::string>& arguments, milliseconds l
 }
 
 } // namespace
+
+std::string add_share_interface(milliseconds limit) {
+    return run_helper({"ap-add"}, limit);
+}
+
+std::string remove_share_interface(milliseconds limit) {
+    return run_helper({"ap-del"}, limit);
+}
 
 bool valid_device_address(const std::string& address) {
     if (address.size() != kAddressLength) {

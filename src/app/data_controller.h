@@ -77,7 +77,7 @@ std::string random_hotspot_password();
 // (BaseViewModel::request_hotspot_rename() and
 // request_new_hotspot_password()), makes the new password, gives the new
 // values to the view model, has them saved (set_hotspot_saver(), only when
-// the reader changes the real network) and, while Router runs, asks the
+// the reader changes the real network) and, while Router or Share runs, asks the
 // reader to start the hotspot again with them (ModeRequest::restart).
 // Requests while a switch runs are ignored. Log lines: "data: hotspot
 // renamed" and "data: new hotspot password" (never the values).
@@ -133,7 +133,7 @@ public:
     void stop();
 
     // Makes the hotspot's new passwords: when the Hotspot page asks for
-    // one, and when Router is asked for while the view model holds none
+    // one, and when Router or Share is asked for while the view model holds none
     // and the reader changes the real network. Empty (the default):
     // random_hotspot_password(). Snapshots set a fixed one.
     void set_password_generator(std::function<std::string()> generator);

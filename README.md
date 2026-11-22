@@ -566,7 +566,18 @@ mode that is on:
   first switch to Router, and saved in `~/.config/lokictl/lokictl.conf`
   (readable only by you). The page shows the name and the password while
   Router runs.
-- **Share** and **VPN** come later and are dimmed.
+- **Share** stays on the Wi-Fi network the device has joined and runs the
+  same hotspot next to it, so phones and laptops on the hotspot get the
+  internet the device has (over the cable when one is plugged in,
+  otherwise over that Wi-Fi). It needs the built-in Wi-Fi joined to a
+  network; without one the page says `Join a Wi-Fi network first`. The
+  chip sends on one channel only, so the hotspot uses the channel of the
+  joined network. **The joined Wi-Fi drops for a few seconds whenever the
+  hotspot starts or stops (usually 2 to 3), and up to about 15 seconds
+  after a new name or password**, then comes back by itself with the same
+  address. To go between Router and Share, go back to
+  Client first; the page says `Back to Client first`.
+- **VPN** comes later and is dimmed.
 
 `f` or `up` and `x` or `down` move the highlight; `enter` or `6` USE
 switches to the highlighted mode, and a line under the list says
@@ -574,13 +585,14 @@ switches to the highlighted mode, and a line under the list says
 dimmed on the mode that is on and while a switch runs. `4` BACK or a short
 `esc` goes back. **Whenever LokiCTL quits, the device goes back to
 Client**: the hotspot is removed and the Wi-Fi network it was on before
-comes back. The hotspot's profile is only ever kept in memory, so a
-restart of the device always ends in Client too. If LokiCTL is killed
-instead of quitting, the hotspot stays on until LokiCTL starts again; the
-Modes page then shows Router and can switch back. On the Mac the switch
+comes back (in Share it never left). The hotspot's profile is only ever
+kept in memory, so a restart of the device always ends in Client too. If
+LokiCTL is killed instead of quitting, the hotspot stays on until LokiCTL
+starts again; the Modes page then shows Router or Share and can switch
+back. On the Mac the switch
 only pretends, so the pages can be tried.
 
-`7` QR on the Modes page opens the Hotspot page. While Router runs it shows
+`7` QR on the Modes page opens the Hotspot page. While Router or Share runs it shows
 a QR code at the left: point a phone's camera at it to join the hotspot
 without typing the password. At the right are the hotspot's name, its
 password, the Wi-Fi channel and how long it has run; while Router is off it
@@ -592,8 +604,8 @@ shows the name and password Router will use.
   default name back.
 - `6` PASS makes a new random password; press it twice, so it never
   happens by accident.
-- Both are saved in `~/.config/lokictl/lokictl.conf`. While Router runs
-  the hotspot starts again at once with the new name or password (the page
+- Both are saved in `~/.config/lokictl/lokictl.conf`. While Router or
+  Share runs the hotspot starts again at once with the new name or password (the page
   says `Applying…`), so phones and laptops on it must join again.
 - `4` BACK or a short `esc` goes back.
 
@@ -603,14 +615,14 @@ gave when it joined, or `unnamed`), `new` for the first five minutes, its
 address, its traffic, its hardware address and how long ago it joined. The
 home page's router view shows the same devices (at most three). `f`/`x`,
 `z`/`c` or `5`/`6` move the highlight, `7` QR opens the Hotspot page and
-`4` BACK or a short `esc` goes back. While Router is off the page says so.
+`4` BACK or a short `esc` goes back. While the hotspot is off the page says so.
 The built-in Wi-Fi does not report each device's signal while it runs a
 hotspot, so the page leaves the signal out there.
 
 `8` BLOCK blocks the highlighted device: it stays joined to the hotspot and
 listed (with `blocked`), but gets no address, no internet and no answer
 from the Cardputer. `8` ALLOW lets it through again. The list of blocked
-devices is saved and applies again whenever Router runs; it goes by the
+devices is saved and applies again whenever Router or Share runs; it goes by the
 device's hardware address, so a device that changes its address (many
 phones pick a new one per network) is a new device. If blocking fails, a
 message says why (`Block failed: helper not installed`).
@@ -624,19 +636,24 @@ through a protected (WPA) hotspot. polkit cannot tell programs apart, so
 LokiCTL**. Removing the package removes the rule. Router also needs
 `dnsmasq-base` and `nftables`, which the package depends on.
 
-Blocking needs one right the app itself does not have: changing the
-firewall. The package installs a small helper program for that,
+Blocking, and Share's second Wi-Fi interface, need one right the app
+itself does not have: network administration. The package installs a
+small helper program for that,
 `/usr/libexec/lokictl/lokictl-helper` (source: `src/helper/lokictl_helper.c`).
 It is not setuid; the package's install script gives it the single Linux
 capability `CAP_NET_ADMIN` (with `setcap`, from `libcap2-bin`) and lets only
-root and the `netdev` group run it. It does one of four fixed commands
-(`block` and `unblock` with device addresses, `list`, `clear`) and exits,
-and it only ever changes its own nftables table, `inet lokictl`: a set of
-blocked addresses and two rules that drop what they send in through the
-hotspot's interface (`wlan0`). LokiCTL removes the table when Router stops
-and when it quits, and removing the package removes it too. Like the polkit
-rule, **every program of a `netdev` member may run the helper**, so it
-could block or unblock devices on the hotspot, and nothing else.
+root and the `netdev` group run it. It does one of six fixed commands
+(`block` and `unblock` with device addresses, `list`, `clear`, `ap-add`,
+`ap-del`) and exits. It only ever changes its own nftables table, `inet
+lokictl`: a set of blocked addresses and two rules that drop what they send
+in through the hotspot's interface (`wlan0` in Router, `lokiap0` in Share).
+`ap-add` and `ap-del` add and remove Share's interface `lokiap0` with `iw`
+(which the package depends on) and fixed arguments. LokiCTL removes the
+table when the hotspot stops, and `lokiap0` when Share stops, and both when
+it quits; removing the package removes them too. Like the polkit rule,
+**every program of a `netdev` member may run the helper**, so it could
+block or unblock devices on the hotspot and add or remove `lokiap0`, and
+nothing else.
 
 The two demo pages, the counter and the key test page, are not opened from
 the home page. They are reached with `--page` in snapshot runs (see
@@ -700,7 +717,7 @@ switching "Dim when idle" on the Settings page saves it in
 `~/.config/lokictl/lokictl.conf`, and so do the first switch to Router
 (the hotspot's password), a new name or password on the Hotspot page and
 blocking a device (the `blocked_devices=` list). The package also installs
-the polkit rule and the firewall helper described above. Switching to Router changes the network (see the Modes
+the polkit rule and the firewall helper described above. Switching to Router or Share changes the network (see the Modes
 page above); quitting LokiCTL switches back to Client. While it runs, LokiCTL dims the screen
 through `/sys/class/backlight/backlight/brightness` and puts the old value
 back when it quits (see [docs/data.md](docs/data.md#battery-care)). A saved picture

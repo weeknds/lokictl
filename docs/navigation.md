@@ -328,18 +328,19 @@ rows and a status line, and it is drawn the same way in every theme:
 
 - one row per mode, Client, Router, Share and VPN, each with a short hint
   and a tick on the mode that is on (it comes from NetworkManager: an
-  active `LokiCTL hotspot` profile means Router). Share and VPN come later
-  and are drawn muted;
+  active `LokiCTL hotspot` profile means Router, or Share when it runs on
+  `lokiap0`). VPN comes later and is drawn muted;
 - the status line: `Switching…` while a switch runs; after one
-  failed, `Plug in a cable first` (warning colour), `Not allowed: permission
-  missing` or `Failed: <reason>` (error colour); while Router runs, the
+  failed, `Plug in a cable first`, `Join a Wi-Fi network first` or `Back to
+  Client first` (warning colour), `Not allowed: permission missing` or
+  `Failed: <reason>` (error colour); while Router or Share runs, the
   hotspot's name and, at the right, its password; in Client the current
   link, muted.
 
 | Key | What it does |
 |---|---|
 | `f`/`x` or up/down | moves the highlight; it stops at the first and the last row |
-| `Enter` or `6` USE | switches to the highlighted mode; USE is dimmed on the mode that is on, on Share and VPN, and while a switch runs |
+| `Enter` or `6` USE | switches to the highlighted mode; USE is dimmed on the mode that is on, on VPN, and while a switch runs |
 | `7` QR | opens the Hotspot page, in any mode |
 | `4` BACK or a short ESC | goes back |
 
@@ -354,7 +355,7 @@ from the home page. The help panel shows the badge `MODES` and four rows.
 `hotspot` shows how to join the hotspot and changes its name and password.
 It has no title bar, so the code can be as big as the height allows:
 
-- at the left, while Router runs, a QR code (LVGL's own widget) that a
+- at the left, while Router or Share runs, a QR code (LVGL's own widget) that a
   phone camera scans to join: `WIFI:T:WPA;S:<name>;P:<password>;;`, with
   `\`, `;`, `,`, `:` and `"` escaped by a backslash. It is black on white
   with a white quiet zone in every theme, because phone cameras often fail
@@ -386,7 +387,7 @@ bar. Each card has three lines: the name (or `unnamed`) with `new` for the
 first five minutes and the signal at the right (left out when not known);
 the address with the traffic; the hardware address with
 `joined N min ago`. [data.md](data.md#devices-on-the-hotspot) says where
-the values come from. Without the hotspot a box says `Router is off`; with
+the values come from. Without the hotspot a box says `Hotspot is off`; with
 the hotspot and nobody on it, `No devices yet` and the hotspot's name. A
 thin mark at the right edge shows where the cards lie when there are more
 than two.

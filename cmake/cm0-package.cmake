@@ -133,18 +133,18 @@ set(CPACK_DEBIAN_PACKAGE_PRIORITY "optional")
 #
 # Router uses NetworkManager's shared mode, which runs dnsmasq (addresses
 # for the hotspot's devices) and nft (sharing the link). The firewall
-# helper runs nft too, and postinst gives it its capability with setcap
-# (libcap2-bin). None of them is a library, so they are named by hand on
-# both routes.
+# helper runs nft too, and iw (adding Share's interface), and postinst
+# gives it its capability with setcap (libcap2-bin). None of them is a
+# library, so they are named by hand on both routes.
 set(APP_DEBIAN_TOOL_DEPENDS "")
 if(APP_USE_LIBNM)
     set(APP_DEBIAN_TOOL_DEPENDS "dnsmasq-base, nftables")
 endif()
 if(TARGET ${APP_HELPER_NAME})
     if(APP_DEBIAN_TOOL_DEPENDS)
-        string(APPEND APP_DEBIAN_TOOL_DEPENDS ", libcap2-bin")
+        string(APPEND APP_DEBIAN_TOOL_DEPENDS ", libcap2-bin, iw")
     else()
-        set(APP_DEBIAN_TOOL_DEPENDS "nftables, libcap2-bin")
+        set(APP_DEBIAN_TOOL_DEPENDS "nftables, libcap2-bin, iw")
     endif()
 endif()
 if(NOT USE_DESKTOP AND NOT CMAKE_CROSSCOMPILING)

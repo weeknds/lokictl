@@ -4,9 +4,10 @@
 #
 # Gives the firewall helper its one right. The helper is the only part of
 # @APP_DISPLAY_NAME@ that may change the firewall (only its own nftables table,
-# "inet lokictl"). It gets the CAP_NET_ADMIN capability as a file capability
-# (it is not setuid), and only root and members of the netdev group may run
-# it. chgrp clears a file capability, so setcap comes last.
+# "inet lokictl") or add an interface (only Share's lokiap0). It gets the
+# CAP_NET_ADMIN capability as a file capability (it is not setuid), and only
+# root and members of the netdev group may run it. chgrp clears a file
+# capability, so setcap comes last.
 
 set -e
 
@@ -17,7 +18,7 @@ if [ "$1" = "configure" ] && [ -f "$helper" ]; then
         chgrp netdev "$helper"
         chmod 0750 "$helper"
         if ! setcap cap_net_admin=ep "$helper"; then
-            echo "@APP_NAME@: could not give $helper its capability; blocking devices will not work" >&2
+            echo "@APP_NAME@: could not give $helper its capability; blocking devices and Share will not work" >&2
         fi
     else
         # Without the netdev group nobody but root may run it.

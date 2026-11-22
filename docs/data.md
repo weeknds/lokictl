@@ -37,7 +37,7 @@ battery (`91%`) as the sample, and all of them keep the `sample data` mark.
 Their values are in one place, `src/model/home_examples.cpp`, and are all
 made up. `demo` is still the same script on the router sample, and keeps
 the mark too. `live` shows the device as it is: in its real mode (Client,
-or Router while LokiCTL's hotspot runs), with its real link and traffic,
+or Router or Share while LokiCTL's hotspot runs), with its real link and traffic,
 and without the mark.
 
 Which one is used:
@@ -71,8 +71,8 @@ With `live`:
   speed, whether the internet answers, and why there is no link (see
   [Names and state from NetworkManager](#names-and-state-from-networkmanager)).
 
-The device is shown in the Client mode, or in Router while LokiCTL's
-hotspot runs (see [Switching modes](#switching-modes)), with the devices
+The device is shown in the Client mode, or in Router or Share while
+LokiCTL's hotspot runs (see [Switching modes](#switching-modes)), with the devices
 on the hotspot (see [Devices on the hotspot](#devices-on-the-hotspot)).
 What NetworkManager does not tell (in
 the simulator, or when it is not running) shows `wi-fi network` and `--`,
@@ -426,8 +426,8 @@ builds the page again instead of updating it in place.
 
 ## Switching modes
 
-The Modes page (key 4 on the home page) switches between Client and
-Router. The page only asks: `BaseViewModel::request_mode()` counts a
+The Modes page (key 4 on the home page) switches between Client, Router
+and Share. The page only asks: `BaseViewModel::request_mode()` counts a
 request, `app::DataController` hands it with the hotspot's password to the
 reader (`DataReader::request_mode()`), and the reader hands it to the
 source on its own thread and takes a reading at once. The switch's state
@@ -440,8 +440,10 @@ named `LokiCTL hotspot` that carries LokiCTL's own user-data mark means
 Router: `mode`, `ap_active`, `ap_name`, `ap_security`, `ap_channel` and
 `uptime_seconds` are filled in from it (the channel from the frequency of
 the access point NetworkManager shows on `wlan0`; 0 when it shows none),
-and `mode_detail` reads `eth0 → wi-fi ap · nat · dhcp`. So a restarted LokiCTL shows Router and can undo it, and a restart
-of the device always lands in Client.
+and `mode_detail` reads `eth0 → wi-fi ap · nat · dhcp`. The same profile
+active on `lokiap0` means Share, with the same values. So a restarted
+LokiCTL shows Router or Share and can undo it, and a restart of the device
+always lands in Client.
 
 Who really switches: only the `live` source on the device's real root, in a
 normal start (`make_data_source(..., may_change_network = true)`). Every
@@ -465,8 +467,32 @@ change anything.
   the hotspot is active; if it fails, or is not done after 20 s, it is
   undone (as Client below) and the page shows `Failed: <reason>`, or `Not
   allowed: permission missing` when polkit refused (the rule is missing).
+- **Share** (`NetworkManagerClient::start_share()`): only when `wlan0` is
+  joined to a Wi-Fi network as a client (`wifi_channel()` gives its
+  channel); otherwise it fails at once with `Join a Wi-Fi network first`.
+  The live source first has the helper add a second, virtual interface of
+  the built-in Wi-Fi, `lokiap0` (`add_share_interface()`, `lokictl-helper
+  ap-add`, which runs `iw dev wlan0 interface add lokiap0 type __ap`), on
+  the reader thread. Once NetworkManager shows `lokiap0` as a Wi-Fi device
+  that is ready (about a second; read() checks), the same in-memory
+  profile as Router's is added there, on `wlan0`'s channel (the chip sends
+  on one channel only) and without `lokictl.restore`: `wlan0` stays on its
+  network and its profile is never touched. The same 20 s limit and undo
+  apply. Devices on the hotspot get the internet through the default
+  route: the cable when one is plugged in, otherwise `wlan0`. The chip
+  restarts its radio whenever the hotspot starts, stops or restarts, so
+  `wlan0` drops for a few seconds (usually 2 to 3; up to about 15 after a
+  restart, when its first rejoin times out) and rejoins by itself with the
+  same address; NetworkManager keeps it `connected`. Router while
+  Share runs, and Share while Router runs, fail at once with `Back to
+  Client first`.
 - **Client** (`start_client()`): deletes every profile of LokiCTL's
-  hotspot, then activates the Wi-Fi profile recorded in it on `wlan0`.
+  hotspot, then activates the Wi-Fi profile recorded in it on `wlan0`
+  (from Share there is none, so nothing more is sent). Afterwards the live
+  source removes `lokiap0` through the helper (`ap-del`) whenever it exists
+  without an active hotspot and no switch runs: also after a Share switch
+  that failed, and a `lokiap0` a killed run left (up to three tries, 5 s
+  apart; never in the first reading, which runs on the UI thread).
   Without one, NetworkManager's autoconnect picks. It is done when
   NetworkManager has answered both; the Wi-Fi join itself then follows as
   usual. In plain Client nothing is sent.
@@ -475,13 +501,17 @@ change anything.
   for an add still on its way, sends the Client requests and waits at most
   3 s (`DataReader::kLeaveModesLimit`) for NetworkManager to answer, well
   under the 5 s `scripts/device.sh stop` gives before SIGKILL. The Wi-Fi
-  join finishes after the app has gone. A quit in plain Client sends
+  join finishes after the app has gone. In Share, at least 1 s of the 3 s
+  is kept to remove `lokiap0` last, and it gets all the time left (right
+  after the hotspot stops, the driver takes over a second). A quit in
+  plain Client sends
   nothing. Keeping a mode after quitting comes later.
-- **A new name or password while Router runs**
+- **A new name or password while Router or Share runs**
   (`restart_router()`, `ModeRequest::restart`): the profile is built
   afresh with the same UUID, the same `lokictl.restore` and a new
-  `lokictl.started`, updated in memory only (`Update2` with the in-memory
-  flag; it stays under `/run`) and activated again on `wlan0`. So `wlan0`
+  `lokictl.started` (Share: on `wlan0`'s channel again), updated in memory
+  only (`Update2` with the in-memory flag; it stays under `/run`) and
+  activated again on its interface (`wlan0`, or `lokiap0` in Share). So `wlan0`
   goes straight from the old hotspot to the new one and never falls back
   to the home Wi-Fi in between; devices on it must join again. A failure,
   or 20 s without the hotspot, undoes it to Client as above. Nothing is
@@ -491,11 +521,13 @@ change anything.
 
 **The pretend switch** counts readings, not time, so a snapshot always
 gives the same picture: a request is taken at the next reading (a mode that
-is already on does nothing; Router without a cable uplink fails at once),
+is already on does nothing; Router without a cable uplink fails at once,
+Share without a Wi-Fi uplink too, and Router or Share while the other runs),
 `Switching` shows for that reading, and the next one ends it. In a window
 the source asks to be read again a second later. Once it has finished, the
-pretend mode replaces the source's own: Router shows the sample's made-up
-hotspot (`LokiCTL-7F`), Client shows no access point and no clients. For
+pretend mode replaces the source's own: Router and Share show the sample's
+made-up hotspot (`LokiCTL-7F`), Client shows no access point and no
+clients. For
 example:
 
 ```sh
@@ -503,6 +535,8 @@ B=./build/darwin-arm64/Debug/lokictl
 $B --snapshot build/shots/modes-switching.png --page modes --data cable --keys down,6
 $B --snapshot build/shots/modes-router.png --page modes --data cable --keys down,6,data
 $B --snapshot build/shots/modes-no-cable.png --page modes --data wifi --keys down,6
+$B --snapshot build/shots/modes-share.png --page modes --data wifi --keys down,down,6,data
+$B --snapshot build/shots/modes-no-wifi.png --page modes --data cable --keys down,down,6
 ```
 
 **The hotspot's password** never goes into `HomeData`, the log or
@@ -523,7 +557,7 @@ model (`request_hotspot_rename()`, `request_new_hotspot_password()`), and
 `app::DataController` makes the password (`random_hotspot_password()`; in
 snapshots a fixed made-up one, `w4nbe8rhq2js`), sets the new values in the
 view model, has them saved (only where the reader changes the real
-network) and, while Router runs, sends a restart request. A request while
+network) and, while Router or Share runs, sends a restart request. A request while
 a switch runs is ignored. Log lines: `data: hotspot renamed`, `data: new
 hotspot password`, then the usual switch lines; never the values. The
 pretend switch takes a restart like any switch (`Switching` for one
@@ -984,7 +1018,7 @@ gives `network=Harbour-Cafe`, `security=WPA2`, `speed_mbps=72` and
 `internet=portal` on a Wi-Fi uplink `wlan0`. Other lines: `networking on|off`,
 `wifi on|off` and `connecting yes|no`; in a `link` line `-` means not known.
 `ap wlan0 WPA2 LokiCTL-1A2B` says LokiCTL's hotspot runs on `wlan0`
-(Router, with that name and security). In a test folder a switch on the
+(Router, with that name and security; `ap lokiap0 …` means Share). In a test folder a switch on the
 Modes page only pretends (see [Switching modes](#switching-modes)), and
 `fail permission` or `fail <reason>` makes it fail as not allowed or with
 that reason.
@@ -1122,10 +1156,11 @@ In a normal run the data layer writes these lines:
   none at stops 14 to 17, 19, 20 and 22, which change only values;
 - `data: mode <client|router>` for the first reading and whenever the mode
   changes; `data: switching to Router`, `data: switch to Router done` and
-  `data: switch to Router failed: <no cable|not allowed|reason>` as a
+  `data: switch to Router failed: <no cable|no Wi-Fi network|another mode
+  runs|not allowed|reason>` (or `Share`) as a
   switch moves on. No network name and never the password;
-- `data: back to Client before quitting` when the app stops while Router is
-  on or a switch runs (only where switches are real);
+- `data: back to Client before quitting` when the app stops while Router or
+  Share is on or a switch runs (only where switches are real);
 - `data: block a device (<n> blocked)` and `data: unblock a device (<n>
   blocked)` for each change of the list (never an address), and the
   failure's message, for example `data: Block failed: no permission`, as a

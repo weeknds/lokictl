@@ -18,15 +18,15 @@ namespace platform {
 // through the data reader to the data source (DataSource::request_mode()).
 struct ModeRequest {
     model::NetMode mode{model::NetMode::Client};
-    // Router: the hotspot's password, 8 to 63 printable ASCII characters.
-    // It is never logged and never shown in a readout.
+    // Router and Share: the hotspot's password, 8 to 63 printable ASCII
+    // characters. It is never logged and never shown in a readout.
     std::string password;
-    // Router: the hotspot's network name (SSID), 1 to 32 bytes; empty means
-    // the default name (see default_hotspot_name()).
+    // Router and Share: the hotspot's network name (SSID), 1 to 32 bytes;
+    // empty means the default name (see default_hotspot_name()).
     std::string name;
-    // Router only: the hotspot already runs and starts again with `name`
-    // and `password` (after a rename or a new password). A restart while
-    // Router is not on does nothing.
+    // Router and Share only: the hotspot already runs in that mode and
+    // starts again with `name` and `password` (after a rename or a new
+    // password). A restart while that mode is not on does nothing.
     bool restart{false};
 };
 
@@ -38,8 +38,14 @@ struct PretendFailure {
     std::string reason;                                 // with SwitchError::Failed
 };
 
-// The interface that runs the hotspot. Router only ever touches this one.
+// The built-in Wi-Fi: Router runs the hotspot on it, and Share keeps it
+// joined to its network. Router only ever touches this one.
 constexpr const char* kHotspotInterface = "wlan0";
+
+// Share's own interface: a second, virtual interface of the built-in
+// Wi-Fi that runs the hotspot on kHotspotInterface's channel. Only the
+// helper adds and removes it (see add_share_interface()).
+constexpr const char* kShareInterface = "lokiap0";
 
 // The hotspot's name until the user renames it: "LokiCTL-" and the last
 // four hex digits of kHotspotInterface's hardware address, in capitals,
@@ -47,11 +53,11 @@ constexpr const char* kHotspotInterface = "wlan0";
 // it cannot be read). Never throws.
 std::string default_hotspot_name(const std::filesystem::path& root);
 
-// The line that explains Router on the home page, for an uplink named
-// `uplink`: "eth0 -> wi-fi ap · nat · dhcp" (with an arrow).
+// The line that explains Router and Share on the home page, for an uplink
+// named `uplink`: "eth0 -> wi-fi ap · nat · dhcp" (with an arrow).
 std::string router_mode_detail(const std::string& uplink);
 
-// Pretends to switch between Client and Router, so pages can be pictured
+// Pretends to switch between Client, Router and Share, so pages can be pictured
 // and tried where nothing may or can change the network: the made-up
 // sources, test folders, the Mac, snapshots and --print-data. It changes
 // nothing outside this object.
@@ -59,18 +65,20 @@ std::string router_mode_detail(const std::string& uplink);
 // It counts readings, not time, so the same snapshot always gives the same
 // picture. A request is taken at the next reading (apply()): a mode that is
 // already on finishes at once, Router without a cable uplink fails at once
-// ("Plug in a cable first"), a restart while Router is not on is ignored,
-// and every other switch (a restart too) shows Switching until the reading
+// ("Plug in a cable first"), Share without a Wi-Fi uplink too ("Join a
+// Wi-Fi network first"), Router while Share is on and Share while Router
+// is on too ("Back to Client first"), a restart while its mode is not on
+// is ignored, and every other switch (a restart too) shows Switching until the reading
 // after, which ends it as `failure` says (or with the new mode on). The
 // source asks to be read again kPretendTime after a switch starts
 // (next_delay()), so in a window it takes about a second.
 //
 // Once a pretend switch has finished, the pretend mode replaces the
-// source's own: Router shows the made-up hotspot of the sample
+// source's own: Router and Share show the made-up hotspot of the sample
 // (model::sample_home_data()) on top of the source's values, under the
 // name the request carried (when it carried one); Client shows no access
-// point and no clients. Share and VPN are never switched to: a request for
-// them is ignored. The password is never kept.
+// point and no clients. VPN is never switched to: a request for it is
+// ignored. The password is never kept.
 class PretendModeSwitch {
 public:
     static constexpr std::chrono::milliseconds kPretendTime{1000};
@@ -109,6 +117,11 @@ private:
 // that explains it. The uplink and the clients are left as they are.
 void show_router(model::HomeData& data, const std::string& name, const std::string& security,
                  int32_t channel, int32_t uptime_seconds);
+
+// Shows Share in `data`: the same values as show_router(), in the mode
+// Share.
+void show_share(model::HomeData& data, const std::string& name, const std::string& security,
+                int32_t channel, int32_t uptime_seconds);
 
 // Shows Client in `data`: no access point (no name, security or channel),
 // no clients, no uptime.

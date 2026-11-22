@@ -278,7 +278,7 @@ void DataController::save_hotspot(const std::optional<std::string>& name, const 
 void DataController::request_mode(model::NetMode mode) {
     platform::ModeRequest request;
     request.mode = mode;
-    if (mode == model::NetMode::Router) {
+    if (model::is_hotspot_mode(mode)) {
         request.name = view_model_.hotspot_name();
         request.password = view_model_.hotspot_password();
         if (request.password.empty() && reader_.changes_network()) {
@@ -335,11 +335,12 @@ void DataController::change_hotspot() {
     view_model_.set_hotspot_password(password);
     save_hotspot(saved_name, saved_password);
 
-    // While Router runs, the hotspot starts again with the new values.
+    // While Router or Share runs, the hotspot starts again with the new
+    // values.
     const model::HomeData& data = view_model_.home();
-    if (data.mode == model::NetMode::Router && data.ap_active) {
+    if (model::is_hotspot_mode(data.mode) && data.ap_active) {
         platform::ModeRequest request;
-        request.mode = model::NetMode::Router;
+        request.mode = data.mode;
         request.name = name;
         request.password = password;
         request.restart = true;
@@ -417,9 +418,11 @@ void DataController::log_mode(const model::HomeData& data) {
             case model::SwitchState::Failed:
                 LOG_INFO("data: switch to {} failed: {}",
                          target,
-                         data.mode_switch.error == model::SwitchError::NoCable      ? "no cable"
-                         : data.mode_switch.error == model::SwitchError::NotAllowed ? "not allowed"
-                                                                                    : data.mode_switch.reason);
+                         data.mode_switch.error == model::SwitchError::NoCable       ? "no cable"
+                         : data.mode_switch.error == model::SwitchError::NoWifi      ? "no Wi-Fi network"
+                         : data.mode_switch.error == model::SwitchError::ClientFirst ? "another mode runs"
+                         : data.mode_switch.error == model::SwitchError::NotAllowed  ? "not allowed"
+                                                                                     : data.mode_switch.reason);
                 break;
             case model::SwitchState::Idle:
                 if (mode_logged_ && logged_switch_ == model::SwitchState::Switching) {

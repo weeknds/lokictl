@@ -93,7 +93,10 @@ void apply_network_manager(const NetworkManagerReading& reading, model::HomeData
         }
     }
 
-    if (reading.hotspot.active) {
+    if (reading.hotspot.active && reading.hotspot.interface_name == kShareInterface) {
+        show_share(data, reading.hotspot.name, reading.hotspot.security, reading.hotspot.channel,
+                   reading.hotspot.uptime_seconds);
+    } else if (reading.hotspot.active) {
         show_router(data, reading.hotspot.name, reading.hotspot.security, reading.hotspot.channel,
                     reading.hotspot.uptime_seconds);
     }

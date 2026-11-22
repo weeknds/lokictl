@@ -345,8 +345,8 @@ void DevicesScreen::refresh() {
             title = "No devices yet";
             note = "Join " + home::text_or_unknown(data.ap_name) + " to see a device here. Key 7 shows the code.";
         } else {
-            title = "Router is off";
-            note = "Devices on the hotspot show here while Router runs. Turn it on in Modes.";
+            title = "Hotspot is off";
+            note = "Devices on the hotspot show here while Router or Share runs. Turn one on in Modes.";
         }
         set_text_if_changed(empty_title_, empty_title_shown_, title);
         set_text_if_changed(empty_note_, empty_note_shown_, note);

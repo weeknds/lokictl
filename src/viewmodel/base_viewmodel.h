@@ -160,7 +160,7 @@ public:
     // never goes to the log.
     const std::string& hotspot_password() const;
     void set_hotspot_password(const std::string& password);
-    // The hotspot's name, the one Router starts with: the saved name, or
+    // The hotspot's name, the one Router and Share start with: the saved name, or
     // the default one on the device, a made-up one in the simulator and in
     // snapshots. Set by the app.
     const std::string& hotspot_name() const;

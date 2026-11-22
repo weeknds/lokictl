@@ -5,19 +5,23 @@
  */
 
 /*
- * lokictl-helper: the only part of LokiCTL that may change the firewall.
+ * lokictl-helper: the only part of LokiCTL that may change the firewall
+ * or add a network interface.
  *
- * LokiCTL runs as the normal user. Blocking a device on its hotspot needs
- * one Linux capability, CAP_NET_ADMIN, which this small program holds as a
- * file capability (set by the package's postinst; it is not setuid). Only
- * root and members of the netdev group may run it (root:netdev, mode 0750).
+ * LokiCTL runs as the normal user. Blocking a device on its hotspot, and
+ * adding the interface that Share runs its hotspot on, need one Linux
+ * capability, CAP_NET_ADMIN, which this small program holds as a file
+ * capability (set by the package's postinst; it is not setuid). Only root
+ * and members of the netdev group may run it (root:netdev, mode 0750).
  *
- * It does exactly one of four fixed commands and exits:
+ * It does exactly one of six fixed commands and exits:
  *
  *   lokictl-helper block MAC [MAC...]    block these devices on the hotspot
  *   lokictl-helper unblock MAC [MAC...]  let them through again
  *   lokictl-helper list                  print the blocked devices, one per line
  *   lokictl-helper clear                 remove LokiCTL's firewall table
+ *   lokictl-helper ap-add                add Share's interface (lokiap0)
+ *   lokictl-helper ap-del                remove Share's interface
  *
  * A MAC is six pairs of hex digits joined by ':' (for example
  * 02:00:00:00:00:01), not a group address; at most HELPER_MAX_ADDRESSES per
@@ -27,13 +31,21 @@
  * Every change goes into one nftables table of its own, "inet lokictl",
  * through /usr/sbin/nft with a fixed script: a set of blocked hardware
  * addresses and two base chains (input and forward, policy accept) that
- * drop what such a device sends in through the hotspot's interface. No
- * other table is ever touched, and the rule set is never flushed. Each
- * command runs as one nft transaction, so it is done whole or not at all,
- * and running it twice gives the same result.
+ * drop what such a device sends in through either hotspot interface
+ * (Router's wlan0, Share's lokiap0). No other table is ever touched, and
+ * the rule set is never flushed. Each command runs as one nft transaction,
+ * so it is done whole or not at all, and running it twice gives the same
+ * result.
+ *
+ * Share's interface goes through /usr/sbin/iw with fixed arguments only:
+ * "iw dev wlan0 interface add lokiap0 type __ap" and "iw dev lokiap0 del".
+ * Each is done at once when the interface is already there (or already
+ * gone), so running it twice gives the same result. No other interface is
+ * ever added or removed.
  *
  * Exit status: 0 done; 2 not a command, or a bad address; 3 the capability
- * is missing; 4 nft refused the change; 5 nft could not be run.
+ * is missing; 4 nft refused the change; 5 nft could not be run; 6 iw
+ * refused the change; 7 iw could not be run.
  */
 
 #define _GNU_SOURCE
@@ -59,15 +71,23 @@ enum {
     EXIT_NO_PERMISSION = 3,
     EXIT_NFT_FAILED = 4,
     EXIT_NFT_NOT_RUN = 5,
+    EXIT_IW_FAILED = 6,
+    EXIT_IW_NOT_RUN = 7,
 };
 
 /* The most addresses one call takes. */
 #define HELPER_MAX_ADDRESSES 16
 /* The most elements the set holds. */
 #define HELPER_SET_SIZE "64"
-/* The hotspot's interface: the rules match only what comes in through it. */
+/* The built-in Wi-Fi: Router's hotspot runs on it, and Share's interface
+ * is added on it. */
 #define HELPER_INTERFACE "wlan0"
+/* Share's interface, which runs its hotspot. */
+#define HELPER_SHARE_INTERFACE "lokiap0"
+/* The rules match only what comes in through the two hotspot interfaces. */
+#define HELPER_HOTSPOTS "{ \"" HELPER_INTERFACE "\", \"" HELPER_SHARE_INTERFACE "\" }"
 #define HELPER_NFT "/usr/sbin/nft"
+#define HELPER_IW "/usr/sbin/iw"
 /* "aa:bb:cc:dd:ee:ff" */
 #define MAC_TEXT_LENGTH 17
 /* The longest script: the fixed lines plus HELPER_MAX_ADDRESSES addresses. */
@@ -87,8 +107,8 @@ static const char kEnsureTable[] =
     "add chain inet lokictl forward { type filter hook forward priority filter - 10; policy accept; }\n"
     "flush chain inet lokictl input\n"
     "flush chain inet lokictl forward\n"
-    "add rule inet lokictl input iifname \"" HELPER_INTERFACE "\" ether saddr @blocked drop\n"
-    "add rule inet lokictl forward iifname \"" HELPER_INTERFACE "\" ether saddr @blocked drop\n";
+    "add rule inet lokictl input iifname " HELPER_HOTSPOTS " ether saddr @blocked drop\n"
+    "add rule inet lokictl forward iifname " HELPER_HOTSPOTS " ether saddr @blocked drop\n";
 
 /* Adding the table first makes the delete work when there is none. */
 static const char kClearTable[] =
@@ -101,7 +121,7 @@ static void fail(const char* message) {
 
 static void usage(void) {
     fprintf(stderr,
-            "usage: %s block MAC [MAC...] | unblock MAC [MAC...] | list | clear\n"
+            "usage: %s block MAC [MAC...] | unblock MAC [MAC...] | list | clear | ap-add | ap-del\n"
             "  MAC: six pairs of hex digits joined by ':', at most %d per call\n",
             kProgram,
             HELPER_MAX_ADDRESSES);
@@ -191,13 +211,15 @@ static int pass_capability_on(void) {
     return 0;
 }
 
-/* Runs nft with `arguments` (NULL-terminated, fixed by this program), an
- * empty environment, `input` on its standard input and, when `output` is
- * not NULL, its standard output read into `output` (at most
- * output_size - 1 bytes, ended by '\0'); otherwise its standard output is
- * dropped. Its messages go to this program's standard error. Returns
- * EXIT_DONE, EXIT_NFT_FAILED or EXIT_NFT_NOT_RUN. */
-static int run_nft(char* const arguments[], const char* input, char* output, size_t output_size) {
+/* Runs the program at `path` (nft or iw) with `arguments` (NULL-terminated,
+ * fixed by this program), an empty environment, `input` on its standard
+ * input and, when `output` is not NULL, its standard output read into
+ * `output` (at most output_size - 1 bytes, ended by '\0'); otherwise its
+ * standard output is dropped. Its messages go to this program's standard
+ * error. Returns EXIT_DONE, EXIT_NFT_FAILED (it failed) or
+ * EXIT_NFT_NOT_RUN (it could not be run). */
+static int run_program(const char* path, char* const arguments[], const char* input, char* output,
+                       size_t output_size) {
     char* const environment[] = {"LC_ALL=C", NULL};
     int in_pipe[2] = {-1, -1};
     int out_pipe[2] = {-1, -1};
@@ -220,7 +242,7 @@ static int run_nft(char* const arguments[], const char* input, char* output, siz
     } else {
         posix_spawn_file_actions_addopen(&actions, 1, "/dev/null", O_WRONLY, 0);
     }
-    /* nft starts with no blocked signals and SIGPIPE at its default. */
+    /* It starts with no blocked signals and SIGPIPE at its default. */
     sigset_t no_signals;
     sigset_t default_signals;
     sigemptyset(&no_signals);
@@ -231,7 +253,7 @@ static int run_nft(char* const arguments[], const char* input, char* output, siz
     posix_spawnattr_setflags(&attributes, POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_SETSIGDEF);
 
     pid_t child = -1;
-    const int spawned = posix_spawn(&child, HELPER_NFT, &actions, &attributes, arguments, environment);
+    const int spawned = posix_spawn(&child, path, &actions, &attributes, arguments, environment);
     posix_spawn_file_actions_destroy(&actions);
     posix_spawnattr_destroy(&attributes);
     close(in_pipe[0]);
@@ -247,7 +269,7 @@ static int run_nft(char* const arguments[], const char* input, char* output, siz
     }
 
     /* The script is far smaller than a pipe holds, so this never waits on
-     * nft reading it. */
+     * the program reading it. */
     size_t left = strlen(input);
     const char* next = input;
     while (left > 0) {
@@ -353,7 +375,7 @@ static void print_addresses(const char* text) {
 static int list_blocked(void) {
     static char output[OUTPUT_MAX];
     char* const tables[] = {"nft", "list", "tables", "inet", NULL};
-    int result = run_nft(tables, "", output, sizeof(output));
+    int result = run_program(HELPER_NFT, tables, "", output, sizeof(output));
     if (result != EXIT_DONE) {
         return result;
     }
@@ -371,11 +393,33 @@ static int list_blocked(void) {
         return EXIT_DONE;
     }
     char* const set[] = {"nft", "list", "set", "inet", "lokictl", "blocked", NULL};
-    result = run_nft(set, "", output, sizeof(output));
+    result = run_program(HELPER_NFT, set, "", output, sizeof(output));
     if (result == EXIT_DONE) {
         print_addresses(output);
     }
     return result;
+}
+
+/* Adds (add != 0) or removes Share's interface, unless it is already
+ * there (or already gone). */
+static int share_interface(int add) {
+    const int present = access("/sys/class/net/" HELPER_SHARE_INTERFACE, F_OK) == 0;
+    if (present == (add != 0)) {
+        return EXIT_DONE;
+    }
+    char* const add_arguments[] = {
+        "iw", "dev", HELPER_INTERFACE, "interface", "add", HELPER_SHARE_INTERFACE, "type", "__ap", NULL};
+    char* const delete_arguments[] = {"iw", "dev", HELPER_SHARE_INTERFACE, "del", NULL};
+    const int result = run_program(HELPER_IW, add ? add_arguments : delete_arguments, "", NULL, 0);
+    if (result == EXIT_NFT_NOT_RUN) {
+        fail("could not run " HELPER_IW);
+        return EXIT_IW_NOT_RUN;
+    }
+    if (result == EXIT_NFT_FAILED) {
+        fail("iw refused the change");
+        return EXIT_IW_FAILED;
+    }
+    return EXIT_DONE;
 }
 
 int main(int argc, char* argv[]) {
@@ -391,7 +435,9 @@ int main(int argc, char* argv[]) {
     const int unblock = strcmp(command, "unblock") == 0;
     const int list = strcmp(command, "list") == 0;
     const int clear = strcmp(command, "clear") == 0;
-    if (!block && !unblock && !list && !clear) {
+    const int ap_add = strcmp(command, "ap-add") == 0;
+    const int ap_del = strcmp(command, "ap-del") == 0;
+    if (!block && !unblock && !list && !clear && !ap_add && !ap_del) {
         usage();
         return EXIT_USAGE;
     }
@@ -431,6 +477,9 @@ int main(int argc, char* argv[]) {
     if (list) {
         return list_blocked();
     }
+    if (ap_add || ap_del) {
+        return share_interface(ap_add);
+    }
 
     char script[SCRIPT_MAX];
     size_t used = 0;
@@ -457,7 +506,7 @@ int main(int argc, char* argv[]) {
     }
 
     char* const from_input[] = {"nft", "-f", "-", NULL};
-    const int result = run_nft(from_input, script, NULL, 0);
+    const int result = run_program(HELPER_NFT, from_input, script, NULL, 0);
     if (result == EXIT_NFT_NOT_RUN) {
         fail("could not run " HELPER_NFT);
     } else if (result == EXIT_NFT_FAILED) {

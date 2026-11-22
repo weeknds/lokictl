@@ -28,7 +28,8 @@ namespace platform {
 // read_network()) and its traffic (see read_traffic_counters()), with the
 // names and state the system's network service adds (see
 // apply_network_manager()). The mode is Client unless LokiCTL's hotspot is
-// active (Router, with the devices on it; see HotspotClients). Nothing is
+// active (Router, or Share on kShareInterface, with the devices on it; see
+// HotspotClients). Nothing is
 // made up, so
 // HomeData::sample is false (unless the system cannot tell the time; see
 // read()).
@@ -36,10 +37,19 @@ namespace platform {
 // Switching modes: on the real root of a device build, and only when the
 // source may change the network (a normal start), request_mode() and
 // leave_modes() go to NetworkManagerClient's actions; Router is refused at
-// once ("Plug in a cable first") unless the kernel's uplink is a cable, and
-// a restart (a new name or password while Router runs) goes to
-// restart_router(). The hotspot's name is the request's, or else
-// default_hotspot_name().
+// once ("Plug in a cable first") unless the kernel's uplink is a cable;
+// Share is refused at once ("Join a Wi-Fi network first") unless
+// kHotspotInterface is joined to a Wi-Fi network, and otherwise has the
+// helper add kShareInterface (on this thread, waiting for it) before
+// start_share() runs the hotspot there on that network's channel; Router
+// while Share runs, and Share while Router runs, are refused ("Back to
+// Client first"). A restart (a new name or password while Router or Share
+// runs) goes to restart_router(). The hotspot's name is the request's, or
+// else default_hotspot_name(). kShareInterface without an active hotspot
+// on it (Share ended or failed, or a killed run left it) is removed through
+// the helper once the network service has answered and no switch runs: at
+// most kShareRemovalTries times, kNetworkInterval apart, never in the first
+// reading.
 // Everywhere else (test folders, the Mac, snapshots, --print-data) the
 // switch only pretends (PretendModeSwitch), and a test folder's
 // "networkmanager" file can make it fail.
@@ -120,7 +130,9 @@ public:
     void set_blocked(const std::vector<std::string>& addresses) override;
     bool changes_network() const override;
     // Removes the firewall table first (DeviceBlocker::leave()), then asks
-    // the network service to go back to Client with the time that is left.
+    // the network service to go back to Client with the time that is left,
+    // and last removes kShareInterface when it is there (keeping at least
+    // kHelperLeaveTimeLimit for that, and giving it all the time left).
     void leave_modes(std::chrono::milliseconds limit) override;
 
     static constexpr std::chrono::milliseconds kBatteryInterval{10000};
@@ -131,6 +143,7 @@ public:
     static constexpr std::chrono::milliseconds kMinuteMargin{20};
     static constexpr std::chrono::milliseconds kMinimumDelay{20};
     static constexpr std::chrono::milliseconds kServiceStartInterval{100};
+    static constexpr int kShareRemovalTries = 3;
 
 private:
     // Forgets the traffic: no counters, rates not known, empty histories.
@@ -155,6 +168,13 @@ private:
     // A refusal decided here (no cable), shown until the next request.
     bool refused_{false};
     model::ModeSwitch refusal_;
+    // A switch refused here, before the network service is asked.
+    void refuse(model::NetMode target, model::SwitchError error, std::string reason = {});
+    // True while kShareInterface exists.
+    bool share_interface_present() const;
+    std::string hotspot_interface_;  // where LokiCTL's hotspot ran at the last reading; empty when off
+    int share_removals_{0};          // tries to remove kShareInterface since it was last needed
+    std::chrono::steady_clock::time_point share_removal_at_{};
     BatteryReading battery_;
     bool battery_read_{false};
     std::chrono::steady_clock::time_point battery_read_at_{};

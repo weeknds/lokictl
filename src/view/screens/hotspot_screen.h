@@ -15,12 +15,12 @@ namespace screen {
 
 // The Hotspot page, opened from the Modes page (key 7). It has no title
 // bar, so the join code can be big:
-// - at the left, while Router runs, a QR code a phone camera scans to join
+// - at the left, while Router or Share runs, a QR code a phone camera scans to join
 //   the hotspot (join_text()), black on white with a white quiet zone in
-//   every theme; otherwise a box that says the code shows while Router
-//   runs;
+//   every theme; otherwise a box that says the code shows while the
+//   hotspot runs;
 // - at the right, the hotspot's name (the running one from
-//   HomeData::ap_name while Router runs, else the one Router will use),
+//   HomeData::ap_name while the hotspot runs, else the one it will use),
 //   its password (always the view model's), the channel and the security,
 //   and a line with the state: "Applying…" while a switch runs (no code
 //   then), an error after one failed, the question after the first press
@@ -63,7 +63,7 @@ private:
     void build_content(lv_obj_t* content) override;
     view::widgets::SoftKeySet soft_keys() override;
 
-    // True while Router runs with its hotspot.
+    // True while Router or Share runs with its hotspot.
     bool router_on() const;
     // True while a switch between modes runs.
     bool switching() const;

@@ -31,15 +31,29 @@ std::string router_mode_detail(const std::string& uplink) {
     return (uplink.empty() ? std::string("cable") : uplink) + " → wi-fi ap · nat · dhcp";
 }
 
-void show_router(model::HomeData& data, const std::string& name, const std::string& security,
-                 int32_t channel, int32_t uptime_seconds) {
-    data.mode = model::NetMode::Router;
+namespace {
+
+void show_hotspot(model::HomeData& data, model::NetMode mode, const std::string& name, const std::string& security,
+                  int32_t channel, int32_t uptime_seconds) {
+    data.mode = mode;
     data.mode_detail = router_mode_detail(data.uplink_name);
     data.ap_active = true;
     data.ap_name = name;
     data.ap_security = security;
     data.ap_channel = channel;
     data.uptime_seconds = uptime_seconds;
+}
+
+} // namespace
+
+void show_router(model::HomeData& data, const std::string& name, const std::string& security,
+                 int32_t channel, int32_t uptime_seconds) {
+    show_hotspot(data, model::NetMode::Router, name, security, channel, uptime_seconds);
+}
+
+void show_share(model::HomeData& data, const std::string& name, const std::string& security,
+                int32_t channel, int32_t uptime_seconds) {
+    show_hotspot(data, model::NetMode::Share, name, security, channel, uptime_seconds);
 }
 
 void show_client(model::HomeData& data) {
@@ -54,25 +68,25 @@ void show_client(model::HomeData& data) {
 }
 
 void PretendModeSwitch::request(const ModeRequest& request) {
-    if (switching_ || (request.mode != model::NetMode::Client && request.mode != model::NetMode::Router)) {
+    if (switching_ || (request.mode != model::NetMode::Client && !model::is_hotspot_mode(request.mode))) {
         return;
     }
     requested_ = true;
     requested_mode_ = request.mode;
-    requested_name_ = request.mode == model::NetMode::Router ? request.name : std::string();
-    requested_restart_ = request.restart && request.mode == model::NetMode::Router;
+    requested_name_ = model::is_hotspot_mode(request.mode) ? request.name : std::string();
+    requested_restart_ = request.restart && model::is_hotspot_mode(request.mode);
 }
 
 void PretendModeSwitch::show_mode(model::HomeData& data) const {
     if (!has_mode_) {
         return;
     }
-    if (mode_ == model::NetMode::Router) {
-        // A source that already shows Router keeps its own values (the
+    if (model::is_hotspot_mode(mode_)) {
+        // A source that already shows the mode keeps its own values (the
         // sample's router, for one), apart from a name the switch carried.
-        if (data.mode != model::NetMode::Router) {
+        if (data.mode != mode_) {
             const model::HomeData sample = model::sample_home_data();
-            show_router(data, sample.ap_name, sample.ap_security, sample.ap_channel, 0);
+            show_hotspot(data, mode_, sample.ap_name, sample.ap_security, sample.ap_channel, 0);
         }
         if (!name_.empty()) {
             data.ap_name = name_;
@@ -104,17 +118,25 @@ void PretendModeSwitch::apply(model::HomeData& data, const PretendFailure& failu
     // A new request starts at this reading, so its Switching is shown once.
     if (requested_) {
         requested_ = false;
-        if (requested_restart_ && data.mode != model::NetMode::Router) {
+        if (requested_restart_ && data.mode != requested_mode_) {
             // Nothing runs that could start again; the last status stays.
         } else {
             status_ = model::ModeSwitch{};
             status_.target = requested_mode_;
             if (requested_mode_ == data.mode && !requested_restart_) {
                 // Already on: nothing to do.
+            } else if (!requested_restart_ && model::is_hotspot_mode(requested_mode_) &&
+                       model::is_hotspot_mode(data.mode)) {
+                status_.state = model::SwitchState::Failed;
+                status_.error = model::SwitchError::ClientFirst;
             } else if (requested_mode_ == model::NetMode::Router && !requested_restart_ &&
                        data.uplink_kind != model::LinkKind::Cable) {
                 status_.state = model::SwitchState::Failed;
                 status_.error = model::SwitchError::NoCable;
+            } else if (requested_mode_ == model::NetMode::Share && !requested_restart_ &&
+                       data.uplink_kind != model::LinkKind::Wifi) {
+                status_.state = model::SwitchState::Failed;
+                status_.error = model::SwitchError::NoWifi;
             } else {
                 status_.state = model::SwitchState::Switching;
                 switching_ = true;

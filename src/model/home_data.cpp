@@ -42,6 +42,10 @@ const char* net_mode_name(NetMode mode) {
     return "Client";
 }
 
+bool is_hotspot_mode(NetMode mode) {
+    return mode == NetMode::Router || mode == NetMode::Share;
+}
+
 const char* switch_state_name(SwitchState state) {
     switch (state) {
         case SwitchState::Idle:

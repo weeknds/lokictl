@@ -26,7 +26,7 @@ namespace screen {
 // kVisibleCards cards are on screen at once. The highlighted card is the
 // top one, unless the list ends; a thin mark at the right edge shows where
 // the cards on screen lie when there are more. Without the hotspot a box
-// says that devices show while Router runs; with the hotspot and nobody on
+// says that devices show while Router or Share runs; with the hotspot and nobody on
 // it, the box says so and names the hotspot.
 //
 // Up and down (F/X), left and right (Z/C) and keys 5 and 6 (Up, Down) move

@@ -26,6 +26,15 @@ constexpr std::size_t kMaxBlockedDevices = 16;
 constexpr std::chrono::milliseconds kHelperTimeLimit{3000};
 constexpr std::chrono::milliseconds kHelperLeaveTimeLimit{1000};
 
+// Share's interface (kShareInterface), through the helper: adds it on the
+// built-in Wi-Fi as an access-point interface, or removes it. Each is done
+// when the interface is already there (or already gone). Waits for the
+// helper, at most `limit` (then it is killed), so it runs on the data
+// reader's thread only, never on the UI thread. Returns an empty text when
+// it worked, else a short reason ("helper not installed").
+std::string add_share_interface(std::chrono::milliseconds limit = kHelperTimeLimit);
+std::string remove_share_interface(std::chrono::milliseconds limit = kHelperTimeLimit);
+
 // True for a device's hardware address as LokiCTL writes it: six pairs of
 // lowercase hex digits joined by ':' ("02:00:00:00:00:01"), not a group
 // address (lowest bit of the first byte), which never sends.

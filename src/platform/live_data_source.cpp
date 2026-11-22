@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <ctime>
 #include <limits>
+#include <system_error>
 #include <time.h>
 #include <utility>
 
@@ -76,27 +77,63 @@ bool LiveDataSource::changes_network() const {
     return changes_network_;
 }
 
+void LiveDataSource::refuse(model::NetMode target, model::SwitchError error, std::string reason) {
+    refused_ = true;
+    refusal_ = model::ModeSwitch{};
+    refusal_.target = target;
+    refusal_.state = model::SwitchState::Failed;
+    refusal_.error = error;
+    refusal_.reason = error == model::SwitchError::Failed ? std::move(reason) : std::string();
+}
+
+bool LiveDataSource::share_interface_present() const {
+    std::error_code error;
+    return std::filesystem::exists(root_ / "sys/class/net" / kShareInterface, error);
+}
+
 void LiveDataSource::request_mode(const ModeRequest& request) {
     if (!changes_network_) {
         pretend_.request(request);
         return;
     }
     refused_ = false;
+    share_removals_ = 0;  // a removal that failed is tried again
     const std::string name = request.name.empty() ? default_hotspot_name(root_) : request.name;
-    if (request.mode == model::NetMode::Router && request.restart) {
-        network_manager_->restart_router(RouterRequest{kHotspotInterface, name, request.password});
+    const bool share = request.mode == model::NetMode::Share;
+    const char* interface_name = share ? kShareInterface : kHotspotInterface;
+    if (model::is_hotspot_mode(request.mode) && request.restart) {
+        // Share stays on the channel of the network the Wi-Fi is joined to.
+        const int32_t channel = share ? network_manager_->wifi_channel(kHotspotInterface) : 0;
+        network_manager_->restart_router(RouterRequest{interface_name, name, request.password, channel});
+    } else if (model::is_hotspot_mode(request.mode) && !hotspot_interface_.empty() &&
+               hotspot_interface_ != interface_name) {
+        // Router and Share go through Client.
+        refuse(request.mode, model::SwitchError::ClientFirst);
     } else if (request.mode == model::NetMode::Router) {
         // Decided on a fresh look at the kernel's uplink: Router shares a
         // cable, never the Wi-Fi it is about to take over.
         if (read_network(root_, addresses_file_).kind != model::LinkKind::Cable) {
-            refused_ = true;
-            refusal_ = model::ModeSwitch{};
-            refusal_.target = model::NetMode::Router;
-            refusal_.state = model::SwitchState::Failed;
-            refusal_.error = model::SwitchError::NoCable;
+            refuse(request.mode, model::SwitchError::NoCable);
             return;
         }
         network_manager_->start_router(RouterRequest{kHotspotInterface, name, request.password});
+    } else if (share) {
+        // The hotspot must use the channel of the network the Wi-Fi is
+        // joined to: the chip sends on one channel only.
+        const int32_t channel = network_manager_->wifi_channel(kHotspotInterface);
+        if (channel <= 0) {
+            refuse(request.mode, model::SwitchError::NoWifi);
+            return;
+        }
+        if (network_manager_->busy()) {
+            return;  // a switch runs: ignored, as start_share() would
+        }
+        const std::string reason = add_share_interface();
+        if (!reason.empty()) {
+            refuse(request.mode, model::SwitchError::Failed, reason);
+            return;
+        }
+        network_manager_->start_share(RouterRequest{kShareInterface, name, request.password, channel});
     } else if (request.mode == model::NetMode::Client) {
         network_manager_->start_client();
     }
@@ -110,8 +147,16 @@ void LiveDataSource::leave_modes(milliseconds limit) {
     if (changes_network_) {
         const auto started = std::chrono::steady_clock::now();
         blocker_.leave();
+        const bool share_interface = share_interface_present();
+        const milliseconds reserve = share_interface ? kHelperLeaveTimeLimit : milliseconds(0);
         const auto spent = std::chrono::duration_cast<milliseconds>(std::chrono::steady_clock::now() - started);
-        network_manager_->leave(std::max(limit - spent, milliseconds(0)));
+        network_manager_->leave(std::max(limit - spent - reserve, milliseconds(0)));
+        if (share_interface) {
+            // Right after the hotspot stops, removing the interface takes
+            // the driver over a second, so it gets all the time that is left.
+            const auto used = std::chrono::duration_cast<milliseconds>(std::chrono::steady_clock::now() - started);
+            remove_share_interface(std::max(limit - used, kHelperLeaveTimeLimit));
+        }
     }
 }
 
@@ -174,6 +219,7 @@ void LiveDataSource::read(model::HomeData& data) {
         service = read_network_manager_file(network_manager_file_);
     }
     apply_network_manager(service, data);
+    hotspot_interface_ = service.available && service.hotspot.active ? service.hotspot.interface_name : std::string();
 
     // The devices on the hotspot. Read before a pretend switch is applied,
     // so a pretend Client drops them with the access point.
@@ -199,8 +245,24 @@ void LiveDataSource::read(model::HomeData& data) {
     // nor while a switch runs.
     const bool hotspot_up = service.available && service.hotspot.active && !hotspot_interface.empty();
     const bool switching = network_manager_ && network_manager_->busy();
-    blocker_.apply(data, hotspot_up, first_read_done_ && !switching);
+    const bool may_run_helper = first_read_done_ && !switching;
+    blocker_.apply(data, hotspot_up, may_run_helper);
     first_read_done_ = true;
+
+    // Share's interface without an active hotspot on it goes, once no
+    // switch runs; a try that fails is repeated a few times. Only once the
+    // network service has answered: while its connection still starts, a
+    // running Share (a killed run's) is not known yet.
+    if (changes_network_) {
+        if ((hotspot_up && hotspot_interface == kShareInterface) || !share_interface_present()) {
+            share_removals_ = 0;
+        } else if (service.available && may_run_helper && share_removals_ < kShareRemovalTries &&
+                   (share_removals_ == 0 || now - share_removal_at_ >= kNetworkInterval)) {
+            ++share_removals_;
+            share_removal_at_ = now;
+            remove_share_interface();
+        }
+    }
     if (details_shown_) {
         data.details = details_;
         apply_network_manager(service, data.details.ports);

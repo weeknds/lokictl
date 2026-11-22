@@ -42,7 +42,7 @@ constexpr const char* kActiveMark = "✓"; // check mark
 constexpr const char* kHints[kRowCount] = {
     "join a Wi-Fi network",
     "share the cable over Wi-Fi",
-    "comes later",
+    "share Wi-Fi as a hotspot",
     "comes later",
 };
 
@@ -59,7 +59,7 @@ enum StatusTone : int32_t {
 
 bool switchable(int32_t row) {
     const auto mode = static_cast<model::NetMode>(row);
-    return mode == model::NetMode::Client || mode == model::NetMode::Router;
+    return mode == model::NetMode::Client || model::is_hotspot_mode(mode);
 }
 
 lv_obj_t* plain_object(lv_obj_t* parent) {
@@ -279,6 +279,14 @@ void ModesScreen::refresh_status() {
                 left = "Plug in a cable first";
                 tone = kToneWarning;
                 break;
+            case model::SwitchError::NoWifi:
+                left = "Join a Wi-Fi network first";
+                tone = kToneWarning;
+                break;
+            case model::SwitchError::ClientFirst:
+                left = "Back to Client first";
+                tone = kToneWarning;
+                break;
             case model::SwitchError::NotAllowed:
                 left = "Not allowed: permission missing";
                 tone = kToneError;
@@ -289,7 +297,7 @@ void ModesScreen::refresh_status() {
                 tone = kToneError;
                 break;
         }
-    } else if (data.mode == model::NetMode::Router && data.ap_active) {
+    } else if (model::is_hotspot_mode(data.mode) && data.ap_active) {
         left = data.ap_name.empty() ? std::string("Hotspot on") : data.ap_name;
         right = view_model().hotspot_password();
     } else {

@@ -21,7 +21,7 @@ constexpr std::size_t kHomeHistoryLength = 24;
 enum class NetMode {
     Client = 0, // joins a Wi-Fi network like a phone
     Router,     // shares its wired uplink through its own access point
-    Share,      // shares another Wi-Fi network through its own access point
+    Share,      // shares the Wi-Fi network it joined through its own access point
     Vpn,        // sends its traffic through a VPN tunnel
 };
 constexpr int kNetModeCount = 4;
@@ -29,6 +29,9 @@ constexpr int kNetModeCount = 4;
 // The name of a mode as shown on screen: "Client", "Router", "Share" or
 // "VPN". Pages write it in capitals or lowercase as their theme asks.
 const char* net_mode_name(NetMode mode);
+
+// True for the modes that run LokiCTL's hotspot: Router and Share.
+bool is_hotspot_mode(NetMode mode);
 
 // What the switch between modes is doing (see HomeData::mode_switch).
 enum class SwitchState {
@@ -44,9 +47,11 @@ const char* switch_state_name(SwitchState state);
 // Why the last switch failed.
 enum class SwitchError {
     None = 0,
-    NoCable,    // Router needs a cable that leads to the internet
-    NotAllowed, // the system refused: the permission rule is missing
-    Failed,     // anything else; ModeSwitch::reason says what
+    NoCable,     // Router needs a cable that leads to the internet
+    NoWifi,      // Share needs the built-in Wi-Fi joined to a network
+    ClientFirst, // Router and Share go through Client: the other one runs
+    NotAllowed,  // the system refused: the permission rule is missing
+    Failed,      // anything else; ModeSwitch::reason says what
 };
 
 // The last switch between modes the user asked for, and where it stands.

@@ -164,7 +164,7 @@ std::string HotspotScreen::join_text(const std::string& name, const std::string&
 
 bool HotspotScreen::router_on() const {
     const model::HomeData& data = view_model().home();
-    return data.mode == model::NetMode::Router && data.ap_active;
+    return model::is_hotspot_mode(data.mode) && data.ap_active;
 }
 
 bool HotspotScreen::switching() const {
@@ -406,7 +406,7 @@ void HotspotScreen::refresh_code(bool on, bool busy, const std::string& name) {
     if (!show_code) {
         const char* note = on     ? "No code for this name and password"
                            : busy ? "The join code shows once the hotspot runs"
-                                  : "The join code shows while Router runs";
+                                  : "The join code shows while the hotspot runs";
         if (std::strcmp(lv_label_get_text(code_note_), note) != 0) {
             lv_label_set_text(code_note_, note);
         }
@@ -506,6 +506,14 @@ void HotspotScreen::refresh() {
                 message = "Plug in a cable first";
                 tone = kToneWarning;
                 break;
+            case model::SwitchError::NoWifi:
+                message = "Join a Wi-Fi network first";
+                tone = kToneWarning;
+                break;
+            case model::SwitchError::ClientFirst:
+                message = "Back to Client first";
+                tone = kToneWarning;
+                break;
             case model::SwitchError::NotAllowed:
                 message = "Not allowed: permission missing";
                 tone = kToneError;
@@ -519,7 +527,7 @@ void HotspotScreen::refresh() {
     } else if (on) {
         message = up_text(data.uptime_seconds) + kSeparator + "scan to join";
     } else {
-        message = "Starts with Router on the Modes page";
+        message = "Starts with Router or Share in Modes";
     }
     set_text_if_changed(message_, message_shown_, message);
     set_tone_if_changed(message_, message_tone_, tone, theme);

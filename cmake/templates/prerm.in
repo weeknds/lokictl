@@ -3,13 +3,17 @@
 # SPDX-License-Identifier: MIT
 #
 # On removal, takes @APP_DISPLAY_NAME@'s own firewall table away (blocked devices
-# on the hotspot), so nothing it made stays behind. No other table is
-# touched.
+# on the hotspot) and Share's interface (lokiap0), so nothing it made stays
+# behind. No other table or interface is touched.
 
 set -e
 
 if [ "$1" = "remove" ] && [ -x /usr/sbin/nft ]; then
     printf 'add table inet lokictl\ndelete table inet lokictl\n' | /usr/sbin/nft -f - || true
+fi
+
+if [ "$1" = "remove" ] && [ -x /usr/sbin/iw ] && [ -e /sys/class/net/lokiap0 ]; then
+    /usr/sbin/iw dev lokiap0 del || true
 fi
 
 exit 0
