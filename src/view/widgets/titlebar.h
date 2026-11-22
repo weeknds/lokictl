@@ -19,6 +19,12 @@ class ThemeEngine;
 
 namespace view::widgets {
 
+// The page's title on the left; on the right the uplink's icon (Wi-Fi by
+// signal, or the cable), the battery and the clock. Those come from the
+// data layer (BaseViewModel::home()), so they read the same as on the home
+// page, and the bar changes them in place when home_data_subject() counts
+// a change, only where a text really changed. It reads no file and has no
+// timer of its own.
 class TitleBar : public BaseWidgets {
 public:
     // Styled from theme_engine.theme() when built; see view::ThemeEngine.
@@ -31,9 +37,9 @@ public:
     void build() override;
 
 private:
-    void refresh_time();
-    void refresh_device_status();
-    static void refresh_timer_cb(lv_timer_t* timer);
+    // Shows the values of view_model_.home().
+    void refresh();
+    static void data_observer(lv_observer_t* observer, lv_subject_t* subject);
 
     viewmodel::BaseViewModel& view_model_;
     app::AssetManager& assets_;
@@ -43,8 +49,6 @@ private:
     lv_obj_t* ethernet_label_{nullptr};
     lv_obj_t* battery_icon_label_{nullptr};
     lv_obj_t* battery_percent_label_{nullptr};
-    lv_timer_t* refresh_timer_{nullptr};
-    uint32_t refresh_tick_{0};
 };
 
 } // namespace view::widgets

@@ -402,10 +402,9 @@ cmp build/shots/keys-x.png build/shots/keys-down.png && echo same
 ```
 
 Both pictures show the key test page with the second row selected, so `cmp`
-prints `same`. The demo pages have a title bar with the current time: if
-the minute changed between the two pictures, take both again. In a
-snapshot the home page shows the fixed sample values unless `--data` says
-otherwise, so its pictures never differ for that reason.
+prints `same`. In a snapshot every page, and the title bar of the demo
+pages, shows the fixed sample values unless `--data` says otherwise, so the
+pictures never differ because the clock moved on.
 
 How it works:
 

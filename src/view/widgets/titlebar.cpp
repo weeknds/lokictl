@@ -9,10 +9,10 @@
 #include <algorithm>
 #include <array>
 #include <cstdio>
-#include <ctime>
+#include <cstring>
 
 #include "asset_manager.h"
-#include "device_status.h"
+#include "home_data.h"
 #include "style.h"
 #include "theme.h"
 #include "theme_engine.h"
@@ -21,29 +21,35 @@
 namespace view::widgets {
 namespace {
 
-constexpr uint32_t kDeviceRefreshTicks = 5;
-
 // Fixed widths keep the status icons from moving when the text changes.
 // Every theme's Mono font fits "100%" and "21:11" in these.
 constexpr int32_t kIconWidth    = 18;
 constexpr int32_t kPercentWidth = 40;
 constexpr int32_t kTimeWidth    = 42;
 
-const char* wifi_icon(int32_t strength_percent, bool connected) {
-    if (!connected || strength_percent < 0) {
+// The Wi-Fi icon's steps, by received signal in dBm.
+constexpr int32_t kSignalHighDbm   = -60;
+constexpr int32_t kSignalMediumDbm = -75;
+
+constexpr int32_t kMinutesPerHour = 60;
+constexpr int32_t kMinutesPerDay  = 24 * kMinutesPerHour;
+
+// A signal that is not known shows the icon without bars.
+const char* wifi_icon(int32_t signal_dbm) {
+    if (signal_dbm == model::kSignalUnknown) {
         return ICON_WIFI_NONE;
     }
-    if (strength_percent < 35) {
-        return ICON_WIFI_LOW;
+    if (signal_dbm >= kSignalHighDbm) {
+        return ICON_WIFI_HIGH;
     }
-    if (strength_percent < 70) {
+    if (signal_dbm >= kSignalMediumDbm) {
         return ICON_WIFI_MEDIUM;
     }
-    return ICON_WIFI_HIGH;
+    return ICON_WIFI_LOW;
 }
 
-const char* battery_icon(int32_t capacity_percent, bool charging) {
-    if (charging) {
+const char* battery_icon(int32_t capacity_percent, model::BatteryState state) {
+    if (state == model::BatteryState::Charging) {
         return ICON_BAT_CHARGING;
     }
     if (capacity_percent >= 95) {
@@ -71,11 +77,21 @@ void configure_label(lv_obj_t* label,
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
 }
 
+// Changes the text only when it differs, so a value that stayed the same
+// draws nothing.
+void set_text_if_changed(lv_obj_t* label, const char* text) {
+    if (std::strcmp(lv_label_get_text(label), text) != 0) {
+        lv_label_set_text(label, text);
+    }
+}
+
+// Changes the flag only when it differs, for the same reason.
 void set_visible(lv_obj_t* obj, bool visible) {
-    if (visible) {
+    const bool hidden = lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN);
+    if (visible && hidden) {
         lv_obj_remove_flag(obj, LV_OBJ_FLAG_HIDDEN);
     }
-    else {
+    else if (!visible && !hidden) {
         lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
     }
 }
@@ -88,12 +104,8 @@ TitleBar::TitleBar(lv_obj_t* parent,
                    view::ThemeEngine& theme_engine)
     : BaseWidgets(parent), view_model_(view_model), assets_(assets), theme_engine_(theme_engine) {}
 
-TitleBar::~TitleBar() {
-    if (refresh_timer_) {
-        lv_timer_delete(refresh_timer_);
-        refresh_timer_ = nullptr;
-    }
-}
+// The observer goes with the bar's object, which the base class deletes.
+TitleBar::~TitleBar() = default;
 
 void TitleBar::build() {
     if (core_obj_) {
@@ -137,6 +149,7 @@ void TitleBar::build() {
     configure_label(wifi_label_, theme, icon_font, kIconWidth);
     ethernet_label_ = lv_label_create(status);
     configure_label(ethernet_label_, theme, icon_font, kIconWidth);
+    lv_label_set_text(ethernet_label_, ICON_ETHERNET);
     battery_icon_label_ = lv_label_create(status);
     configure_label(battery_icon_label_, theme, icon_font, kIconWidth);
     battery_percent_label_ = lv_label_create(status);
@@ -144,53 +157,45 @@ void TitleBar::build() {
     time_label_ = lv_label_create(status);
     configure_label(time_label_, theme, status_font, kTimeWidth);
 
-    refresh_time();
-    refresh_device_status();
-    refresh_timer_ = lv_timer_create(refresh_timer_cb, 1000, this);
+    // LVGL calls the observer once right away, which shows the values.
+    lv_subject_add_observer_obj(view_model_.home_data_subject(), data_observer, core_obj_, this);
 }
 
-void TitleBar::refresh_time() {
-    const std::time_t now = std::time(nullptr);
-    std::tm local_time{};
-#if defined(_WIN32)
-    localtime_s(&local_time, &now);
-#else
-    localtime_r(&now, &local_time);
-#endif
-    std::array<char, 6> text{};
-    std::strftime(text.data(), text.size(), "%H:%M", &local_time);
-    lv_label_set_text(time_label_, text.data());
-}
+void TitleBar::refresh() {
+    const model::HomeData& data = view_model_.home();
 
-void TitleBar::refresh_device_status() {
-    const auto status = platform::read_device_status();
-
-    lv_label_set_text(wifi_label_, wifi_icon(status.wifi_strength_percent, status.wifi_connected));
-    set_visible(wifi_label_, status.wifi_connected);
-
-    lv_label_set_text(ethernet_label_, ICON_ETHERNET);
-    set_visible(ethernet_label_, status.ethernet_connected);
-
-    lv_label_set_text(battery_icon_label_,
-                      battery_icon(status.battery_percent, status.battery_charging));
-    set_visible(battery_icon_label_, status.battery_present);
-    set_visible(battery_percent_label_, status.battery_present);
-    if (status.battery_present) {
-        std::array<char, 6> percent{};
-        std::snprintf(percent.data(), percent.size(), "%d%%", std::clamp(status.battery_percent, 0, 100));
-        lv_label_set_text(battery_percent_label_, percent.data());
+    const bool wifi = data.uplink_kind == model::LinkKind::Wifi;
+    if (wifi) {
+        set_text_if_changed(wifi_label_, wifi_icon(data.wifi_signal_dbm));
     }
+    set_visible(wifi_label_, wifi);
+    set_visible(ethernet_label_, data.uplink_kind == model::LinkKind::Cable);
+
+    const bool battery_known = data.battery_percent >= 0;
+    if (battery_known) {
+        const int32_t percent = std::min<int32_t>(data.battery_percent, 100);
+        set_text_if_changed(battery_icon_label_, battery_icon(percent, data.battery_state));
+        std::array<char, 8> text{};
+        std::snprintf(text.data(), text.size(), "%d%%", static_cast<int>(percent));
+        set_text_if_changed(battery_percent_label_, text.data());
+    }
+    set_visible(battery_icon_label_, battery_known);
+    set_visible(battery_percent_label_, battery_known);
+
+    const int32_t minutes = std::clamp<int32_t>(data.clock_minutes, 0, kMinutesPerDay - 1);
+    std::array<char, 8> clock{};
+    std::snprintf(clock.data(),
+                  clock.size(),
+                  "%02d:%02d",
+                  static_cast<int>(minutes / kMinutesPerHour),
+                  static_cast<int>(minutes % kMinutesPerHour));
+    set_text_if_changed(time_label_, clock.data());
 }
 
-void TitleBar::refresh_timer_cb(lv_timer_t* timer) {
-    auto* title_bar = static_cast<TitleBar*>(lv_timer_get_user_data(timer));
-    if (!title_bar) {
-        return;
-    }
-    title_bar->refresh_time();
-    if (++title_bar->refresh_tick_ >= kDeviceRefreshTicks) {
-        title_bar->refresh_tick_ = 0;
-        title_bar->refresh_device_status();
+void TitleBar::data_observer(lv_observer_t* observer, lv_subject_t* /*subject*/) {
+    auto* title_bar = static_cast<TitleBar*>(lv_observer_get_user_data(observer));
+    if (title_bar && title_bar->time_label_) {
+        title_bar->refresh();
     }
 }
 

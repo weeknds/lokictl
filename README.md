@@ -65,7 +65,8 @@ Notes:
 - The simulator's home page shows moving demo values: the clock runs one
   minute per second and the battery counts down, to show that the page
   follows its data. `--data <name>` picks other values for the run:
-  `sample` (fixed values), `demo` or `live` (the Mac's own clock). The
+  `sample` (fixed values), `demo` or `live` (the Mac's own clock; the Mac
+  has no Linux network files, so it shows no network). The
   made-up examples `--data wifi`, `--data cable` and `--data offline` show
   the home page joined to a Wi-Fi network, on a cable and with no network,
   and `--data tour` walks through all of them, one every 2 s. See
@@ -169,10 +170,11 @@ Options:
   docs/navigation.md for the details.
 - `--data <name>`: where the values come from: `sample` (fixed made-up
   values, the default for a snapshot), `demo` (the made-up values, moving
-  on a fixed script) or `live` (the real clock and battery). `wifi`,
-  `cable` and `offline` are fixed made-up examples of the other situations
-  the device can be in (joined to a Wi-Fi network, on a cable, no network),
-  and `tour` walks through all of them, one stop per reading; see
+  on a fixed script) or `live` (the real clock, battery and network link).
+  `wifi`, `cable` and `offline` are fixed made-up examples of the other
+  situations the device can be in (joined to a Wi-Fi network, on a cable,
+  no network), and `tour` walks through all of them, one stop per reading;
+  see
   [docs/home.md](docs/home.md). Any other name is refused with a message
   that lists all seven.
 - `--data-steps <n>`: takes `n` further readings, from 0 to 100000, right
@@ -210,10 +212,9 @@ Notes:
   not included, also not when `--keys` opens them. The developer pages
   `dev-help` and `dev-toast` show the same help panel and messages on a page
   of their own, so their look can still be checked.
-- Pages with a title bar show the current time in it, so two pictures of
-  such a page taken a minute apart are not identical. The home page has no
-  title bar, and a snapshot shows the fixed sample values unless `--data`
-  says otherwise, so its pictures are always the same file.
+- A snapshot shows the fixed sample values unless `--data` says otherwise,
+  on the home page and in the title bar of the other pages, so two pictures
+  of the same page are always the same file.
 
 ## Live data
 
@@ -221,13 +222,16 @@ The home page gets its values from a small data layer. A background reader
 collects them beside the screen, so reading never holds up drawing. When a
 value changes, the page changes only that text; when the situation changes
 (for example from a Wi-Fi network to a cable), the page's content is built
-again, once. So far the clock and the battery are real; the network values
-are still made up, and the page keeps its `sample data` mark.
+again, once. The clock, the battery and the network link (Wi-Fi or cable,
+address, router, signal, cable speed) are real; the traffic is still made
+up, so the page keeps its `sample data` mark. The title bar of the other
+pages shows the same clock, battery and link.
 
 `--data <name>` picks the source: `sample`, `demo`, `live`, `wifi`,
 `cable`, `offline` or `tour`. Without it, a snapshot uses `sample`, and a
 normal start uses `live` on the device and `demo` in the simulator. `live`
-still shows the made-up router sample with the real clock and battery.
+shows the device in the Client mode with its real link; the Wi-Fi
+network's name is not known yet.
 `--data wifi`, `--data cable` and `--data offline` are fixed made-up
 examples of the device joined to a Wi-Fi network, on a cable and with no
 network, and `--data tour` walks through every situation, one stop every
@@ -259,8 +263,9 @@ prints `unknown`.
 
 It takes `--data` and `--data-steps` and nothing else. The environment
 variable `LOKICTL_DATA_ROOT=<folder>` makes the `live` source read
-`<folder>/sys/class/power_supply/...` instead of the system's battery
-files, so every battery state can be tested on the Mac. On a device,
+`<folder>/sys/...` and `<folder>/proc/...` instead of the system's battery
+and network files (and `<folder>/addresses` for the addresses), so every
+battery state and kind of link can be tested on the Mac. On a device,
 `scripts/device.sh data` prints the device's own values.
 [docs/data.md](docs/data.md) explains the sources, the reader, how a page
 updates in place, how to add a value and every test option.

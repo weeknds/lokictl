@@ -170,16 +170,16 @@ The link view:
 
 ## Sample data
 
-Most values on the page are still made up: the mode, the uplink, the
-access point, the addresses, the traffic and the clients. Only the clock
-and the battery are real, and only when the app reads live values, which
-it does on the device (the data layer decides this; see
-[data.md](data.md)). The page says that its values are made up with a
-small `sample data` mark in every theme. Instrument and Constellation write
-it in capitals, like all their captions; Terminal writes it in lowercase.
-The mark matters on a network tool: nobody should take three made-up
-clients for a real reading. So it stays on, also next to a real clock,
-until the network values are real too.
+When the app reads live values, which it does on the device (the data
+layer decides this; see [data.md](data.md)), the clock, the battery and
+the network link are real: Wi-Fi, cable or no network, the interface, the
+address, the router's address, the signal and the cable's speed. The
+traffic is still made up. The page says that some of its values are made
+up with a small `sample data` mark in every theme. Instrument and
+Constellation write it in capitals, like all their captions; Terminal
+writes it in lowercase. The mark matters on a network tool: nobody should
+take a made-up rate for a real reading. So it stays on until the traffic
+is real too.
 
 Next to the router sample there are made-up example sets for the other
 situations, so every layout can be looked at in each of them before real
@@ -196,14 +196,15 @@ network values arrive. Each is a data source of its own (`--data <name>`):
 All of them are marked `sample data`, show the clock `07:46` and the
 battery `91%`, and never change, except the tour. All the names and
 addresses are made up. `--data live`, which the device uses by default,
-still shows the router sample with the real clock and battery; real
-network values come later.
+shows the device's real link in the link view (the Wi-Fi network's name is
+not known yet, so it reads `wi-fi network`), with made-up traffic.
 
 A snapshot uses the fixed sample values unless `--data` says otherwise, so
 the same state always gives the same picture. Two snapshots of the home
 page are the same file, byte for byte, which makes the page easy to check
-by script. Pages with a title bar show the real time there, so in a
-snapshot Settings shows a different clock from the home page.
+by script. The title bar of the other pages takes its values from the same
+data, so in a snapshot Settings shows the same clock and battery as the
+home page.
 
 ## Where the values come from
 
@@ -244,8 +245,9 @@ snapshot Settings shows a different clock from the home page.
   write made-up values; nothing in `src/view` or `src/app` writes or asks
   for one.
 - A data source fills in one whole `HomeData` block: `sample`, `demo` (the
-  sample, moving on a fixed script), `live` (the sample with the real clock
-  and battery put in), `wifi`, `cable`, `offline` or `tour`. A background
+  sample, moving on a fixed script), `live` (the real clock, battery and
+  link, in the Client mode, with made-up traffic), `wifi`, `cable`,
+  `offline` or `tour`. A background
   reader asks the source and `app::DataController` hands every new block to
   `viewmodel::BaseViewModel::set_home_data()`. [data.md](data.md) explains
   the whole path.
@@ -273,9 +275,10 @@ snapshot Settings shows a different clock from the home page.
   | `join_parts()` | the parts that are not empty, joined by ` · ` |
   | `count_text()` | `1/3` |
 
-More real values will replace the sample ones in the same place: the live
+More real values will replace the made-up ones in the same place: the live
 source will fill more of the same `HomeData`, and once the last made-up
-value is gone it sets `sample` to false, which removes the mark. The
+value (the traffic) is gone it sets `sample` to false, which removes the
+mark. The
 layouts take every value from `HomeData` already, so none of them has to
 change for that.
 

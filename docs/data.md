@@ -26,7 +26,7 @@ Where the values come from is called the source. There are seven:
 |---|---|
 | `sample` | the router sample: fixed made-up values that never change. A router with its own access point and three clients; the clock says `07:46` and the battery `91%` |
 | `demo` | the router sample, moving on a fixed script (see [The demo script](#the-demo-script)) |
-| `live` | real readings: the device's clock and battery; every other value is still the router sample's |
+| `live` | real readings: the device's clock, battery and network link (see [What is real today](#what-is-real-today)); the traffic is still made up |
 | `wifi` | fixed made-up values: joined to a Wi-Fi network, no access point, no clients |
 | `cable` | fixed made-up values: on a network cable, no access point, no clients |
 | `offline` | fixed made-up values: no network at all; every network value is not known |
@@ -35,9 +35,8 @@ Where the values come from is called the source. There are seven:
 `wifi`, `cable`, `offline` and `tour` show the same clock (`07:46`) and
 battery (`91%`) as the sample, and all of them keep the `sample data` mark.
 Their values are in one place, `src/model/home_examples.cpp`, and are all
-made up. `demo` and `live` are as they were: `demo` is still the same
-script, and `live` still shows the router sample with the real clock and
-battery.
+made up. `demo` is still the same script on the router sample. `live` shows
+the device as it is: in the Client mode, with its real link.
 
 Which one is used:
 
@@ -60,17 +59,26 @@ With `live`:
 
 - the clock is the device's local time as `HH:MM`;
 - the battery charge and its state come from the system's battery files
-  (see [The battery](#the-battery)).
+  (see [The battery](#the-battery));
+- the network link: Wi-Fi, cable or none, the interface, its IPv4 address,
+  the router's address, the Wi-Fi signal and the cable's speed (see
+  [The network link](#the-network-link)).
 
-The mode, the uplink, the access point, the addresses, the traffic and the
-clients are still made up in every source. That is why the page keeps its
-`sample data` mark: `HomeData::sample` stays true in every source. A real
-clock next to the mark is fine; a made-up client without it would not be.
-The mark goes away once the last made-up value on the page is real.
+The device is shown in the Client mode, without an access point and without
+clients (those come with the modes). The Wi-Fi network's name, its security
+and its speed are not known yet, so the page shows `wi-fi network` and `--`
+for them, never a made-up name.
 
-The pages with a title bar, such as Settings, still read the clock and the
-battery for their title bar on their own, as before. Only the home page
-takes its values from the data layer for now.
+The traffic (the two rates and their histories) is still made up: with a
+link it is the router sample's, without a link it is not known. That is why
+the page keeps its `sample data` mark: `HomeData::sample` stays true in
+every source. The mark goes away once the traffic is real too.
+
+The title bar of the other pages (Settings and the rest) takes its clock,
+battery and link icon from the same data layer, so it always reads the same
+as the home page. In a snapshot it therefore shows the sample's values
+(`07:46`, the cable icon, `91%`), and two snapshots of a page are the same
+file.
 
 ## The tour
 
@@ -151,10 +159,14 @@ reader thread.
 - `demo` takes one step a second.
 - `tour` takes one stop every 2 s.
 - `live` reads the clock just after each new minute starts (20 ms after
-  it) and the battery every 10 s. The reader sleeps until whichever comes
-  first. That is about seven wake-ups a minute, each a few small file
-  reads, so it costs next to nothing. The battery files are read only when
-  10 s have passed since the last battery reading.
+  it), the network every 5 s and the battery every 10 s. The reader sleeps
+  until whichever comes first. That is at most about nineteen wake-ups a
+  minute, each a few small file reads, so it costs next to nothing. The
+  network and battery files are read only when their time has come; in
+  between their last reading is used again. A block that equals the last
+  one is not handed over, so the page only changes when a shown value
+  does (the Wi-Fi signal moves by a dBm now and then; that changes one
+  text).
 
 The reader sleeps on a clock that never jumps, and works out the next
 minute from the wall clock each time it wakes up. If the device's time is
@@ -265,6 +277,33 @@ On the page, `screen::home::battery_text()` in
 | unknown, any state | `--%` |
 
 There is no colour change yet.
+
+## The network link
+
+The link is read by `platform::read_network()` in
+`src/platform/network.h`, from files the kernel offers to every user. It
+only reads: it never brings an interface up or down, never starts a scan
+and never changes a setting. It takes the folder to read from, like the
+battery, so a test folder works on any computer.
+
+- **Which link (the uplink):** the default route with the lowest metric in
+  `/proc/net/route` whose interface has a cable or a network
+  (`/sys/class/net/<name>/carrier` reads `1`). It is Wi-Fi when
+  `/sys/class/net/<name>/wireless` exists and a cable when `type` is `1`;
+  any other interface is skipped. An interface that does not carry the
+  default route, such as a second Wi-Fi stick, is never the uplink. With
+  no such route the page shows its "no network" look.
+- **The router's address** is the gateway of that route.
+- **The address** is the interface's first IPv4 address, from the system's
+  list of addresses (`getifaddrs()`).
+- **The signal** is the level in `/proc/net/wireless`, in dBm. Anything
+  outside −255 to −1 is not known.
+- **The cable's speed** is `/sys/class/net/<name>/speed` in Mbit/s. Without
+  a cable that file gives an error or −1, which means not known.
+
+Whatever is not known shows `--`. The title bar shows the Wi-Fi icon by
+signal (−60 dBm and above full, −75 and above medium, lower low, not known
+without bars) or the cable icon; only the uplink's icon is shown.
 
 ## The demo script
 
@@ -496,9 +535,13 @@ later values are added at the end.
 ### `LOKICTL_DATA_ROOT`
 
 With `LOKICTL_DATA_ROOT=<folder>`, the `live` source reads
-`<folder>/sys/class/power_supply/...` in place of
-`/sys/class/power_supply/...`. That makes every battery state testable on
-the Mac. It only matters for `live`.
+`<folder>/sys/...` and `<folder>/proc/...` in place of `/sys/...` and
+`/proc/...`. That makes every battery state and every kind of link testable
+on the Mac. It only matters for `live`.
+
+The system keeps its list of addresses in no file, so in a test folder the
+system is not asked at all: `<folder>/addresses` stands in for it, one line
+per address, `<interface> <IPv4 address>`.
 
 A small test folder with a charger and a battery (all made up):
 
@@ -533,6 +576,26 @@ with `--data live` shows `72%+`; delete `capacity` and it shows `--%`:
 echo Charging > $D/battery0/status
 LOKICTL_DATA_ROOT=build/test-power ./build/darwin-arm64/Debug/lokictl --snapshot build/shots/home-charging.png --data live
 ```
+
+A link is added the same way. A made-up Wi-Fi link (the numbers in
+`proc/net/route` are hexadecimal, the address bytes in reverse order:
+`011E140A` is 10.20.30.1):
+
+```text
+build/test-power/
+  addresses               wlan0 10.20.30.44
+  proc/net/route          Iface Destination Gateway Flags RefCnt Use Metric Mask MTU Window IRTT
+                          wlan0 00000000 011E140A 0003 0 0 600 00000000 0 0 0
+  proc/net/wireless       (two header lines, then)
+                          wlan0: 0000 53. -57. -256 0 0 0 0 0 0
+  sys/class/net/wlan0/
+    carrier               1
+    type                  1
+    wireless/             (an empty folder)
+```
+
+`--print-data --data live` then prints `link=wifi`, `interface=wlan0`,
+`address=10.20.30.44`, `router=10.20.30.1` and `signal_dbm=-57`.
 
 ### On the device
 

@@ -260,8 +260,8 @@ std::string usage_text() {
             "the made-up values, moving on a fixed script\n";
     text += source_indent + "(one step a second when the app runs)\n";
     text += indent + "  " + padded(live_source, source_width) +
-            "real readings: the clock and the battery so\n";
-    text += source_indent + "far; the other values are still made up\n";
+            "real readings: the clock, the battery and\n";
+    text += source_indent + "the network link; the traffic is made up\n";
     text += indent + "  " + padded(wifi_source, source_width) +
             "fixed made-up values: joined to a Wi-Fi\n";
     text += source_indent + "network, no access point\n";

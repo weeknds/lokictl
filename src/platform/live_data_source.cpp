@@ -32,13 +32,17 @@ bool read_local_clock(int32_t& minutes) {
 
 } // namespace
 
-LiveDataSource::LiveDataSource(std::string data_root) {
+LiveDataSource::LiveDataSource(std::string data_root)
+    : sample_(model::sample_home_data()) {
     // Reads the time zone once, so localtime_r() below shows local time.
     tzset();
-    const std::filesystem::path root = data_root.empty() ? std::filesystem::path("/")
-                                                         : std::filesystem::path(std::move(data_root));
+    const bool test_folder = !data_root.empty();
+    root_ = test_folder ? std::filesystem::path(std::move(data_root)) : std::filesystem::path("/");
     // Relative on purpose: an absolute path on the right would drop the root.
-    power_supply_dir_ = root / "sys/class/power_supply";
+    power_supply_dir_ = root_ / "sys/class/power_supply";
+    if (test_folder) {
+        addresses_file_ = root_ / "addresses";
+    }
 }
 
 DataSourceKind LiveDataSource::kind() const {
@@ -46,14 +50,17 @@ DataSourceKind LiveDataSource::kind() const {
 }
 
 void LiveDataSource::read(model::HomeData& data) {
-    data = model::sample_home_data();
+    // The Client mode, no access point, no clients, every network value not
+    // known; the mark stays on while the rates are made up.
+    data = model::HomeData{};
+    data.sample = true;
+    data.mode = model::NetMode::Client;
+    data.ap_active = false;
 
     // If the system cannot tell the time, the clock keeps the sample's value;
     // the page still carries the sample mark.
     int32_t minutes = 0;
-    if (read_local_clock(minutes)) {
-        data.clock_minutes = minutes;
-    }
+    data.clock_minutes = read_local_clock(minutes) ? minutes : sample_.clock_minutes;
 
     const auto now = std::chrono::steady_clock::now();
     if (!battery_read_ || now - battery_read_at_ >= kBatteryInterval) {
@@ -63,11 +70,36 @@ void LiveDataSource::read(model::HomeData& data) {
     }
     data.battery_percent = battery_.percent;
     data.battery_state = battery_.state;
+
+    if (!network_read_ || now - network_read_at_ >= kNetworkInterval) {
+        network_ = read_network(root_, addresses_file_);
+        network_read_at_ = now;
+        network_read_ = true;
+    }
+    data.uplink_kind = network_.kind;
+    data.uplink_name = network_.interface_name;
+    data.uplink_address = network_.address;
+    data.gateway_address = network_.gateway;
+    data.uplink_speed_mbps = network_.speed_mbps;
+    data.wifi_signal_dbm = network_.signal_dbm;
+
+    if (network_.kind == model::LinkKind::None) {
+        // No traffic without a link; both histories stay all 0.
+        data.down_kbps = model::kRateUnknown;
+        data.up_kbps = model::kRateUnknown;
+    } else {
+        // Still made up (real rates come later).
+        data.down_kbps = sample_.down_kbps;
+        data.up_kbps = sample_.up_kbps;
+        data.down_history = sample_.down_history;
+        data.up_history = sample_.up_history;
+    }
 }
 
-// Worked out from the current time at every call: the reader then wakes
-// about seven times a minute (once for the minute, six times for the
-// battery), and a wake-up that comes early, or a jump of the wall clock,
+// Worked out from the current time at every call: the reader then wakes at
+// most about nineteen times a minute (once for the minute, every 5 s for the
+// network and every 10 s for the battery; those two often fall together),
+// and a wake-up that comes early, or a jump of the wall clock,
 // corrects itself at the next call. The minute follows the wall clock,
 // while the battery and the waiting follow the steady clock, which never
 // jumps.
@@ -83,11 +115,14 @@ milliseconds LiveDataSource::next_read_delay() {
     }
     milliseconds delay = minutes(1) - into_minute + kMinuteMargin;
 
-    if (!battery_read_) {
+    if (!battery_read_ || !network_read_) {
         delay = milliseconds(0);
     } else {
+        const auto now = std::chrono::steady_clock::now();
         const auto battery_due = battery_read_at_ + kBatteryInterval;
-        delay = std::min(delay, ceil<milliseconds>(battery_due - std::chrono::steady_clock::now()));
+        const auto network_due = network_read_at_ + kNetworkInterval;
+        delay = std::min(delay, ceil<milliseconds>(battery_due - now));
+        delay = std::min(delay, ceil<milliseconds>(network_due - now));
     }
     return std::max(delay, kMinimumDelay);
 }
