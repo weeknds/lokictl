@@ -42,8 +42,9 @@ namespace screen {
 // The values come from the view model (home()), which the data layer fills
 // (see app::DataController). The page keeps a copy of the block its layout
 // shows. When home_data_subject() counts a change and the new block differs
-// only in the values of home_values_only() (clock, battery and the uplink's
-// values), the layout's update() retexts the labels that already exist.
+// only in the values of home_values_only() (clock, battery, the uplink's
+// values and the traffic), the layout's update() retexts the labels and
+// resizes the bars that already exist.
 // Any other change, a new situation, empties the content area and builds the
 // layout again, once, with the new values and the current selection. The
 // selection lives in the view model as well (home_selection_subject()), so

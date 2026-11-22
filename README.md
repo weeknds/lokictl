@@ -17,9 +17,10 @@ Instrument, Constellation and Terminal.
 **Early development.** The app builds and runs in the desktop simulator. It
 opens on a home page drawn in each theme's own layout, and it has a
 Settings page where you pick the theme. On the device the home page shows
-the real time and battery charge; everything about the network on it is
-still made-up sample data. None of the network features above exist yet;
-the home page marks its values as `sample data` until they do.
+the real time, battery charge, network link and traffic (download and
+upload speed with a moving graph). None of the network features above
+exist yet; the made-up example data used in the simulator and in
+screenshots is marked `sample data`.
 
 The device package also builds, and it installs and runs on a real
 CardputerZero. From your computer, `scripts/device.sh` installs and starts it

@@ -68,13 +68,13 @@ public:
 
 // True when `next` differs from `shown`, the block a layout shows, only in
 // the values update() shows in place: the clock, the battery, the uplink's
-// interface, address and link speed, the router's address and the Wi-Fi
-// network's name, security and signal. Every other difference (the kind of
-// link, the access point, the mode, the clients, the rates, the sample mark
-// and any field added later) means the page is built again. It copies
-// `shown`, takes over exactly those values from `next` and compares the
-// copy with `next`, so a new field counts as "build again" by itself. The
-// rates join this list once their numbers and graphs change in place.
+// interface, address and link speed, the router's address, the Wi-Fi
+// network's name, security and signal, and the two rates with their
+// histories. Every other difference (the kind of link, the access point,
+// the mode, the clients, the sample mark and any field added later) means
+// the page is built again. It copies `shown`, takes over exactly those
+// values from `next` and compares the copy with `next`, so a new field
+// counts as "build again" by itself.
 inline bool home_values_only(const model::HomeData& shown, const model::HomeData& next) {
     model::HomeData copy = shown;
     copy.clock_minutes = next.clock_minutes;
@@ -87,6 +87,10 @@ inline bool home_values_only(const model::HomeData& shown, const model::HomeData
     copy.wifi_name = next.wifi_name;
     copy.wifi_security = next.wifi_security;
     copy.wifi_signal_dbm = next.wifi_signal_dbm;
+    copy.down_kbps = next.down_kbps;
+    copy.up_kbps = next.up_kbps;
+    copy.down_history = next.down_history;
+    copy.up_history = next.up_history;
     return copy == next;
 }
 

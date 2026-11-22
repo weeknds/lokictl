@@ -37,12 +37,14 @@ std::string battery_text(int32_t percent, model::BatteryState state);
 std::string uptime_text(int32_t seconds);
 
 // A rate in kbit/s as Mbit/s with one decimal, rounded: 2450 -> "2.5",
-// 40 -> "0.0". A rate that is not known (any negative value, such as
+// 40 -> "0.0". From 100 Mbit/s on (99950 and up) it is whole Mbit/s, so
+// below 1000 Mbit/s the number is never wider than "99.9": 120000 -> "120".
+// A rate that is not known (any negative value, such as
 // model::kRateUnknown) gives "--".
 std::string rate_text(int32_t kbps);
 
 // The same rate with the unit's short form after it, as Terminal writes it:
-// 2450 -> "2.5M". Not known gives "--", never "--M".
+// 2450 -> "2.5M", 120000 -> "120M". Not known gives "--", never "--M".
 std::string rate_short_text(int32_t kbps);
 
 // A signal level in dBm: -55 gives "55 dBm" with a minus sign in front. It

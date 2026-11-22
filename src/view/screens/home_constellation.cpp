@@ -309,6 +309,22 @@ std::string uplink_label_text(const model::HomeData& data) {
         {home::text_or_unknown(data.uplink_name), home::speed_text(data.uplink_speed_mbps)});
 }
 
+// The panel's traffic line, in both views: "↓3.8 ↑0.9 Mb/s"; "--" for a
+// rate that is not known. When that is wider than the panel's text in
+// `font`, as two rates of 10 Mbit/s or more are, each number takes the
+// unit's short form instead: "↓12.3M ↑10.2M".
+std::string traffic_label_text(const model::HomeData& data, const lv_font_t* font) {
+    std::string text = "\u2193" + home::rate_text(data.down_kbps) + " \u2191" +
+                       home::rate_text(data.up_kbps) + " Mb/s";
+    lv_point_t size{};
+    lv_text_get_size(&size, text.c_str(), font, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+    if (size.x <= kTextWidth) {
+        return text;
+    }
+    return "\u2193" + home::rate_short_text(data.down_kbps) + " \u2191" +
+           home::rate_short_text(data.up_kbps);
+}
+
 // The texts of the link view. build() and update() both take them from
 // here, so a page updated in place shows what a fresh one shows.
 
@@ -373,12 +389,14 @@ private:
     std::string uplink_shown_;
     lv_obj_t* uplink_star_{nullptr};
 
-    // The panel's clock and battery, and the text each shows; update()
-    // changes the text only.
+    // The panel's clock, battery and traffic line, and the text each shows;
+    // update() changes the text only.
     lv_obj_t* clock_{nullptr};
     std::string clock_shown_;
     lv_obj_t* battery_{nullptr};
     std::string battery_shown_;
+    lv_obj_t* traffic_{nullptr};
+    std::string traffic_shown_;
 
     // The panel's lines about the selected client.
     lv_obj_t* selected_caption_{nullptr};
@@ -702,12 +720,11 @@ void ConstellationHomeLayout::build_panel(const HomeContext& context) {
     fix_width(mode, kTextWidth, title);
     lv_obj_set_pos(mode, left, kModeY);
 
-    const std::string traffic = "\u2193" + home::rate_text(data.down_kbps) + " \u2191" +
-                                home::rate_text(data.up_kbps) + " Mb/s";
-    auto* rates = plain_label(panel, traffic.c_str());
-    view::style::text(rates, theme, view::FontRole::Small);
-    fix_width(rates, kTextWidth, small);
-    lv_obj_set_pos(rates, left, kTrafficY);
+    traffic_shown_ = traffic_label_text(data, small);
+    traffic_ = plain_label(panel, traffic_shown_.c_str());
+    view::style::text(traffic_, theme, view::FontRole::Small);
+    fix_width(traffic_, kTextWidth, small);
+    lv_obj_set_pos(traffic_, left, kTrafficY);
 
     if (link_view_) {
         build_link_rows(context, panel);
@@ -871,8 +888,9 @@ void ConstellationHomeLayout::select(const HomeContext& context, int32_t index) 
     lv_label_set_text(selected_address_, client.address.c_str());
 }
 
-// The panel's clock and battery follow the values in both views. The clock
-// keeps its place; the battery stays right-aligned in its box. In the
+// The panel's clock, battery and traffic line follow the values in both
+// views. The clock and the traffic line keep their places; the battery
+// stays right-aligned in its box. In the
 // router view the uplink beside its line follows too: its text grows to the
 // right, and the star beside it gives way to a wide text. In the link view
 // the link's label, the network's name and details, the signal or link
@@ -882,6 +900,8 @@ void ConstellationHomeLayout::update(const HomeContext& context) {
     const auto& data = context.data;
     set_text_if_changed(clock_, clock_shown_, clock_label_text(data));
     set_text_if_changed(battery_, battery_shown_, battery_label_text(data));
+    set_text_if_changed(traffic_, traffic_shown_,
+                        traffic_label_text(data, context.theme.font(view::FontRole::Small)));
     if (set_text_if_changed(uplink_, uplink_shown_, uplink_label_text(data))) {
         show_uplink_star(context.theme);
     }

@@ -62,6 +62,14 @@ public:
     // Whether the background thread runs.
     bool running() const;
 
+    // Tells the source whether a page that shows the traffic is on screen
+    // (see DataSource::set_traffic_shown()); it starts as shown. While the
+    // background thread runs, it wakes up, hands the flag to the source and
+    // asks it again how long to sleep, without taking a reading for that
+    // alone. Without the background thread the flag reaches the source with
+    // the next read_now().
+    void set_traffic_shown(bool shown);
+
     // Copies the newest block into `data` and returns true, but only if it
     // changed since the last take(); otherwise leaves `data` alone and
     // returns false.
@@ -78,18 +86,24 @@ private:
     bool read_source(model::HomeData& data);
     // Stores the block as the newest one, unless it equals the newest one.
     void publish(model::HomeData data);
+    // Gives the source the newest traffic flag. Called on the thread that
+    // asks the source.
+    void hand_over_traffic_shown();
 
     std::unique_ptr<DataSource> source_;
     const DataSourceKind kind_;
     std::thread thread_;
 
-    // The hand-over slot and the stop flag; the mutex guards all four.
+    // The hand-over slot, the stop flag and the traffic flag; the mutex
+    // guards all six.
     mutable std::mutex mutex_;
     std::condition_variable wake_;
     bool stop_requested_{false};
     model::HomeData latest_;
     bool has_latest_{false};
-    bool fresh_{false}; // latest_ changed since the last take()
+    bool fresh_{false};            // latest_ changed since the last take()
+    bool traffic_shown_{true};     // see set_traffic_shown()
+    bool traffic_changed_{false};  // set_traffic_shown() changed it since the source got it
 };
 
 } // namespace platform

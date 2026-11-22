@@ -134,7 +134,8 @@ bool operator!=(const HomeData& left, const HomeData& right);
 // Made-up example values for the home page: a router that shares its
 // cable uplink through its own access point, with three clients. They are
 // the `sample` data source as they are, the starting point of the `demo`
-// source, and every value the `live` source does not read yet.
+// source, and the `live` source's clock when the system cannot tell the
+// time.
 // HomeData::sample is true, so the page marks them as sample data. The
 // other made-up situations are in home_examples.h.
 HomeData sample_home_data();

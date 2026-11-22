@@ -203,6 +203,16 @@ private:
     lv_obj_t* status_{nullptr};
     std::string status_shown_;
 
+    // The download and upload numbers, in both views, their captions and
+    // the text each number shows. When a number changes, update() moves its
+    // caption with it.
+    lv_obj_t* down_number_{nullptr};
+    std::string down_number_shown_;
+    lv_obj_t* down_caption_{nullptr};
+    lv_obj_t* up_number_{nullptr};
+    std::string up_number_shown_;
+    lv_obj_t* up_caption_{nullptr};
+
     // The router view's selected client's line; select() changes their
     // text only. They stay null in the link view.
     lv_obj_t* tag_{nullptr};
@@ -355,6 +365,14 @@ void InstrumentHomeLayout::build_numbers(const HomeContext& context) {
             first_number_ = number;
             first_number_shown_ = rows[index].value;
             first_caption_ = caption;
+        } else if (index == 1) {
+            down_number_ = number;
+            down_number_shown_ = rows[index].value;
+            down_caption_ = caption;
+        } else if (index == 2) {
+            up_number_ = number;
+            up_number_shown_ = rows[index].value;
+            up_caption_ = caption;
         }
     }
 }
@@ -500,16 +518,23 @@ void InstrumentHomeLayout::select(const HomeContext& context, int32_t index) {
     lv_label_set_text(signal_, home::signal_text(client.signal_dbm).c_str());
 }
 
-// The strip's clock and battery follow the values; the router view shows
-// no other value update() follows. The strip's label keeps its alignment,
-// so LVGL places a text of another width again at the same right end. In
-// the link view the network line, the first number, the link line, the link
-// speed and both addresses follow too; each keeps its box, and the first
-// number's caption moves with the number's width. The labels of the other
-// view are null, and set_text_if_changed() skips them.
+// The strip's clock and battery and the download and upload numbers follow
+// the values in both views. The strip's label keeps its alignment, so LVGL
+// places a text of another width again at the same right end; a rate's
+// caption moves with its number's width. In the link view the network line,
+// the first number, the link line, the link speed and both addresses follow
+// too; each keeps its box, and the first number's caption moves with the
+// number's width. The labels of the other view are null, and
+// set_text_if_changed() skips them.
 void InstrumentHomeLayout::update(const HomeContext& context) {
     const auto& data = context.data;
     set_text_if_changed(status_, status_shown_, status_text(data));
+    if (set_text_if_changed(down_number_, down_number_shown_, home::rate_text(data.down_kbps))) {
+        place_caption(down_caption_, down_number_);
+    }
+    if (set_text_if_changed(up_number_, up_number_shown_, home::rate_text(data.up_kbps))) {
+        place_caption(up_caption_, up_number_);
+    }
     set_text_if_changed(network_, network_shown_, network_line_text(data));
     if (set_text_if_changed(first_number_, first_number_shown_, first_number_text(data))) {
         place_caption(first_caption_, first_number_);

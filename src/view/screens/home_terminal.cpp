@@ -246,14 +246,20 @@ private:
                               const char* label,
                               const std::string& value);
 
-    // One traffic row of the net pane.
+    // One traffic row of the net pane, into `row`.
+    struct TrafficRow {
+        lv_obj_t* graph{nullptr};
+        lv_obj_t* rate{nullptr};
+        std::string rate_shown; // the text `rate` shows
+    };
     void build_traffic_row(const HomeContext& context,
                            lv_obj_t* parent,
                            int32_t y,
                            const char* arrow,
                            const uint8_t* history,
                            int32_t kbps,
-                           lv_color_t color);
+                           lv_color_t color,
+                           TrafficRow& row);
 
     // The clock in the net pane's border and the battery in the mode
     // pane's, and the text each shows; update() changes the text only.
@@ -261,6 +267,11 @@ private:
     std::string clock_shown_;
     lv_obj_t* battery_note_{nullptr};
     std::string battery_shown_;
+
+    // The download and upload rows of the net pane; update() changes the
+    // rates' text and the bars' heights.
+    TrafficRow down_row_;
+    TrafficRow up_row_;
 
     // The uplink's interface, address and link speed in the net pane, and
     // the text each shows; update() changes the text only.
@@ -321,20 +332,21 @@ void TerminalHomeLayout::build_traffic_row(const HomeContext& context,
                                            const char* arrow,
                                            const uint8_t* history,
                                            int32_t kbps,
-                                           lv_color_t color) {
+                                           lv_color_t color,
+                                           TrafficRow& row) {
     const auto& theme = context.theme;
 
     small_label(parent, theme, arrow, color, 0, y);
 
-    auto* graph = view::widgets::build_bar_graph(
+    row.graph = view::widgets::build_bar_graph(
         parent, history, model::kHomeHistoryLength, kGraphBarWidth, kGraphGap, kGraphHeight, color);
-    lv_obj_set_pos(graph, kGraphX, y + kGraphTop);
+    lv_obj_set_pos(row.graph, kGraphX, y + kGraphTop);
 
-    const std::string rate = home::rate_short_text(kbps);
-    auto* value = plain_label(parent, rate.c_str());
-    view::style::text(value, theme, view::FontRole::Small, color);
-    align_text_right(value, kRateWidth, theme.font(view::FontRole::Small));
-    lv_obj_align(value, LV_ALIGN_TOP_RIGHT, 0, y);
+    row.rate_shown = home::rate_short_text(kbps);
+    row.rate = plain_label(parent, row.rate_shown.c_str());
+    view::style::text(row.rate, theme, view::FontRole::Small, color);
+    align_text_right(row.rate, kRateWidth, theme.font(view::FontRole::Small));
+    lv_obj_align(row.rate, LV_ALIGN_TOP_RIGHT, 0, y);
 }
 
 void TerminalHomeLayout::build_net(const HomeContext& context) {
@@ -349,9 +361,9 @@ void TerminalHomeLayout::build_net(const HomeContext& context) {
     clock_note_ = view::style::pane_note(pane, theme, clock_shown_.c_str(), theme.colors.muted);
 
     build_traffic_row(context, pane.content, 0, "\u2193", data.down_history.data(), data.down_kbps,
-                      theme.colors.accent2);
+                      theme.colors.accent2, down_row_);
     build_traffic_row(context, pane.content, kRowStep, "\u2191", data.up_history.data(),
-                      data.up_kbps, theme.colors.selection);
+                      data.up_kbps, theme.colors.selection, up_row_);
 
     const int32_t uplink_y = 2 * kRowStep;
     if (home::is_offline(data)) {
@@ -611,17 +623,22 @@ void TerminalHomeLayout::select(const HomeContext& context, int32_t index) {
     }
 }
 
-// The two border notes and the uplink's row of the net pane follow the
-// values. Each note keeps its alignment to its pane's right end, so a wider
-// text grows to the left and the clock stays where it is. The interface and
-// the address keep their fixed boxes, and the link speed stays right-aligned
-// in its own. In the link view the link pane's values follow too, each in
+// The two border notes, the traffic rows and the uplink's row of the net
+// pane follow the values. Each note keeps its alignment to its pane's right
+// end, so a wider text grows to the left and the clock stays where it is.
+// Each rate stays right-aligned in its box, and each graph's bars change
+// height in place. The interface and the address keep their fixed boxes,
+// and the link speed stays right-aligned in its own. In the link view the link pane's values follow too, each in
 // its fixed box. The labels the built view does not have are null, and
 // set_text_if_changed() skips them.
 void TerminalHomeLayout::update(const HomeContext& context) {
     const auto& data = context.data;
     set_text_if_changed(clock_note_, clock_shown_, clock_note_text(data));
     set_text_if_changed(battery_note_, battery_shown_, battery_note_text(data));
+    set_text_if_changed(down_row_.rate, down_row_.rate_shown, home::rate_short_text(data.down_kbps));
+    set_text_if_changed(up_row_.rate, up_row_.rate_shown, home::rate_short_text(data.up_kbps));
+    view::widgets::update_bar_graph(down_row_.graph, data.down_history.data(), data.down_history.size());
+    view::widgets::update_bar_graph(up_row_.graph, data.up_history.data(), data.up_history.size());
     set_text_if_changed(interface_, interface_shown_, interface_text(data));
     set_text_if_changed(uplink_address_, uplink_address_shown_, uplink_address_text(data));
     set_text_if_changed(uplink_speed_, uplink_speed_shown_, uplink_speed_text(data));

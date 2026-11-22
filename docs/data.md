@@ -11,12 +11,12 @@ page shows each new value while it is open: a value in place, and a new
 situation (another kind of link, an access point switched on or off, other
 clients) by building its content again, once.
 
-So far two values are real: the **clock** and the **battery**. Everything
-about the network is still made up. Made-up example situations (Wi-Fi,
+On the device every value is real: the **clock**, the **battery**, the
+**network link** and its **traffic**. Made-up example situations (Wi-Fi,
 cable, no network) let every page be looked at and tested in the states the
-device can really be in, before real network values arrive. This page
-explains where the values come from, how they reach a page, how to add a
-new value, and how to test all of it by script.
+device can really be in, on any computer. This page explains where the
+values come from, how they reach a page, how to add a new value, and how to
+test all of it by script.
 
 ## The sources
 
@@ -26,7 +26,7 @@ Where the values come from is called the source. There are seven:
 |---|---|
 | `sample` | the router sample: fixed made-up values that never change. A router with its own access point and three clients; the clock says `07:46` and the battery `91%` |
 | `demo` | the router sample, moving on a fixed script (see [The demo script](#the-demo-script)) |
-| `live` | real readings: the device's clock, battery and network link (see [What is real today](#what-is-real-today)); the traffic is still made up |
+| `live` | real readings: the device's clock, battery, network link and traffic (see [What is real today](#what-is-real-today)) |
 | `wifi` | fixed made-up values: joined to a Wi-Fi network, no access point, no clients |
 | `cable` | fixed made-up values: on a network cable, no access point, no clients |
 | `offline` | fixed made-up values: no network at all; every network value is not known |
@@ -35,8 +35,9 @@ Where the values come from is called the source. There are seven:
 `wifi`, `cable`, `offline` and `tour` show the same clock (`07:46`) and
 battery (`91%`) as the sample, and all of them keep the `sample data` mark.
 Their values are in one place, `src/model/home_examples.cpp`, and are all
-made up. `demo` is still the same script on the router sample. `live` shows
-the device as it is: in the Client mode, with its real link.
+made up. `demo` is still the same script on the router sample, and keeps
+the mark too. `live` shows the device as it is: in the Client mode, with
+its real link and traffic, and without the mark.
 
 Which one is used:
 
@@ -62,17 +63,19 @@ With `live`:
   (see [The battery](#the-battery));
 - the network link: Wi-Fi, cable or none, the interface, its IPv4 address,
   the router's address, the Wi-Fi signal and the cable's speed (see
-  [The network link](#the-network-link)).
+  [The network link](#the-network-link));
+- the traffic: the download and upload rates and their graphs (see
+  [The traffic](#the-traffic)).
 
 The device is shown in the Client mode, without an access point and without
 clients (those come with the modes). The Wi-Fi network's name, its security
 and its speed are not known yet, so the page shows `wi-fi network` and `--`
 for them, never a made-up name.
 
-The traffic (the two rates and their histories) is still made up: with a
-link it is the router sample's, without a link it is not known. That is why
-the page keeps its `sample data` mark: `HomeData::sample` stays true in
-every source. The mark goes away once the traffic is real too.
+Nothing is made up any more, so `live` sets `HomeData::sample` to false
+and the page shows no `sample data` mark. (Only if the system could not
+tell the time would the clock fall back to the sample's `07:46`, and the
+mark come back with it.) Every other source keeps the mark.
 
 The title bar of the other pages (Settings and the rest) takes its clock,
 battery and link icon from the same data layer, so it always reads the same
@@ -161,9 +164,11 @@ reader thread.
 - `live` reads the clock just after each new minute starts (20 ms after
   it), the network every 5 s and the battery every 10 s. The reader sleeps
   until whichever comes first. That is at most about nineteen wake-ups a
-  minute, each a few small file reads, so it costs next to nothing. The
-  network and battery files are read only when their time has come; in
-  between their last reading is used again. A block that equals the last
+  minute, each a few small file reads, so it costs next to nothing. While
+  the home page is on screen it also reads the traffic once a second (see
+  [The traffic](#the-traffic)). The network, battery and traffic files are
+  read only when their time has come; in between their last reading is
+  used again. A block that equals the last
   one is not handed over, so the page only changes when a shown value
   does (the Wi-Fi signal moves by a dBm now and then; that changes one
   text).
@@ -213,12 +218,12 @@ new block needs, with `home_values_only()` in
 `src/view/screens/home_layout.h`:
 
 - **In place**, when the new block differs only in the clock, the battery,
-  the uplink's interface, address and link speed, the router's address, or
-  the Wi-Fi network's name, security and signal: `HomeScreen` calls
-  `update()`.
+  the uplink's interface, address and link speed, the router's address,
+  the Wi-Fi network's name, security and signal, or the two rates and their
+  histories: `HomeScreen` calls `update()`.
 - **Built again**, for any other difference (the kind of link, the access
-  point, the mode, the clients, the rates, the sample mark, or a field
-  added later): `HomeScreen` throws the layout away, empties the page's
+  point, the mode, the clients, the sample mark, or a field added
+  later): `HomeScreen` throws the layout away, empties the page's
   content area, and a new layout builds it afresh, once (on the device a
   new situation costs one frame of roughly 20 to 40 ms, depending on the
   theme). The soft-key bar, the page and its observers stay. [home.md](home.md#values-in-place-a-new-situation-built-again)
@@ -243,12 +248,14 @@ below. The battery text is right-aligned and grows to the left. In
 Constellation and Terminal the clock stays where it is. In Instrument the
 clock and the battery are one right-aligned label that ends 8 px from the
 right edge, so a longer battery text pushes the clock to the left. `--%`
-is as wide as `91%`. Names and addresses sit in boxes of fixed width. Two things change with a value:
-Instrument's caption next to its first number (`DBM` or `MBIT`) follows
-the number when its width changes, for example from `−57` to `−100`; and
-in Constellation's router view the dim star right of the uplink's text is
-hidden while a wide text, such as `eth0 · 1000M`, would come too close to
-it.
+is as wide as `91%`. Names and addresses sit in boxes of fixed width. A
+few things change with a value: Instrument's captions next to its numbers
+(`DBM` or `MBIT`, `MB/S`) follow their number when its width changes, for
+example from `−57` to `−100` or from `9.9` to `12.0`; in Constellation's
+router view the dim star right of the uplink's text is hidden while a wide
+text, such as `eth0 · 1000M`, would come too close to it; and Terminal's
+bars change height (only the bars whose height changed are touched, see
+`view::widgets::update_bar_graph()`).
 
 ## The battery
 
@@ -305,6 +312,43 @@ Whatever is not known shows `--`. The title bar shows the Wi-Fi icon by
 signal (−60 dBm and above full, −75 and above medium, lower low, not known
 without bars) or the cable icon; only the uplink's icon is shown.
 
+## The traffic
+
+The traffic is read by `platform::read_traffic_counters()` in
+`src/platform/network.h`, and turned into rates by
+`platform::LiveDataSource`. NetworkManager's own traffic statistics cannot
+be switched on by an app, so the rates come from the kernel's byte
+counters, which every user may read:
+`/sys/class/net/<uplink>/statistics/rx_bytes` (received, the download) and
+`tx_bytes` (sent, the upload).
+
+- **Only while it is seen.** `app::DataController` follows the current page
+  and tells the reader whether the home page, the only page with the
+  traffic, is on top (`DataReader::set_traffic_shown()`). The reader wakes
+  up at once and hands that on to the source. While another page is open
+  nothing reads the counters, which saves battery.
+- **Once a second.** The rate is the bytes since the reading before, times
+  8, over the time between the two readings (measured, not assumed), in
+  kbit/s. Each new pair of rates goes into the two histories, the last 24
+  readings, which the Terminal theme draws as its two bar graphs.
+- **Starting afresh.** The rates are not known (`--`), and both graphs are
+  empty, after the first reading, without a link, while the home page is
+  not on screen, when a counter cannot be read or went backwards (the
+  interface came up again), and when the uplink changes. Each of these
+  starts the traffic afresh, so the page never shows a huge made-up jump.
+  So a second after the home page opens, the first rates appear, and the
+  graphs fill from the right.
+- **The graph's scale.** `model::RateHistory` (`src/model/rate_history.h`)
+  keeps the rates and gives each bar as a share of the largest rate in its
+  history, so each graph fills its own height. A quiet link would make a
+  few stray bytes the peak, so the scale is never lower than 100 kbit/s
+  (`kRateGraphFloorKbps`): a link that reads `0.0` never fills its graph.
+- **Text.** Rates are written in Mbit/s with one decimal (`3.8`), and from
+  100 Mbit/s on in whole Mbit/s (`120`), so a number below 1000 Mbit/s is
+  never wider than `99.9`. When Constellation's line `↓3.8 ↑0.9 Mb/s`
+  does not fit its panel (two rates of 10 Mbit/s or more), it writes
+  `↓12.3M ↑10.2M` instead.
+
 ## The demo script
 
 The demo shows that the page follows its data. It is fixed, so pictures of
@@ -317,6 +361,11 @@ sample.
   discharging, down to 5 %. Then it charges, one more per step, up to
   100 %. It stays idle at 100 % for three steps, then discharges again down
   to 5 %, and so on in the same cycle.
+- The traffic moves: at step `n` the sample's two histories are turned
+  left by `n` places (the oldest value comes back as the newest), so the
+  graph scrolls round and round, and each rate matches its newest bar
+  (the sample's rate times that bar over the sample's own newest bar).
+  Step 1 reads `0.5` down and `0.4` up. The clients keep their rates.
 - Every other value stays the sample's.
 
 Fixed points (`--print-data --data demo --data-steps <n>` prints them):
@@ -408,7 +457,8 @@ same way and, in a snapshot, updates the page or builds it again, one after
 the other, so nothing has to be waited for and the same command always
 gives the same picture. With `demo` each step is one step of the script;
 with `tour` each step is one stop; with `live` a step reads the clock
-again, and the battery only once 10 s have passed. With `sample`, `wifi`,
+again, and the battery only once 10 s have passed (in a test folder each
+step also reads the traffic; see [`LOKICTL_DATA_ROOT`](#lokictl_data_root)). With `sample`, `wifi`,
 `cable` and `offline` the steps change nothing. A tour step usually builds
 the page again, so many thousands of tour steps take minutes in a
 snapshot, while demo steps stay fast.
@@ -501,6 +551,8 @@ access_point=no
 clients=0
 down_kbps=2400
 up_kbps=300
+down_history=12,18,30,44,62,80,100,86,70,52,40,30,24,20,28,40,56,72,60,46,34,26,30,38
+up_history=8,10,8,14,22,12,8,10,30,55,100,60,28,14,8,8,12,20,12,8,10,16,10,8
 ```
 
 The lines always come in this order:
@@ -524,6 +576,7 @@ The lines always come in this order:
 | `access_point=` | `yes` while the device runs its own access point, else `no` |
 | `clients=` | the number of connected clients |
 | `down_kbps=`, `up_kbps=` | the current rates in kbit/s |
+| `down_history=`, `up_history=` | the two graphs: 24 shares of 0 to 100 (100 is the history's peak), oldest first, separated by commas |
 
 A value that is not known prints `unknown`. `network=`, `security=` and
 `signal_dbm=` belong to a Wi-Fi network only, so they say `unknown` on a
@@ -531,6 +584,11 @@ cable and in the router sample. `--data offline` prints `mode=client` and
 `link=none`, with `unknown` for every value from `interface=` to
 `signal_dbm=` and for both rates; the page says `OFFLINE` for it. Lines for
 later values are added at the end.
+
+With `live` on the device and a link, `--print-data` waits one second after
+the first reading and takes one more, so the rates it prints are real (a
+rate needs two readings of the counters). In a test folder it does not
+wait.
 
 ### `LOKICTL_DATA_ROOT`
 
@@ -596,6 +654,28 @@ build/test-power/
 
 `--print-data --data live` then prints `link=wifi`, `interface=wlan0`,
 `address=10.20.30.44`, `router=10.20.30.1` and `signal_dbm=-57`.
+
+The traffic comes from `sys/class/net/<interface>/statistics/rx_bytes` and
+`tx_bytes`. In a test folder the traffic is timed by the readings, not by
+the clock, so the same folder always gives the same rates and graphs:
+
+- every reading (the first one and each `--data-steps` step) reads the
+  counters and counts as exactly one second after the one before;
+- a counter file may hold several numbers, one per line: reading 1 takes
+  the first line, reading 2 the second, and so on, and once the lines run
+  out the last one again (a rate of 0).
+
+For example, in the Wi-Fi folder above, with
+`sys/class/net/wlan0/statistics/rx_bytes` holding the lines `0`, `1000` and
+`313500` and `tx_bytes` holding `0`, `500` and `13000`:
+
+```sh
+LOKICTL_DATA_ROOT=build/test-power ./build/darwin-arm64/Debug/lokictl --print-data --data live --data-steps 2
+```
+
+prints `down_kbps=2500` and `up_kbps=100` (312500 bytes in a second are
+2500 kbit/s), and the histories end in `...,0,100` and `...,4,100`. With
+`--data-steps 0` both rates are `unknown`: one reading is not enough.
 
 ### On the device
 

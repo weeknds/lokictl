@@ -34,9 +34,13 @@ namespace app {
 //   clients=<number of connected clients>
 //   down_kbps=<download rate in kbit/s|unknown>
 //   up_kbps=<upload rate in kbit/s|unknown>
+//   down_history=<24 shares of 0-100, oldest first, by commas>
+//   up_history=<the same for the upload>
 // A value that is not known (an empty text, an unknown speed or signal, a
 // negative rate) prints `unknown`. The first five lines came first and
-// stay first. It starts no screen, no logger and no background thread,
+// stay first. With the live source on the real system (an empty
+// `data_root`) and a link, it waits one traffic interval (1 s) after the
+// first reading and takes one more before the steps, so the rates are real. It starts no screen, no logger and no background thread,
 // never reads or writes the settings file, and prints nothing else.
 // `data_root` is handed to the source (see platform::make_data_source()).
 // Returns the process exit code.

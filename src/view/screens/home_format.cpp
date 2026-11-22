@@ -24,6 +24,9 @@ constexpr int32_t kMinutesPerDay = 24 * 60;
 constexpr int32_t kSignalLimit = 999;
 // Rounding adds half a step of 100 kbit/s; this keeps the sum in range.
 constexpr int32_t kRateLimitKbps = 2000000000;
+// A rate that rounds to this many tenths of a Mbit/s (100.0) or more is
+// written in whole Mbit/s.
+constexpr int32_t kWholeRateTenths = 1000;
 
 // A signal clamped to -999..999, as text with the real minus sign.
 std::string signal_number(int32_t dbm) {
@@ -76,6 +79,11 @@ std::string rate_text(int32_t kbps) {
     const int32_t clamped = std::clamp<int32_t>(kbps, 0, kRateLimitKbps);
     const int32_t tenths = (clamped + 50) / 100;
     char buffer[kTextBufferSize];
+    if (tenths >= kWholeRateTenths) {
+        // From 100 Mbit/s on, whole Mbit/s: "120" is no wider than "99.9".
+        std::snprintf(buffer, sizeof(buffer), "%d", static_cast<int>((clamped + 500) / 1000));
+        return buffer;
+    }
     std::snprintf(buffer, sizeof(buffer), "%d.%d",
                   static_cast<int>(tenths / 10), static_cast<int>(tenths % 10));
     return buffer;

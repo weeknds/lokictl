@@ -9,6 +9,8 @@
 #include "home_examples.h"
 #include "live_data_source.h"
 
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
 
 namespace platform {
@@ -107,7 +109,8 @@ private:
 // 00:00), and the battery runs down from the sample's charge by one per
 // cent per step to the floor, then charges by one per step to full, stays
 // idle on the charger for a few steps, runs down to the floor again, and
-// so on. Every value not named here stays the sample's.
+// so on. The traffic moves too (see demo_traffic()). Every value not named
+// here stays the sample's; the clients keep their rates.
 constexpr int32_t kMinutesPerDay = 24 * 60;
 constexpr int64_t kDemoBatteryFloor = 5;    // the lowest charge of the script, per cent
 constexpr int64_t kDemoBatteryFull = 100;   // the highest charge of the script, per cent
@@ -118,6 +121,30 @@ constexpr milliseconds kDemoStepTime{1000}; // one step per second in a window
 constexpr int64_t kDemoRiseSteps = kDemoBatteryFull - kDemoBatteryFloor;
 // One whole cycle after the first run down: up to full, idle, down to the floor.
 constexpr int64_t kDemoCycleSteps = 2 * kDemoRiseSteps + kDemoIdleSteps;
+
+// `rate` scaled by share / reference, rounded; `rate` itself when the
+// reference is 0.
+int32_t scaled_rate(int32_t rate, uint8_t share, uint8_t reference) {
+    if (reference == 0) {
+        return rate;
+    }
+    return static_cast<int32_t>((static_cast<int64_t>(rate) * share + reference / 2) / reference);
+}
+
+// The demo's traffic at `step`: the sample's two histories turned left by
+// one place per step, so the oldest value comes back as the newest and the
+// graph scrolls, round and round. Each rate matches its newest value: the
+// sample's rate times that value over the sample's own newest value. At
+// step 0 it is the sample's traffic as it is.
+void demo_traffic(model::HomeData& data, uint64_t step) {
+    const auto shift = static_cast<std::ptrdiff_t>(step % model::kHomeHistoryLength);
+    const uint8_t down_reference = data.down_history.back();
+    const uint8_t up_reference = data.up_history.back();
+    std::rotate(data.down_history.begin(), data.down_history.begin() + shift, data.down_history.end());
+    std::rotate(data.up_history.begin(), data.up_history.begin() + shift, data.up_history.end());
+    data.down_kbps = scaled_rate(data.down_kbps, data.down_history.back(), down_reference);
+    data.up_kbps = scaled_rate(data.up_kbps, data.up_history.back(), up_reference);
+}
 
 model::HomeData demo_step(uint64_t step) {
     model::HomeData data = model::sample_home_data();
@@ -152,6 +179,7 @@ model::HomeData demo_step(uint64_t step) {
     }
     data.battery_percent = static_cast<int32_t>(percent);
     data.battery_state = state;
+    demo_traffic(data, step);
     return data;
 }
 

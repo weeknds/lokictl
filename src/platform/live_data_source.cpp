@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <ctime>
+#include <limits>
 #include <time.h>
 #include <utility>
 
@@ -30,17 +31,29 @@ bool read_local_clock(int32_t& minutes) {
     return true;
 }
 
+// `bytes` sent or received in `elapsed_ms` as kbit/s (one kbit/s is one bit
+// per millisecond), rounded; at most the largest int32_t. `elapsed_ms` is
+// above 0.
+int32_t rate_kbps(uint64_t bytes, int64_t elapsed_ms) {
+    constexpr auto kMaxRate = static_cast<uint64_t>(std::numeric_limits<int32_t>::max());
+    const auto ms = static_cast<uint64_t>(elapsed_ms);
+    if (bytes > (std::numeric_limits<uint64_t>::max() - ms / 2) / 8) {
+        return std::numeric_limits<int32_t>::max();
+    }
+    return static_cast<int32_t>(std::min((bytes * 8 + ms / 2) / ms, kMaxRate));
+}
+
 } // namespace
 
 LiveDataSource::LiveDataSource(std::string data_root)
-    : sample_(model::sample_home_data()) {
+    : sample_(model::sample_home_data()),
+      test_folder_(!data_root.empty()) {
     // Reads the time zone once, so localtime_r() below shows local time.
     tzset();
-    const bool test_folder = !data_root.empty();
-    root_ = test_folder ? std::filesystem::path(std::move(data_root)) : std::filesystem::path("/");
+    root_ = test_folder_ ? std::filesystem::path(std::move(data_root)) : std::filesystem::path("/");
     // Relative on purpose: an absolute path on the right would drop the root.
     power_supply_dir_ = root_ / "sys/class/power_supply";
-    if (test_folder) {
+    if (test_folder_) {
         addresses_file_ = root_ / "addresses";
     }
 }
@@ -49,18 +62,23 @@ DataSourceKind LiveDataSource::kind() const {
     return DataSourceKind::Live;
 }
 
+void LiveDataSource::set_traffic_shown(bool shown) {
+    traffic_shown_ = shown;
+}
+
 void LiveDataSource::read(model::HomeData& data) {
     // The Client mode, no access point, no clients, every network value not
-    // known; the mark stays on while the rates are made up.
+    // known.
     data = model::HomeData{};
-    data.sample = true;
     data.mode = model::NetMode::Client;
     data.ap_active = false;
 
-    // If the system cannot tell the time, the clock keeps the sample's value;
-    // the page still carries the sample mark.
+    // If the system cannot tell the time, the clock keeps the sample's value
+    // and the page carries the sample mark, so nobody takes it for the time.
     int32_t minutes = 0;
-    data.clock_minutes = read_local_clock(minutes) ? minutes : sample_.clock_minutes;
+    const bool clock_known = read_local_clock(minutes);
+    data.clock_minutes = clock_known ? minutes : sample_.clock_minutes;
+    data.sample = !clock_known;
 
     const auto now = std::chrono::steady_clock::now();
     if (!battery_read_ || now - battery_read_at_ >= kBatteryInterval) {
@@ -83,25 +101,75 @@ void LiveDataSource::read(model::HomeData& data) {
     data.uplink_speed_mbps = network_.speed_mbps;
     data.wifi_signal_dbm = network_.signal_dbm;
 
-    if (network_.kind == model::LinkKind::None) {
-        // No traffic without a link; both histories stay all 0.
-        data.down_kbps = model::kRateUnknown;
-        data.up_kbps = model::kRateUnknown;
-    } else {
-        // Still made up (real rates come later).
-        data.down_kbps = sample_.down_kbps;
-        data.up_kbps = sample_.up_kbps;
-        data.down_history = sample_.down_history;
-        data.up_history = sample_.up_history;
+    traffic_shown_read_ = traffic_shown_;
+    if (network_.kind == model::LinkKind::None || !traffic_shown_) {
+        forget_traffic();
+    } else if (test_folder_ || !traffic_tried_ || traffic_interface_ != network_.interface_name ||
+               now - traffic_tried_at_ >= kTrafficInterval) {
+        read_traffic();
     }
+    data.down_kbps = down_kbps_;
+    data.up_kbps = up_kbps_;
+    data.down_history = down_history_.shares();
+    data.up_history = up_history_.shares();
+}
+
+void LiveDataSource::forget_traffic() {
+    traffic_tried_ = false;
+    traffic_interface_.clear();
+    has_counters_ = false;
+    down_kbps_ = model::kRateUnknown;
+    up_kbps_ = model::kRateUnknown;
+    down_history_.clear();
+    up_history_.clear();
+}
+
+void LiveDataSource::read_traffic() {
+    // Taken right at the counters, after the other files, so the time
+    // between two readings is the time between the two counter reads.
+    const auto now = std::chrono::steady_clock::now();
+    const bool same_uplink = traffic_tried_ && traffic_interface_ == network_.interface_name;
+    const int64_t elapsed_ms =
+        test_folder_ ? kTrafficInterval.count()
+                     : std::chrono::duration_cast<milliseconds>(now - traffic_tried_at_).count();
+
+    TrafficCounters reading;
+    const std::size_t line = test_folder_ ? counter_line_++ : 0;
+    const bool read_ok = read_traffic_counters(root_, network_.interface_name, line, reading);
+
+    // A rate needs two good readings of the same uplink, in order, with time
+    // between them. Anything else starts the traffic afresh, so a counter
+    // that went backwards (the interface came up again) never shows a huge
+    // number.
+    if (read_ok && has_counters_ && same_uplink && elapsed_ms > 0 &&
+        reading.received >= counters_.received && reading.sent >= counters_.sent) {
+        down_kbps_ = rate_kbps(reading.received - counters_.received, elapsed_ms);
+        up_kbps_ = rate_kbps(reading.sent - counters_.sent, elapsed_ms);
+        down_history_.push(down_kbps_);
+        up_history_.push(up_kbps_);
+    } else {
+        down_kbps_ = model::kRateUnknown;
+        up_kbps_ = model::kRateUnknown;
+        down_history_.clear();
+        up_history_.clear();
+    }
+
+    has_counters_ = read_ok;
+    if (read_ok) {
+        counters_ = reading;
+    }
+    traffic_tried_ = true;
+    traffic_tried_at_ = now;
+    traffic_interface_ = network_.interface_name;
 }
 
 // Worked out from the current time at every call: the reader then wakes at
 // most about nineteen times a minute (once for the minute, every 5 s for the
 // network and every 10 s for the battery; those two often fall together),
-// and a wake-up that comes early, or a jump of the wall clock,
-// corrects itself at the next call. The minute follows the wall clock,
-// while the battery and the waiting follow the steady clock, which never
+// and once a second more while the home page shows the traffic. A wake-up
+// that comes early, or a jump of the wall clock, corrects itself at the
+// next call. The minute follows the wall clock, while the battery, the
+// network, the traffic and the waiting follow the steady clock, which never
 // jumps.
 milliseconds LiveDataSource::next_read_delay() {
     using std::chrono::ceil;
@@ -115,7 +183,7 @@ milliseconds LiveDataSource::next_read_delay() {
     }
     milliseconds delay = minutes(1) - into_minute + kMinuteMargin;
 
-    if (!battery_read_ || !network_read_) {
+    if (!battery_read_ || !network_read_ || traffic_shown_ != traffic_shown_read_) {
         delay = milliseconds(0);
     } else {
         const auto now = std::chrono::steady_clock::now();
@@ -123,6 +191,10 @@ milliseconds LiveDataSource::next_read_delay() {
         const auto network_due = network_read_at_ + kNetworkInterval;
         delay = std::min(delay, ceil<milliseconds>(battery_due - now));
         delay = std::min(delay, ceil<milliseconds>(network_due - now));
+        if (traffic_shown_ && network_.kind != model::LinkKind::None) {
+            const auto traffic_due = traffic_tried_ ? traffic_tried_at_ + kTrafficInterval : now;
+            delay = std::min(delay, ceil<milliseconds>(traffic_due - now));
+        }
     }
     return std::max(delay, kMinimumDelay);
 }

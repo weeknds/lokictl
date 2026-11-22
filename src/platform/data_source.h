@@ -21,7 +21,7 @@ namespace platform {
 enum class DataSourceKind {
     Sample,  // the fixed made-up router values; they never change
     Demo,    // the made-up values, moving on a fixed script (for the simulator and tests)
-    Live,    // real readings; values not read yet are still the made-up ones
+    Live,    // real readings of the device
     Wifi,    // made-up and fixed: joined to a Wi-Fi network, no access point
     Cable,   // made-up and fixed: on a network cable, no access point
     Offline, // made-up and fixed: no network at all
@@ -56,6 +56,13 @@ public:
     // How long from now until the values can have changed, so the reader
     // can sleep until then. kNever when they never change.
     virtual std::chrono::milliseconds next_read_delay() = 0;
+
+    // Whether a page that shows the traffic is on screen. The reader hands
+    // the flag over before it asks the source anything, on the same thread
+    // as read(). A source that reads the traffic only while it is shown
+    // (the live one) uses it; every other source keeps this default, which
+    // ignores it. Until the first call it counts as shown.
+    virtual void set_traffic_shown(bool /*shown*/) {}
 };
 
 // Creates a source. `data_root` only matters for the live source: it is a

@@ -33,6 +33,8 @@ constexpr int64_t kHighestSignalDbm = -1;
 constexpr std::size_t kMaxInterfaceName = 15;
 // A number in these files has at most this many digits.
 constexpr std::size_t kMaxDigits = 10;
+// A byte counter has at most this many digits (the largest 64-bit number).
+constexpr std::size_t kMaxCounterDigits = 20;
 
 struct DefaultRoute {
     std::string interface_name;
@@ -261,6 +263,41 @@ std::string file_address(const std::filesystem::path& addresses_file, const std:
     return {};
 }
 
+// A byte counter: 1 to 20 digits, nothing else, at most the largest 64-bit
+// number.
+bool parse_counter(const std::string& text, uint64_t& value) {
+    if (text.empty() || text.size() > kMaxCounterDigits) {
+        return false;
+    }
+    uint64_t result = 0;
+    for (const char character : text) {
+        if (character < '0' || character > '9') {
+            return false;
+        }
+        const auto digit = static_cast<uint64_t>(character - '0');
+        if (result > (std::numeric_limits<uint64_t>::max() - digit) / 10) {
+            return false;
+        }
+        result = result * 10 + digit;
+    }
+    value = result;
+    return true;
+}
+
+// Line `line` of a counter file (counting from 0), or its last line when it
+// has fewer, read as a counter.
+bool read_counter(const std::filesystem::path& path, std::size_t line, uint64_t& value) {
+    std::ifstream file(path);
+    std::string text;
+    std::string current;
+    bool found = false;
+    for (std::size_t index = 0; index <= line && std::getline(file, current); ++index) {
+        text = trim(current);
+        found = true;
+    }
+    return found && parse_counter(text, value);
+}
+
 } // namespace
 
 NetworkReading read_network(const std::filesystem::path& root,
@@ -293,6 +330,23 @@ NetworkReading read_network(const std::filesystem::path& root,
         break;
     }
     return reading;
+}
+
+bool read_traffic_counters(const std::filesystem::path& root,
+                           const std::string& interface_name,
+                           std::size_t line,
+                           TrafficCounters& counters) {
+    if (!valid_interface_name(interface_name)) {
+        return false;
+    }
+    const std::filesystem::path statistics = root / "sys/class/net" / interface_name / "statistics";
+    TrafficCounters reading;
+    if (!read_counter(statistics / "rx_bytes", line, reading.received) ||
+        !read_counter(statistics / "tx_bytes", line, reading.sent)) {
+        return false;
+    }
+    counters = reading;
+    return true;
 }
 
 } // namespace platform

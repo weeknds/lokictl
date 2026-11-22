@@ -43,6 +43,7 @@ void DataReader::read_now() {
     if (thread_.joinable()) {
         return;
     }
+    hand_over_traffic_shown();
     model::HomeData data;
     if (read_source(data)) {
         publish(std::move(data));
@@ -93,6 +94,30 @@ bool DataReader::running() const {
     return thread_.joinable();
 }
 
+void DataReader::set_traffic_shown(bool shown) {
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (traffic_shown_ == shown) {
+            return;
+        }
+        traffic_shown_ = shown;
+        traffic_changed_ = true;
+    }
+    wake_.notify_all();
+}
+
+void DataReader::hand_over_traffic_shown() {
+    bool shown = true;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        shown = traffic_shown_;
+        traffic_changed_ = false;
+    }
+    if (source_) {
+        source_->set_traffic_shown(shown);
+    }
+}
+
 bool DataReader::take(model::HomeData& data) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!fresh_) {
@@ -109,10 +134,13 @@ model::HomeData DataReader::latest() const {
 }
 
 // The background thread. The source is asked with the mutex released, so
-// take() never waits for a reading.
+// take() never waits for a reading. A new traffic flag ends the wait early:
+// the loop then starts again, hands the flag over and asks the source how
+// long to sleep now (the live source asks for a reading at once).
 void DataReader::run() {
-    const auto stopped = [this] { return stop_requested_; };
+    const auto woken = [this] { return stop_requested_ || traffic_changed_; };
     while (true) {
+        hand_over_traffic_shown();
         milliseconds delay = DataSource::kNever;
         try {
             delay = source_->next_read_delay();
@@ -123,21 +151,24 @@ void DataReader::run() {
         {
             std::unique_lock<std::mutex> lock(mutex_);
             if (delay == DataSource::kNever) {
-                // The values never change: sleep until stop(), and never ask
-                // the source again. kNever itself cannot go to wait_for(),
-                // whose deadline would overflow, so it waits in slices of
-                // kLongestWait. Not condition_variable::wait(): with GCC 12
-                // and later that function needs a newer libstdc++ than the
-                // rest of the app, which would change the package's
-                // dependencies.
-                while (!wake_.wait_for(lock, kLongestWait, stopped)) {
-                    // A slice ended without stop(): wait again.
+                // The values never change: sleep until stop() (or a new
+                // traffic flag), and ask the source nothing else. kNever
+                // itself cannot go to wait_for(), whose deadline would
+                // overflow, so it waits in slices of kLongestWait. Not
+                // condition_variable::wait(): with GCC 12 and later that
+                // function needs a newer libstdc++ than the rest of the
+                // app, which would change the package's dependencies.
+                while (!wake_.wait_for(lock, kLongestWait, woken)) {
+                    // A slice ended without stop() or a new flag: wait again.
                 }
             } else {
-                wake_.wait_for(lock, std::clamp(delay, kShortestWait, kLongestWait), stopped);
+                wake_.wait_for(lock, std::clamp(delay, kShortestWait, kLongestWait), woken);
             }
             if (stop_requested_) {
                 return;
+            }
+            if (traffic_changed_) {
+                continue;
             }
         }
 

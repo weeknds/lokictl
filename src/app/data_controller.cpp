@@ -33,10 +33,18 @@ int32_t logged_charge(int32_t percent) {
 DataController::DataController(viewmodel::BaseViewModel& view_model,
                                std::unique_ptr<platform::DataSource> source)
     : view_model_(view_model),
-      reader_(std::move(source)) {}
+      reader_(std::move(source)) {
+    // LVGL calls the observer once right away, so the reader knows the
+    // first page before the first reading.
+    page_observer_ = lv_subject_add_observer(view_model_.current_page_subject(), page_observer_cb, this);
+}
 
 DataController::~DataController() {
     stop();
+    if (page_observer_) {
+        lv_observer_remove(page_observer_);
+        page_observer_ = nullptr;
+    }
 }
 
 void DataController::read_first() {
@@ -102,6 +110,14 @@ void DataController::poll_timer_cb(lv_timer_t* timer) {
     auto* controller = static_cast<DataController*>(lv_timer_get_user_data(timer));
     if (controller) {
         controller->poll();
+    }
+}
+
+void DataController::page_observer_cb(lv_observer_t* observer, lv_subject_t* subject) {
+    auto* controller = static_cast<DataController*>(lv_observer_get_user_data(observer));
+    if (controller) {
+        const bool home = lv_subject_get_int(subject) == static_cast<int32_t>(model::AppPage::Home);
+        controller->reader_.set_traffic_shown(home);
     }
 }
 

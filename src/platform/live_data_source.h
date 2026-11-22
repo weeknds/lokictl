@@ -9,22 +9,26 @@
 #include "battery.h"
 #include "data_source.h"
 #include "network.h"
+#include "rate_history.h"
 
 #include <chrono>
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <string>
 
 namespace platform {
 
-// Real readings: the local time, the battery and the uplink (see
-// read_network()). The device is shown in the Client mode, without an
-// access point and without clients. The rates are still made up: with an
-// uplink they are the sample's, without one they are not known. So
-// HomeData::sample stays true.
+// Real readings: the local time, the battery, the uplink (see
+// read_network()) and its traffic (see read_traffic_counters()). The device
+// is shown in the Client mode, without an access point and without
+// clients. Nothing is made up, so HomeData::sample is false (unless the
+// system cannot tell the time; see read()).
 class LiveDataSource final : public DataSource {
 public:
     // `data_root` stands in for the root of the file system (see
-    // make_data_source()); empty means the real root.
+    // make_data_source()); empty means the real root. With a test folder
+    // the traffic is timed by the readings, not by the clock (see read()).
     explicit LiveDataSource(std::string data_root);
 
     DataSourceKind kind() const override;
@@ -33,21 +37,47 @@ public:
     // call and then again only once kBatteryInterval has passed since the
     // last battery reading, and the network files the same way with
     // kNetworkInterval; in between the last reading is used again.
+    //
+    // The traffic: while it is shown (set_traffic_shown()) and there is an
+    // uplink, the uplink's byte counters are read on the first call and then
+    // again once kTrafficInterval has passed since the last try. The rates
+    // are the bytes since the reading before, times 8, over the time between
+    // the two readings, in kbit/s; each new pair of rates goes into the two
+    // histories. The rates are not known, and both histories empty, while
+    // the traffic is not shown, without an uplink, after the first reading,
+    // after a counter that cannot be read or went backwards, and after a
+    // change of uplink: each of these starts the traffic afresh. In a test
+    // folder the counters are read at every call, each call counts as
+    // exactly kTrafficInterval after the one before, and call n reads line
+    // n of the counter files (see read_traffic_counters()), so a run with
+    // the same files always gives the same rates.
     void read(model::HomeData& data) override;
 
     // The earliest of "just after the next minute starts", "the battery is
-    // due" and "the network is due", never less than kMinimumDelay.
+    // due", "the network is due" and, while the traffic is shown and there
+    // is an uplink, "the traffic is due"; never less than kMinimumDelay. Right
+    // away (kMinimumDelay) when the traffic flag changed since the last
+    // read(), so the page gets the new state at once.
     std::chrono::milliseconds next_read_delay() override;
+
+    void set_traffic_shown(bool shown) override;
 
     static constexpr std::chrono::milliseconds kBatteryInterval{10000};
     static constexpr std::chrono::milliseconds kNetworkInterval{5000};
+    static constexpr std::chrono::milliseconds kTrafficInterval{1000};
     // How long after the minute starts the clock is read, so the new
     // minute is surely there.
     static constexpr std::chrono::milliseconds kMinuteMargin{20};
     static constexpr std::chrono::milliseconds kMinimumDelay{20};
 
 private:
-    const model::HomeData sample_; // the made-up values still used
+    // Forgets the traffic: no counters, rates not known, empty histories.
+    void forget_traffic();
+    // Reads the uplink's counters and works out the rates (see read()).
+    void read_traffic();
+
+    const model::HomeData sample_; // the clock's fall-back value
+    const bool test_folder_;
     std::filesystem::path root_;
     std::filesystem::path power_supply_dir_;
     // Empty on the real system; in a test folder, the file that stands in
@@ -59,6 +89,20 @@ private:
     NetworkReading network_;
     bool network_read_{false};
     std::chrono::steady_clock::time_point network_read_at_{};
+
+    // The traffic.
+    bool traffic_shown_{true};       // the flag set_traffic_shown() gave last
+    bool traffic_shown_read_{true};  // the flag the last read() used
+    bool traffic_tried_{false};      // the counters were tried since the traffic started afresh
+    std::chrono::steady_clock::time_point traffic_tried_at_{};
+    std::string traffic_interface_;  // the interface they were tried on
+    bool has_counters_{false};       // `counters_` holds the last good reading
+    TrafficCounters counters_;
+    std::size_t counter_line_{0};    // test folder: the line the next reading takes
+    int32_t down_kbps_{model::kRateUnknown};
+    int32_t up_kbps_{model::kRateUnknown};
+    model::RateHistory down_history_;
+    model::RateHistory up_history_;
 };
 
 } // namespace platform

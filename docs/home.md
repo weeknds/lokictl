@@ -171,15 +171,14 @@ The link view:
 ## Sample data
 
 When the app reads live values, which it does on the device (the data
-layer decides this; see [data.md](data.md)), the clock, the battery and
-the network link are real: Wi-Fi, cable or no network, the interface, the
-address, the router's address, the signal and the cable's speed. The
-traffic is still made up. The page says that some of its values are made
-up with a small `sample data` mark in every theme. Instrument and
-Constellation write it in capitals, like all their captions; Terminal
-writes it in lowercase. The mark matters on a network tool: nobody should
-take a made-up rate for a real reading. So it stays on until the traffic
-is real too.
+layer decides this; see [data.md](data.md)), every value is real: the
+clock, the battery, the network link (Wi-Fi, cable or no network, the
+interface, the address, the router's address, the signal and the cable's
+speed) and the traffic, so the page shows no mark. Every other source is
+made up, and the page says so with a small `sample data` mark in every
+theme. Instrument and Constellation write it in capitals, like all their
+captions; Terminal writes it in lowercase. The mark matters on a network
+tool: nobody should take a made-up rate for a real reading.
 
 Next to the router sample there are made-up example sets for the other
 situations, so every layout can be looked at in each of them before real
@@ -196,8 +195,9 @@ network values arrive. Each is a data source of its own (`--data <name>`):
 All of them are marked `sample data`, show the clock `07:46` and the
 battery `91%`, and never change, except the tour. All the names and
 addresses are made up. `--data live`, which the device uses by default,
-shows the device's real link in the link view (the Wi-Fi network's name is
-not known yet, so it reads `wi-fi network`), with made-up traffic.
+shows the device's real link and traffic in the link view (the Wi-Fi
+network's name is not known yet, so it reads `wi-fi network`), without the
+mark.
 
 A snapshot uses the fixed sample values unless `--data` says otherwise, so
 the same state always gives the same picture. Two snapshots of the home
@@ -217,7 +217,9 @@ home page.
   traffic histories, are plain C++ containers. Each history value is a
   share (0 to 100) of that history's own recent peak, not of a fixed rate,
   so the quieter upload graph fills its height as well as the download
-  graph does; the current rates give the real numbers.
+  graph does; the current rates give the real numbers. The live source
+  never scales to less than 100 kbit/s, so a quiet link does not fill its
+  graph (see [The traffic](data.md#the-traffic)).
 - The fields for the link and the access point:
 
   | Field | What it holds |
@@ -245,8 +247,8 @@ home page.
   write made-up values; nothing in `src/view` or `src/app` writes or asks
   for one.
 - A data source fills in one whole `HomeData` block: `sample`, `demo` (the
-  sample, moving on a fixed script), `live` (the real clock, battery and
-  link, in the Client mode, with made-up traffic), `wifi`, `cable`,
+  sample, moving on a fixed script), `live` (the real clock, battery, link
+  and traffic, in the Client mode), `wifi`, `cable`,
   `offline` or `tour`. A background
   reader asks the source and `app::DataController` hands every new block to
   `viewmodel::BaseViewModel::set_home_data()`. [data.md](data.md) explains
@@ -263,7 +265,7 @@ home page.
   | `clock_text()` | `07:46` |
   | `battery_text()` | `91%`, `91%+` while the battery charges, `--%` when the charge is not known |
   | `uptime_text()` | `00:12:31` |
-  | `rate_text()`, `rate_short_text()` | `3.8` and `3.8M` for 3800 kbit/s; `--` when not known |
+  | `rate_text()`, `rate_short_text()` | `3.8` and `3.8M` for 3800 kbit/s; whole Mbit/s from 100 Mbit/s on (`120`, `120M`); `--` when not known |
   | `signal_text()`, `signal_number_text()` | `−61 dBm` and `−61`, with a real minus sign; `--` when not known |
   | `speed_text()`, `speed_long_text()`, `speed_number_text()` | `100M`, `100 Mbit/s` and `100`; `--` when not known |
   | `speed_part_text()` | `100 Mbit/s`, or an empty text when not known, for a line made of parts |
@@ -275,11 +277,9 @@ home page.
   | `join_parts()` | the parts that are not empty, joined by ` · ` |
   | `count_text()` | `1/3` |
 
-More real values will replace the made-up ones in the same place: the live
-source will fill more of the same `HomeData`, and once the last made-up
-value (the traffic) is gone it sets `sample` to false, which removes the
-mark. The
-layouts take every value from `HomeData` already, so none of them has to
+Real values replaced the made-up ones in the same place: the live source
+fills the same `HomeData`, and sets `sample` to false, which removes the
+mark. The layouts take every value from `HomeData`, so none of them had to
 change for that.
 
 ## Values in place, a new situation built again
@@ -290,18 +290,19 @@ can show it in place or whether the page's content is built again.
 
 **Changed in place**, by the layout's `update()`, in both views: the
 clock, the battery (charge and state), the uplink's interface, the
-device's address, the router's address, the link speed, and the Wi-Fi
-network's name, security and signal. These are values that change while
-the situation stays the same, and each sits in a box of its own, so a new
-text moves nothing else. There are two exceptions: Instrument's caption
-follows its first number, and in Constellation's router view the star
-right of the uplink's text is hidden while a wide text (such as
-`eth0 · 1000M`) would come too close to it.
+device's address, the router's address, the link speed, the Wi-Fi
+network's name, security and signal, and the two rates with their graphs.
+These are values that change while the situation stays the same, and each
+sits in a box of its own, so a new text moves nothing else. The
+exceptions: Instrument's captions follow their numbers, Terminal's bars
+change height, and in Constellation's router view the star right of the
+uplink's text is hidden while a wide text (such as `eth0 · 1000M`) would
+come too close to it.
 
 **Built again** for any other change: the kind of link, the access point
-switched on or off, the mode, the list of clients, the rates and their
-graphs, the access point's name, the uptime, the sample mark, and any field
-added to `HomeData` later. Such a change can need other objects, so the
+switched on or off, the mode, the list of clients, the access point's
+name, the uptime, the sample mark, and any field added to `HomeData`
+later. Such a change can need other objects, so the
 content is built again, once.
 
 How it works:
@@ -329,10 +330,6 @@ How it works:
 
 When the page is built again for another reason, after a theme switch or
 when coming back from Settings, it shows the current values at once.
-
-The rates are on the "built again" side for now: they do not move yet.
-Once their numbers and graphs change on their own, they join the in-place
-list, in `home_values_only()` and in every layout's `update()`.
 
 ## The selected client
 
@@ -481,6 +478,9 @@ The home page added four parts that other pages can use too:
   standing on the bottom edge. Values are shares of the full height, from
   0 to 100. A bar is never less than 1 px tall, so the graph always shows
   its floor. The caller passes the colour and places the graph.
+  `view::widgets::update_bar_graph()` shows new values on it in place: it
+  changes the height of the bars that changed and never adds or deletes
+  one.
 - **`view::style::PaneDensity::Compact`**, the last parameter of
   `view::style::pane()`: less padding for pages whose rows sit on a fixed
   grid. In Terminal, whose pane titles sit in the border, the content

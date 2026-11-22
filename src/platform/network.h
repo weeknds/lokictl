@@ -8,6 +8,7 @@
 
 #include "home_data.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <string>
@@ -53,5 +54,26 @@ struct NetworkReading {
 // system error.
 NetworkReading read_network(const std::filesystem::path& root,
                             const std::filesystem::path& addresses_file);
+
+// How many bytes an interface has received and sent since it came up, as
+// the kernel counts them.
+struct TrafficCounters {
+    uint64_t received{0}; // statistics/rx_bytes
+    uint64_t sent{0};     // statistics/tx_bytes
+};
+
+// Reads "<root>/sys/class/net/<interface_name>/statistics/rx_bytes" and
+// "tx_bytes", which every user may read. Like read_network() it only reads.
+// `line` picks the line of each file, counting from 0: the kernel's files
+// hold one number, so the app passes 0; a test folder may hold several
+// numbers, one per line, and a `line` past the last takes the last one.
+// Returns false, and leaves `counters` alone, when the name could not be an
+// interface's, or either file is missing, empty or holds anything but a
+// whole number of 1 to 20 digits that fits in 64 bits. Never throws on a
+// file system error.
+bool read_traffic_counters(const std::filesystem::path& root,
+                           const std::string& interface_name,
+                           std::size_t line,
+                           TrafficCounters& counters);
 
 } // namespace platform

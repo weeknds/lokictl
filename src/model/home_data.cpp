@@ -111,8 +111,9 @@ bool operator!=(const HomeData& left, const HomeData& right) {
 
 // These are made-up example values, so the home page has something to show.
 // The data layer starts from them: the sample source hands them over as
-// they are, the demo source moves some of them, and the live source keeps
-// every value it does not read yet. The other made-up situations, in
+// they are, the demo source moves some of them, and the live source falls
+// back to their clock if the system cannot tell the time. The other
+// made-up situations, in
 // home_examples.cpp, are the only other place in the app that writes
 // made-up values.
 HomeData sample_home_data() {

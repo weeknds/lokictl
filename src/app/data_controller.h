@@ -45,12 +45,18 @@ namespace app {
 // after the battery line of the same reading; "data: reader stopped" when a
 // background reader that ran has ended.
 //
+// It also follows the current page and tells the reader whether the home
+// page, the only page that shows the traffic, is on top
+// (DataReader::set_traffic_shown()), so the live source reads the traffic
+// once a second only while it is seen.
+//
 // Create it after the view model and destroy it before; like
 // app::ThemeController, it is not copied.
 class DataController {
 public:
+    // Starts following the current page at once.
     DataController(viewmodel::BaseViewModel& view_model, std::unique_ptr<platform::DataSource> source);
-    // Calls stop().
+    // Calls stop() and stops following the current page.
     ~DataController();
 
     DataController(const DataController&) = delete;
@@ -79,6 +85,9 @@ public:
 
 private:
     static void poll_timer_cb(lv_timer_t* timer);
+    // Tells the reader whether the page on top shows the traffic. The user
+    // data is the controller.
+    static void page_observer_cb(lv_observer_t* observer, lv_subject_t* subject);
 
     // Fetches the newest block from the reader, if one arrived since the
     // last time, and hands it over. Returns false when nothing new was there;
@@ -95,6 +104,7 @@ private:
     viewmodel::BaseViewModel& view_model_;
     platform::DataReader reader_;
     lv_timer_t* poll_timer_{nullptr};
+    lv_observer_t* page_observer_{nullptr};
     model::HomeData block_;  // the block fetched last; kept to reuse its memory
     bool battery_logged_{false};
     int32_t logged_percent_{model::kBatteryPercentUnknown};
