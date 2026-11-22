@@ -132,10 +132,25 @@ view::style::caption(label, theme, "gateway");
 The rules:
 
 - **Use the helpers in `src/view/style.h`** where one fits: `screen`, `bar`,
-  `popup`, `text`, `caption`, `card`, `list_row`, `pane` and `soft_key`.
-  They already follow the flags, so a list row is filled or outlined and a
-  pane's title sits in the border or inside the box without the screen
-  having to check.
+  `popup`, `text`, `caption`, `card`, `list_row`, `pane`, `pane_note` and
+  `soft_key`. They already follow the flags, so a list row is filled or
+  outlined and a pane's title sits in the border or inside the box without
+  the screen having to check.
+- **Dense pages have their own choices.** `pane()` takes an optional last
+  parameter, `view::style::PaneDensity`. `Normal`, the default, is the
+  theme's usual padding. `Compact` leaves less room, for pages whose rows
+  sit on a fixed grid: in Terminal the content starts 2 px into the title
+  line, so the first two rows of the content must stay free of ink, and
+  in the other themes the padding is `space_xs` all round. `pane_note()`
+  puts a second short label at the right end of a pane's top line, such as
+  a clock: in the border line next to the title in Terminal, in the box's
+  top right corner in the other themes. The home page uses both (see
+  [home.md](home.md#shared-parts)).
+- **Graphs are shapes.** `view::widgets::build_bar_graph()`
+  (`src/view/widgets/bar_graph.h`) draws a small bar graph from plain
+  objects, one bar per value from 0 to 100, in a colour the caller passes.
+  No bundled font has braille, so graphs are never drawn as text; Terminal's
+  traffic graphs on the home page are built this way.
 - **Never hard-code a colour or a text font.** No colour values and no
   `lv_color_hex()` outside `src/view/theme.cpp`, and no text font files
   loaded by a screen. Take colours from `theme.colors` and fonts from
@@ -147,16 +162,16 @@ The rules:
 - **Screens do not watch for theme changes.** When the theme changes, the
   screen is built again from scratch (see below).
 - **Icon fonts are not theme fonts.** The Phosphor icons of the title bar
-  and the key-cap fonts of the home page are loaded where they are used,
-  with `AssetManager::load_font()`. They take their colour from the theme
-  like any other text.
+  are loaded where they are used, with `AssetManager::load_font()`. They
+  take their colour from the theme like any other text.
 
 ## Soft keys
 
-The five keys `4` to `8` sit right under the screen. On every page with a
-title bar, the bar along the bottom edge of the screen says what each of
-them does on that page. The widget is `view::widgets::SoftKeyBar`, in
-`src/view/widgets/soft_key_bar.h`.
+The five keys `4` to `8` sit right under the screen. On every page except
+the full-screen ones, the bar along the bottom edge of the screen says what
+each of them does on that page. Pages with a title bar have it, and so
+does the home page, which has no title bar. The widget is
+`view::widgets::SoftKeyBar`, in `src/view/widgets/soft_key_bar.h`.
 
 - The bar is 30 px tall (y 140 to 169) and as wide as the screen, with a
   1 px line in the border colour along its top edge.
@@ -215,27 +230,31 @@ A page says which keys it uses by overriding `soft_keys()` from
 `screen::BaseScreen`. It returns five `view::widgets::SoftKey` values, for
 the keys 4 to 8 in that order. Each one has a word, an action, whether it is
 the page's main key (drawn in the accent colour) and whether it is switched
-on. A key written as `{}` stays empty. The home page of the demo does this:
+on. A key written as `{}` stays empty. The home page does this:
 
 ```cpp
-view::widgets::SoftKeySet AppleScreen::soft_keys() {
+view::widgets::SoftKeySet HomeScreen::soft_keys() {
+    // Called from init(), before build_content(): it uses nothing but the
+    // view model, which outlives every screen. Modes, Scan and Tools open
+    // pages that do not exist yet, so they are shown switched off.
     auto& view_model = this->view_model();
     return {{
-        {"Exit", [&view_model] { view_model.request_quit(); }},
-        {"Size", [&view_model] { view_model.toggle_bold_text(); }},
+        {"Modes", {}, false, false},
+        {"Scan", {}, false, false},
         {"Setup", [&view_model] { view_model.open_settings(); }, true},
-        {"Info", [&view_model] { view_model.toggle_info(); }},
-        {"Count", [&view_model] { view_model.open_page(model::AppPage::Butter); }},
+        {"Tools", {}, false, false},
+        {},
     }};
 }
 ```
 
 Some things to know:
 
-- Write the word in normal letters, such as `"Exit"`. The bar writes it in
+- Write the word in normal letters, such as `"Setup"`. The bar writes it in
   capitals or lowercase, as the theme asks.
-- A switched-off key, such as `{"Pcap", {}, false, false}`, is drawn dimmed
-  and does nothing until it is switched on.
+- A switched-off key, such as `{"Scan", {}, false, false}` above, is drawn
+  dimmed and does nothing until it is switched on. Key 6 (`Setup`) is the
+  home page's main key, and key 8 is empty.
 - `soft_keys()` is called once, from `init()`, before `build_content()`. A
   page that needs its own members there sets them before it calls `init()`.
   A page without the override gets a bar with five empty keys, and a
@@ -262,9 +281,6 @@ Some things to know:
 - A page in typing mode should draw its keys switched off, because they
   cannot be pressed then. The key test page (`demo-keys`) does this with
   `set_key()` when typing starts and ends.
-- On the home page the app's exit handling takes key 4 first (a short press
-  shows a hint, holding it quits), so the `Exit` action only runs when its
-  slot is clicked with the mouse in the simulator.
 
 The developer page `dev-softkeys` shows all of this. Its own bar at the
 bottom has a main key (`TOOLS`), a switched-off key (`PCAP`) and an empty
@@ -300,7 +316,8 @@ Some things to know:
   Inter text comes from JetBrains Mono, so it can be a little wider or
   heavier than the letters around it.
 - **There is no braille.** No bundled font has braille characters, the
-  fallback included. Draw graphs with LVGL shapes instead.
+  fallback included. Draw graphs with LVGL shapes instead, for example
+  with `view::widgets::build_bar_graph()`.
 - **Chinese, Japanese and Korean are not covered yet.** None of the theme
   fonts or the fallback has those characters, so such text (a Wi-Fi name,
   for example) would show empty boxes.
@@ -369,13 +386,13 @@ Instrument, Constellation, Terminal. Up and down move the highlight, and
 Enter or key 6 (`USE`) switches to the highlighted theme at once. The
 Settings page is built again in the new theme, with the tick on the new
 theme and the highlight where it was. The other pages keep their state as
-well: the text size picked with key 5 on the home page, the version line
-shown with key 7 and the counter value all stay. The message box and the
-help panel take the new look, and in the desktop simulator so does the
-device frame around the screen. A short message says `Theme: <Name>`, or
-`Theme: <Name> (not saved)` when the settings file could not be written.
-Holding Enter or key 6 switches once. While the help panel is open, both do
-nothing.
+well: the client selected on the home page and the counter value stay. The
+home page is built again in the new theme's own layout (see
+[home.md](home.md)). The message box and the help panel take the new look,
+and in the desktop simulator so does the device frame around the screen. A
+short message says `Theme: <Name>`, or `Theme: <Name> (not saved)` when the
+settings file could not be written. Holding Enter or key 6 switches once.
+While the help panel is open, both do nothing.
 
 Every switch is saved as `theme=<name>` in the `[application]` section of
 the settings file. All other lines, comments and sections of the file stay
@@ -479,9 +496,13 @@ rebuilds the page, frees fonts and saves the choice.
    the themes from the table by itself, but it has room for three rows
    only. A `static_assert` in `src/view/screens/settings_screen.cpp` stops
    the build until its list can scroll.
-5. Snapshot every page in the new theme (see below), look at each picture,
+5. Optionally give the home page its own layout for the theme (see
+   [Adding a layout for a new theme](home.md#adding-a-layout-for-a-new-theme)).
+   Without one, the theme gets the Instrument layout in its own colours and
+   fonts.
+6. Snapshot every page in the new theme (see below), look at each picture,
    and add the theme to the tables on this page.
-6. Check live switching for every page: with `--switch-to`, from every other
+7. Check live switching for every page: with `--switch-to`, from every other
    theme to the new one and from the new one to every other theme. Each
    picture must be identical to one drawn directly in the target theme.
 
@@ -505,7 +526,7 @@ $B --snapshot build/shots/theme-terminal.png --page dev-theme --theme terminal
 $B --snapshot build/shots/help-instrument.png --page dev-help --theme instrument
 $B --snapshot build/shots/toast-constellation.png --page dev-toast --theme constellation
 for t in instrument constellation terminal; do
-  $B --snapshot "build/shots/home-$t.png" --page demo-home --theme "$t"
+  $B --snapshot "build/shots/home-$t.png" --page home --theme "$t"
 done
 ```
 
@@ -543,13 +564,14 @@ means that something on the page kept a piece of the old theme.
 ```sh
 B=./build/darwin-arm64/Debug/lokictl
 mkdir -p build/shots
-$B --snapshot build/shots/home-terminal.png --page demo-home --theme terminal
-$B --snapshot build/shots/home-switched.png --page demo-home --theme instrument --switch-to terminal
+$B --snapshot build/shots/home-terminal.png --page home --theme terminal
+$B --snapshot build/shots/home-switched.png --page home --theme instrument --switch-to terminal
 cmp build/shots/home-terminal.png build/shots/home-switched.png && echo same
 ```
 
-The demo pages show the clock in the title bar, so if two pictures were
-taken on either side of a new minute, take both again.
+Pages with a title bar show the current time in it, so if two pictures of
+such a page were taken on either side of a new minute, take both again.
+The home page has no title bar and no clock that runs.
 
 To check that switching does not leak fonts, switch 30 times (10 full
 rounds) and count the `fonts loaded` lines. Each theme must show a single

@@ -6,7 +6,7 @@
 
 #include "dev_overlays_screen.h"
 
-#include "apple_screen.h"
+#include "home_screen.h"
 #include "theme.h"
 #include "theme_engine.h"
 
@@ -77,7 +77,7 @@ void DevOverlaysScreen::build_content(lv_obj_t* content) {
 void DevOverlaysScreen::build_help(lv_obj_t* content) {
     help_popup_ = std::make_unique<view::widgets::HelpPopup>(content, theme_engine());
     help_popup_->build();
-    help_popup_->show(AppleScreen::help_content());
+    help_popup_->show(HomeScreen::help_content());
 }
 
 void DevOverlaysScreen::build_toasts(lv_obj_t* content) {

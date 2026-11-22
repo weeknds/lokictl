@@ -42,15 +42,13 @@ class ScreenManager;
 //     short ESC (let go before 700 ms) first goes to the page, which may use
 //     it to end typing, and then goes back one page. A long ESC on a deeper
 //     page does nothing: holding ESC belongs to the launcher.
-//  5. Key 4 on the demo home page is that page's hold-to-exit key.
-//  6. Keys 4-8 press the soft keys (not while typing).
-//  7. F/X/Z/C become up/down/left/right (not while typing).
-//  8. The page gets the key (screen::BaseScreen::on_key()).
+//  5. Keys 4-8 press the soft keys (not while typing).
+//  6. F/X/Z/C become up/down/left/right (not while typing).
+//  7. The page gets the key (screen::BaseScreen::on_key()).
 //
 // The platform also reports every key once more when it is still held after
-// 700 ms. Only a held ESC or home key 4 that started step 4 or 5 acts on that
-// call; for every other key it does nothing, so a held soft key or arrow
-// acts exactly once.
+// 700 ms. Only a held ESC that started step 4 acts on that call; for every
+// other key it does nothing, so a held soft key or arrow acts exactly once.
 //
 // Everything here runs inside LVGL input callbacks (or, in snapshot runs,
 // between LVGL steps): it only asks the view model or the page for
@@ -80,8 +78,8 @@ private:
 
     void take_screenshot();
     void toggle_help();
-    // Follows ESC or home key 4 from its press to its release. `armed`:
-    // holding it quits the app.
+    // Follows ESC from its press to its release. `armed`: holding it quits
+    // the app.
     void track(uint32_t key, bool armed);
     // Forgets the followed key and hides the exit hint if it was showing.
     void stop_tracking();
@@ -96,7 +94,7 @@ private:
     ScreenManager& screen_manager_;
     std::unique_ptr<view::widgets::Toast> toast_;
     std::unique_ptr<view::widgets::HelpPopup> help_popup_;
-    uint32_t tracked_key_{0};      // ESC or home key 4 while held; 0 for none
+    uint32_t tracked_key_{0};      // ESC while held; 0 for none
     bool exit_armed_{false};       // holding the tracked key quits the app
     bool tracked_held_long_{false};
 };

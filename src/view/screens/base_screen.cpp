@@ -45,6 +45,16 @@ void BaseScreen::init(Layout layout) {
         lv_obj_set_size(content_, view::kScreenWidth, view::kScreenHeight);
         lv_obj_align(content_, LV_ALIGN_TOP_MID, 0, 0);
     }
+    else if (layout == Layout::NoTitleBar) {
+        soft_key_bar_ = std::make_unique<view::widgets::SoftKeyBar>(
+            root_, theme_engine_, soft_keys(), view::widgets::SoftKeyBar::KeyInput::Bound);
+        soft_key_bar_->build();
+
+        content_ = lv_obj_create(root_);
+        lv_obj_remove_style_all(content_);
+        lv_obj_set_size(content_, view::kScreenWidth, view::kScreenHeight - view::kSoftKeyBarHeight);
+        lv_obj_align(content_, LV_ALIGN_TOP_MID, 0, 0);
+    }
     else {
         title_bar_ = std::make_unique<view::widgets::TitleBar>(root_, view_model_, assets_, theme_engine_);
         title_bar_->build();

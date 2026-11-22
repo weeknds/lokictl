@@ -68,6 +68,20 @@ struct Pane {
     lv_obj_t* content; // put the pane's children in here
 };
 
+// How much room a pane leaves between its border and its content.
+// - Normal: the theme's usual padding.
+// - Compact: for dense pages where rows sit on a fixed grid. In themes with
+//   pane_title_in_border the content starts 2 px higher than Normal, so its
+//   first two rows lie under the bottom of the title label, and the bottom
+//   padding is space_xs; the side padding is unchanged. In the other themes
+//   the padding is space_xs all round. In title-in-border themes, keep the
+//   first two rows of a Compact pane's content free of ink: the title and a
+//   pane note are filled with the ground colour and cover them.
+enum class PaneDensity {
+    Normal,
+    Compact,
+};
+
 // A box with a border and a title. Themes with pane_title_in_border set the
 // title (Small font, in `title_color`) into the top border line; the other
 // themes show it as a normal caption inside the box, and then `title_color`
@@ -78,7 +92,17 @@ Pane pane(lv_obj_t* parent,
           const char* title,
           int32_t width,
           int32_t height,
-          lv_color_t title_color);
+          lv_color_t title_color,
+          PaneDensity density = PaneDensity::Normal);
+
+// A second label on a pane's top line, at its right end, for a short value
+// such as a clock or a count. In themes with pane_title_in_border it sits in
+// the top border line like the title: Small font in `color`, filled with the
+// ground colour, as far from the right edge as the title is from the left.
+// In the other themes it sits in the box's top right corner, in the Small
+// font and in `color`, and takes no part in the box's layout. Returns the
+// label, so the caller can change its text later.
+lv_obj_t* pane_note(const Pane& pane, const Theme& theme, const char* text, lv_color_t color);
 
 // How one key of the soft-key bar is drawn; see widgets::SoftKeyBar.
 enum class SoftKeyState {

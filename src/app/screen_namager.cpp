@@ -6,12 +6,12 @@
 
 #include "screen_manager.h"
 
-#include "apple_screen.h"
 #include "butter_screen.h"
 #include "dev_fonts_screen.h"
 #include "dev_overlays_screen.h"
 #include "dev_softkeys_screen.h"
 #include "dev_theme_screen.h"
+#include "home_screen.h"
 #include "key_test_screen.h"
 #include "logger.h"
 #include "page_registry.h"
@@ -63,11 +63,11 @@ void ScreenManager::start() {
                                                          nullptr);
 }
 
-bool ScreenManager::show_apple_screen() {
-    if (!load_screen(std::make_unique<screen::AppleScreen>(view_model_, assets_, theme_engine_))) {
+bool ScreenManager::show_home_screen() {
+    if (!load_screen(std::make_unique<screen::HomeScreen>(view_model_, assets_, theme_engine_))) {
         return false;
     }
-    page_loaded(model::AppPage::Apple);
+    page_loaded(model::AppPage::Home);
     return true;
 }
 
@@ -189,7 +189,7 @@ bool ScreenManager::show_page(model::AppPage page) {
         return show_settings_screen();
     }
 
-    return show_apple_screen();
+    return show_home_screen();
 }
 
 lv_obj_t* ScreenManager::current_screen() const {

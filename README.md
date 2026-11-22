@@ -14,10 +14,11 @@ Instrument, Constellation and Terminal.
 
 ## Status
 
-**Early development.** The project has just been set up. It builds and runs in
-the desktop simulator. It still shows mostly the starter demo pages. The
-first real page is Settings, where you pick the theme; none of the network
-features above exist yet.
+**Early development.** The app builds and runs in the desktop simulator. It
+opens on a home page that shows made-up sample data, drawn in each theme's
+own layout, and it has a Settings page where you pick the theme. None of
+the network features above exist yet; the home page marks its values as
+`sample data` until they do.
 
 The device package also builds, and it installs and runs on a real
 CardputerZero. From your computer, `scripts/device.sh` installs and starts it
@@ -52,7 +53,7 @@ Notes:
 - Keys: type on your Mac's keyboard or click the keys of the keyboard drawn
   below the screen. `4` to `8` are the five soft keys under the screen.
   `F`, `X`, `Z` and `C` work as up, down, left and right, like the arrow
-  keys. A short `ESC` goes back one page; on the first page, hold `ESC` (or
+  keys. A short `ESC` goes back one page; on the home page, hold `ESC` (or
   close the window) to quit. For the help panel (fn+H), click `fn` and then
   `H` on the drawn keyboard. [docs/navigation.md](docs/navigation.md)
   explains every key.
@@ -72,7 +73,10 @@ Notes:
 ## Themes
 
 LokiCTL has three themes: Instrument, Constellation and Terminal. Each one
-sets the colours, fonts, spacing and borders of every screen.
+sets the colours, fonts, spacing and borders of every screen. The home page
+goes further and has a layout of its own in each theme: a big-type gauge in
+Instrument, a network map in Constellation and boxed panes in Terminal (see
+[docs/home.md](docs/home.md)).
 
 The theme is picked on the Settings page, which `6` (SETUP) on the home page
 opens. It lists the three themes, each with its name, four small squares in
@@ -115,19 +119,20 @@ building:
 
 ```sh
 ./build/darwin-arm64/Debug/lokictl --snapshot build/shots/home.png
-./build/darwin-arm64/Debug/lokictl --snapshot build/shots/counter-terminal.png --page demo-counter --theme terminal
 ./build/darwin-arm64/Debug/lokictl --snapshot build/shots/home-instrument.png --theme instrument
+./build/darwin-arm64/Debug/lokictl --snapshot build/shots/home-next.png --page home --keys c
 ./build/darwin-arm64/Debug/lokictl --snapshot build/shots/home-switched.png --theme instrument --switch-to terminal
-./build/darwin-arm64/Debug/lokictl --snapshot build/shots/keys.png --page demo-home --keys 8,8,x
 ./build/darwin-arm64/Debug/lokictl --snapshot build/shots/settings.png --page settings --theme terminal
+./build/darwin-arm64/Debug/lokictl --snapshot build/shots/counter-terminal.png --page demo-counter --theme terminal
+./build/darwin-arm64/Debug/lokictl --snapshot build/shots/keys.png --page demo-counter --keys 8,x
 ./build/darwin-arm64/Debug/lokictl --list-pages
 ```
 
 Options:
 
 - `--snapshot <file>`: where to save the PNG. Missing folders are created.
-- `--page <name>`: which page to draw. The default is the first page, and
-  `--list-pages` prints all page names (see the list below).
+- `--page <name>`: which page to draw. The default is `home`, the first
+  page, and `--list-pages` prints all page names (see the list below).
 - `--theme <name>`: `instrument`, `constellation` or `terminal`. The default
   is `constellation`, the app's default theme. Any other name is refused
   with a message that lists the three.
@@ -144,8 +149,9 @@ Options:
   (before any `--switch-to`). Names: `0` to `9`, `a` to `z`, `esc`,
   `enter`, `space`, `backspace`, `up`, `down`, `left`, `right` and `help`.
   Add `:long` to hold a key for one second, for example `esc:long`. The
-  page from `--page` is the first page, so start at `demo-home` to test
-  going back. If the keys made the app ask to quit, `quit requested` goes
+  page from `--page` is the first page, so start at `home` to test going
+  back from Settings, and at `demo-counter` to test going back from the
+  key test page. If the keys made the app ask to quit, `quit requested` goes
   to standard error. See
   [Testing keys](docs/navigation.md#testing-keys-with---keys) in
   docs/navigation.md for the details.
@@ -157,11 +163,15 @@ Options:
 
 The app has 14 pages. `--list-pages` prints them in this order:
 
-- `demo-home`, `demo-counter` and `demo-keys`, the three demo pages: the
-  home page, a counter and a key test page. The app opens them itself (see
-  [Pressing keys](#pressing-keys));
+- `home`, the home page, where the app starts (see
+  [docs/home.md](docs/home.md));
 - `settings`, the Settings page with the theme picker, which the home page
   opens;
+- `demo-counter` and `demo-keys`, two demo pages kept for navigation and
+  key tests: a counter and a key test page. Nothing in the app opens them
+  any more, so they are drawn by name only, with `--page`; the counter
+  page's key 8 still opens the key test page (see
+  [Pressing keys](#pressing-keys));
 - ten developer pages whose names start with `dev-` (see [Fonts](#fonts)).
 
 Notes:
@@ -174,8 +184,10 @@ Notes:
   not included, also not when `--keys` opens them. The developer pages
   `dev-help` and `dev-toast` show the same help panel and messages on a page
   of their own, so their look can still be checked.
-- The clock in the title bar shows the current time, so two pictures taken a
-  minute apart are not identical.
+- Pages with a title bar show the current time in it, so two pictures of
+  such a page taken a minute apart are not identical. The home page has no
+  title bar and shows a made-up clock with the rest of its sample data, so
+  its pictures are always the same file.
 
 ## Fonts
 
@@ -306,12 +318,12 @@ A typical session, from the repository root:
 scripts/device.sh deploy                         # build if needed, copy, install
 scripts/device.sh run --theme constellation      # start LokiCTL in one theme
 scripts/device.sh screen build/shots/device.png  # save the device's screen
+scripts/device.sh key c                          # select the next client
 scripts/device.sh key 6                          # press 6 (opens Settings)
 scripts/device.sh key x                          # move the highlight down
 scripts/device.sh key enter                      # switch to Terminal, saved
 scripts/device.sh key esc                        # back to the home page
-scripts/device.sh key 8                          # press 8 (counter page)
-scripts/device.sh screen build/shots/device-counter.png
+scripts/device.sh screen build/shots/device-terminal.png
 scripts/device.sh stats                          # memory, CPU and frame time
 scripts/device.sh stop                           # stop it, the launcher returns
 ```
@@ -351,8 +363,8 @@ The commands:
   and saves the picture. It works while LokiCTL is running and does not
   touch the screen. `--keys` presses keys inside that snapshot run, not on
   the device's keyboard, so LokiCTL does not need to be running; for
-  example `scripts/device.sh snapshot build/shots/keys.png --page demo-home
-  --keys 8,8,x`. The `fonts loaded` lines of `--switch-to` and the
+  example `scripts/device.sh snapshot build/shots/keys.png --page
+  demo-counter --keys 8,x`. The `fonts loaded` lines of `--switch-to` and the
   `quit requested` line of `--keys` appear on your computer's standard
   error.
 - `logs [-n N]`: shows the last N log lines (50 by default) of the latest
@@ -401,14 +413,16 @@ check off.
 
 The bar along the bottom of the screen names what the keys `4` to `8` do on
 the current page. Pages open on top of each other, and a short `esc` goes
-back one page. On the home page of the current demo:
+back one page. On the home page, which shows sample data for now (see
+[docs/home.md](docs/home.md)):
 
-- `4` EXIT: pressing `4` or `esc` shows the hint `Hold ESC to exit`, and
-  holding either one quits;
-- `5` SIZE switches the greeting between two text sizes;
+- `f`, `z`, `up` or `left` selects the previous client and `x`, `c`,
+  `down` or `right` the next one; the selection stops at the first and the
+  last client;
 - `6` SETUP opens the Settings page;
-- `7` INFO shows the version line;
-- `8` COUNT opens the counter page.
+- `4` MODES, `5` SCAN and `7` TOOLS are dimmed and do nothing yet; `8` and
+  `enter` do nothing either;
+- a short `esc` shows the hint `Hold ESC to exit`, and holding `esc` quits.
 
 The Settings page lists the three themes; a tick marks the active one:
 
@@ -420,9 +434,14 @@ The Settings page lists the three themes; a tick marks the active one:
   picking that theme does nothing;
 - `4` BACK or a short `esc` goes back to the home page.
 
-On the counter page, `4` or a short `esc` goes back to the home page, `5`
-(or `z` or `left`) counts down and `7` (or `c` or `right`) counts up. `8`
-KEYS opens the key test page. `6` does nothing there.
+The two demo pages, the counter and the key test page, are not opened from
+the home page. They are reached with `--page` in snapshot runs (see
+[Screenshots without a window](#screenshots-without-a-window)), where the
+keys are pressed with `--keys`. On the counter page, `5` (or `z` or `left`)
+counts down and `7` (or `c` or `right`) counts up. `8` KEYS opens the key
+test page. `6` does nothing there. Started with `--page demo-counter`, the
+counter page is the first page of the run, so its `4` BACK has nothing to
+go back to, and `esc` works as on the home page.
 
 The key test page shows what a page gets from the keyboard. It has a list
 of four rows and a box that names the last key the page got:
@@ -489,7 +508,8 @@ cmake/
   templates/          inputs for the launcher entry, systemd unit and conffiles
   toolchains/         cross-compiler setup for the device
 config/               default settings file
-docs/                 notes on the bundled fonts, the themes and navigation
+docs/                 notes on the bundled fonts, the themes, navigation and
+                      the home page
 screenshot/           simulator screenshots
 scripts/
   build-deb.sh        builds the device package in a Debian arm64 container
@@ -545,6 +565,6 @@ The project started from M5Stack's CardputerZero application template (MIT,
 https://github.com/CardputerZero/Template); files derived from it keep their
 original copyright headers.
 The bundled fonts and icons have their own licenses (SIL Open Font License
-1.1, MIT and CC0), listed in `assets/fonts/LICENSE.txt`. LokiCTL is an
+1.1 and MIT), listed in `assets/fonts/LICENSE.txt`. LokiCTL is an
 independent project and is not affiliated with or endorsed by M5Stack or
 Flipper Devices.

@@ -156,9 +156,11 @@ Pane pane(lv_obj_t* parent,
           const char* title,
           int32_t width,
           int32_t height,
-          lv_color_t title_color) {
+          lv_color_t title_color,
+          PaneDensity density) {
     const auto& metrics = theme.metrics;
     const bool fit_content = height == LV_SIZE_CONTENT;
+    const bool compact = density == PaneDensity::Compact;
     Pane result{};
 
     if (!metrics.pane_title_in_border) {
@@ -166,7 +168,7 @@ Pane pane(lv_obj_t* parent,
         auto* box = plain_object(parent);
         lv_obj_set_size(box, width, height);
         box_border(box, theme);
-        lv_obj_set_style_pad_all(box, metrics.space_sm, 0);
+        lv_obj_set_style_pad_all(box, compact ? metrics.space_xs : metrics.space_sm, 0);
         lv_obj_set_flex_flow(box, LV_FLEX_FLOW_COLUMN);
         lv_obj_set_style_pad_row(box, metrics.space_xs, 0);
 
@@ -202,13 +204,24 @@ Pane pane(lv_obj_t* parent,
     lv_obj_set_size(box, width, fit_content ? LV_SIZE_CONTENT : height - box_top);
     box_border(box, theme);
     lv_obj_set_style_pad_hor(box, metrics.space_sm, 0);
-    lv_obj_set_style_pad_bottom(box, metrics.space_sm, 0);
-    // Content starts below the title label, so a filled first row is not
-    // cut by the title's background.
-    lv_obj_set_style_pad_top(
-        box,
-        std::max<int32_t>(metrics.space_sm, title_height - box_top - metrics.border_width),
-        0);
+    if (compact) {
+        // Content starts 2 px into the title line: the title's ground fill
+        // covers the first two content rows, which grid pages keep empty.
+        lv_obj_set_style_pad_bottom(box, metrics.space_xs, 0);
+        lv_obj_set_style_pad_top(
+            box,
+            std::max<int32_t>(metrics.space_xs,
+                              title_height - box_top - metrics.border_width - 2),
+            0);
+    } else {
+        lv_obj_set_style_pad_bottom(box, metrics.space_sm, 0);
+        // Content starts below the title label, so a filled first row is not
+        // cut by the title's background.
+        lv_obj_set_style_pad_top(
+            box,
+            std::max<int32_t>(metrics.space_sm, title_height - box_top - metrics.border_width),
+            0);
+    }
 
     auto* content = plain_object(box);
     lv_obj_set_size(content, LV_PCT(100), fit_content ? LV_SIZE_CONTENT : LV_PCT(100));
@@ -225,6 +238,31 @@ Pane pane(lv_obj_t* parent,
     result.root = root;
     result.content = content;
     return result;
+}
+
+lv_obj_t* pane_note(const Pane& pane, const Theme& theme, const char* text, lv_color_t color) {
+    const auto& metrics = theme.metrics;
+    auto* note = plain_label(pane.root);
+    lv_label_set_text(note, text ? text : "");
+    lv_obj_set_style_text_font(note, theme.font(FontRole::Small), 0);
+    lv_obj_set_style_text_color(note, color, 0);
+
+    if (!metrics.pane_title_in_border) {
+        // The root is the box itself; keep the note out of its column of
+        // children and put it in the top right corner, inside the padding.
+        lv_obj_add_flag(note, LV_OBJ_FLAG_FLOATING);
+        lv_obj_align(note, LV_ALIGN_TOP_RIGHT, 0, 0);
+        return note;
+    }
+
+    // Like the title: on the border line, filled with the ground colour, at
+    // the title's distance from the edge. Made after the box, so it is drawn
+    // over the line.
+    lv_obj_set_style_bg_color(note, theme.colors.background, 0);
+    lv_obj_set_style_bg_opa(note, LV_OPA_COVER, 0);
+    lv_obj_set_style_pad_hor(note, metrics.space_xs, 0);
+    lv_obj_align(note, LV_ALIGN_TOP_RIGHT, -metrics.space_md, 0);
+    return note;
 }
 
 SoftKeyLook soft_key(const Theme& theme, SoftKeyState state) {

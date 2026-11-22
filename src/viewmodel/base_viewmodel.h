@@ -23,6 +23,10 @@ constexpr int32_t kKeyTestRowCount = 4;
 // theme, whichever that is.
 constexpr int32_t kSettingsThemeFollowsActive = -1;
 
+// The home page shows at most this many clients; the selection never goes
+// past the last of them.
+constexpr int32_t kHomeClientRows = 3;
+
 class BaseViewModel {
 public:
     BaseViewModel();
@@ -32,11 +36,8 @@ public:
     BaseViewModel& operator=(const BaseViewModel&) = delete;
 
     lv_subject_t* title_subject();
-    lv_subject_t* greeting_subject();
     lv_subject_t* current_page_subject();
     lv_subject_t* counter_subject();
-    lv_subject_t* bold_text_subject();
-    lv_subject_t* info_visible_subject();
     lv_subject_t* quit_requested_subject();
     // Counts how often a theme was asked for. It is a counter, because LVGL
     // only tells observers about a value that changed, and the same theme
@@ -62,8 +63,6 @@ public:
     bool go_back();
     void increment_counter();
     void decrement_counter();
-    void toggle_bold_text();
-    void toggle_info();
     void request_quit();
     // Asks for the theme in table row `row`. The view model only passes the
     // request on: the app applies it (app::ThemeController), and
@@ -81,6 +80,19 @@ public:
     // Settings page (see open_page()). Every way into Settings uses it, so
     // the highlight always starts on the active theme.
     bool open_settings();
+
+    // The home page.
+    // The values it shows (see model::HomeData). The page reads them while
+    // it is built; they do not change while it is open yet.
+    const model::HomeData& home() const;
+    // The index of the selected client in home().clients; starts at 0.
+    lv_subject_t* home_selection_subject();
+    int32_t home_selection() const;
+    // Moves the selection by `delta` clients. It stops at the first and the
+    // last client shown (at most kHomeClientRows); it does not wrap around.
+    // Nothing changes, and nothing is written, when the selection would stay
+    // where it is or there are no clients.
+    void home_select(int32_t delta);
 
     // What the key test page (demo-keys) shows. It lives here rather than in
     // the screen, so it is kept while the app runs: after going back,
@@ -108,15 +120,13 @@ private:
 
     model::BaseModel model_;
     reactive::StringSubject<32> title_subject_;
-    reactive::StringSubject<32> greeting_subject_;
     reactive::IntSubject current_page_subject_;
     reactive::IntSubject counter_subject_;
-    reactive::BoolSubject bold_text_subject_;
-    reactive::BoolSubject info_visible_subject_;
     reactive::BoolSubject quit_requested_subject_;
     reactive::IntSubject theme_request_subject_;
     int32_t requested_theme_{-1};
     reactive::IntSubject settings_theme_selection_subject_;
+    reactive::IntSubject home_selection_subject_;
     reactive::IntSubject key_test_selection_subject_;
     reactive::IntSubject key_test_picked_subject_;
     reactive::StringSubject<16> key_test_last_key_subject_;

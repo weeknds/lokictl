@@ -37,9 +37,9 @@ largest family at 831,384 bytes for its two files.
 Each family's full license text sits next to its fonts as `<Family>-OFL.txt`,
 copied unchanged from the same release. `assets/fonts/LICENSE.txt` lists every
 bundled font with its source, release and license, and it also covers the
-icon fonts that were already there: the Phosphor icon font
-(`Phosphor-Fill.ttf`) and the two Kenney keyboard fonts. The package installs
-that file as `/usr/share/doc/lokictl/third-party-assets-license.txt`.
+icon font that was already there: the Phosphor icon font
+(`Phosphor-Fill.ttf`). The package installs that file as
+`/usr/share/doc/lokictl/third-party-assets-license.txt`.
 
 ### Which theme uses which font
 
@@ -101,7 +101,9 @@ The same results, counted per group:
 - **No bundled font contains a single braille character.** The Terminal theme
   mockup draws traffic graphs with braille dots, but none of the five families
   can show them. Graphs must therefore be drawn with LVGL shapes (lines, bars or
-  a canvas) instead of braille text, in every theme.
+  a canvas) instead of braille text, in every theme. The traffic graphs on
+  the Terminal home page use `view::widgets::build_bar_graph()`, a bar graph
+  made of plain objects (see [home.md](home.md#shared-parts)).
 - **Safe in every font:** the four arrows ↑ ↓ ← →, the angle › (U+203A), the
   middle dot · (U+00B7) and the minus sign − (U+2212). These can be used as
   plain text anywhere.

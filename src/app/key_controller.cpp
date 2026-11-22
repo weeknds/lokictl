@@ -94,22 +94,14 @@ void KeyController::handle_press(uint32_t key) {
         return;
     }
 
-    // 5. Key 4 is the demo home page's EXIT key. It keeps the hold-to-exit
-    // it had before ESC got its own rule, until the demo home page is
-    // replaced.
-    if (key == '4' && !typing && view_model_.current_page() == model::AppPage::Apple) {
-        track(key, true);
-        return;
-    }
-
-    // 6. Keys 4-8 belong to the soft keys; an unused or switched-off key
+    // 5. Keys 4-8 belong to the soft keys; an unused or switched-off key
     // does nothing, and the page never sees the digit.
     if (!typing && is_soft_key(key)) {
         platform::press_soft_key(static_cast<std::size_t>(key - '4'));
         return;
     }
 
-    // 7. and 8. F/X/Z/C as arrows, then the page.
+    // 6. and 7. F/X/Z/C as arrows, then the page.
     if (!typing) {
         key = platform::arrow_for_letter(key);
     }

@@ -6,13 +6,15 @@
 
 #pragma once
 
+#include "home_data.h"
+
 #include <array>
 #include <cstddef>
 
 namespace model {
 
 enum class AppPage {
-    Apple    = 0,
+    Home     = 0,
     Butter   = 1,
     KeyTest  = 2,
     Settings = 3,
@@ -38,7 +40,10 @@ constexpr std::size_t kMaxPageDepth = 8;
 class BaseModel {
 public:
     const char* app_title() const;
-    const char* greeting() const;
+
+    // The values the home page shows. For now they are the sample values
+    // of sample_home_data(); the data layer will fill them with real ones.
+    const HomeData& home() const;
 
     // The path of open pages, from the first page to the one on top. Only
     // the top page is shown; the pages below it are rebuilt when the user
@@ -57,8 +62,9 @@ public:
     bool go_back();
 
 private:
-    std::array<AppPage, kMaxPageDepth> pages_{AppPage::Apple};
+    std::array<AppPage, kMaxPageDepth> pages_{AppPage::Home};
     std::size_t depth_ = 1;
+    HomeData home_{sample_home_data()};
 };
 
 } // namespace model

@@ -16,7 +16,15 @@ Pages open on top of each other, like on a phone, and ESC goes back one
 page. The app remembers the path of open pages, for example:
 
 ```text
-demo-home -> demo-counter -> demo-keys
+home -> settings
+```
+
+A snapshot run that starts with `--page demo-counter` (see
+[Testing keys](#testing-keys-with---keys)) shows another path, with the two
+demo pages:
+
+```text
+demo-counter -> demo-keys
 ```
 
 - Only the page on top exists as a screen. The pages below it are just names
@@ -49,11 +57,9 @@ from inside its own action.
 Every page change writes one line to the log:
 
 ```text
-page: demo-home (start, depth 1)
-page: demo-counter (opened, depth 2)
-page: demo-keys (opened, depth 3)
-page: demo-counter (back, depth 2)
-page: demo-home (back, depth 1)
+page: home (start, depth 1)
+page: settings (opened, depth 2)
+page: home (back, depth 1)
 ```
 
 `start` is the first page after the app starts, `opened` means the path got
@@ -65,8 +71,9 @@ switch builds the same page again and writes no `page:` line.
 
 A page's screen is thrown away when the user leaves the page and when the
 theme changes. So everything a page shows must live in the view model, not
-in the screen. The counter value lives there, and so do the selection, the
-picked row, the last key and the typing switch of the key test page. When
+in the screen. The selected client of the home page lives there, and so
+do the counter value and the selection, the picked row, the last key and
+the typing switch of the key test page. When
 the user comes back to the page, or the theme changes, the new screen reads
 the same values and looks exactly as before.
 
@@ -103,10 +110,6 @@ it is let go. Holding ESC belongs to the device's launcher, which closes the
 app after 3 seconds. Quitting from the first page ends the same way, back on
 the launcher's HOME screen, only faster.
 
-On the demo home page, key 4 (`EXIT`) works like ESC on the first page: a
-short press shows the message and holding it for 700 ms quits. This goes
-away when the demo home page is replaced.
-
 ## The order in which a key is handled
 
 One class decides what every key does: `app::KeyController`, in
@@ -123,19 +126,18 @@ first step that takes the key ends it:
 3. **While the help panel is open,** ESC closes it and every other key is
    swallowed.
 4. **ESC** follows the ESC rule above.
-5. **Key 4 on the demo home page** is that page's hold-to-exit key.
-6. **Keys 4 to 8** press the page's soft keys (not while typing). An empty
+5. **Keys 4 to 8** press the page's soft keys (not while typing). An empty
    or switched-off key does nothing, and the page never gets the digit.
-7. **F, X, Z and C** become up, down, left and right (not while typing).
-8. **The page** gets the key, through its `on_key()`.
+6. **F, X, Z and C** become up, down, left and right (not while typing).
+7. **The page** gets the key, through its `on_key()`.
 
 fn+H and fn+J work on every page, also while typing. Never give them
 another job. Holding TAB is reserved as well; the app does not use TAB yet.
 
 **A held key acts once.** The keyboard layer reports a key once when it
-goes down, and once more if it is still held after 700 ms. Only a held ESC,
-or the home page's key 4, acts on that second report. For every other key
-it is ignored, so holding a soft key or an arrow does its job one time.
+goes down, and once more if it is still held after 700 ms. Only a held ESC
+acts on that second report. For every other key it is ignored, so holding
+a soft key or an arrow does its job one time.
 There is no key repeat yet: to move three rows down, press down three
 times.
 
@@ -188,7 +190,7 @@ functions. Each one has a default that does nothing:
 | Function | When it is called | What it returns |
 |---|---|---|
 | `soft_keys()` | once, while the page is built | the five soft keys 4 to 8 (see [Soft keys](themes.md#soft-keys)) |
-| `on_key(key)` | a key for the page, after steps 1 to 7 | true when the page used the key |
+| `on_key(key)` | a key for the page, after steps 1 to 6 | true when the page used the key |
 | `on_back()` | a short ESC, on every page except the first one, and on the first one while typing | true when the page used the ESC itself, for example to end typing; false lets the app go back one page |
 | `text_entry()` | at every key | true while the user is typing on this page |
 | `help()` | when fn+H opens the help panel | a badge and at most 5 rows |
@@ -299,18 +301,41 @@ The panel floats above the page, on LVGL's top layer, so snapshot pictures
 never show it. The developer page `dev-help` draws the home page's help on
 a page of its own, so its look can still be checked.
 
+## The home page
+
+`home` is the first page and the one the app starts on. It has no title
+bar, and its picture depends on the theme; [home.md](home.md) describes
+it. Its keys are the same in every theme:
+
+| Key | What it does |
+|---|---|
+| `z`/`f` or left/up | selects the previous client; it stops at the first one |
+| `c`/`x` or right/down | selects the next client; it stops at the last one shown |
+| `6` SETUP | opens the Settings page |
+| `4` MODES, `5` SCAN, `7` TOOLS | shown switched off; they do nothing yet |
+| `8`, `Enter` | nothing |
+| ESC | the ESC rule for the first page: a short press shows `Hold ESC to exit`, holding it for 700 ms quits |
+
+The selection lives in the view model, so it is kept when Settings is
+opened and closed and when the theme changes.
+
 ## The demo pages
+
+Two demo pages are kept for navigation and key tests. Nothing in the app
+opens them, so, like the developer pages, they are drawn by name only:
+start a snapshot run with `--page demo-counter` (see
+[Testing keys](#testing-keys-with---keys)). The counter page's key 8 then
+opens the key test page.
 
 | Page | Keys |
 |---|---|
-| `demo-home` | `4` EXIT (hold to quit, like ESC), `5` SIZE, `6` SETUP opens the Settings page, `7` INFO, `8` COUNT opens the counter page |
-| `demo-counter` | `4` BACK or a short ESC goes back, `5` LESS (or `z` or left) counts down, `7` MORE (or `c` or right) counts up, `8` KEYS opens the key test page |
+| `demo-counter` | as the first page of a snapshot run, `4` BACK has nothing to go back to, and ESC follows the ESC rule for the first page; `5` LESS (or `z` or left) counts down, `7` MORE (or `c` or right) counts up, `8` KEYS opens the key test page |
 | `demo-keys` | `4` BACK, `5` TYPE turns typing mode on, `f`/`x` or up/down move the selection and stop at the first and last row, `Enter` picks the selected row; a box shows the last key, the picked row and whether typing is on |
 
 ## The Settings page
 
-`settings` is the app's first real page. Key 6 (`SETUP`) on the home page
-opens it. For now it holds only the theme picker: one row per theme, with
+`settings` is the Settings page, which key 6 (`SETUP`) on the home page
+opens. For now it holds only the theme picker: one row per theme, with
 the theme's name, four small squares in its colours and a tick on the theme
 that is active.
 
@@ -339,7 +364,9 @@ themes.md describes each step.
 2. Add a line such as `{"demo-keys", model::AppPage::KeyTest}` to the list
    in `src/app/page_registry.cpp`. The name is what `--page`,
    `--list-pages` and the `page:` log line use. Names that start with
-   `dev-` are developer pages, which nothing in the app opens.
+   `dev-` are developer pages, which nothing in the app opens. The two
+   `demo-` pages are not opened by anything in the app either; they are
+   kept for tests.
 3. Write the screen class in `src/view/screens/`, a `.h` and a `.cpp` file.
    The build finds new files by itself. Derive it from `screen::BaseScreen`,
    call `init()` in the constructor, build the page in `build_content()`,
@@ -369,14 +396,16 @@ keyboard. From the repository root, after building:
 ```sh
 B=./build/darwin-arm64/Debug/lokictl
 mkdir -p build/shots
-$B --snapshot build/shots/keys-x.png --page demo-home --keys 8,8,x
-$B --snapshot build/shots/keys-down.png --page demo-home --keys 8,8,down
+$B --snapshot build/shots/keys-x.png --page demo-counter --keys 8,x
+$B --snapshot build/shots/keys-down.png --page demo-counter --keys 8,down
 cmp build/shots/keys-x.png build/shots/keys-down.png && echo same
 ```
 
 Both pictures show the key test page with the second row selected, so `cmp`
-prints `same`. The demo pages show a clock in the title bar: if the minute
-changed between the two pictures, take both again.
+prints `same`. The demo pages have a title bar with the current time: if
+the minute changed between the two pictures, take both again. The home
+page has no clock that runs, so its pictures never differ for that
+reason.
 
 How it works:
 
@@ -393,18 +422,21 @@ How it works:
   page change has happened before the next key. The program does not
   really wait that long.
 - The page given with `--page` is the first page of the path, with nothing
-  below it. To test going back, start at `demo-home`: with
-  `--page demo-counter --keys esc` the app stays on the counter page,
+  below it. To test going back, start one page lower: at `home` for the
+  Settings page (`--page home --keys 6,esc`) and at `demo-counter` for the
+  key test page (`--page demo-counter --keys 8,esc`). With
+  `--page demo-keys --keys esc` the app stays on the key test page,
   because there it is the first page.
 - A theme picked on the Settings page, for example with
-  `--page demo-home --keys 6,x,enter`, really switches the theme. As in
-  every snapshot, nothing is saved.
+  `--page home --keys 6,x,enter`, really switches the theme. As in every
+  snapshot, nothing is saved.
 - If the keys made the app ask to quit, for example with a held ESC on the
   first page, the line `quit requested` goes to standard error. The picture
   is still taken and the exit code stays 0.
 - The picture shows the page only. The help panel and the messages, such as
   `Hold ESC to exit`, float above the page and are not in it. So
-  `--keys 8,help` gives the same picture as `--keys 8`.
+  `--page home --keys c,help` gives the same picture as
+  `--page home --keys c`.
 - `--keys` only works together with `--snapshot`. Without it, or with an
   unknown name, an empty name or an unknown suffix, the app stops with exit
   code 2 and a message.
@@ -415,14 +447,17 @@ More examples:
 B=./build/darwin-arm64/Debug/lokictl
 mkdir -p build/shots
 # The key test page in typing mode, after typing f, in the Terminal theme.
-$B --snapshot build/shots/keys-typing.png --page demo-home --keys 8,8,5,f --theme terminal
+$B --snapshot build/shots/keys-typing.png --page demo-counter --keys 8,5,f --theme terminal
 # A held ESC on the first page asks to quit: standard error says "quit requested".
 $B --snapshot build/shots/keys-quit.png --keys esc:long
 # Pick the second row, then switch to Instrument: the page keeps its state.
-$B --snapshot build/shots/keys-switched.png --page demo-home --keys 8,8,x,enter --switch-to instrument
+$B --snapshot build/shots/keys-switched.png --page demo-counter --keys 8,x,enter --switch-to instrument
+# Select the second client on the home page, then switch to Terminal: the
+# selection stays.
+$B --snapshot build/shots/home-switched.png --page home --keys c --switch-to terminal
 # From the default theme, Constellation: open Settings, move the highlight to
 # Terminal and pick it. The Settings page is now drawn in Terminal.
-$B --snapshot build/shots/keys-settings.png --page demo-home --keys 6,x,enter
+$B --snapshot build/shots/keys-settings.png --page home --keys 6,x,enter
 ```
 
 ### On the device
@@ -433,7 +468,7 @@ keyboard, so LokiCTL does not need to be running and the screen does not
 change:
 
 ```sh
-scripts/device.sh snapshot build/shots/device-keys.png --page demo-home --keys 8,8,x
+scripts/device.sh snapshot build/shots/device-keys.png --page demo-counter --keys 8,x
 ```
 
 To press keys on the real keyboard while LokiCTL runs on the screen, use
@@ -443,13 +478,18 @@ key with `--long` instead of `:long`.
 
 ```sh
 scripts/device.sh run
-scripts/device.sh key 8
-scripts/device.sh key 8
+scripts/device.sh key c
+scripts/device.sh key 6
 scripts/device.sh key x
-scripts/device.sh screen build/shots/device-keys-live.png
+scripts/device.sh screen build/shots/device-settings-live.png
 scripts/device.sh logs -n 20
 scripts/device.sh stop
 ```
 
-The log then shows the `page:` lines of the path, and the saved picture
-shows the key test page with the second row selected.
+`c` selects the second client on the home page, and `6` opens Settings.
+The log then shows `page: home (start, depth 1)` and
+`page: settings (opened, depth 2)`, and the saved picture shows the
+Settings page with the highlight moved one row down (it stops on the
+last row). `x` only moves the highlight, so no theme is picked. An `esc`
+before `stop` would bring back the home page with the second client still
+selected.

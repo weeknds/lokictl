@@ -30,9 +30,12 @@ class BaseScreen {
 public:
     // Standard: title bar on top and soft-key bar at the bottom.
     // FullScreen: no bars; the content area covers the whole 320x170 screen.
+    // NoTitleBar: soft-key bar at the bottom, no title bar; the content area
+    // is 320x140 at the top of the screen.
     enum class Layout {
         Standard,
         FullScreen,
+        NoTitleBar,
     };
 
     // Screens are styled from theme_engine.theme() when they are built and
@@ -78,11 +81,11 @@ protected:
     virtual void build_content(lv_obj_t* content) = 0;
 
     // What keys 4-8 do on this page (index 0-4 = keys 4-8), shown in the
-    // soft-key bar of Standard pages. Called once from init(), before
-    // build_content(); the default leaves all five keys unused. Actions run
-    // inside an LVGL click event and may only ask the view model for
-    // something. A screen that needs its own members here sets them before
-    // it calls init().
+    // soft-key bar of Standard and NoTitleBar pages. Called once from
+    // init(), before build_content(); the default leaves all five keys
+    // unused. Actions run inside an LVGL click event and may only ask the
+    // view model for something. A screen that needs its own members here
+    // sets them before it calls init().
     virtual view::widgets::SoftKeySet soft_keys();
     // The page's soft-key bar, for changing a key later with set_key();
     // nullptr on FullScreen pages.

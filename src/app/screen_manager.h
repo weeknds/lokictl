@@ -35,7 +35,7 @@ public:
     // Each show_* function builds its page, loads it and deletes the screen
     // shown before. They return false when the page could not be built; the
     // old screen then stays.
-    bool show_apple_screen();
+    bool show_home_screen();
     bool show_butter_screen();
     bool show_key_test_screen();
     bool show_settings_screen();
@@ -75,8 +75,8 @@ private:
     view::ThemeEngine& theme_engine_;
     std::unique_ptr<screen::BaseScreen> current_screen_;
     lv_observer_t* page_observer_ = nullptr;
-    model::AppPage requested_page_ = model::AppPage::Apple;
-    model::AppPage loaded_page_ = model::AppPage::Apple;
+    model::AppPage requested_page_ = model::AppPage::Home;
+    model::AppPage loaded_page_ = model::AppPage::Home;
     std::size_t loaded_depth_ = 0;   // page_depth() when loaded_page_ loaded
     bool has_loaded_page_ = false;
     bool page_switch_scheduled_ = false;

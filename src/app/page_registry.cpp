@@ -10,12 +10,16 @@ namespace app {
 
 const std::vector<PageInfo>& page_registry() {
     // Add one line here for every page added to model::AppPage.
-    // The first entry is the default page.
+    // The first entry, home, is the default page: the app starts on it.
     static const std::vector<PageInfo> pages{
-        {"demo-home", model::AppPage::Apple},
+        {"home", model::AppPage::Home},
+        {"settings", model::AppPage::Settings},
+        // The two demo pages are kept for navigation and key tests. Like the
+        // dev- pages, they are opened by name only (snapshot --page), since
+        // nothing in the app links to them; the counter page's key 8 opens
+        // the key test page.
         {"demo-counter", model::AppPage::Butter},
         {"demo-keys", model::AppPage::KeyTest},
-        {"settings", model::AppPage::Settings},
         // Pages starting with "dev-" are for developers only; nothing in the
         // app links to them.
         {"dev-fonts", model::AppPage::DevFonts},

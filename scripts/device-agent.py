@@ -1452,17 +1452,17 @@ def cmd_selftest(args):
     assert plain.keys is None, "snapshot without --keys"
     assert switched.keys is None, "--keys is only there when given"
     assert "--keys" not in snapshot_command(shot, switched), snapshot_command(shot, switched)
-    keyed = parser.parse_args(["snapshot", "--page", "demo-home", "--keys", "8,8,x"])
-    assert keyed.keys == "8,8,x", keyed.keys
+    keyed = parser.parse_args(["snapshot", "--page", "demo-counter", "--keys", "8,x"])
+    assert keyed.keys == "8,x", keyed.keys
     assert snapshot_command(shot, keyed) == [
-        BINARY, "--snapshot", shot, "--page", "demo-home", "--keys", "8,8,x"], snapshot_command(shot, keyed)
+        BINARY, "--snapshot", shot, "--page", "demo-counter", "--keys", "8,x"], snapshot_command(shot, keyed)
     assert parser.parse_args(["snapshot", "--keys=nope,,esc:short"]).keys == "nope,,esc:short", \
         "key names are not checked"
     everything = parser.parse_args(["snapshot", "--settle-ms", "0", "--switch-to", "terminal",
                                     "--keys", "8,esc:long", "--theme", "instrument",
-                                    "--page", "demo-home"])
+                                    "--page", "demo-counter"])
     assert snapshot_command(shot, everything) == [
-        BINARY, "--snapshot", shot, "--page", "demo-home", "--theme", "instrument",
+        BINARY, "--snapshot", shot, "--page", "demo-counter", "--theme", "instrument",
         "--keys", "8,esc:long", "--switch-to", "terminal", "--settle-ms", "0"], \
         snapshot_command(shot, everything)
 

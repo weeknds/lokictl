@@ -12,8 +12,8 @@
 #   scripts/device.sh key 6         press keys on the device (6: opens Settings)
 #   scripts/device.sh snapshot x.png --theme instrument --switch-to terminal
 #                                   draw a page off screen, after a live switch
-#   scripts/device.sh snapshot x.png --page demo-home --keys 8,8,x
-#                                   draw a page off screen after the keys 8, 8, x
+#   scripts/device.sh snapshot x.png --page demo-counter --keys 8,x
+#                                   draw a page off screen after the keys 8, x
 #   scripts/device.sh stats         memory, CPU and frame time
 #   scripts/device.sh stop          stop LokiCTL and bring the launcher back
 #

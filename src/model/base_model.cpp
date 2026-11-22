@@ -12,8 +12,8 @@ const char* BaseModel::app_title() const {
     return APP_DISPLAY_NAME;
 }
 
-const char* BaseModel::greeting() const {
-    return "Hello World";
+const HomeData& BaseModel::home() const {
+    return home_;
 }
 
 AppPage BaseModel::current_page() const {

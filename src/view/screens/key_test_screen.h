@@ -13,8 +13,8 @@
 
 namespace screen {
 
-// The key test page (demo-keys), the third demo page: home -> counter ->
-// key test. It shows what a page gets from the keyboard:
+// The key test page (demo-keys), the second demo page: counter -> key test.
+// It shows what a page gets from the keyboard:
 // - a list of four rows; up and down (F/X or the arrow keys) move the
 //   selection and stop at the first and the last row, Enter picks the
 //   selected row (marked with a tick);
