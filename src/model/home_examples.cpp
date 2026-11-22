@@ -7,6 +7,8 @@
 #include "home_examples.h"
 
 #include <cstddef>
+#include <cstdint>
+#include <string>
 
 namespace model {
 namespace {
@@ -91,7 +93,114 @@ HomeData situation_data(Situation situation) {
     return sample_home_data();
 }
 
+// The made-up battery behind example_status_details(): its charge when
+// full, and the current it draws or takes in.
+constexpr int32_t kExampleBatteryFullMah = 1750;
+constexpr int32_t kExampleDischargeMa = 480;
+constexpr int32_t kExampleChargeMa = 650;
+
+// A signal or a speed of HomeData as a Status page number: its own "not
+// known" value becomes kDetailUnknown.
+int32_t detail_signal(int32_t dbm) {
+    return dbm == kSignalUnknown ? kDetailUnknown : dbm;
+}
+
+int32_t detail_speed(int32_t mbps) {
+    return mbps > kSpeedUnknown ? mbps : kDetailUnknown;
+}
+
+// An IPv4 address of a made-up block with the prefix every example network
+// has (/24); empty stays empty.
+std::string with_prefix(const std::string& address) {
+    return address.empty() ? std::string() : address + "/24";
+}
+
 } // namespace
+
+StatusDetails example_status_details(const HomeData& data) {
+    StatusDetails details;
+
+    // The ports in name order, as the live reader lists them.
+    StatusPort cable;
+    cable.kind = LinkKind::Cable;
+    cable.name = "eth0";
+    cable.hardware_address = "02:4c:4b:00:00:01";
+    StatusPort wifi;
+    wifi.kind = LinkKind::Wifi;
+    wifi.name = "wlan0";
+    wifi.hardware_address = "02:4c:4b:00:00:02";
+
+    if (data.uplink_kind == LinkKind::Cable) {
+        cable.state = PortState::Connected;
+        cable.uplink = true;
+        cable.speed_mbps = detail_speed(data.uplink_speed_mbps);
+        cable.ipv4 = with_prefix(data.uplink_address);
+        cable.ipv6 = "2001:db8:a::12";
+        cable.ipv6_link = "fe80::4c:4bff:fe00:1";
+        cable.router = data.gateway_address;
+    } else {
+        cable.state = PortState::NoLink;
+    }
+
+    if (data.uplink_kind == LinkKind::Wifi) {
+        wifi.state = PortState::Connected;
+        wifi.uplink = true;
+        wifi.network = data.wifi_name;
+        wifi.security = data.wifi_security;
+        wifi.signal_dbm = detail_signal(data.wifi_signal_dbm);
+        wifi.speed_mbps = detail_speed(data.uplink_speed_mbps);
+        wifi.ipv4 = with_prefix(data.uplink_address);
+        // Long enough to go on in a second row on the page.
+        wifi.ipv6 = "2001:db8:85a3:42:1000:8a2e:370:7334";
+        wifi.ipv6_link = "fe80::4c:4bff:fe00:2";
+        wifi.router = data.gateway_address;
+    } else if (data.ap_active) {
+        wifi.state = PortState::AccessPoint;
+        wifi.network = data.ap_name;
+        wifi.security = data.ap_security;
+        wifi.ipv4 = "10.42.0.1/24";
+        wifi.ipv6_link = "fe80::4c:4bff:fe00:2";
+    } else {
+        wifi.state = PortState::NoLink;
+    }
+
+    details.ports.push_back(cable);
+    details.ports.push_back(wifi);
+    if (data.uplink_kind != LinkKind::None && !data.gateway_address.empty()) {
+        details.dns.push_back(data.gateway_address);
+    }
+
+    if (data.battery_percent >= 0) {
+        const int32_t percent = data.battery_percent > 100 ? 100 : data.battery_percent;
+        const int32_t charge = kExampleBatteryFullMah * percent / 100;
+        details.battery_charge_mah = charge;
+        details.battery_full_mah = kExampleBatteryFullMah;
+        details.battery_voltage_mv = 3500 + 7 * percent;
+        switch (data.battery_state) {
+            case BatteryState::Discharging:
+                details.battery_current_ma = -kExampleDischargeMa;
+                details.battery_empty_minutes = charge * 60 / kExampleDischargeMa;
+                break;
+            case BatteryState::Charging:
+                details.battery_current_ma = kExampleChargeMa;
+                details.battery_full_minutes = (kExampleBatteryFullMah - charge) * 60 / kExampleChargeMa;
+                break;
+            case BatteryState::Idle:
+                details.battery_current_ma = 0;
+                break;
+            case BatteryState::Unknown:
+                break;
+        }
+    }
+    details.battery_temp_tenths = 314;
+    details.battery_health = "Good";
+    details.battery_cycles = 7;
+    details.cpu_temp_tenths = 523;
+    details.memory_free_mb = 212;
+    details.memory_total_mb = 446;
+    details.uptime_seconds = 2 * 86400 + 5 * 3600 + 17 * 60;
+    return details;
+}
 
 HomeData wifi_home_data() {
     HomeData data = client_base();

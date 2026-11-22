@@ -77,6 +77,11 @@ public:
     // the next read_now().
     void set_traffic_shown(bool shown);
 
+    // Tells the source whether the Status page is on screen (see
+    // DataSource::set_details_shown()); it starts as not shown. Handed over
+    // the same way as the traffic flag.
+    void set_details_shown(bool shown);
+
     // Copies the newest block into `data` and returns true, but only if it
     // changed since the last take(); otherwise leaves `data` alone and
     // returns false.
@@ -93,16 +98,16 @@ private:
     bool read_source(model::HomeData& data);
     // Stores the block as the newest one, unless it equals the newest one.
     void publish(model::HomeData data);
-    // Gives the source the newest traffic flag. Called on the thread that
-    // asks the source.
-    void hand_over_traffic_shown();
+    // Gives the source the newest traffic and details flags. Called on the
+    // thread that asks the source.
+    void hand_over_shown();
 
     std::unique_ptr<DataSource> source_;
     const DataSourceKind kind_;
     std::thread thread_;
 
-    // The hand-over slot, the stop flag and the traffic flag; the mutex
-    // guards all six.
+    // The hand-over slot, the stop flag and the two page flags; the mutex
+    // guards all seven.
     mutable std::mutex mutex_;
     std::condition_variable wake_;
     bool stop_requested_{false};
@@ -110,7 +115,8 @@ private:
     bool has_latest_{false};
     bool fresh_{false};            // latest_ changed since the last take()
     bool traffic_shown_{true};     // see set_traffic_shown()
-    bool traffic_changed_{false};  // set_traffic_shown() changed it since the source got it
+    bool details_shown_{false};    // see set_details_shown()
+    bool shown_changed_{false};    // a flag changed since the source got them
 };
 
 } // namespace platform

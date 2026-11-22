@@ -190,12 +190,15 @@ Options:
   long; it finishes in a fraction of a second.
 - `--help`: shows a short summary of all options.
 
-The app has 14 pages. `--list-pages` prints them in this order:
+The app has 15 pages. `--list-pages` prints them in this order:
 
 - `home`, the home page, where the app starts (see
   [docs/home.md](docs/home.md));
 - `settings`, the Settings page with the theme picker, which the home page
   opens;
+- `status`, the Status page with every detail (ports, DNS, battery,
+  device), which the home page's key 8 opens (see
+  [docs/navigation.md](docs/navigation.md#the-status-page));
 - `demo-counter` and `demo-keys`, two demo pages kept for navigation and
   key tests: a counter and a key test page. Nothing in the app opens them
   any more, so they are drawn by name only, with `--page`; the counter
@@ -259,8 +262,9 @@ link=cable
 ```
 
 and goes on with the network's lines (`interface=`, `address=`, `router=`,
-`speed_mbps=` and more, down to `up_kbps=`). A value that is not known
-prints `unknown`.
+`speed_mbps=` and more, down to `state=`), then the Status page's details
+(one `port=` line per port, `dns=`, the battery, processor, memory and
+uptime lines). A value that is not known prints `unknown`.
 
 It takes `--data` and `--data-steps` and nothing else. The environment
 variable `LOKICTL_DATA_ROOT=<folder>` makes the `live` source read
@@ -519,8 +523,11 @@ but sample network data for now (see [docs/home.md](docs/home.md)):
   `down` or `right` the next one; the selection stops at the first and the
   last client;
 - `6` SETUP opens the Settings page;
-- `4` MODES, `5` SCAN and `7` TOOLS are dimmed and do nothing yet; `8` and
-  `enter` do nothing either;
+- `8` INFO opens the Status page, a list of every detail (every network
+  port, DNS, battery, processor, memory) that scrolls with `f`/`x` and
+  jumps between its parts with `z`/`c` or `5`/`6`;
+- `4` MODES, `5` SCAN and `7` TOOLS are dimmed and do nothing yet; `enter`
+  does nothing either;
 - a short `esc` shows the hint `Hold ESC to exit`, and holding `esc` quits.
 
 The Settings page lists the three themes; a tick marks the active one:

@@ -94,11 +94,12 @@ model::BatteryState read_state(const std::filesystem::path& battery_dir) {
     return model::BatteryState::Unknown;
 }
 
-} // namespace
+// The longest health text kept.
+constexpr std::size_t kMaxHealthText = 24;
 
-BatteryReading read_battery(const std::filesystem::path& power_supply_dir) {
-    BatteryReading reading;
-
+// The folder of the first battery in `power_supply_dir` (see
+// read_battery()), or false when there is none.
+bool find_battery(const std::filesystem::path& power_supply_dir, std::filesystem::path& battery_dir) {
     // The names of the sub-folders first, so they can be taken in order.
     // The entries are usually links to the supplies' own folders, so they
     // are not filtered by their type: a name without a readable `type`
@@ -107,7 +108,7 @@ BatteryReading read_battery(const std::filesystem::path& power_supply_dir) {
     std::error_code error;
     std::filesystem::directory_iterator entry(power_supply_dir, error);
     if (error) {
-        return reading;
+        return false;
     }
     std::vector<std::string> names;
     const std::filesystem::directory_iterator end;
@@ -115,7 +116,7 @@ BatteryReading read_battery(const std::filesystem::path& power_supply_dir) {
         names.push_back(entry->path().filename().string());
         entry.increment(error);
         if (error) {
-            return reading;
+            return false;
         }
     }
     std::sort(names.begin(), names.end());
@@ -123,14 +124,86 @@ BatteryReading read_battery(const std::filesystem::path& power_supply_dir) {
     for (const auto& name : names) {
         const std::filesystem::path supply_dir = power_supply_dir / name;
         std::string type;
-        if (!read_first_line(supply_dir / "type", type) || type != "Battery") {
-            continue;
+        if (read_first_line(supply_dir / "type", type) && type == "Battery") {
+            battery_dir = supply_dir;
+            return true;
         }
-        reading.percent = read_capacity(supply_dir);
-        reading.state = read_state(supply_dir);
-        return reading;
+    }
+    return false;
+}
+
+// A whole number from `file` in the battery's folder, or false.
+bool read_number(const std::filesystem::path& battery_dir, const char* file, int32_t& value) {
+    std::string text;
+    return read_first_line(battery_dir / file, text) && parse_whole_number(text, value);
+}
+
+// A number in millionths (µV, µA, µAh) in thousandths (mV, mA, mAh),
+// rounded half away from zero; unknown when it cannot be read.
+int32_t read_thousandths(const std::filesystem::path& battery_dir, const char* file) {
+    int32_t value = 0;
+    if (!read_number(battery_dir, file, value)) {
+        return model::kDetailUnknown;
+    }
+    return (value >= 0 ? value + 500 : value - 500) / 1000;
+}
+
+// Seconds (0 or more) in whole minutes; unknown when it cannot be read.
+int32_t read_minutes(const std::filesystem::path& battery_dir, const char* file) {
+    int32_t seconds = 0;
+    if (!read_number(battery_dir, file, seconds) || seconds < 0) {
+        return model::kDetailUnknown;
+    }
+    return seconds / 60;
+}
+
+} // namespace
+
+BatteryReading read_battery(const std::filesystem::path& power_supply_dir) {
+    BatteryReading reading;
+    std::filesystem::path battery_dir;
+    if (find_battery(power_supply_dir, battery_dir)) {
+        reading.percent = read_capacity(battery_dir);
+        reading.state = read_state(battery_dir);
     }
     return reading;
+}
+
+void read_battery_details(const std::filesystem::path& power_supply_dir, model::StatusDetails& details) {
+    details.battery_voltage_mv = model::kDetailUnknown;
+    details.battery_current_ma = model::kDetailUnknown;
+    details.battery_temp_tenths = model::kDetailUnknown;
+    details.battery_health.clear();
+    details.battery_cycles = model::kDetailUnknown;
+    details.battery_charge_mah = model::kDetailUnknown;
+    details.battery_full_mah = model::kDetailUnknown;
+    details.battery_empty_minutes = model::kDetailUnknown;
+    details.battery_full_minutes = model::kDetailUnknown;
+
+    std::filesystem::path battery_dir;
+    if (!find_battery(power_supply_dir, battery_dir)) {
+        return;
+    }
+    details.battery_voltage_mv = read_thousandths(battery_dir, "voltage_now");
+    details.battery_current_ma = read_thousandths(battery_dir, "current_now");
+    details.battery_charge_mah = read_thousandths(battery_dir, "charge_now");
+    details.battery_full_mah = read_thousandths(battery_dir, "charge_full");
+    int32_t value = 0;
+    if (read_number(battery_dir, "temp", value)) {
+        details.battery_temp_tenths = value;
+    }
+    if (read_number(battery_dir, "cycle_count", value) && value >= 0) {
+        details.battery_cycles = value;
+    }
+    details.battery_empty_minutes = read_minutes(battery_dir, "time_to_empty_now");
+    details.battery_full_minutes = read_minutes(battery_dir, "time_to_full_now");
+
+    std::string health;
+    if (read_first_line(battery_dir / "health", health) && !health.empty() &&
+        health.size() <= kMaxHealthText &&
+        std::all_of(health.begin(), health.end(), [](unsigned char ch) { return ch >= 0x20 && ch < 0x7f; })) {
+        details.battery_health = health;
+    }
 }
 
 } // namespace platform

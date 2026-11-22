@@ -40,4 +40,14 @@ constexpr int kHomeTourStops = 25;
 // index gives stop 0.
 HomeData home_tour_stop(int index);
 
+// Made-up Status page values that fit `data`, a made-up block: a cable port
+// (eth0) and the built-in Wi-Fi (wlan0), each connected when it is the
+// uplink, the Wi-Fi running the access point when `data` has one; the DNS
+// server is the router; battery details that follow the block's charge and
+// state; a fixed processor temperature, memory and time since start. The
+// hardware addresses are made up (02:...) and the IPv6 addresses come from
+// the range kept for examples (2001:db8::/32). Every made-up source fills
+// HomeData::details with it, after all its other values are set.
+StatusDetails example_status_details(const HomeData& data);
+
 } // namespace model

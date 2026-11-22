@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <string>
+#include <vector>
 
 namespace platform {
 
@@ -49,11 +50,50 @@ struct NetworkReading {
 // - The address is the interface's first IPv4 address. The system keeps that
 //   list in no file, so with `addresses_file` empty it comes from the
 //   system (getifaddrs()). With a file named, the system is not asked and
-//   the file stands in for it: one line per address, "<interface> <IPv4>".
+//   the file stands in for it: one line per address, "<interface> <IPv4>"
+//   or "<interface> <IPv4>/<prefix>" (the prefix is not used here).
 // Without any uplink every value is not known. Never throws on a file
 // system error.
 NetworkReading read_network(const std::filesystem::path& root,
                             const std::filesystem::path& addresses_file);
+
+// The most network ports read_ports() lists.
+constexpr std::size_t kMaxPorts = 4;
+
+// The network ports for the Status page, read like read_network() from the
+// files the kernel offers to every user (and getifaddrs(), or
+// `addresses_file` in its place); it only reads.
+// - A port is an interface in sys/class/net whose "type" is 1 (Ethernet)
+//   and that has a "device" entry (real hardware, so not the loopback, a
+//   bridge or a tunnel); Wi-Fi when it has a "wireless" folder, otherwise a
+//   cable. Ports are listed by name, at most kMaxPorts.
+// - State: Off when "flags" says the interface is not up; NoLink when
+//   "carrier" is not 1 (or cannot be read); Connected otherwise; Unknown
+//   when "flags" cannot be read. The port named `uplink_name` is marked as
+//   the uplink.
+// - Only a connected port gets its signal (Wi-Fi, proc/net/wireless), its
+//   speed (cable, "speed") and its router (the gateway of its own default
+//   route with the lowest metric in proc/net/route).
+// - IPv4: the port's first IPv4 address with its prefix, "10.0.0.12/24"
+//   (a line of `addresses_file` without a prefix gives the address alone).
+// - IPv6, from proc/net/if_inet6: the first address that is not link-local
+//   and the first link-local one, without prefix; tentative addresses and
+//   addresses that failed their check are skipped.
+// - The hardware address is "address", when it reads like one.
+// The Wi-Fi name, security and speed are not read here (see
+// apply_network_manager()). Never throws on a file system error.
+std::vector<model::StatusPort> read_ports(const std::filesystem::path& root,
+                                          const std::filesystem::path& addresses_file,
+                                          const std::string& uplink_name);
+
+// The most DNS servers read_dns_servers() lists, as many as the system's
+// resolver uses.
+constexpr std::size_t kMaxDnsServers = 3;
+
+// The DNS servers in "<root>/etc/resolv.conf": the address of every
+// "nameserver" line that holds an IPv4 or IPv6 address, in order, at most
+// kMaxDnsServers. Empty without the file. Never throws.
+std::vector<std::string> read_dns_servers(const std::filesystem::path& root);
 
 // How many bytes an interface has received and sent since it came up, as
 // the kernel counts them.

@@ -18,6 +18,7 @@ enum class AppPage {
     Butter   = 1,
     KeyTest  = 2,
     Settings = 3,
+    Status   = 4,
 
     // Developer pages. They are opened by name only (snapshot --page) and
     // are never linked from the normal UI.

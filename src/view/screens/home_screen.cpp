@@ -29,6 +29,7 @@ view::widgets::HelpContent HomeScreen::help_content() {
                 {"HOLD ESC", "Exit"},
                 {"F Z / X C", "Previous / next client"},
                 {"6", "Settings"},
+                {"8", "Status"},
                 {"4 / 5 / 7", "Not available yet"},
             }};
 }
@@ -47,7 +48,7 @@ view::widgets::SoftKeySet HomeScreen::soft_keys() {
         {"Scan", {}, false, false},
         {"Setup", [&view_model] { view_model.open_settings(); }, true},
         {"Tools", {}, false, false},
-        {},
+        {"Info", [&view_model] { view_model.open_status(); }},
     }};
 }
 

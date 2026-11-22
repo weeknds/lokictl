@@ -110,6 +110,28 @@ void apply_network_manager(const NetworkManagerReading& reading, model::HomeData
     }
 }
 
+void apply_network_manager(const NetworkManagerReading& reading, std::vector<model::StatusPort>& ports) {
+    if (!reading.available) {
+        return;
+    }
+    for (model::StatusPort& port : ports) {
+        if (port.kind != model::LinkKind::Wifi || port.state != model::PortState::Connected) {
+            continue;
+        }
+        for (const NetworkManagerReading::WifiLink& link : reading.wifi_links) {
+            if (link.interface_name != port.name) {
+                continue;
+            }
+            port.network = link.name;
+            port.security = link.security;
+            if (link.speed_mbps > model::kSpeedUnknown) {
+                port.speed_mbps = link.speed_mbps;
+            }
+            break;
+        }
+    }
+}
+
 std::string clean_network_name(const std::string& name) {
     std::string result = name.substr(0, kMaxNetworkName);
     if (name.size() > kMaxNetworkName) {

@@ -69,8 +69,9 @@ public:
 // True when `next` differs from `shown`, the block a layout shows, only in
 // the values update() shows in place: the clock, the battery, the uplink's
 // interface, address and link speed, the router's address, the Wi-Fi
-// network's name, security and signal, and the two rates with their
-// histories. Every other difference (the kind of link, the access point,
+// network's name, security and signal, the two rates with their
+// histories, and the Status page's details (HomeData::details, which the
+// home page does not show). Every other difference (the kind of link, the access point,
 // the mode, the clients, the sample mark, the internet state, the offline
 // state and any field added later) means the page is built again. The
 // internet and offline states change seldom, so a layout shows them in
@@ -93,6 +94,9 @@ inline bool home_values_only(const model::HomeData& shown, const model::HomeData
     copy.up_kbps = next.up_kbps;
     copy.down_history = next.down_history;
     copy.up_history = next.up_history;
+    // The Status page's values: the home page shows none of them, so they
+    // never build it again (update() then finds nothing to retext).
+    copy.details = next.details;
     return copy == next;
 }
 

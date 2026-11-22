@@ -64,6 +64,13 @@ public:
     // ignores it. Until the first call it counts as shown.
     virtual void set_traffic_shown(bool /*shown*/) {}
 
+    // Whether the Status page, the only page that shows HomeData::details,
+    // is on screen. Handed over like set_traffic_shown(). A source that
+    // reads the details only while they are shown (the live one) uses it;
+    // the made-up sources always fill them and keep this default. Until the
+    // first call it counts as not shown.
+    virtual void set_details_shown(bool /*shown*/) {}
+
     // Waits until values that a source collects in the background after it
     // was made (the live source's connection to the network service) are
     // there, at most `limit`. It blocks, so it is only called before the

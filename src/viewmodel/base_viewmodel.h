@@ -81,6 +81,21 @@ public:
     // the highlight always starts on the active theme.
     bool open_settings();
 
+    // The Status page.
+    // The first row it shows, counted from the top of its list; starts at
+    // 0. The page shows it clamped to the rows there are (the view model
+    // does not know how many rows the values make), so a value past the end
+    // shows the last rows.
+    lv_subject_t* status_scroll_subject();
+    int32_t status_scroll() const;
+    // Stores `row` (0 or more) as the first row shown; nothing is written
+    // when it stays the same.
+    void set_status_scroll(int32_t row);
+    // Sets the first row back to 0, then opens the Status page (see
+    // open_page()). The home page's key 8 uses it, so the page always opens
+    // at the top.
+    bool open_status();
+
     // The home page.
     // The values it shows (see model::HomeData). The page reads them while
     // it is built, and they change while it is open: the data layer hands
@@ -140,6 +155,7 @@ private:
     reactive::IntSubject theme_request_subject_;
     int32_t requested_theme_{-1};
     reactive::IntSubject settings_theme_selection_subject_;
+    reactive::IntSubject status_scroll_subject_;
     reactive::IntSubject home_selection_subject_;
     reactive::IntSubject home_data_subject_;
     reactive::IntSubject key_test_selection_subject_;

@@ -399,6 +399,47 @@ counters, which every user may read:
   does not fit its panel (two rates of 10 Mbit/s or more), it writes
   `↓12.3M ↑10.2M` instead.
 
+## The Status page's details
+
+The Status page (home page, key 8) shows the extra values of
+`model::StatusDetails`, which the block carries as `HomeData::details`. The
+home page shows none of them, so a change there never builds it again.
+
+- **Only while it is seen.** Like the traffic, `app::DataController` tells
+  the reader whether the Status page is on top
+  (`DataReader::set_details_shown()`). With `live`, the details are read at
+  once when the page opens (they appear a moment later and fill in place),
+  then the ports and the DNS servers every 5 s with the network, and the
+  battery details and the device values every 10 s with the battery. While
+  another page is on top every detail is unknown and nothing reads them.
+  The made-up sources always fill them, from their own home values
+  (`model::example_status_details()`), with made-up hardware addresses
+  (`02:...`) and IPv6 addresses from the range kept for examples
+  (`2001:db8::/32`).
+- **Ports** (`platform::read_ports()` in `src/platform/network.h`): every
+  interface in `/sys/class/net` with `type` 1 and a `device` entry (real
+  hardware: on the device `eth0`, `wlan0` and a USB Wi-Fi stick), by name,
+  at most four. State from `flags` (not up: `off`) and `carrier` (`no
+  cable` or `not joined`, else `connected`); the IPv4 address with its
+  prefix (`getifaddrs()`); from `/proc/net/if_inet6` the first IPv6 address
+  that is not link-local and the link-local one; the router of the port's
+  own default route; the hardware address (`address`); signal and cable
+  speed as for the uplink; NetworkManager's Wi-Fi name, security and speed.
+- **DNS** (`platform::read_dns_servers()`): the `nameserver` lines of
+  `/etc/resolv.conf`, at most three.
+- **Battery** (`platform::read_battery_details()`): `voltage_now` (µV),
+  `current_now` (µA, negative while discharging), `temp` (tenths of a
+  degree), `health`, `cycle_count`, `charge_now` and `charge_full` (µAh),
+  and `time_to_empty_now` or `time_to_full_now` (seconds; the battery
+  answers them with a read error while they do not apply).
+- **Device** (`platform::read_device_details()`): the thermal zone whose
+  `type` is `cpu-thermal` (thousandths of a degree), `MemAvailable` and
+  `MemTotal` of `/proc/meminfo`, and `/proc/uptime`.
+
+Every reader only reads. In a test folder the same files are read under
+the folder, and the `addresses` file may give a prefix:
+`<interface> <IPv4>/<prefix>`.
+
 ## The demo script
 
 The demo shows that the page follows its data. It is fixed, so pictures of
@@ -605,6 +646,23 @@ down_history=12,18,30,44,62,80,100,86,70,52,40,30,24,20,28,40,56,72,60,46,34,26,
 up_history=8,10,8,14,22,12,8,10,30,55,100,60,28,14,8,8,12,20,12,8,10,16,10,8
 internet=unknown
 state=unknown
+ports=2
+port=eth0 kind=cable state=no-link uplink=no ipv4=unknown ipv6=unknown ipv6_link=unknown router=unknown speed_mbps=unknown signal_dbm=unknown hardware=02:4c:4b:00:00:01 security=unknown network=unknown
+port=wlan0 kind=wifi state=connected uplink=yes ipv4=10.20.30.44/24 ipv6=2001:db8:85a3:42:1000:8a2e:370:7334 ipv6_link=fe80::4c:4bff:fe00:2 router=10.20.30.1 speed_mbps=72 signal_dbm=-57 hardware=02:4c:4b:00:00:02 security=WPA2 network=Harbour-Cafe
+dns=10.20.30.1
+battery_voltage_mv=4137
+battery_current_ma=-480
+battery_temp_tenths=314
+battery_health=Good
+battery_cycles=7
+battery_charge_mah=1592
+battery_full_mah=1750
+battery_empty_min=199
+battery_full_min=unknown
+cpu_temp_tenths=523
+memory_free_mb=212
+memory_total_mb=446
+uptime_s=191820
 ```
 
 The lines always come in this order:
@@ -631,6 +689,11 @@ The lines always come in this order:
 | `down_history=`, `up_history=` | the two graphs: 24 shares of 0 to 100 (100 is the history's peak), oldest first, separated by commas |
 | `internet=` | NetworkManager's internet check: `full`, `limited`, `portal`, `none` or `unknown` (always `unknown` without a link) |
 | `state=` | why there is no link: `connecting`, `wifi-off`, `network-off` or `unknown` (always `unknown` with a link) |
+| `ports=` | how many ports the Status page lists |
+| `port=` | one line per port: its interface, then `kind=`, `state=` (`off`, `no-link`, `connected`, `access-point` or `unknown`), `uplink=`, `ipv4=`, `ipv6=`, `ipv6_link=`, `router=`, `speed_mbps=`, `signal_dbm=`, `hardware=`, `security=` and, last because it may hold spaces, `network=` |
+| `dns=` | the DNS servers, separated by commas |
+| `battery_voltage_mv=` to `battery_full_min=` | the battery's details: voltage (mV), current (mA, negative while discharging), temperature (tenths of a degree), health, cycles, charge and full charge (mAh), minutes until empty and until full |
+| `cpu_temp_tenths=`, `memory_free_mb=`, `memory_total_mb=`, `uptime_s=` | the processor's temperature (tenths of a degree), free and total memory (MiB) and the seconds since the device started |
 
 A value that is not known prints `unknown`. `network=`, `security=` and
 `signal_dbm=` belong to a Wi-Fi network only, so they say `unknown` on a
@@ -639,7 +702,8 @@ cable and in the router sample. `--data offline` prints `mode=client` and
 `signal_dbm=` and for both rates; the page says `OFFLINE` for it. Lines for
 later values are added at the end.
 
-With `live` on the device and a link, `--print-data` waits one second after
+The detail lines are read as if the Status page were open. With `live` on
+the device and a link, `--print-data` waits one second after
 the first reading and takes one more, so the rates it prints are real (a
 rate needs two readings of the counters). In a test folder it does not
 wait.
@@ -647,13 +711,15 @@ wait.
 ### `LOKICTL_DATA_ROOT`
 
 With `LOKICTL_DATA_ROOT=<folder>`, the `live` source reads
-`<folder>/sys/...` and `<folder>/proc/...` in place of `/sys/...` and
-`/proc/...`. That makes every battery state and every kind of link testable
-on the Mac. It only matters for `live`.
+`<folder>/sys/...`, `<folder>/proc/...` and `<folder>/etc/resolv.conf` in
+place of `/sys/...`, `/proc/...` and `/etc/resolv.conf`. That makes every
+battery state and every kind of link testable on the Mac. It only matters
+for `live`.
 
 The system keeps its list of addresses in no file, so in a test folder the
 system is not asked at all: `<folder>/addresses` stands in for it, one line
-per address, `<interface> <IPv4 address>`.
+per address, `<interface> <IPv4 address>` or, for the Status page's prefix,
+`<interface> <IPv4 address>/<prefix>`.
 
 NetworkManager is never asked in a test folder either: `<folder>/networkmanager`
 stands in for it (see `read_network_manager_file()` in

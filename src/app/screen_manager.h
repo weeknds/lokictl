@@ -39,6 +39,7 @@ public:
     bool show_butter_screen();
     bool show_key_test_screen();
     bool show_settings_screen();
+    bool show_status_screen();
     bool show_dev_fonts_screen(model::AppPage page);
     bool show_dev_theme_screen();
     bool show_dev_overlays_screen(model::AppPage page);

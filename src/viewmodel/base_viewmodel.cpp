@@ -26,6 +26,7 @@ BaseViewModel::BaseViewModel()
       quit_requested_subject_(false),
       theme_request_subject_(0),
       settings_theme_selection_subject_(kSettingsThemeFollowsActive),
+      status_scroll_subject_(0),
       home_selection_subject_(0),
       home_data_subject_(0),
       key_test_selection_subject_(0),
@@ -122,6 +123,26 @@ void BaseViewModel::select_settings_theme(int32_t row) {
 bool BaseViewModel::open_settings() {
     settings_theme_selection_subject_.set(kSettingsThemeFollowsActive);
     return open_page(model::AppPage::Settings);
+}
+
+lv_subject_t* BaseViewModel::status_scroll_subject() {
+    return status_scroll_subject_.native();
+}
+
+int32_t BaseViewModel::status_scroll() const {
+    return status_scroll_subject_.value();
+}
+
+void BaseViewModel::set_status_scroll(int32_t row) {
+    const int32_t next = std::max<int32_t>(row, 0);
+    if (next != status_scroll_subject_.value()) {
+        status_scroll_subject_.set(next);
+    }
+}
+
+bool BaseViewModel::open_status() {
+    set_status_scroll(0);
+    return open_page(model::AppPage::Status);
 }
 
 const model::HomeData& BaseViewModel::home() const {

@@ -107,6 +107,66 @@ bool operator!=(const HomeClient& left, const HomeClient& right) {
     return !(left == right);
 }
 
+const char* port_state_name(PortState state) {
+    switch (state) {
+        case PortState::Unknown:
+            return "unknown";
+        case PortState::Off:
+            return "off";
+        case PortState::NoLink:
+            return "no-link";
+        case PortState::Connected:
+            return "connected";
+        case PortState::AccessPoint:
+            return "access-point";
+    }
+    return "unknown";
+}
+
+// Every field, in the order they are declared.
+bool operator==(const StatusPort& left, const StatusPort& right) {
+    return left.kind == right.kind &&
+           left.name == right.name &&
+           left.state == right.state &&
+           left.uplink == right.uplink &&
+           left.network == right.network &&
+           left.security == right.security &&
+           left.signal_dbm == right.signal_dbm &&
+           left.speed_mbps == right.speed_mbps &&
+           left.ipv4 == right.ipv4 &&
+           left.ipv6 == right.ipv6 &&
+           left.ipv6_link == right.ipv6_link &&
+           left.router == right.router &&
+           left.hardware_address == right.hardware_address;
+}
+
+bool operator!=(const StatusPort& left, const StatusPort& right) {
+    return !(left == right);
+}
+
+// Every field, in the order they are declared.
+bool operator==(const StatusDetails& left, const StatusDetails& right) {
+    return left.ports == right.ports &&
+           left.dns == right.dns &&
+           left.battery_voltage_mv == right.battery_voltage_mv &&
+           left.battery_current_ma == right.battery_current_ma &&
+           left.battery_temp_tenths == right.battery_temp_tenths &&
+           left.battery_health == right.battery_health &&
+           left.battery_cycles == right.battery_cycles &&
+           left.battery_charge_mah == right.battery_charge_mah &&
+           left.battery_full_mah == right.battery_full_mah &&
+           left.battery_empty_minutes == right.battery_empty_minutes &&
+           left.battery_full_minutes == right.battery_full_minutes &&
+           left.cpu_temp_tenths == right.cpu_temp_tenths &&
+           left.memory_free_mb == right.memory_free_mb &&
+           left.memory_total_mb == right.memory_total_mb &&
+           left.uptime_seconds == right.uptime_seconds;
+}
+
+bool operator!=(const StatusDetails& left, const StatusDetails& right) {
+    return !(left == right);
+}
+
 // Every field of HomeData, in the order they are declared. A new field must
 // be added here too (see home_data.h).
 bool operator==(const HomeData& left, const HomeData& right) {
@@ -134,7 +194,8 @@ bool operator==(const HomeData& left, const HomeData& right) {
            left.up_kbps == right.up_kbps &&
            left.down_history == right.down_history &&
            left.up_history == right.up_history &&
-           left.clients == right.clients;
+           left.clients == right.clients &&
+           left.details == right.details;
 }
 
 bool operator!=(const HomeData& left, const HomeData& right) {

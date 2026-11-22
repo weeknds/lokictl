@@ -380,14 +380,15 @@ The keys are the same in every theme and in both views:
 | `z`, `f`, left or up | select the previous client (nothing without clients) |
 | `c`, `x`, right or down | select the next client (nothing without clients) |
 | `6` SETUP | opens the Settings page |
+| `8` INFO | opens the Status page (see [navigation.md](navigation.md#the-status-page)) |
 | `4` MODES, `5` SCAN, `7` TOOLS | shown switched off; their pages do not exist yet |
-| `8`, Enter | nothing |
+| Enter | nothing |
 | ESC | shows `Hold ESC to exit` while it is held; letting go sooner only hides it |
 | ESC held for 700 ms | quits the app |
 
-The help panel (fn+H) shows the badge `HOME` and four rows: `HOLD ESC`
-Exit, `F Z / X C` Previous / next client, `6` Settings and `4 / 5 / 7` Not
-available yet. It is the same in both views. [navigation.md](navigation.md)
+The help panel (fn+H) shows the badge `HOME` and five rows: `HOLD ESC`
+Exit, `F Z / X C` Previous / next client, `6` Settings, `8` Status and
+`4 / 5 / 7` Not available yet. It is the same in both views. [navigation.md](navigation.md)
 explains how keys travel through the app.
 
 The soft keys are set in `HomeScreen::soft_keys()`:

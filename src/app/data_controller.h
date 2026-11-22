@@ -49,7 +49,8 @@ namespace app {
 // It also follows the current page and tells the reader whether the home
 // page, the only page that shows the traffic, is on top
 // (DataReader::set_traffic_shown()), so the live source reads the traffic
-// once a second only while it is seen.
+// once a second only while it is seen; and the same for the Status page and
+// its details (DataReader::set_details_shown()).
 //
 // Create it after the view model and destroy it before; like
 // app::ThemeController, it is not copied.
@@ -92,8 +93,8 @@ public:
 
 private:
     static void poll_timer_cb(lv_timer_t* timer);
-    // Tells the reader whether the page on top shows the traffic. The user
-    // data is the controller.
+    // Tells the reader whether the page on top shows the traffic or the
+    // details. The user data is the controller.
     static void page_observer_cb(lv_observer_t* observer, lv_subject_t* subject);
 
     // Fetches the newest block from the reader, if one arrived since the

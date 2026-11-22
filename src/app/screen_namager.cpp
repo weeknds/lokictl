@@ -16,6 +16,7 @@
 #include "logger.h"
 #include "page_registry.h"
 #include "settings_screen.h"
+#include "status_screen.h"
 
 namespace app {
 namespace {
@@ -92,6 +93,14 @@ bool ScreenManager::show_settings_screen() {
         return false;
     }
     page_loaded(model::AppPage::Settings);
+    return true;
+}
+
+bool ScreenManager::show_status_screen() {
+    if (!load_screen(std::make_unique<screen::StatusScreen>(view_model_, assets_, theme_engine_))) {
+        return false;
+    }
+    page_loaded(model::AppPage::Status);
     return true;
 }
 
@@ -187,6 +196,10 @@ bool ScreenManager::show_page(model::AppPage page) {
 
     if (screen::SettingsScreen::handles(page)) {
         return show_settings_screen();
+    }
+
+    if (screen::StatusScreen::handles(page)) {
+        return show_status_screen();
     }
 
     return show_home_screen();

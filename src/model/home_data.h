@@ -108,6 +108,68 @@ struct HomeClient {
 bool operator==(const HomeClient& left, const HomeClient& right);
 bool operator!=(const HomeClient& left, const HomeClient& right);
 
+// A number of the Status page that is not known. Every number of
+// StatusPort and StatusDetails below uses it, because 0 and negative
+// numbers are real readings there (a current of 0 mA, a current of -480 mA).
+constexpr int32_t kDetailUnknown = INT32_MIN;
+
+// What a network port is doing, as the Status page shows it.
+enum class PortState {
+    Unknown = 0,  // not known
+    Off,          // the interface is switched off (not up)
+    NoLink,       // up, but no cable plugged in, or no Wi-Fi network joined
+    Connected,    // a cable plugged in, or a Wi-Fi network joined
+    AccessPoint,  // the port runs the device's own access point
+};
+
+// The name of a port state in lowercase: "unknown", "off", "no-link",
+// "connected" or "access-point". Used by the --print-data readout.
+const char* port_state_name(PortState state);
+
+// One network port (a Wi-Fi or a cable interface) on the Status page. A
+// text that is not known is empty; a number is kDetailUnknown.
+struct StatusPort {
+    LinkKind kind{LinkKind::None};   // Wifi or Cable
+    std::string name;                // interface, for example "wlan0"
+    PortState state{PortState::Unknown};
+    bool uplink{false};              // this port carries the traffic (see HomeData::uplink_name)
+    std::string network;             // Wi-Fi: the network joined, or the access point's name
+    std::string security;            // Wi-Fi: that network's security, for example "WPA2"
+    int32_t signal_dbm{kDetailUnknown}; // Wi-Fi: received signal, dBm
+    int32_t speed_mbps{kDetailUnknown}; // link speed, Mbit/s
+    std::string ipv4;                // first IPv4 address with its prefix, "10.0.0.12/24"
+    std::string ipv6;                // first IPv6 address that is not link-local, without prefix
+    std::string ipv6_link;           // the link-local IPv6 address (fe80::...), without prefix
+    std::string router;              // IPv4 address of this port's default router
+    std::string hardware_address;    // "02:00:00:00:00:01"
+};
+
+bool operator==(const StatusPort& left, const StatusPort& right);
+bool operator!=(const StatusPort& left, const StatusPort& right);
+
+// The extra values of the Status page. The live source reads them only
+// while that page is on top; otherwise everything here is unknown (empty).
+struct StatusDetails {
+    std::vector<StatusPort> ports;   // in the order they are shown
+    std::vector<std::string> dns;    // DNS servers, in the system's order
+    int32_t battery_voltage_mv{kDetailUnknown};  // mV
+    int32_t battery_current_ma{kDetailUnknown};  // mA, negative while discharging
+    int32_t battery_temp_tenths{kDetailUnknown}; // tenths of a degree Celsius
+    std::string battery_health;                  // as the battery reports it, for example "Good"
+    int32_t battery_cycles{kDetailUnknown};      // charge cycles
+    int32_t battery_charge_mah{kDetailUnknown};  // charge now, mAh
+    int32_t battery_full_mah{kDetailUnknown};    // charge when full, mAh
+    int32_t battery_empty_minutes{kDetailUnknown}; // until empty, while discharging
+    int32_t battery_full_minutes{kDetailUnknown};  // until full, while charging
+    int32_t cpu_temp_tenths{kDetailUnknown};     // processor, tenths of a degree Celsius
+    int32_t memory_free_mb{kDetailUnknown};      // memory still available, MiB
+    int32_t memory_total_mb{kDetailUnknown};     // all memory, MiB
+    int32_t uptime_seconds{kDetailUnknown};      // time since the device started
+};
+
+bool operator==(const StatusDetails& left, const StatusDetails& right);
+bool operator!=(const StatusDetails& left, const StatusDetails& right);
+
 // Everything the home page shows. Numbers are stored as numbers in the units
 // noted on each field; the page turns them into text. A value that is not
 // known has a value of its own (an empty text, or one of the constants
@@ -152,6 +214,7 @@ struct HomeData {
     std::array<uint8_t, kHomeHistoryLength> down_history{}; // download rate history
     std::array<uint8_t, kHomeHistoryLength> up_history{};   // upload rate history
     std::vector<HomeClient> clients;   // connected devices, in the order they are shown
+    StatusDetails details;             // the Status page's extra values (see StatusDetails)
 };
 
 // Every field is compared. A new field must be added here too: the data

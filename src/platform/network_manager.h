@@ -48,6 +48,12 @@ struct NetworkManagerReading {
 //   WifiOff when the Wi-Fi radio is off, else Unknown (plainly no network).
 void apply_network_manager(const NetworkManagerReading& reading, model::HomeData& data);
 
+// Adds `reading` to the Status page's ports (see read_ports()): each
+// connected Wi-Fi port gets the name, security and speed of the Wi-Fi link
+// with its interface (a speed that is not known stays unknown). Does
+// nothing when the service is not available.
+void apply_network_manager(const NetworkManagerReading& reading, std::vector<model::StatusPort>& ports);
+
 // A network name as the page may show it: every control character (below
 // 0x20, and 0x7f) becomes '?', and at most 32 bytes are kept, the longest
 // name a Wi-Fi network can have; a UTF-8 character that would be cut is

@@ -6,6 +6,8 @@
 
 #include "live_data_source.h"
 
+#include "device_info.h"
+
 #include <algorithm>
 #include <ctime>
 #include <limits>
@@ -69,6 +71,10 @@ void LiveDataSource::set_traffic_shown(bool shown) {
     traffic_shown_ = shown;
 }
 
+void LiveDataSource::set_details_shown(bool shown) {
+    details_shown_ = shown;
+}
+
 void LiveDataSource::wait_until_ready(milliseconds limit) {
     if (network_manager_) {
         network_manager_->wait_started(limit);
@@ -89,17 +95,33 @@ void LiveDataSource::read(model::HomeData& data) {
     data.clock_minutes = clock_known ? minutes : sample_.clock_minutes;
     data.sample = !clock_known;
 
+    // When the Status page has just opened, the battery and the network are
+    // read again at once, with their details, so the page fills right away.
+    const bool details_started = details_shown_ && !details_shown_read_;
+    details_shown_read_ = details_shown_;
+    if (!details_shown_) {
+        details_ = model::StatusDetails{};
+    }
+
     const auto now = std::chrono::steady_clock::now();
-    if (!battery_read_ || now - battery_read_at_ >= kBatteryInterval) {
+    if (!battery_read_ || details_started || now - battery_read_at_ >= kBatteryInterval) {
         battery_ = read_battery(power_supply_dir_);
+        if (details_shown_) {
+            read_battery_details(power_supply_dir_, details_);
+            read_device_details(root_, details_);
+        }
         battery_read_at_ = now;
         battery_read_ = true;
     }
     data.battery_percent = battery_.percent;
     data.battery_state = battery_.state;
 
-    if (!network_read_ || now - network_read_at_ >= kNetworkInterval) {
+    if (!network_read_ || details_started || now - network_read_at_ >= kNetworkInterval) {
         network_ = read_network(root_, addresses_file_);
+        if (details_shown_) {
+            details_.ports = read_ports(root_, addresses_file_, network_.interface_name);
+            details_.dns = read_dns_servers(root_);
+        }
         network_read_at_ = now;
         network_read_ = true;
     }
@@ -117,6 +139,10 @@ void LiveDataSource::read(model::HomeData& data) {
         service = read_network_manager_file(network_manager_file_);
     }
     apply_network_manager(service, data);
+    if (details_shown_) {
+        data.details = details_;
+        apply_network_manager(service, data.details.ports);
+    }
 
     traffic_shown_read_ = traffic_shown_;
     if (network_.kind == model::LinkKind::None || !traffic_shown_) {
@@ -202,7 +228,8 @@ milliseconds LiveDataSource::next_read_delay() {
     }
     milliseconds delay = minutes(1) - into_minute + kMinuteMargin;
 
-    if (!battery_read_ || !network_read_ || traffic_shown_ != traffic_shown_read_) {
+    if (!battery_read_ || !network_read_ || traffic_shown_ != traffic_shown_read_ ||
+        details_shown_ != details_shown_read_) {
         delay = milliseconds(0);
     } else {
         const auto now = std::chrono::steady_clock::now();

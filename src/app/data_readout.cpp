@@ -53,6 +53,64 @@ void print_history(const char* name, const std::array<uint8_t, model::kHomeHisto
     std::printf("%s=%s\n", name, values.c_str());
 }
 
+// A Status page number as text, or `unknown`.
+std::string detail_text(int32_t value) {
+    return value == model::kDetailUnknown ? std::string("unknown") : std::to_string(value);
+}
+
+// A text, or `unknown` when it is empty.
+std::string text_or_unknown(const std::string& value) {
+    return value.empty() ? std::string("unknown") : value;
+}
+
+// One line per port: its fields as name=value pairs in a fixed order,
+// separated by spaces, with the network name last (it may hold spaces).
+void print_port(const model::StatusPort& port) {
+    std::printf("port=%s kind=%s state=%s uplink=%s ipv4=%s ipv6=%s ipv6_link=%s router=%s "
+                "speed_mbps=%s signal_dbm=%s hardware=%s security=%s network=%s\n",
+                port.name.c_str(),
+                model::link_kind_name(port.kind),
+                model::port_state_name(port.state),
+                port.uplink ? "yes" : "no",
+                text_or_unknown(port.ipv4).c_str(),
+                text_or_unknown(port.ipv6).c_str(),
+                text_or_unknown(port.ipv6_link).c_str(),
+                text_or_unknown(port.router).c_str(),
+                detail_text(port.speed_mbps).c_str(),
+                detail_text(port.signal_dbm).c_str(),
+                text_or_unknown(port.hardware_address).c_str(),
+                text_or_unknown(port.security).c_str(),
+                text_or_unknown(port.network).c_str());
+}
+
+void print_details(const model::StatusDetails& details) {
+    std::printf("ports=%zu\n", details.ports.size());
+    for (const model::StatusPort& port : details.ports) {
+        print_port(port);
+    }
+    std::string servers;
+    for (const std::string& server : details.dns) {
+        if (!servers.empty()) {
+            servers += ',';
+        }
+        servers += server;
+    }
+    print_text("dns", servers);
+    std::printf("battery_voltage_mv=%s\n", detail_text(details.battery_voltage_mv).c_str());
+    std::printf("battery_current_ma=%s\n", detail_text(details.battery_current_ma).c_str());
+    std::printf("battery_temp_tenths=%s\n", detail_text(details.battery_temp_tenths).c_str());
+    print_text("battery_health", details.battery_health);
+    std::printf("battery_cycles=%s\n", detail_text(details.battery_cycles).c_str());
+    std::printf("battery_charge_mah=%s\n", detail_text(details.battery_charge_mah).c_str());
+    std::printf("battery_full_mah=%s\n", detail_text(details.battery_full_mah).c_str());
+    std::printf("battery_empty_min=%s\n", detail_text(details.battery_empty_minutes).c_str());
+    std::printf("battery_full_min=%s\n", detail_text(details.battery_full_minutes).c_str());
+    std::printf("cpu_temp_tenths=%s\n", detail_text(details.cpu_temp_tenths).c_str());
+    std::printf("memory_free_mb=%s\n", detail_text(details.memory_free_mb).c_str());
+    std::printf("memory_total_mb=%s\n", detail_text(details.memory_total_mb).c_str());
+    std::printf("uptime_s=%s\n", detail_text(details.uptime_seconds).c_str());
+}
+
 } // namespace
 
 int run_data_readout(platform::DataSourceKind kind, uint32_t steps, const std::string& data_root) {
@@ -61,6 +119,9 @@ int run_data_readout(platform::DataSourceKind kind, uint32_t steps, const std::s
     // source's connection to the network service starts in the background,
     // so the readout first waits for it (a short, bounded time).
     platform::DataReader reader(platform::make_data_source(kind, data_root));
+    // The readout prints the Status page's details too, so the live source
+    // reads them as if that page were open.
+    reader.set_details_shown(true);
     reader.wait_until_ready(kServiceWait);
     reader.read_now();
     // A rate needs two readings of the byte counters. On the real system
@@ -104,6 +165,7 @@ int run_data_readout(platform::DataSourceKind kind, uint32_t steps, const std::s
     print_history("up_history", data.up_history);
     std::printf("internet=%s\n", model::internet_name(data.internet));
     std::printf("state=%s\n", model::offline_state_name(data.offline_state));
+    print_details(data.details);
     return 0;
 }
 

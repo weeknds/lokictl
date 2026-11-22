@@ -36,6 +36,22 @@ namespace app {
 //   up_kbps=<upload rate in kbit/s|unknown>
 //   down_history=<24 shares of 0-100, oldest first, by commas>
 //   up_history=<the same for the upload>
+//   internet=<unknown|none|portal|limited|full>
+//   state=<unknown|connecting|wifi-off|network-off>
+// then the Status page's details (the live source reads them as if that
+// page were open):
+//   ports=<number of ports>
+//   port=<interface> kind=<wifi|cable> state=<unknown|off|no-link|connected|
+//     access-point> uplink=<yes|no> ipv4=<address/prefix> ipv6=<address>
+//     ipv6_link=<address> router=<address> speed_mbps=<n> signal_dbm=<n>
+//     hardware=<address> security=<text> network=<name, may hold spaces>
+//     (one line per port, in the page's order)
+//   dns=<servers by commas>
+//   battery_voltage_mv=, battery_current_ma=, battery_temp_tenths=,
+//   battery_health=, battery_cycles=, battery_charge_mah=,
+//   battery_full_mah=, battery_empty_min=, battery_full_min=,
+//   cpu_temp_tenths=, memory_free_mb=, memory_total_mb=, uptime_s=
+//     (one line each, in this order)
 // A value that is not known (an empty text, an unknown speed or signal, a
 // negative rate) prints `unknown`. The first five lines came first and
 // stay first. With the live source on the real system (an empty

@@ -43,7 +43,7 @@ void DataReader::read_now() {
     if (thread_.joinable()) {
         return;
     }
-    hand_over_traffic_shown();
+    hand_over_shown();
     model::HomeData data;
     if (read_source(data)) {
         publish(std::move(data));
@@ -108,20 +108,35 @@ void DataReader::set_traffic_shown(bool shown) {
             return;
         }
         traffic_shown_ = shown;
-        traffic_changed_ = true;
+        shown_changed_ = true;
     }
     wake_.notify_all();
 }
 
-void DataReader::hand_over_traffic_shown() {
-    bool shown = true;
+void DataReader::set_details_shown(bool shown) {
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        shown = traffic_shown_;
-        traffic_changed_ = false;
+        if (details_shown_ == shown) {
+            return;
+        }
+        details_shown_ = shown;
+        shown_changed_ = true;
+    }
+    wake_.notify_all();
+}
+
+void DataReader::hand_over_shown() {
+    bool traffic = true;
+    bool details = false;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        traffic = traffic_shown_;
+        details = details_shown_;
+        shown_changed_ = false;
     }
     if (source_) {
-        source_->set_traffic_shown(shown);
+        source_->set_traffic_shown(traffic);
+        source_->set_details_shown(details);
     }
 }
 
@@ -141,13 +156,13 @@ model::HomeData DataReader::latest() const {
 }
 
 // The background thread. The source is asked with the mutex released, so
-// take() never waits for a reading. A new traffic flag ends the wait early:
-// the loop then starts again, hands the flag over and asks the source how
-// long to sleep now (the live source asks for a reading at once).
+// take() never waits for a reading. A new traffic or details flag ends the
+// wait early: the loop then starts again, hands the flags over and asks the
+// source how long to sleep now (the live source asks for a reading at once).
 void DataReader::run() {
-    const auto woken = [this] { return stop_requested_ || traffic_changed_; };
+    const auto woken = [this] { return stop_requested_ || shown_changed_; };
     while (true) {
-        hand_over_traffic_shown();
+        hand_over_shown();
         milliseconds delay = DataSource::kNever;
         try {
             delay = source_->next_read_delay();
@@ -159,7 +174,7 @@ void DataReader::run() {
             std::unique_lock<std::mutex> lock(mutex_);
             if (delay == DataSource::kNever) {
                 // The values never change: sleep until stop() (or a new
-                // traffic flag), and ask the source nothing else. kNever
+                // flag), and ask the source nothing else. kNever
                 // itself cannot go to wait_for(), whose deadline would
                 // overflow, so it waits in slices of kLongestWait. Not
                 // condition_variable::wait(): with GCC 12 and later that
@@ -174,7 +189,7 @@ void DataReader::run() {
             if (stop_requested_) {
                 return;
             }
-            if (traffic_changed_) {
+            if (shown_changed_) {
                 continue;
             }
         }

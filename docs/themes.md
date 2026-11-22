@@ -254,7 +254,7 @@ Some things to know:
   capitals or lowercase, as the theme asks.
 - A switched-off key, such as `{"Scan", {}, false, false}` above, is drawn
   dimmed and does nothing until it is switched on. Key 6 (`Setup`) is the
-  home page's main key, and key 8 is empty.
+  home page's main key, and key 8 (`Info`) opens the Status page.
 - `soft_keys()` is called once, from `init()`, before `build_content()`. A
   page that needs its own members there sets them before it calls `init()`.
   A page without the override gets a bar with five empty keys, and a

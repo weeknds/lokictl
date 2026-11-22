@@ -34,6 +34,13 @@ constexpr DataSourceName kDataSourceNames[] = {
     {DataSourceKind::Tour, "tour"},
 };
 
+// Every made-up block carries made-up Status page values that fit it
+// (model::example_status_details()), whichever page is shown, so the Status
+// page has values in every made-up source.
+void add_example_details(model::HomeData& data) {
+    data.details = model::example_status_details(data);
+}
+
 // The fixed made-up values. They never change, so the reader never wakes up
 // for them.
 class SampleDataSource final : public DataSource {
@@ -44,6 +51,7 @@ public:
 
     void read(model::HomeData& data) override {
         data = model::sample_home_data();
+        add_example_details(data);
     }
 
     milliseconds next_read_delay() override {
@@ -67,6 +75,7 @@ public:
 
     void read(model::HomeData& data) override {
         data = fill_();
+        add_example_details(data);
     }
 
     milliseconds next_read_delay() override {
@@ -93,6 +102,7 @@ public:
     void read(model::HomeData& data) override {
         const auto stop = static_cast<int>(step_ % static_cast<uint64_t>(model::kHomeTourStops));
         data = model::home_tour_stop(stop);
+        add_example_details(data);
         ++step_;
     }
 
@@ -192,6 +202,7 @@ public:
     // Uses the current step, then moves on to the next one.
     void read(model::HomeData& data) override {
         data = demo_step(step_);
+        add_example_details(data);
         ++step_;
     }
 

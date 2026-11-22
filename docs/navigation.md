@@ -312,12 +312,34 @@ it. Its keys are the same in every theme:
 | `z`/`f` or left/up | selects the previous client; it stops at the first one |
 | `c`/`x` or right/down | selects the next client; it stops at the last one shown |
 | `6` SETUP | opens the Settings page |
+| `8` INFO | opens the Status page |
 | `4` MODES, `5` SCAN, `7` TOOLS | shown switched off; they do nothing yet |
-| `8`, `Enter` | nothing |
+| `Enter` | nothing |
 | ESC | the ESC rule for the first page: a short press shows `Hold ESC to exit`, holding it for 700 ms quits |
 
 The selection lives in the view model, so it is kept when Settings is
 opened and closed and when the theme changes.
+
+## The Status page
+
+`status` lists every detail the home page has no room for: each network
+port (Wi-Fi and cable) with its state, network name, security, signal,
+speed, IPv4 and IPv6 addresses, router and hardware address, then the DNS
+servers, the battery's details and the device (processor temperature,
+free memory, time since start). [data.md](data.md#the-status-pages-details)
+says where the values come from. It has a title bar and shows six rows at a
+time; a thin mark at the right edge shows where they lie in the whole list.
+
+| Key | What it does |
+|---|---|
+| `f`/`x` or up/down | scrolls one row; it stops at the first and the last row |
+| `z`/`c` or left/right, `5` UP, `6` DOWN | jumps to the previous or next heading (a port, `dns`, `battery`, `device`) |
+| `4` BACK or a short ESC | goes back to the home page |
+
+The first row shown lives in the view model, so it is kept when the theme
+changes; the home page's key 8 always opens the page at the top. Only the
+six rows on screen exist as LVGL objects: scrolling and new values retext
+them, nothing is built again.
 
 ## The demo pages
 

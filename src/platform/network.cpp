@@ -24,6 +24,7 @@
 namespace platform {
 namespace {
 
+constexpr uint32_t kInterfaceUp = 0x0001;  // IFF_UP in sys/class/net/<name>/flags
 constexpr uint32_t kRouteUp = 0x0001;      // RTF_UP: the route is in use
 constexpr uint32_t kRouteGateway = 0x0002; // RTF_GATEWAY: the route goes through a router
 constexpr int64_t kEthernetType = 1;       // ARPHRD_ETHER in sys/class/net/<name>/type
@@ -35,6 +36,14 @@ constexpr std::size_t kMaxInterfaceName = 15;
 constexpr std::size_t kMaxDigits = 10;
 // A byte counter has at most this many digits (the largest 64-bit number).
 constexpr std::size_t kMaxCounterDigits = 20;
+// The scope of a link-local IPv6 address in proc/net/if_inet6, and of the
+// loopback address.
+constexpr uint32_t kIpv6ScopeLink = 0x20;
+constexpr uint32_t kIpv6ScopeHost = 0x10;
+// IFA_F_TENTATIVE and IFA_F_DADFAILED: the address cannot be used (yet).
+constexpr uint32_t kIpv6Unusable = 0x40 | 0x08;
+// The longest hardware address text read_ports() takes (20 bytes as hex).
+constexpr std::size_t kMaxHardwareAddress = 59;
 
 struct DefaultRoute {
     std::string interface_name;
@@ -248,19 +257,158 @@ std::string system_address(const std::string& name) {
     return address;
 }
 
-std::string file_address(const std::filesystem::path& addresses_file, const std::string& name) {
+// "<IPv4>" or "<IPv4>/<prefix>" (prefix 0 to 32) as an address and a
+// prefix; the prefix is -1 when the text has none. Returns false for
+// anything else.
+bool parse_address_with_prefix(const std::string& text, uint32_t& raw_address, int& prefix) {
+    const auto slash = text.find('/');
+    prefix = -1;
+    if (slash != std::string::npos) {
+        int64_t value = 0;
+        const std::string digits = text.substr(slash + 1);
+        if (digits.empty() || digits[0] == '-' || !parse_whole_number(digits, value) || value > 32) {
+            return false;
+        }
+        prefix = static_cast<int>(value);
+    }
+    in_addr address{};
+    if (inet_pton(AF_INET, text.substr(0, slash).c_str(), &address) != 1) {
+        return false;
+    }
+    raw_address = address.s_addr;
+    return true;
+}
+
+// The first address of `name` in the file that stands in for the system's
+// list, with its prefix when the line has one (`prefix` is -1 otherwise).
+bool file_address_line(const std::filesystem::path& addresses_file,
+                       const std::string& name,
+                       uint32_t& raw_address,
+                       int& prefix) {
     std::ifstream file(addresses_file);
     std::string line;
     while (std::getline(file, line)) {
         std::istringstream fields(line);
         std::string interface_name, text;
-        in_addr address{};
         if (fields >> interface_name >> text && interface_name == name &&
-            inet_pton(AF_INET, text.c_str(), &address) == 1) {
-            return ipv4_text(address.s_addr);
+            parse_address_with_prefix(text, raw_address, prefix)) {
+            return true;
         }
     }
-    return {};
+    return false;
+}
+
+std::string file_address(const std::filesystem::path& addresses_file, const std::string& name) {
+    uint32_t raw_address = 0;
+    int prefix = -1;
+    if (!file_address_line(addresses_file, name, raw_address, prefix)) {
+        return {};
+    }
+    return ipv4_text(raw_address);
+}
+
+// An address with its prefix, "10.0.0.12/24", or the address alone when the
+// prefix is -1.
+std::string address_with_prefix(uint32_t raw_address, int prefix) {
+    std::string text = ipv4_text(raw_address);
+    if (!text.empty() && prefix >= 0) {
+        text += "/" + std::to_string(prefix);
+    }
+    return text;
+}
+
+// The first IPv4 address of `name` with its prefix, from the system's list.
+std::string system_address_with_prefix(const std::string& name) {
+    ifaddrs* list = nullptr;
+    if (getifaddrs(&list) != 0) {
+        return {};
+    }
+    std::string text;
+    for (const ifaddrs* entry = list; entry != nullptr; entry = entry->ifa_next) {
+        if (entry->ifa_addr == nullptr || entry->ifa_addr->sa_family != AF_INET ||
+            entry->ifa_name == nullptr || name != entry->ifa_name) {
+            continue;
+        }
+        sockaddr_in socket_address{};
+        std::memcpy(&socket_address, entry->ifa_addr, sizeof(socket_address));
+        int prefix = -1;
+        if (entry->ifa_netmask != nullptr && entry->ifa_netmask->sa_family == AF_INET) {
+            sockaddr_in mask{};
+            std::memcpy(&mask, entry->ifa_netmask, sizeof(mask));
+            uint32_t bits = ntohl(mask.sin_addr.s_addr);
+            prefix = 0;
+            while (bits & 0x80000000u) {
+                ++prefix;
+                bits <<= 1;
+            }
+        }
+        text = address_with_prefix(socket_address.sin_addr.s_addr, prefix);
+        if (!text.empty()) {
+            break;
+        }
+    }
+    freeifaddrs(list);
+    return text;
+}
+
+// A line of proc/net/if_inet6 reads "<32 hex digits> <index> <prefix>
+// <scope> <flags> <name>", all numbers in hexadecimal. Fills in the port's
+// first address that is not link-local and its first link-local one.
+void read_ipv6(const std::filesystem::path& if_inet6_file, model::StatusPort& port) {
+    std::ifstream file(if_inet6_file);
+    std::string line;
+    while (std::getline(file, line) && (port.ipv6.empty() || port.ipv6_link.empty())) {
+        std::istringstream fields(line);
+        std::string hex, index, prefix, scope, flags, name;
+        uint32_t scope_value = 0;
+        uint32_t flags_value = 0;
+        if (!(fields >> hex >> index >> prefix >> scope >> flags >> name) || name != port.name ||
+            hex.size() != 32 || !parse_hex32(scope, scope_value) || !parse_hex32(flags, flags_value) ||
+            (flags_value & kIpv6Unusable) != 0 || scope_value == kIpv6ScopeHost) {
+            continue;
+        }
+        in6_addr address{};
+        bool valid = true;
+        for (std::size_t byte = 0; byte < 16 && valid; ++byte) {
+            uint32_t value = 0;
+            valid = parse_hex32(hex.substr(byte * 2, 2), value);
+            address.s6_addr[byte] = static_cast<uint8_t>(value);
+        }
+        char text[INET6_ADDRSTRLEN] = {};
+        if (!valid || inet_ntop(AF_INET6, &address, text, sizeof(text)) == nullptr) {
+            continue;
+        }
+        std::string& slot = scope_value == kIpv6ScopeLink ? port.ipv6_link : port.ipv6;
+        if (slot.empty()) {
+            slot = text;
+        }
+    }
+}
+
+// "aa:bb:cc:dd:ee:ff": only hexadecimal digits and colons, as the kernel
+// writes it; empty for anything else.
+std::string read_hardware_address(const std::filesystem::path& interface_dir) {
+    std::string text;
+    if (!read_first_line(interface_dir / "address", text) || text.empty() ||
+        text.size() > kMaxHardwareAddress ||
+        !std::all_of(text.begin(), text.end(), [](unsigned char ch) {
+            return ch == ':' || std::isxdigit(ch) != 0;
+        })) {
+        return {};
+    }
+    return text;
+}
+
+// The interface's flags ("0x1003"); false when they cannot be read.
+bool read_flags(const std::filesystem::path& interface_dir, uint32_t& flags) {
+    std::string text;
+    if (!read_first_line(interface_dir / "flags", text)) {
+        return false;
+    }
+    if (text.size() > 2 && text[0] == '0' && (text[1] == 'x' || text[1] == 'X')) {
+        text.erase(0, 2);
+    }
+    return parse_hex32(text, flags);
 }
 
 // A byte counter: 1 to 20 digits, nothing else, at most the largest 64-bit
@@ -330,6 +478,115 @@ NetworkReading read_network(const std::filesystem::path& root,
         break;
     }
     return reading;
+}
+
+std::vector<model::StatusPort> read_ports(const std::filesystem::path& root,
+                                          const std::filesystem::path& addresses_file,
+                                          const std::string& uplink_name) {
+    std::vector<model::StatusPort> ports;
+    const std::filesystem::path net_dir = root / "sys/class/net";
+
+    // The names first, so they can be taken in order. The iterator is
+    // stepped with increment() and an error code, because a range-for would
+    // throw.
+    std::error_code error;
+    std::filesystem::directory_iterator entry(net_dir, error);
+    if (error) {
+        return ports;
+    }
+    std::vector<std::string> names;
+    const std::filesystem::directory_iterator end;
+    while (entry != end) {
+        const std::string name = entry->path().filename().string();
+        if (valid_interface_name(name)) {
+            names.push_back(name);
+        }
+        entry.increment(error);
+        if (error) {
+            return ports;
+        }
+    }
+    std::sort(names.begin(), names.end());
+
+    const std::vector<DefaultRoute> routes = read_default_routes(root / "proc/net/route");
+    for (const std::string& name : names) {
+        if (ports.size() >= kMaxPorts) {
+            break;
+        }
+        const std::filesystem::path interface_dir = net_dir / name;
+        std::string text;
+        int64_t type = 0;
+        if (!read_first_line(interface_dir / "type", text) || !parse_whole_number(text, type) ||
+            type != kEthernetType || !std::filesystem::exists(interface_dir / "device", error)) {
+            continue;
+        }
+
+        model::StatusPort port;
+        port.name = name;
+        port.kind = std::filesystem::is_directory(interface_dir / "wireless", error) ? model::LinkKind::Wifi
+                                                                                     : model::LinkKind::Cable;
+        port.uplink = name == uplink_name;
+        port.hardware_address = read_hardware_address(interface_dir);
+
+        uint32_t flags = 0;
+        if (!read_flags(interface_dir, flags)) {
+            port.state = model::PortState::Unknown;
+        } else if ((flags & kInterfaceUp) == 0) {
+            port.state = model::PortState::Off;
+        } else if (!carrier_up(interface_dir)) {
+            port.state = model::PortState::NoLink;
+        } else {
+            port.state = model::PortState::Connected;
+        }
+
+        if (port.state == model::PortState::Connected) {
+            if (port.kind == model::LinkKind::Wifi) {
+                const int32_t dbm = read_signal(root / "proc/net/wireless", name);
+                port.signal_dbm = dbm == model::kSignalUnknown ? model::kDetailUnknown : dbm;
+            } else {
+                const int32_t mbps = read_speed(interface_dir);
+                port.speed_mbps = mbps == model::kSpeedUnknown ? model::kDetailUnknown : mbps;
+            }
+            for (const DefaultRoute& route : routes) {
+                if (route.interface_name == name && route.has_gateway) {
+                    port.router = ipv4_text(route.gateway);
+                    break;
+                }
+            }
+        }
+
+        if (addresses_file.empty()) {
+            port.ipv4 = system_address_with_prefix(name);
+        } else {
+            uint32_t raw_address = 0;
+            int prefix = -1;
+            if (file_address_line(addresses_file, name, raw_address, prefix)) {
+                port.ipv4 = address_with_prefix(raw_address, prefix);
+            }
+        }
+        read_ipv6(root / "proc/net/if_inet6", port);
+        ports.push_back(std::move(port));
+    }
+    return ports;
+}
+
+std::vector<std::string> read_dns_servers(const std::filesystem::path& root) {
+    std::vector<std::string> servers;
+    std::ifstream file(root / "etc/resolv.conf");
+    std::string line;
+    while (servers.size() < kMaxDnsServers && std::getline(file, line)) {
+        std::istringstream fields(line);
+        std::string keyword, text;
+        if (!(fields >> keyword >> text) || keyword != "nameserver") {
+            continue;
+        }
+        in_addr ipv4{};
+        in6_addr ipv6{};
+        if (inet_pton(AF_INET, text.c_str(), &ipv4) == 1 || inet_pton(AF_INET6, text.c_str(), &ipv6) == 1) {
+            servers.push_back(text);
+        }
+    }
+    return servers;
 }
 
 bool read_traffic_counters(const std::filesystem::path& root,

@@ -33,4 +33,18 @@ struct BatteryReading {
 // both are unknown. Never throws on a file system error.
 BatteryReading read_battery(const std::filesystem::path& power_supply_dir);
 
+// Reads the Status page's battery details from the same battery as
+// read_battery() into `details`; every value that cannot be read becomes
+// model::kDetailUnknown (or an empty text):
+// - voltage_now (µV) as mV, current_now (µA, negative while discharging) as
+//   mA, charge_now and charge_full (µAh) as mAh, each rounded;
+// - temp, tenths of a degree, as it is;
+// - health as text (printable ASCII only, at most 24 characters);
+// - cycle_count, 0 or more;
+// - time_to_empty_now and time_to_full_now (seconds, 0 or more) in whole
+//   minutes; the battery answers them with a read error while they do not
+//   apply, which is unknown.
+// Never throws on a file system error.
+void read_battery_details(const std::filesystem::path& power_supply_dir, model::StatusDetails& details);
+
 } // namespace platform
