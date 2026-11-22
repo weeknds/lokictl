@@ -21,12 +21,15 @@ ThemeController::ThemeController(viewmodel::BaseViewModel& view_model,
                                  AssetManager& assets,
                                  view::ThemeEngine& theme_engine,
                                  ScreenManager& screen_manager)
-    : assets_(assets), theme_engine_(theme_engine), screen_manager_(screen_manager) {
-    lv_subject_t* requests = view_model.next_theme_request_subject();
+    : view_model_(view_model),
+      assets_(assets),
+      theme_engine_(theme_engine),
+      screen_manager_(screen_manager) {
+    lv_subject_t* requests = view_model_.theme_request_subject();
     // LVGL calls the observer once while it is added. Remembering the count
     // first makes that call a no-op, so the app does not switch at startup.
     seen_request_count_ = lv_subject_get_int(requests);
-    request_observer_ = lv_subject_add_observer(requests, next_theme_requested_cb, this);
+    request_observer_ = lv_subject_add_observer(requests, theme_requested_cb, this);
 }
 
 ThemeController::~ThemeController() {
@@ -46,12 +49,6 @@ void ThemeController::request(view::ThemeId id) {
     schedule();
 }
 
-void ThemeController::request_next() {
-    // Starts from a switch that is still waiting, so two quick presses move
-    // two themes on.
-    request(view::next_theme(pending_ ? *pending_ : theme_engine_.theme().id));
-}
-
 void ThemeController::schedule() {
     if (apply_scheduled_) {
         return;
@@ -69,7 +66,7 @@ void ThemeController::apply_pending_async(void* user_data) {
     }
 }
 
-void ThemeController::next_theme_requested_cb(lv_observer_t* observer, lv_subject_t* subject) {
+void ThemeController::theme_requested_cb(lv_observer_t* observer, lv_subject_t* subject) {
     auto* controller = static_cast<ThemeController*>(lv_observer_get_user_data(observer));
     if (!controller) {
         return;
@@ -80,7 +77,15 @@ void ThemeController::next_theme_requested_cb(lv_observer_t* observer, lv_subjec
         return;
     }
     controller->seen_request_count_ = count;
-    controller->request_next();
+
+    // The view model knows a theme only by its row in the theme table, which
+    // is also its ThemeId value (theme.cpp checks that).
+    const int32_t row = controller->view_model_.requested_theme();
+    if (row < 0 || row >= view::kThemeCount) {
+        LOG_WARN("ignored a request for theme {}: there is no such theme", row);
+        return;
+    }
+    controller->request(static_cast<view::ThemeId>(row));
 }
 
 void ThemeController::apply_pending() {

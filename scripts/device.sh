@@ -9,7 +9,7 @@
 #   scripts/device.sh run --theme constellation
 #                                   the same, in that theme for this run only
 #   scripts/device.sh screen x.png  save what the screen shows
-#   scripts/device.sh key 6         press keys on the device (6: next theme)
+#   scripts/device.sh key 6         press keys on the device (6: opens Settings)
 #   scripts/device.sh snapshot x.png --theme instrument --switch-to terminal
 #                                   draw a page off screen, after a live switch
 #   scripts/device.sh snapshot x.png --page demo-home --keys 8,8,x
@@ -63,8 +63,8 @@ Commands:
                   terminal) for this run only and does not save it; without
                   it, LokiCTL's saved theme or its default decides. An
                   unknown name makes LokiCTL exit at once with a message.
-                  Pressing 6 on the home page switches the theme and saves
-                  the new choice, also after a --theme start.
+                  A theme picked on the Settings page (6 on the home page)
+                  is saved, also after a --theme start.
   stop            Stop LokiCTL (however it was started) and bring the
                   launcher back on HOME. Safe to repeat.
   status          Show the installed version and what is running.
@@ -93,9 +93,9 @@ Commands:
                   Names: 0-9, a-z, esc, enter, space, backspace, up, down,
                   left, right, help; add :long to hold one for 1 s (for
                   example esc:long). --switch-to switches live through the
-                  listed themes, the way key 6 does, before the picture is
-                  taken. The "fonts loaded" and "quit requested" lines
-                  appear on standard error.
+                  listed themes, the way a pick on the Settings page does,
+                  before the picture is taken. The "fonts loaded" and "quit
+                  requested" lines appear on standard error.
   logs [-n N]     Show the last N log lines (default 50) of the latest
                   'run' only, also after LokiCTL has stopped.
 

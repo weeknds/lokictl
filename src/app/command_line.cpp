@@ -204,8 +204,8 @@ std::string usage_text() {
             " ms (default: " + std::to_string(kDefaultSettleMs) + ")\n";
     text += "  " + padded("--switch-to <names>", option_width) +
             "themes to switch to while the app runs, in order and\n";
-    text += indent + "separated by commas, the same way key 6 switches. The\n";
-    text += indent + "picture is taken after the last switch, and the\n";
+    text += indent + "separated by commas, the same way the Settings page\n";
+    text += indent + "switches. The picture shows the last theme, and the\n";
     text += indent + "number of loaded fonts is printed to standard error.\n";
     text += "  " + padded("--keys <names>", option_width) +
             "keys to press before the picture (and before any\n";

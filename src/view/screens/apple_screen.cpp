@@ -69,7 +69,7 @@ view::widgets::HelpContent AppleScreen::help_content() {
             {
                 {"HOLD ESC / 4", "Exit"},
                 {"5", "Text size"},
-                {"6", "Next theme"},
+                {"6", "Settings"},
                 {"7", "Version info"},
                 {"8", "Open counter"},
             }};
@@ -88,7 +88,7 @@ view::widgets::SoftKeySet AppleScreen::soft_keys() {
     return {{
         {"Exit", [&view_model] { view_model.request_quit(); }},
         {"Size", [&view_model] { view_model.toggle_bold_text(); }},
-        {"Theme", [&view_model] { view_model.request_next_theme(); }, true},
+        {"Setup", [&view_model] { view_model.open_settings(); }, true},
         {"Info", [&view_model] { view_model.toggle_info(); }},
         {"Count", [&view_model] { view_model.open_page(model::AppPage::Butter); }},
     }};

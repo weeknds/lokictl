@@ -15,6 +15,7 @@
 #include "key_test_screen.h"
 #include "logger.h"
 #include "page_registry.h"
+#include "settings_screen.h"
 
 namespace app {
 namespace {
@@ -83,6 +84,14 @@ bool ScreenManager::show_key_test_screen() {
         return false;
     }
     page_loaded(model::AppPage::KeyTest);
+    return true;
+}
+
+bool ScreenManager::show_settings_screen() {
+    if (!load_screen(std::make_unique<screen::SettingsScreen>(view_model_, assets_, theme_engine_))) {
+        return false;
+    }
+    page_loaded(model::AppPage::Settings);
     return true;
 }
 
@@ -174,6 +183,10 @@ bool ScreenManager::show_page(model::AppPage page) {
 
     if (screen::KeyTestScreen::handles(page)) {
         return show_key_test_screen();
+    }
+
+    if (screen::SettingsScreen::handles(page)) {
+        return show_settings_screen();
     }
 
     return show_apple_screen();

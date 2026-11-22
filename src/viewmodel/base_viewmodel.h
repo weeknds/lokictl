@@ -19,6 +19,10 @@ namespace viewmodel {
 // The number of rows in the list of the key test page (demo-keys).
 constexpr int32_t kKeyTestRowCount = 4;
 
+// The highlighted row of the Settings page while it follows the active
+// theme, whichever that is.
+constexpr int32_t kSettingsThemeFollowsActive = -1;
+
 class BaseViewModel {
 public:
     BaseViewModel();
@@ -34,11 +38,13 @@ public:
     lv_subject_t* bold_text_subject();
     lv_subject_t* info_visible_subject();
     lv_subject_t* quit_requested_subject();
-    // Counts how often the user asked for the next theme (key 6). The view
-    // model only passes the request on: the app applies it
-    // (app::ThemeController), and view::ThemeEngine::subject() publishes the
-    // theme that is active.
-    lv_subject_t* next_theme_request_subject();
+    // Counts how often a theme was asked for. It is a counter, because LVGL
+    // only tells observers about a value that changed, and the same theme
+    // may be asked for twice. requested_theme() says which one.
+    lv_subject_t* theme_request_subject();
+    // The theme asked for last, as its row number (its position in the
+    // theme table); -1 before the first request.
+    int32_t requested_theme() const;
 
     // The path of open pages (see model::BaseModel). Only the top page is
     // shown; current_page_subject() publishes it, and the app builds that
@@ -59,7 +65,22 @@ public:
     void toggle_bold_text();
     void toggle_info();
     void request_quit();
-    void request_next_theme();
+    // Asks for the theme in table row `row`. The view model only passes the
+    // request on: the app applies it (app::ThemeController), and
+    // view::ThemeEngine::subject() publishes the theme that is active.
+    void request_theme(int32_t row);
+
+    // The Settings page's theme list.
+    // The highlighted row, or kSettingsThemeFollowsActive while the
+    // highlight is on the active theme; starts as
+    // kSettingsThemeFollowsActive.
+    lv_subject_t* settings_theme_selection_subject();
+    int32_t settings_theme_selection() const;
+    void select_settings_theme(int32_t row);
+    // Sets the highlight back to kSettingsThemeFollowsActive, then opens the
+    // Settings page (see open_page()). Every way into Settings uses it, so
+    // the highlight always starts on the active theme.
+    bool open_settings();
 
     // What the key test page (demo-keys) shows. It lives here rather than in
     // the screen, so it is kept while the app runs: after going back,
@@ -93,7 +114,9 @@ private:
     reactive::BoolSubject bold_text_subject_;
     reactive::BoolSubject info_visible_subject_;
     reactive::BoolSubject quit_requested_subject_;
-    reactive::IntSubject next_theme_request_subject_;
+    reactive::IntSubject theme_request_subject_;
+    int32_t requested_theme_{-1};
+    reactive::IntSubject settings_theme_selection_subject_;
     reactive::IntSubject key_test_selection_subject_;
     reactive::IntSubject key_test_picked_subject_;
     reactive::StringSubject<16> key_test_last_key_subject_;

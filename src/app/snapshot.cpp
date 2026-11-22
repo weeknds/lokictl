@@ -255,11 +255,11 @@ int run_snapshot(const SnapshotRequest& request) {
         return 1;
     }
 
-    // Switches the theme for key 6 and for --switch-to: each request is
-    // applied later, from lv_timer_handler(), with a rebuild of the page, the
-    // same path as in a normal run. Declared after the screen manager, so it
-    // is destroyed before it. It has no listener, so nothing is saved. A
-    // plain snapshot creates none.
+    // Switches the theme for a pick on the Settings page and for
+    // --switch-to: each request is applied later, from lv_timer_handler(),
+    // with a rebuild of the page, the same path as in a normal run. Declared
+    // after the screen manager, so it is destroyed before it. It has no
+    // listener, so nothing is saved. A plain snapshot creates none.
     std::optional<ThemeController> theme_controller;
     if (!request.keys.empty() || !request.switch_to.empty()) {
         theme_controller.emplace(view_model, assets, theme_engine, screen_manager);

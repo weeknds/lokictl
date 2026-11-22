@@ -320,7 +320,8 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override) {
         LOG_WARN("failed to load config {}: {}; using defaults", loaded_config_path, config_error);
     }
     // Like an unknown theme name, a dark_mode value that cannot be read
-    // writes nothing at this start; the line goes away when key 6 saves.
+    // writes nothing at this start; the line goes away when the user picks
+    // a theme in Settings.
     if (config.dark_mode_invalid) {
         LOG_WARN("invalid dark_mode value in {}; it is ignored", loaded_config_path);
     }
@@ -328,7 +329,7 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override) {
     // The saved choice: the theme= key, or else the old dark_mode key that
     // came before it (yes: Terminal, no: Instrument). An unknown theme name
     // counts as no choice at all; dark_mode is then ignored too, and the
-    // file is left alone until the user saves a theme with key 6.
+    // file is left alone until the user picks a theme in Settings.
     std::optional<view::ThemeId> saved_theme;
     const char* saved_theme_source = "the saved setting";
     if (config.theme) {
@@ -406,8 +407,8 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override) {
     KeyController key_controller(view_model, theme_engine, screen_manager);
 
     // Declared after everything its listener uses, so it is destroyed before
-    // them. Key 6 switches the theme while the app runs, and every switch is
-    // saved.
+    // them. When the user picks a theme in Settings, the theme switches
+    // while the app runs, and every switch is saved.
     ThemeController theme_controller(view_model, assets, theme_engine, screen_manager);
     theme_controller.set_listener([&](const ThemeController::SwitchResult& result) {
 #if USE_DESKTOP

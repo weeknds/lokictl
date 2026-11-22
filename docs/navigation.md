@@ -70,6 +70,14 @@ picked row, the last key and the typing switch of the key test page. When
 the user comes back to the page, or the theme changes, the new screen reads
 the same values and looks exactly as before.
 
+The Settings page keeps its highlight in the view model too, so a theme
+switch, which builds the page again, leaves the highlight where it was. But
+the page is meant to start fresh each time the user opens it: the home
+page's `SETUP` key calls `open_settings()`, which puts the highlight back on
+the active theme and then opens the page. A page that should start fresh
+does it this way, in the view model function that opens it, and not by
+keeping the value in the screen.
+
 A screen holds only its LVGL objects. It ties them to the view model's
 subjects with observers that are bound to those objects
 (`lv_subject_add_observer_obj()`, `lv_label_bind_text()`), so the observers
@@ -295,9 +303,34 @@ a page of its own, so its look can still be checked.
 
 | Page | Keys |
 |---|---|
-| `demo-home` | `4` EXIT (hold to quit, like ESC), `5` SIZE, `6` THEME, `7` INFO, `8` COUNT opens the counter page |
+| `demo-home` | `4` EXIT (hold to quit, like ESC), `5` SIZE, `6` SETUP opens the Settings page, `7` INFO, `8` COUNT opens the counter page |
 | `demo-counter` | `4` BACK or a short ESC goes back, `5` LESS (or `z` or left) counts down, `7` MORE (or `c` or right) counts up, `8` KEYS opens the key test page |
 | `demo-keys` | `4` BACK, `5` TYPE turns typing mode on, `f`/`x` or up/down move the selection and stop at the first and last row, `Enter` picks the selected row; a box shows the last key, the picked row and whether typing is on |
+
+## The Settings page
+
+`settings` is the app's first real page. Key 6 (`SETUP`) on the home page
+opens it. For now it holds only the theme picker: one row per theme, with
+the theme's name, four small squares in its colours and a tick on the theme
+that is active.
+
+| Key | What it does |
+|---|---|
+| `f`/`x` or up/down | move the highlight; it stops at the first and the last row |
+| `Enter` or `6` USE | switches to the highlighted theme and saves it; `USE` is switched off while the highlight is on the active theme, and picking that theme does nothing |
+| `4` BACK or a short ESC | goes back to the home page |
+
+Left and right and the keys 5, 7 and 8 do nothing here. The highlight starts
+on the active theme each time the page is opened, and a theme switch leaves
+it where it was (see
+[Keep a page's state in the view model](#keep-a-pages-state-in-the-view-model)).
+
+The pick travels the same way as every other action: the page only asks the
+view model, with `request_theme(row)`, and `app::ThemeController` switches
+a moment later, after the key has been handled. The switch builds the
+Settings page again in the new theme, so the page never deletes itself.
+[Switching while the app runs](themes.md#switching-while-the-app-runs) in
+themes.md describes each step.
 
 ## Adding a page
 
@@ -320,7 +353,9 @@ a page of its own, so its look can still be checked.
    subjects, so it is kept after going back and after a theme switch.
 6. Give the page its help rows, at most 5, in `help()`.
 7. Open it from another page with `open_page()`, for example from a soft
-   key: `view_model.open_page(model::AppPage::KeyTest)`.
+   key: `view_model.open_page(model::AppPage::KeyTest)`. A page that starts
+   fresh each time gets its own function that resets its values first, like
+   `open_settings()`.
 8. Add the page to the page list in `README.md`. Then take snapshots of it
    in all three themes, with `--keys` and with `--switch-to`, and look at
    each picture.
@@ -361,8 +396,9 @@ How it works:
   below it. To test going back, start at `demo-home`: with
   `--page demo-counter --keys esc` the app stays on the counter page,
   because there it is the first page.
-- Key 6 on the home page really switches the theme. As in every snapshot,
-  nothing is saved.
+- A theme picked on the Settings page, for example with
+  `--page demo-home --keys 6,x,enter`, really switches the theme. As in
+  every snapshot, nothing is saved.
 - If the keys made the app ask to quit, for example with a held ESC on the
   first page, the line `quit requested` goes to standard error. The picture
   is still taken and the exit code stays 0.
@@ -384,6 +420,9 @@ $B --snapshot build/shots/keys-typing.png --page demo-home --keys 8,8,5,f --them
 $B --snapshot build/shots/keys-quit.png --keys esc:long
 # Pick the second row, then switch to Instrument: the page keeps its state.
 $B --snapshot build/shots/keys-switched.png --page demo-home --keys 8,8,x,enter --switch-to instrument
+# From the default theme, Constellation: open Settings, move the highlight to
+# Terminal and pick it. The Settings page is now drawn in Terminal.
+$B --snapshot build/shots/keys-settings.png --page demo-home --keys 6,x,enter
 ```
 
 ### On the device

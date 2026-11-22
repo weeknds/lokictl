@@ -29,8 +29,9 @@ class AssetManager;
 class ScreenManager;
 
 // Switches the theme while the app runs. It listens for the view model's
-// next-theme requests (key 6) and can also be asked directly (snapshot
-// --switch-to uses that, so both take the same path).
+// theme requests (the Settings page asks for one with Enter or its Use key)
+// and can also be asked directly (snapshot --switch-to uses that, so both
+// take the same path).
 //
 // A switch has three steps, in this order:
 // 1. ThemeEngine::set_theme() loads the new theme's fonts, makes it the
@@ -42,8 +43,8 @@ class ScreenManager;
 //    only happens when step 2 worked: otherwise the old screen still uses
 //    them, and they stay loaded.
 //
-// Requests never switch at once. Key 6 arrives as a click on a soft key
-// that the rebuild deletes, and the request also passes through an
+// Requests never switch at once. A request arrives inside a key or click
+// callback of a page that the rebuild deletes, and it passes through an
 // observer callback, which must not delete the screen it runs under. So a
 // request only records the target and schedules one lv_async_call(); the
 // switch runs from lv_timer_handler() afterwards, like a page change.
@@ -74,19 +75,18 @@ public:
 
     void set_listener(Listener listener);
 
-    // Asks for a switch to `id`, or to the theme after the one that is active
-    // or already asked for. Safe to call from LVGL event and observer
+    // Asks for a switch to `id`. Safe to call from LVGL event and observer
     // callbacks. A request for the theme that is already active does nothing.
     void request(view::ThemeId id);
-    void request_next();
 
 private:
     static void apply_pending_async(void* user_data);
-    static void next_theme_requested_cb(lv_observer_t* observer, lv_subject_t* subject);
+    static void theme_requested_cb(lv_observer_t* observer, lv_subject_t* subject);
 
     void schedule();
     void apply_pending();
 
+    viewmodel::BaseViewModel& view_model_;
     AssetManager& assets_;
     view::ThemeEngine& theme_engine_;
     ScreenManager& screen_manager_;

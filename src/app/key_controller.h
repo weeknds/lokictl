@@ -68,7 +68,7 @@ public:
     KeyController(const KeyController&) = delete;
     KeyController& operator=(const KeyController&) = delete;
 
-    // The message after a theme switch with key 6. The toast has already
+    // The message after the user picked a theme. The toast has already
     // taken the new theme's look by then. `saved` is false when the choice
     // could not be written to the settings file.
     void show_theme_switched(const char* display_name, bool saved);

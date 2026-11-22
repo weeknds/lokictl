@@ -139,7 +139,9 @@ The rules:
 - **Never hard-code a colour or a text font.** No colour values and no
   `lv_color_hex()` outside `src/view/theme.cpp`, and no text font files
   loaded by a screen. Take colours from `theme.colors` and fonts from
-  `theme.font(role)`.
+  `theme.font(role)`. The colour squares of the Settings page show the
+  colours of every theme, not only the active one; they read them with
+  `view::to_colors(view::theme_spec(id).colors)`.
 - **Text is never smaller than 12 px.** Use the roles; they are all 12 px or
   more. If something does not fit, shorten the text or change the layout.
 - **Screens do not watch for theme changes.** When the theme changes, the
@@ -221,7 +223,7 @@ view::widgets::SoftKeySet AppleScreen::soft_keys() {
     return {{
         {"Exit", [&view_model] { view_model.request_quit(); }},
         {"Size", [&view_model] { view_model.toggle_bold_text(); }},
-        {"Theme", [&view_model] { view_model.request_next_theme(); }, true},
+        {"Setup", [&view_model] { view_model.open_settings(); }, true},
         {"Info", [&view_model] { view_model.toggle_info(); }},
         {"Count", [&view_model] { view_model.open_page(model::AppPage::Butter); }},
     }};
@@ -242,7 +244,8 @@ Some things to know:
   example. It runs inside an LVGL click event, so it must never delete or
   build a screen itself. The view model's page changes and theme switches
   are already put off until LVGL has finished its callbacks, which is why
-  key 6 can rebuild the very page whose key was pressed.
+  the `USE` key of the Settings page can rebuild the very page whose key
+  was pressed.
 - To change a key later, for example to turn `SCAN` into `STOP` while a scan
   runs, call `soft_key_bar()->set_key(index, key)`, with an index from 0 to
   4 for the keys 4 to 8. Only that key is drawn again. It also works from
@@ -316,11 +319,11 @@ At startup the app takes the first of these that applies:
    file. Any other name stops the app at once with a message that lists the
    three names.
 2. **The saved choice**, the key `theme` in the `[application]` section of
-   the settings file, for example `theme=instrument`. Key 6 writes it every
-   time it switches the theme (see below). A name the app does not know
-   gives a warning in the log. The app then carries on as if no theme had
-   been saved (step 3 is skipped as well) and leaves the file exactly as it
-   is.
+   the settings file, for example `theme=instrument`. The Settings page
+   writes it every time the user picks a theme (see below). A name the app
+   does not know gives a warning in the log. The app then carries on as if
+   no theme had been saved (step 3 is skipped as well) and leaves the file
+   exactly as it is.
 3. **The old setting `dark_mode`**, which earlier versions wrote before
    themes were saved by name: `yes` means Terminal, `no` means Instrument.
    It only counts when the file has no `theme` line. A start that finds it
@@ -350,7 +353,8 @@ the app reads and writes instead of the normal ones, on any platform. It is
 meant for testing, above all in the simulator, where the normal settings
 file is the repository's own `config/lokictl.conf`. If the named file does
 not exist yet, the app logs that it could not load it, carries on as if no
-theme had been saved and creates the file when key 6 first saves a theme.
+theme had been saved and creates the file when a theme is first picked in
+Settings.
 
 The log says which theme was picked and why, for example
 `theme: constellation (from the default)`. The other reasons are
@@ -359,32 +363,44 @@ The log says which theme was picked and why, for example
 
 ## Switching while the app runs
 
-Key 6 on the home page switches to the next theme at once, in the order of
-the theme table: Instrument, Constellation, Terminal, then Instrument again.
-The page is built again in the new theme and keeps its state: the text size
-picked with key 5, the version line shown with key 7 and the counter value
-all stay. The message box and the help panel take the new look too, and in
-the desktop simulator so does the device frame around the screen. A short
-message says `Theme: <Name>`, or `Theme: <Name> (not saved)` when the
-settings file could not be written. Holding the key switches once. While
-the help panel is open, key 6 does nothing.
+The user switches the theme on the Settings page, which key 6 (`SETUP`) on
+the home page opens. The page lists the themes of the theme table in order:
+Instrument, Constellation, Terminal. Up and down move the highlight, and
+Enter or key 6 (`USE`) switches to the highlighted theme at once. The
+Settings page is built again in the new theme, with the tick on the new
+theme and the highlight where it was. The other pages keep their state as
+well: the text size picked with key 5 on the home page, the version line
+shown with key 7 and the counter value all stay. The message box and the
+help panel take the new look, and in the desktop simulator so does the
+device frame around the screen. A short message says `Theme: <Name>`, or
+`Theme: <Name> (not saved)` when the settings file could not be written.
+Holding Enter or key 6 switches once. While the help panel is open, both do
+nothing.
 
 Every switch is saved as `theme=<name>` in the `[application]` section of
 the settings file. All other lines, comments and sections of the file stay
-as they are. After a start with `--theme`, key 6 goes on from the theme that
-is running and saves the new choice, because the user picked it in the
-running app.
+as they are. After a start with `--theme`, a pick in Settings is saved like
+any other, because the user made it in the running app. Picking the theme
+that is already running does nothing at all: there is no switch, no message
+and nothing is written. `USE` is drawn switched off while the highlight is
+on that theme.
 
 What happens inside, step by step:
 
-1. The action of key 6, the home page's `THEME` soft key, calls
-   `BaseViewModel::request_next_theme()`. The view model knows nothing
-   about themes; it only counts the requests in a subject,
-   `next_theme_request_subject()`.
+1. Enter and the `USE` soft key of the Settings page call
+   `BaseViewModel::request_theme(row)`, unless the highlight is on the
+   active theme. A theme is the number of its row in the theme table (0 to
+   2), so the view model knows nothing about themes. It stores the row,
+   then counts the request in a subject, `theme_request_subject()`. The
+   subject is a counter because LVGL only tells observers about a value
+   that changed, and the same theme can be asked for twice.
 2. `app::ThemeController` (`src/app/theme_controller.h`) observes that
-   subject. It does not switch right away: it notes the target theme and
-   schedules one `lv_async_call()`. Several requests before that call runs
-   fold into one switch, and a request for the active theme does nothing.
+   subject and reads the row with `requested_theme()`. A row that is not in
+   the theme table is ignored with a warning in the log. The controller
+   does not switch right away: it notes the target theme and schedules one
+   `lv_async_call()`. Several requests before that call runs fold into one
+   switch to the last theme asked for, and a request for the active theme
+   does nothing.
 3. Called from `lv_timer_handler()`, the controller first runs
    `ThemeEngine::set_theme(id)`. It loads the new theme's fonts, makes it
    the active theme and notifies `ThemeEngine::subject()`. The old fonts
@@ -427,10 +443,11 @@ The rules that keep this safe:
   restyle themselves, fonts included, during step 3, before the old fonts
   are freed. Anything new on the top layer that uses a theme font must do
   the same.
-- **A switch never runs inside an LVGL event or observer callback.** Key 6
-  arrives as a click on a soft-key button that the rebuild deletes, and the
-  request passes through an observer. That is why the controller defers
-  the switch, the same way the screen manager defers page changes.
+- **A switch never runs inside an LVGL event or observer callback.** The
+  pick arrives inside a key or click callback of the very page that the
+  rebuild deletes, and the request passes through an observer. That is why
+  the controller defers the switch, the same way the screen manager defers
+  page changes.
 - **Fonts are freed only after the old screen is gone**, so no label ever
   points at a font that has been freed.
 - **Objects are created and destroyed in a fixed order:** LVGL, then the
@@ -439,10 +456,10 @@ The rules that keep this safe:
   reverse. When the theme controller is destroyed, it cancels a switch that
   is still waiting and stops observing the view model.
 
-A future settings screen with a theme picker should not call
-`ThemeEngine::set_theme()` itself. It should ask through the view model,
-the way key 6 does, so that the controller stays the one place that
-switches, rebuilds the page, frees fonts and saves the choice.
+The Settings page does not call `ThemeEngine::set_theme()` itself. It asks
+through the view model, and anything else that wants to switch the theme
+must do the same. So the controller stays the one place that switches,
+rebuilds the page, frees fonts and saves the choice.
 
 ## Adding a theme
 
@@ -457,9 +474,11 @@ switches, rebuilds the page, frees fonts and saves the choice.
    needs its files and license text in `assets/fonts/`, a constant in
    `bundled_fonts.h`, a line in `assets/fonts/LICENSE.txt` and a row in
    [fonts.md](fonts.md). Check its symbol coverage on the `dev-fonts` pages.
-4. Nothing else is needed for the command line or for key 6: `--theme`,
-   `--switch-to` and `--help` take the names from the table, and key 6 goes
-   through the table in order, so it picks up the new theme by itself.
+4. Nothing else is needed for the command line: `--theme`, `--switch-to`
+   and `--help` take the names from the table. The Settings page also lists
+   the themes from the table by itself, but it has room for three rows
+   only. A `static_assert` in `src/view/screens/settings_screen.cpp` stops
+   the build until its list can scroll.
 5. Snapshot every page in the new theme (see below), look at each picture,
    and add the theme to the tables on this page.
 6. Check live switching for every page: with `--switch-to`, from every other
@@ -491,8 +510,8 @@ done
 ```
 
 To start the simulator in one theme for a single run, with a settings file
-of its own so that key 6 leaves the repository's `config/lokictl.conf`
-alone:
+of its own so that picking a theme leaves the repository's
+`config/lokictl.conf` alone:
 
 ```sh
 LOKICTL_CONFIG_FILE=build/simulator.conf ./build/darwin-arm64/Debug/lokictl --theme constellation
@@ -510,12 +529,12 @@ orange text on the paper ground, are worth a look on the device itself.
 ### Checking live switching
 
 `--switch-to <theme>[,<theme>...]` makes a snapshot switch themes while the
-page is shown, the same way key 6 does. The page is drawn in the starting
-theme (`--theme`, or the default), the app then switches through the listed
-themes in order, and the picture is taken after the last switch. After the
-first draw and after every switch it prints `fonts loaded: <n> (<theme>)`
-to standard error. Like every snapshot, it never reads or writes the
-settings file.
+page is shown, the same way a pick on the Settings page does. The page is
+drawn in the starting theme (`--theme`, or the default), the app then
+switches through the listed themes in order, and the picture is taken after
+the last switch. After the first draw and after every switch it prints
+`fonts loaded: <n> (<theme>)` to standard error. Like every snapshot, it
+never reads or writes the settings file.
 
 The rule: **a picture taken after a live switch must be the same file, byte
 for byte, as a picture drawn directly in the last theme.** Any difference

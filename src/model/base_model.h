@@ -12,9 +12,10 @@
 namespace model {
 
 enum class AppPage {
-    Apple   = 0,
-    Butter  = 1,
-    KeyTest = 2,
+    Apple    = 0,
+    Butter   = 1,
+    KeyTest  = 2,
+    Settings = 3,
 
     // Developer pages. They are opened by name only (snapshot --page) and
     // are never linked from the normal UI.

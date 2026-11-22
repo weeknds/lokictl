@@ -101,9 +101,6 @@ const ThemeSpec& theme_spec(ThemeId id);
 const ThemeSpec* find_theme(std::string_view name);
 // The theme names joined with ", ", for help and error messages.
 std::string theme_names();
-// The theme after `id` in table order, wrapping from the last back to the
-// first. This is the order key 6 cycles through.
-ThemeId next_theme(ThemeId id);
 
 // The same colours as ThemeColorSpec, ready for LVGL.
 struct ThemeColors {

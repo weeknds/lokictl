@@ -25,7 +25,8 @@ BaseViewModel::BaseViewModel()
       bold_text_subject_(false),
       info_visible_subject_(false),
       quit_requested_subject_(false),
-      next_theme_request_subject_(0),
+      theme_request_subject_(0),
+      settings_theme_selection_subject_(kSettingsThemeFollowsActive),
       key_test_selection_subject_(0),
       key_test_picked_subject_(-1),
       key_test_last_key_subject_("-"),
@@ -61,8 +62,12 @@ lv_subject_t* BaseViewModel::quit_requested_subject() {
     return quit_requested_subject_.native();
 }
 
-lv_subject_t* BaseViewModel::next_theme_request_subject() {
-    return next_theme_request_subject_.native();
+lv_subject_t* BaseViewModel::theme_request_subject() {
+    return theme_request_subject_.native();
+}
+
+int32_t BaseViewModel::requested_theme() const {
+    return requested_theme_;
 }
 
 model::AppPage BaseViewModel::current_page() const {
@@ -115,8 +120,27 @@ void BaseViewModel::request_quit() {
     quit_requested_subject_.set(true);
 }
 
-void BaseViewModel::request_next_theme() {
-    next_theme_request_subject_.set(next_theme_request_subject_.value() + 1);
+void BaseViewModel::request_theme(int32_t row) {
+    // Stored first: the observers run inside set() and read it from there.
+    requested_theme_ = row;
+    theme_request_subject_.set(theme_request_subject_.value() + 1);
+}
+
+lv_subject_t* BaseViewModel::settings_theme_selection_subject() {
+    return settings_theme_selection_subject_.native();
+}
+
+int32_t BaseViewModel::settings_theme_selection() const {
+    return settings_theme_selection_subject_.value();
+}
+
+void BaseViewModel::select_settings_theme(int32_t row) {
+    settings_theme_selection_subject_.set(row);
+}
+
+bool BaseViewModel::open_settings() {
+    settings_theme_selection_subject_.set(kSettingsThemeFollowsActive);
+    return open_page(model::AppPage::Settings);
 }
 
 lv_subject_t* BaseViewModel::key_test_selection_subject() {

@@ -15,6 +15,7 @@ const std::vector<PageInfo>& page_registry() {
         {"demo-home", model::AppPage::Apple},
         {"demo-counter", model::AppPage::Butter},
         {"demo-keys", model::AppPage::KeyTest},
+        {"settings", model::AppPage::Settings},
         // Pages starting with "dev-" are for developers only; nothing in the
         // app links to them.
         {"dev-fonts", model::AppPage::DevFonts},
