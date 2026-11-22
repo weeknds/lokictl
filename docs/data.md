@@ -7,22 +7,37 @@ SPDX-License-Identifier: MIT
 
 The data layer collects the values the app shows and hands them to the
 screen. A small background reader asks a *source* for values, and the home
-page shows each new value while it is open, without being built again.
+page shows each new value while it is open: a value in place, and a new
+situation (another kind of link, an access point switched on or off, other
+clients) by building its content again, once.
 
 So far two values are real: the **clock** and the **battery**. Everything
-about the network is still made up. This page explains where the values
-come from, how they reach a page, how to add a new value, and how to test
-all of it by script.
+about the network is still made up. Made-up example situations (Wi-Fi,
+cable, no network) let every page be looked at and tested in the states the
+device can really be in, before real network values arrive. This page
+explains where the values come from, how they reach a page, how to add a
+new value, and how to test all of it by script.
 
-## Three sources
+## The sources
 
-Where the values come from is called the source. There are three:
+Where the values come from is called the source. There are seven:
 
 | Source | What it gives |
 |---|---|
-| `sample` | fixed made-up values that never change: the clock says `07:46` and the battery `91%` |
-| `demo` | the same made-up values, moving on a fixed script (see [The demo script](#the-demo-script)) |
-| `live` | real readings: the device's clock and battery; every other value is still the sample's |
+| `sample` | the router sample: fixed made-up values that never change. A router with its own access point and three clients; the clock says `07:46` and the battery `91%` |
+| `demo` | the router sample, moving on a fixed script (see [The demo script](#the-demo-script)) |
+| `live` | real readings: the device's clock and battery; every other value is still the router sample's |
+| `wifi` | fixed made-up values: joined to a Wi-Fi network, no access point, no clients |
+| `cable` | fixed made-up values: on a network cable, no access point, no clients |
+| `offline` | fixed made-up values: no network at all; every network value is not known |
+| `tour` | walks through the made-up situations, one stop per reading (see [The tour](#the-tour)) |
+
+`wifi`, `cable`, `offline` and `tour` show the same clock (`07:46`) and
+battery (`91%`) as the sample, and all of them keep the `sample data` mark.
+Their values are in one place, `src/model/home_examples.cpp`, and are all
+made up. `demo` and `live` are as they were: `demo` is still the same
+script, and `live` still shows the router sample with the real clock and
+battery.
 
 Which one is used:
 
@@ -32,10 +47,12 @@ Which one is used:
 - **A normal start and `--print-data`** use `live` on the device and `demo`
   in the Mac simulator, which has no battery to read.
 - `--data <name>` picks the source in every mode, for example
-  `--data live` in the simulator or `--data demo` on the device.
+  `--data live` in the simulator, `--data demo` on the device, or
+  `--data wifi` anywhere to see the page joined to a Wi-Fi network.
 
 The default is chosen in one place, `default_data_source()` in
-`src/app/app.cpp`.
+`src/app/app.cpp`. The example sources are never a default; they are only
+used when `--data` names them.
 
 ## What is real today
 
@@ -46,15 +63,46 @@ With `live`:
   (see [The battery](#the-battery)).
 
 The mode, the uplink, the access point, the addresses, the traffic and the
-clients are still the sample's made-up values in every source. That is why
-the page keeps its `sample data` mark: `HomeData::sample` stays true in all
-three sources. A real clock next to the mark is fine; a made-up client
-without it would not be. The mark goes away once the last made-up value on
-the page is real.
+clients are still made up in every source. That is why the page keeps its
+`sample data` mark: `HomeData::sample` stays true in every source. A real
+clock next to the mark is fine; a made-up client without it would not be.
+The mark goes away once the last made-up value on the page is real.
 
 The pages with a title bar, such as Settings, still read the clock and the
 battery for their title bar on their own, as before. Only the home page
 takes its values from the data layer for now.
+
+## The tour
+
+The tour (`--data tour`) is the test for "the page follows a new
+situation". It walks through 25 fixed stops and then starts again: reading
+`n` (counting the first reading as 0) shows stop `n` modulo 25, so
+`--data-steps 25` and `--data-steps 50` show stop 0 again. In a window it
+takes one stop every 2 s, so a person can watch the page change.
+
+In the table, A is the router sample, W the `wifi` set, C the `cable` set
+and O the `offline` set:
+
+| Stops | Shows |
+|---|---|
+| 0 to 12 | A, W, A, C, A, O, W, C, W, O, C, O, A: every set once after every other set |
+| 13 | W |
+| 14 | W with a weak signal: −83 dBm, 6 Mbit/s |
+| 15 | W with the widest texts: the name `Harbour-Cafe-Upstairs-Guest-5GHz` (32 characters, the longest a Wi-Fi name can be), `WPA3`, −100 dBm, 1000 Mbit/s, address `100.100.100.200`, router `100.100.100.100` |
+| 16 | W with values that are not known: no name, no security, no signal, no speed, no router's address; the interface `wlan0` and the address `10.20.30.44` stay |
+| 17, 18 | W, C |
+| 19 | C, fast: 1000 Mbit/s, address `100.100.100.200`, router `100.100.100.100` |
+| 20 | C with values that are not known: no speed, no address, no router's address; the interface `eth0` stays |
+| 21 | A |
+| 22 | A with another uplink: address `100.100.100.200`, 1000 Mbit/s |
+| 23 | A with one client left (`laptop`) |
+| 24 | A with no clients left |
+
+Stops 13 to 17, 18 to 20 and 21 to 22 change only values that the page
+changes in place, so between them nothing on the page is built again. Every
+other step brings a new situation, and the page's content is built again
+(see [How a page updates in place](#how-a-page-updates-in-place)). All the
+names and addresses are made up.
 
 ## The reader
 
@@ -98,8 +146,10 @@ reader thread.
 
 ### How often each source reads
 
-- `sample` never wakes up again: its values never change.
+- `sample`, `wifi`, `cable` and `offline` never wake up again: their
+  values never change.
 - `demo` takes one step a second.
+- `tour` takes one stop every 2 s.
 - `live` reads the clock just after each new minute starts (20 ms after
   it) and the battery every 10 s. The reader sleeps until whichever comes
   first. That is about seven wake-ups a minute, each a few small file
@@ -119,8 +169,12 @@ source            fills in one model::HomeData block
   -> app::DataController          (screen's thread) takes it, 4 times a second
   -> viewmodel::BaseViewModel     set_home_data() stores it, then
                                   home_data_subject() counts one change
-  -> screen::HomeScreen           its observer is told
-  -> screen::HomeLayout::update() the layout retexts its labels
+  -> screen::HomeScreen           its observer is told and compares the
+                                  new block with the one it shows
+  -> screen::HomeLayout::update() only values changed: the layout retexts
+                                  its labels
+     or the content built again   a new situation: a new layout builds
+                                  the page afresh
 ```
 
 - `BaseViewModel::set_home_data()` is only ever called on the screen's
@@ -141,11 +195,28 @@ source            fills in one model::HomeData block
 ## How a page updates in place
 
 Each home layout has two functions for values: `build(context)` makes the
-page, and `update(context)` shows new values on it. `update()`:
+page, and `update(context)` shows new values on it. `screen::HomeScreen`
+keeps a copy of the block the layout shows and decides which of the two a
+new block needs, with `home_values_only()` in
+`src/view/screens/home_layout.h`:
 
-- only changes the text of labels `build()` made. It never creates or
-  deletes an object and never builds the page again (a build takes 26 to
-  29 ms on the device);
+- **In place**, when the new block differs only in the clock, the battery,
+  the uplink's interface, address and link speed, the router's address, or
+  the Wi-Fi network's name, security and signal: `HomeScreen` calls
+  `update()`.
+- **Built again**, for any other difference (the kind of link, the access
+  point, the mode, the clients, the rates, the sample mark, or a field
+  added later): `HomeScreen` throws the layout away, empties the page's
+  content area, and a new layout builds it afresh, once (on the device a
+  new situation costs one frame of roughly 20 to 40 ms, depending on the
+  theme). The soft-key bar, the page and its observers stay. [home.md](home.md#values-in-place-a-new-situation-built-again)
+  explains why that is safe.
+
+`update()`:
+
+- only changes the text of labels `build()` made, and may move them. It
+  never creates or deletes an object and never builds the page again
+  itself;
 - sets a text through `set_text_if_changed(label, shown, text)`
   (`src/view/screens/home_layout.h`), which sets it only when it differs
   from `shown`, the text the layout gave that label last time. So nothing
@@ -155,11 +226,17 @@ page, and `update(context)` shows new values on it. `update()`:
 - uses the same text function as `build()`, so a page updated in place and
   a page built fresh with the same values look exactly the same.
 
-Nothing moves when a value changes. The battery text is right-aligned and
-grows to the left. In Constellation and Terminal the clock stays where it
-is. In Instrument the clock and the battery are one right-aligned label
-that ends 8 px from the right edge, so a longer battery text pushes the
-clock to the left. `--%` is as wide as `91%`.
+A value that changes in place moves nothing else, with the two exceptions
+below. The battery text is right-aligned and grows to the left. In
+Constellation and Terminal the clock stays where it is. In Instrument the
+clock and the battery are one right-aligned label that ends 8 px from the
+right edge, so a longer battery text pushes the clock to the left. `--%`
+is as wide as `91%`. Names and addresses sit in boxes of fixed width. Two things change with a value:
+Instrument's caption next to its first number (`DBM` or `MBIT`) follows
+the number when its width changes, for example from `−57` to `−100`; and
+in Constellation's router view the dim star right of the uplink's text is
+hidden while a wide text, such as `eth0 · 1000M`, would come too close to
+it.
 
 ## The battery
 
@@ -223,31 +300,42 @@ runs one minute per second and the battery counts down.
 
 ## Adding a new value
 
-Say a later version shows the Wi-Fi signal for real. The steps:
+Say a later version shows the Wi-Fi network's channel. The steps:
 
 1. **Model:** add a field to `model::HomeData` in `src/model/home_data.h`,
-   with its unit in the comment, and add it to `operator==` in
-   `src/model/home_data.cpp`. That operator decides whether a block is new,
-   so a field missing there never reaches the page.
-2. **Sample:** give it a made-up value in `model::sample_home_data()`. That
-   function is the only place where made-up values are written; nothing
-   under `src/view` or `src/app` writes one.
-3. **Live reader:** write a small reader in `src/platform`, like
+   on one line, with its unit in the comment and its "not known" value as
+   the default, and add it to `operator==` in `src/model/home_data.cpp`.
+   That operator decides whether a block is new, so a field missing there
+   never reaches the page.
+2. **Built again by itself:** from then on, a change in the new field
+   builds the page's content again, because `home_values_only()` does not
+   know it. That is always correct, only slower. If the value changes
+   while the situation stays the same, add it to `home_values_only()` in
+   `src/view/screens/home_layout.h` and to every layout's `update()` (step
+   7), so it changes in place.
+3. **Sample and example sets:** give it a made-up value in
+   `model::sample_home_data()` and, where it belongs, in the sets and tour
+   stops of `src/model/home_examples.cpp`. These two files are the only
+   places where made-up values are written; nothing under `src/view` or
+   `src/app` writes one.
+4. **Live reader:** write a small reader in `src/platform`, like
    `battery.*`. It takes the folder to read from, never throws, and never
    uses LVGL, the view model or the log. Call it from
    `platform::LiveDataSource::read()`. If the value changes on its own
    schedule, take that into account in `next_read_delay()`.
-4. **Demo:** if the value should move in the demo, add it to the demo
+5. **Demo:** if the value should move in the demo, add it to the demo
    script in `src/platform/data_source.cpp`, starting from the sample's
    value.
-5. **Text:** add a helper to `src/view/screens/home_format.h`, so the
-   value reads the same in every theme.
-6. **Layouts:** in each layout, `build()` makes the label and keeps a
-   pointer to it and the text it shows; `update()` sets the new text with
-   `set_text_if_changed()`. Use one text function for both.
-7. **Readout:** add a `name=value` line to `--print-data` in
-   `src/app/data_readout.cpp`, after the five lines that are there.
-8. **Test folder:** make a small folder that holds the files the reader
+6. **Text:** add a helper to `src/view/screens/home_format.h`, so the
+   value reads the same in every theme, with `--` when it is not known.
+7. **Layouts:** in each layout, `build()` makes the label and keeps a
+   pointer to it and the text it shows; if the value is on the in-place
+   list, `update()` sets the new text with `set_text_if_changed()`. Use
+   one text function for both.
+8. **Readout:** add a `name=value` line to `--print-data` in
+   `src/app/data_readout.cpp`, after the lines that are there, with
+   `unknown` for a value that is not known.
+9. **Test folder:** make a small folder that holds the files the reader
    reads, and check the reading with `LOKICTL_DATA_ROOT` and
    `--print-data`.
 
@@ -258,15 +346,18 @@ the reader.
 
 None of these changes a setting.
 
-### `--data <sample|demo|live>`
+### `--data <sample|demo|live|wifi|cable|offline|tour>`
 
 Picks the source in every mode. A wrong name stops the app with exit code
-2 and a message that names the three.
+2 and a message that names all seven. Names are lowercase and exact:
+`Wifi` and `wi-fi` are refused.
 
 ```sh
 B=./build/darwin-arm64/Debug/lokictl
 $B --data sample                 # a window whose values never change
+$B --data tour                   # a window that changes situation every 2 s
 $B --snapshot build/shots/home-live.png --data live
+$B --snapshot build/shots/home-wifi.png --data wifi
 ```
 
 ### `--data-steps <n>`
@@ -274,18 +365,24 @@ $B --snapshot build/shots/home-live.png --data live
 Only with `--snapshot` or `--print-data`: takes `n` further readings (0 to
 100000, default 0) right after the first one. These runs have no
 background thread. Each step asks the source, hands the values over the
-same way and, in a snapshot, updates the page, one after the other, so
-nothing has to be waited for and the same command always gives the same
-picture. With `demo` each step is one step of the script; with `live` a
-step reads the clock again, and the battery only once 10 s have passed.
+same way and, in a snapshot, updates the page or builds it again, one after
+the other, so nothing has to be waited for and the same command always
+gives the same picture. With `demo` each step is one step of the script;
+with `tour` each step is one stop; with `live` a step reads the clock
+again, and the battery only once 10 s have passed. With `sample`, `wifi`,
+`cable` and `offline` the steps change nothing. A tour step usually builds
+the page again, so many thousands of tour steps take minutes in a
+snapshot, while demo steps stay fast.
 
 ```sh
 B=./build/darwin-arm64/Debug/lokictl
 mkdir -p build/shots
 $B --snapshot build/shots/home-181.png --page home --data demo --data-steps 181
+$B --snapshot build/shots/home-widest.png --page home --data tour --data-steps 15
 ```
 
-That picture shows `10:47` and `100%+`.
+The first picture shows `10:47` and `100%+`, the second the tour's widest
+texts.
 
 ### The name `data` in `--keys`
 
@@ -299,6 +396,15 @@ mkdir -p build/shots
 $B --snapshot build/shots/a.png --page home --data demo --keys 6,data,data,esc
 $B --snapshot build/shots/b.png --page home --data demo --data-steps 2
 cmp build/shots/a.png build/shots/b.png && echo same
+```
+
+With the tour, a new situation that arrives while Settings is open is
+there when the home page comes back; this picture is the `wifi` picture:
+
+```sh
+$B --snapshot build/shots/c.png --page home --data tour --keys 6,data,esc
+$B --snapshot build/shots/d.png --page home --data wifi
+cmp build/shots/c.png build/shots/d.png && echo same
 ```
 
 It works in snapshot runs only. `scripts/device.sh key` does not know it.
@@ -323,6 +429,9 @@ $B --snapshot build/shots/fresh.png --page home --theme terminal --data demo --d
 cmp build/shots/in-place.png build/shots/fresh.png && echo same
 ```
 
+The same check with `--data tour` and any step from 1 to 26 covers both
+the values changed in place and the content built again.
+
 ### `--print-data`
 
 No screen and no keys. It takes the first reading (and the `--data-steps`
@@ -334,18 +443,55 @@ or writes the settings file and never touches the screen. It takes only
 exit code 2.
 
 ```sh
-$ ./build/darwin-arm64/Debug/lokictl --print-data --data sample
-source=sample
+$ ./build/darwin-arm64/Debug/lokictl --print-data --data wifi
+source=wifi
 sample=yes
 clock=07:46
 battery_percent=91
 battery_state=discharging
+mode=client
+link=wifi
+interface=wlan0
+address=10.20.30.44
+router=10.20.30.1
+speed_mbps=72
+network=Harbour-Cafe
+security=WPA2
+signal_dbm=-57
+access_point=no
+clients=0
+down_kbps=2400
+up_kbps=300
 ```
 
-The first five lines always come in this order. `battery_percent` is a
-number from 0 to 100 or `unknown`, and `battery_state` is `charging`,
-`discharging`, `idle` or `unknown`. Lines for more values may follow
-later.
+The lines always come in this order:
+
+| Line | What it says |
+|---|---|
+| `source=` | the source's name |
+| `sample=` | `yes` while the values are made up |
+| `clock=` | the clock as `HH:MM` |
+| `battery_percent=` | a number from 0 to 100, or `unknown` |
+| `battery_state=` | `charging`, `discharging`, `idle` or `unknown` |
+| `mode=` | `client`, `router`, `share` or `vpn` |
+| `link=` | the kind of link: `none`, `wifi` or `cable` |
+| `interface=` | the uplink's interface, for example `wlan0` |
+| `address=` | the device's address on the uplink |
+| `router=` | the router's address |
+| `speed_mbps=` | the link speed in Mbit/s |
+| `network=` | the Wi-Fi network's name |
+| `security=` | the Wi-Fi network's security, for example `WPA2` |
+| `signal_dbm=` | the Wi-Fi signal in dBm, with a plain hyphen: `-57` |
+| `access_point=` | `yes` while the device runs its own access point, else `no` |
+| `clients=` | the number of connected clients |
+| `down_kbps=`, `up_kbps=` | the current rates in kbit/s |
+
+A value that is not known prints `unknown`. `network=`, `security=` and
+`signal_dbm=` belong to a Wi-Fi network only, so they say `unknown` on a
+cable and in the router sample. `--data offline` prints `mode=client` and
+`link=none`, with `unknown` for every value from `interface=` to
+`signal_dbm=` and for both rates; the page says `OFFLINE` for it. Lines for
+later values are added at the end.
 
 ### `LOKICTL_DATA_ROOT`
 
@@ -393,8 +539,11 @@ LOKICTL_DATA_ROOT=build/test-power ./build/darwin-arm64/Debug/lokictl --snapshot
 ```sh
 scripts/device.sh data                    # the device's own values, live
 scripts/device.sh data --data sample      # the sample lines
+scripts/device.sh data --data wifi        # the Wi-Fi example's lines
 scripts/device.sh run --data demo         # the demo on the real screen
+scripts/device.sh run --data tour         # every situation on the real screen
 scripts/device.sh snapshot build/shots/device-181.png --data demo --data-steps 181
+scripts/device.sh snapshot build/shots/device-offline.png --data offline
 ```
 
 `scripts/device.sh data` runs `lokictl --print-data` on the device and
@@ -411,6 +560,11 @@ In a normal run the data layer writes these lines:
   when the charge or the state changes. `data: battery --% discharging`
   when only the charge is unknown, and `data: battery unknown` when neither
   is known. There is no line per reading and none per minute;
+- `data: link <none|wifi|cable>, access point <on|off>, <n> clients` for
+  the first reading, for example `data: link cable, access point on, 3
+  clients`, and then only when the kind of link, the access point or the
+  number of clients changes. So the tour logs a new line at most stops, but
+  none at stops 14 to 17, 19, 20 and 22, which change only values;
 - `data: reader stopped` once on the way out.
 
 A snapshot logs only warnings, so these lines do not appear there, and

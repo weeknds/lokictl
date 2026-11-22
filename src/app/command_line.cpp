@@ -215,6 +215,10 @@ std::string usage_text() {
     const std::string sample_source = platform::data_source_name(platform::DataSourceKind::Sample);
     const std::string demo_source = platform::data_source_name(platform::DataSourceKind::Demo);
     const std::string live_source = platform::data_source_name(platform::DataSourceKind::Live);
+    const std::string wifi_source = platform::data_source_name(platform::DataSourceKind::Wifi);
+    const std::string cable_source = platform::data_source_name(platform::DataSourceKind::Cable);
+    const std::string offline_source = platform::data_source_name(platform::DataSourceKind::Offline);
+    const std::string tour_source = platform::data_source_name(platform::DataSourceKind::Tour);
     // The default source of a start and of --print-data, as app.cpp picks it.
 #if USE_DESKTOP
     const std::string start_source = demo_source;
@@ -230,7 +234,7 @@ std::string usage_text() {
     const std::size_t form_width =
         std::max({start_form.size(), list_form.size(), help_form.size()}) + 3;
     const std::size_t option_width = 21;
-    const std::size_t source_width = 8;
+    const std::size_t source_width = 9;
     const std::string indent = "  " + std::string(option_width, ' ');
     const std::string source_indent = indent + "  " + std::string(source_width, ' ');
     const std::string continuation(program.size() + 1, ' ');
@@ -248,16 +252,26 @@ std::string usage_text() {
     text += "  " + padded("--theme <name>", option_width) + "one of: " + themes + "\n";
     text += indent + "When starting the app, the theme is used for this run\n";
     text += indent + "only and is not saved. Snapshot default: " + default_theme + "\n";
-    text += "  " + padded("--data <name>", option_width) + "where the values come from, one of: " +
-            platform::data_source_names() + "\n";
+    text += "  " + padded("--data <name>", option_width) + "where the values come from, one of:\n";
     text += indent + "  " + padded(sample_source, source_width) +
-            "fixed made-up values that never change\n";
+            "fixed made-up values: a router with its own\n";
+    text += source_indent + "access point and three clients\n";
     text += indent + "  " + padded(demo_source, source_width) +
             "the made-up values, moving on a fixed script\n";
     text += source_indent + "(one step a second when the app runs)\n";
     text += indent + "  " + padded(live_source, source_width) +
             "real readings: the clock and the battery so\n";
     text += source_indent + "far; the other values are still made up\n";
+    text += indent + "  " + padded(wifi_source, source_width) +
+            "fixed made-up values: joined to a Wi-Fi\n";
+    text += source_indent + "network, no access point\n";
+    text += indent + "  " + padded(cable_source, source_width) +
+            "fixed made-up values: on a network cable\n";
+    text += indent + "  " + padded(offline_source, source_width) +
+            "fixed made-up values: no network at all\n";
+    text += indent + "  " + padded(tour_source, source_width) +
+            "walks through the made-up situations, one\n";
+    text += source_indent + "stop every two seconds when the app runs\n";
     text += indent + "Default: " + sample_source + " for a snapshot; " + start_source +
             " when starting\n";
     text += indent + "the app and for --print-data (" + start_source_elsewhere + ").\n";

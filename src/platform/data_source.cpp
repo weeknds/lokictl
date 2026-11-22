@@ -6,6 +6,7 @@
 
 #include "data_source.h"
 
+#include "home_examples.h"
 #include "live_data_source.h"
 
 #include <cstdint>
@@ -25,6 +26,10 @@ constexpr DataSourceName kDataSourceNames[] = {
     {DataSourceKind::Sample, "sample"},
     {DataSourceKind::Demo, "demo"},
     {DataSourceKind::Live, "live"},
+    {DataSourceKind::Wifi, "wifi"},
+    {DataSourceKind::Cable, "cable"},
+    {DataSourceKind::Offline, "offline"},
+    {DataSourceKind::Tour, "tour"},
 };
 
 // The fixed made-up values. They never change, so the reader never wakes up
@@ -42,6 +47,59 @@ public:
     milliseconds next_read_delay() override {
         return kNever;
     }
+};
+
+// One of the fixed made-up situations of home_examples.h: Wi-Fi, cable or
+// no network. Like the sample, its values never change.
+class ExampleDataSource final : public DataSource {
+public:
+    using Fill = model::HomeData (*)();
+
+    ExampleDataSource(DataSourceKind kind, Fill fill)
+        : kind_(kind),
+          fill_(fill) {}
+
+    DataSourceKind kind() const override {
+        return kind_;
+    }
+
+    void read(model::HomeData& data) override {
+        data = fill_();
+    }
+
+    milliseconds next_read_delay() override {
+        return kNever;
+    }
+
+private:
+    const DataSourceKind kind_;
+    const Fill fill_;
+};
+
+// The tour (see model::home_tour_stop()). Each reading is one stop; step 0
+// is stop 0, and after the last stop it starts again. In a window it takes
+// one stop every two seconds, so a person can watch the page change.
+constexpr milliseconds kTourStepTime{2000};
+
+class TourDataSource final : public DataSource {
+public:
+    DataSourceKind kind() const override {
+        return DataSourceKind::Tour;
+    }
+
+    // Uses the current stop, then moves on to the next one.
+    void read(model::HomeData& data) override {
+        const auto stop = static_cast<int>(step_ % static_cast<uint64_t>(model::kHomeTourStops));
+        data = model::home_tour_stop(stop);
+        ++step_;
+    }
+
+    milliseconds next_read_delay() override {
+        return kTourStepTime;
+    }
+
+private:
+    uint64_t step_{0};
 };
 
 // The demo script. Each reading is one step; step 0 is the sample exactly.
@@ -157,6 +215,14 @@ std::unique_ptr<DataSource> make_data_source(DataSourceKind kind, const std::str
             return std::make_unique<DemoDataSource>();
         case DataSourceKind::Live:
             return std::make_unique<LiveDataSource>(data_root);
+        case DataSourceKind::Wifi:
+            return std::make_unique<ExampleDataSource>(kind, &model::wifi_home_data);
+        case DataSourceKind::Cable:
+            return std::make_unique<ExampleDataSource>(kind, &model::cable_home_data);
+        case DataSourceKind::Offline:
+            return std::make_unique<ExampleDataSource>(kind, &model::offline_home_data);
+        case DataSourceKind::Tour:
+            return std::make_unique<TourDataSource>();
     }
     return std::make_unique<SampleDataSource>();
 }

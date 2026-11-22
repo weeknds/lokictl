@@ -10,6 +10,8 @@
 #                                   the same, in that theme for this run only
 #   scripts/device.sh run --data demo
 #                                   the same, with the moving demo values
+#   scripts/device.sh run --data wifi
+#                                   the same, joined to a made-up Wi-Fi network
 #   scripts/device.sh data          print LokiCTL's current values (name=value)
 #   scripts/device.sh screen x.png  save what the screen shows
 #   scripts/device.sh key 6         press keys on the device (6: opens Settings)
@@ -70,9 +72,11 @@ Commands:
                   it, LokiCTL's saved theme or its default decides. A theme
                   picked on the Settings page (6 on the home page) is
                   saved, also after a --theme start. --data takes the
-                  values from D (sample, demo or live) for this run only;
-                  without it the device reads live values. An unknown name
-                  makes LokiCTL exit at once with a message.
+                  values from D (sample, demo, live, wifi, cable, offline
+                  or tour) for this run only; without it the device reads
+                  live values. wifi, cable and offline are fixed made-up
+                  examples; tour walks through them, one every 2 s. An
+                  unknown name makes LokiCTL exit at once with a message.
   stop            Stop LokiCTL (however it was started) and bring the
                   launcher back on HOME. Safe to repeat.
   status          Show the installed version and what is running.
@@ -96,12 +100,13 @@ Commands:
                   Without --theme the picture uses the default theme; the
                   settings file is not read or written. Without --data the
                   picture shows the fixed sample values; --data D (sample,
-                  demo or live) takes them from D. --data-steps takes N
-                  further readings (0 to 100000) after the page is built
-                  and before the keys. --keys presses the listed keys
-                  before the picture (and before --switch-to). They are
-                  pressed inside that snapshot run, not on the device's
-                  keyboard, so LokiCTL need not be running.
+                  demo, live, wifi, cable, offline or tour) takes them
+                  from D. --data-steps takes N further readings (0 to
+                  100000) after the page is built and before the keys.
+                  --keys presses the listed keys before the picture (and
+                  before --switch-to). They are pressed inside that
+                  snapshot run, not on the device's keyboard, so LokiCTL
+                  need not be running.
                   Names: 0-9, a-z, esc, enter, space, backspace, up, down,
                   left, right, help; add :long to hold one for 1 s (for
                   example esc:long). The name data is not a key: it takes
@@ -111,12 +116,13 @@ Commands:
                   "fonts loaded" and "quit requested" lines appear on
                   standard error.
   data [--data D] Print LokiCTL's current values as name=value lines
-                  (source, sample, clock, battery_percent, battery_state),
-                  read on the device with "lokictl --print-data". Without
-                  --data the device reads live values; --data D (sample,
-                  demo or live) takes them from D. It works while the
-                  launcher is on screen and touches neither the screen nor
-                  a running LokiCTL.
+                  (source, sample, clock, battery_percent, battery_state,
+                  then the network's lines from mode to up_kbps), read on
+                  the device with "lokictl --print-data". Without --data
+                  the device reads live values; --data D (sample, demo,
+                  live, wifi, cable, offline or tour) takes them from D.
+                  It works while the launcher is on screen and touches
+                  neither the screen nor a running LokiCTL.
   logs [-n N]     Show the last N log lines (default 50) of the latest
                   'run' only, also after LokiCTL has stopped.
 

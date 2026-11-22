@@ -5,7 +5,8 @@
  */
 
 // The home page of the Terminal theme: three boxed panes, with their titles
-// set into the top border line.
+// set into the top border line. It has two views (see HomeLayout). The
+// router view shows:
 // - net (top left): a bar graph of the recent download and upload rates with
 //   the current rate at the right end of each, then the uplink with its
 //   address and link speed; the clock sits in the border.
@@ -14,6 +15,13 @@
 // - clients (bottom): a header row and one row per client (address, name,
 //   signal, rate and a "new" mark); the selected row is filled. The sample
 //   mark sits in the border.
+// The link view, without an access point, keeps the panes and their places:
+// - net: the same rows; without a link the uplink's row says "no network".
+// - mode: the mode ("offline", muted and without the dot, when there is no
+//   link), the access point "off" and the kind of link the device is on.
+// - link (bottom, titled "no network" without a link): the network, the
+//   Wi-Fi signal and security, the device's address and link speed, and the
+//   router's address, as labels and values in two columns.
 // The panes are Compact (see view::style::pane()): content starts 14 px under
 // a pane's top and its rows step 14 px, or 15 px for the filled table rows.
 // Every label sits at a fixed position; nothing is stacked by LVGL.
@@ -60,8 +68,9 @@ constexpr int32_t kGraphGap       = 1;
 constexpr int32_t kGraphHeight    = 12;
 constexpr int32_t kGraphTop       = 2;   // the bars end on row 13 of their text row
 constexpr int32_t kRateWidth      = 42;  // right-aligned, room for "100.0M"
+constexpr int32_t kInterfaceWidth = 35;  // 5 characters; a longer name ends in dots
 constexpr int32_t kUplinkAddressX = 40;
-constexpr int32_t kUplinkAddressWidth = 104;
+constexpr int32_t kUplinkAddressWidth = 105; // 15 characters, the widest IPv4 address
 constexpr int32_t kSpeedWidth     = 40;  // right-aligned, room for "1000M"
 
 // The mode pane.
@@ -90,12 +99,27 @@ constexpr int32_t kTableRateEnd   = 270;
 constexpr int32_t kTableRateWidth = 36;
 constexpr int32_t kNewX           = 277;
 
+// The link pane of the link view, in the content of its pane, which is 306
+// px wide (the 316 px pane less a 1 px border and 4 px padding each side).
+// Rows step 14 px from the content's top; a label and its value, twice.
+constexpr int32_t kLinkContentWidth = 306;
+constexpr int32_t kLinkLabelX       = 4;
+constexpr int32_t kLinkValueX       = 60;
+constexpr int32_t kLinkValueWidth   = 110;  // ends before the second column
+constexpr int32_t kLinkLabel2X      = 176;
+constexpr int32_t kLinkValue2X      = 218;
+constexpr int32_t kLinkValue2Width  = kLinkContentWidth - kLinkValue2X;
+constexpr int32_t kLinkNameWidth    = kLinkContentWidth - kLinkValueX; // a 32-character name fits
+
 constexpr int32_t kContentHeight = view::kScreenHeight - view::kSoftKeyBarHeight;
 
 static_assert(kClientsY + kClientsHeight <= kContentHeight - 3,
               "rows 137-139, right above the soft-key bar, stay empty");
 static_assert(kNetX + kNetWidth < kModeX && kModeX + kModeWidth <= view::kScreenWidth - 2,
               "the top panes sit side by side");
+static_assert(kInterfaceWidth < kUplinkAddressX, "the interface ends before the address");
+static_assert(kLinkValueX + kLinkValueWidth < kLinkLabel2X && kLinkLabel2X < kLinkValue2X,
+              "the link pane's columns do not overlap");
 static_assert(kNameX + kNameWidth <= kSignalEnd - kSignalWidth &&
                   kSignalEnd < kTableRateEnd - kTableRateWidth && kTableRateEnd < kNewX,
               "table columns do not overlap");
@@ -143,6 +167,55 @@ std::string battery_note_text(const model::HomeData& data) {
     return home::battery_text(data.battery_percent, data.battery_state);
 }
 
+// The uplink's row of the net pane: interface, address and link speed;
+// "--" for each one that is not known.
+std::string interface_text(const model::HomeData& data) {
+    return home::text_or_unknown(data.uplink_name);
+}
+
+std::string uplink_address_text(const model::HomeData& data) {
+    return home::text_or_unknown(data.uplink_address);
+}
+
+std::string uplink_speed_text(const model::HomeData& data) {
+    return home::speed_text(data.uplink_speed_mbps);
+}
+
+// The values of the link pane; "--" for each one that is not known.
+std::string network_value_text(const model::HomeData& data) {
+    return home::network_name_text(data);
+}
+
+std::string signal_value_text(const model::HomeData& data) {
+    return home::signal_text(data.wifi_signal_dbm);
+}
+
+std::string security_value_text(const model::HomeData& data) {
+    return home::text_or_unknown(data.wifi_security);
+}
+
+std::string address_value_text(const model::HomeData& data) {
+    return home::text_or_unknown(data.uplink_address);
+}
+
+std::string speed_value_text(const model::HomeData& data) {
+    return home::speed_long_text(data.uplink_speed_mbps);
+}
+
+std::string router_value_text(const model::HomeData& data) {
+    return home::text_or_unknown(data.gateway_address);
+}
+
+// The round dot after the mode word, drawn as a shape.
+void mode_dot(lv_obj_t* parent, lv_obj_t* mode, const view::Theme& theme) {
+    auto* dot = plain_object(parent);
+    lv_obj_set_size(dot, kModeDotSize, kModeDotSize);
+    lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(dot, theme.colors.accent, 0);
+    lv_obj_set_style_bg_opa(dot, LV_OPA_COVER, 0);
+    lv_obj_align_to(dot, mode, LV_ALIGN_OUT_RIGHT_MID, kModeDotGap, 0);
+}
+
 class TerminalHomeLayout final : public HomeLayout {
 public:
     void build(const HomeContext& context) override;
@@ -152,7 +225,26 @@ public:
 private:
     void build_net(const HomeContext& context);
     void build_mode(const HomeContext& context);
+    void build_link_mode(const HomeContext& context, lv_obj_t* parent);
     void build_clients(const HomeContext& context);
+    void build_link(const HomeContext& context);
+
+    // One row of the link pane: a muted label and, from kLinkValueX, its
+    // value in a box of `width`. Returns the value's label.
+    lv_obj_t* link_row(const HomeContext& context,
+                       lv_obj_t* parent,
+                       int32_t y,
+                       const char* label,
+                       const std::string& value,
+                       lv_color_t color,
+                       int32_t width);
+
+    // The same for the second column, from kLinkLabel2X.
+    lv_obj_t* link_row_second(const HomeContext& context,
+                              lv_obj_t* parent,
+                              int32_t y,
+                              const char* label,
+                              const std::string& value);
 
     // One traffic row of the net pane.
     void build_traffic_row(const HomeContext& context,
@@ -170,6 +262,15 @@ private:
     lv_obj_t* battery_note_{nullptr};
     std::string battery_shown_;
 
+    // The uplink's interface, address and link speed in the net pane, and
+    // the text each shows; update() changes the text only.
+    lv_obj_t* interface_{nullptr};
+    std::string interface_shown_;
+    lv_obj_t* uplink_address_{nullptr};
+    std::string uplink_address_shown_;
+    lv_obj_t* uplink_speed_{nullptr};
+    std::string uplink_speed_shown_;
+
     // One row of the clients table; select() restyles them.
     struct ClientRow {
         lv_obj_t* row{nullptr};
@@ -181,12 +282,37 @@ private:
     };
     std::array<ClientRow, viewmodel::kHomeClientRows> rows_{};
     int32_t row_count_{0};
+
+    // True when build() drew the link view: no access point, no clients.
+    bool link_view_{false};
+
+    // The link pane's values that update() follows, and the text each
+    // shows. They stay null in the router view, and so do the rows the link
+    // pane leaves out for a kind of link.
+    lv_obj_t* network_{nullptr};
+    std::string network_shown_;
+    lv_obj_t* signal_{nullptr};
+    std::string signal_shown_;
+    lv_obj_t* security_{nullptr};
+    std::string security_shown_;
+    lv_obj_t* address_{nullptr};
+    std::string address_shown_;
+    lv_obj_t* speed_{nullptr};
+    std::string speed_shown_;
+    lv_obj_t* router_{nullptr};
+    std::string router_shown_;
 };
 
 void TerminalHomeLayout::build(const HomeContext& context) {
+    link_view_ = !context.data.ap_active;
+
     build_net(context);
     build_mode(context);
-    build_clients(context);
+    if (link_view_) {
+        build_link(context);
+    } else {
+        build_clients(context);
+    }
 }
 
 void TerminalHomeLayout::build_traffic_row(const HomeContext& context,
@@ -204,7 +330,7 @@ void TerminalHomeLayout::build_traffic_row(const HomeContext& context,
         parent, history, model::kHomeHistoryLength, kGraphBarWidth, kGraphGap, kGraphHeight, color);
     lv_obj_set_pos(graph, kGraphX, y + kGraphTop);
 
-    const std::string rate = home::rate_text(kbps) + "M";
+    const std::string rate = home::rate_short_text(kbps);
     auto* value = plain_label(parent, rate.c_str());
     view::style::text(value, theme, view::FontRole::Small, color);
     align_text_right(value, kRateWidth, theme.font(view::FontRole::Small));
@@ -228,17 +354,28 @@ void TerminalHomeLayout::build_net(const HomeContext& context) {
                       data.up_kbps, theme.colors.selection);
 
     const int32_t uplink_y = 2 * kRowStep;
-    small_label(pane.content, theme, data.uplink_name.c_str(), theme.colors.text, 0, uplink_y);
+    if (home::is_offline(data)) {
+        // Without any network the row says so, in the muted colour.
+        small_label(pane.content, theme, home::network_text(data).c_str(), theme.colors.muted, 0,
+                    uplink_y);
+        return;
+    }
 
-    auto* address = small_label(pane.content, theme, data.uplink_address.c_str(),
-                                theme.colors.accent2, kUplinkAddressX, uplink_y);
-    fix_width(address, kUplinkAddressWidth, small);
+    interface_shown_ = interface_text(data);
+    interface_ = small_label(pane.content, theme, interface_shown_.c_str(), theme.colors.text, 0,
+                             uplink_y);
+    fix_width(interface_, kInterfaceWidth, small);
 
-    const std::string speed = std::to_string(data.uplink_speed_mbps) + "M";
-    auto* link = plain_label(pane.content, speed.c_str());
-    view::style::text(link, theme, view::FontRole::Small);
-    align_text_right(link, kSpeedWidth, small);
-    lv_obj_align(link, LV_ALIGN_TOP_RIGHT, 0, uplink_y);
+    uplink_address_shown_ = uplink_address_text(data);
+    uplink_address_ = small_label(pane.content, theme, uplink_address_shown_.c_str(),
+                                  theme.colors.accent2, kUplinkAddressX, uplink_y);
+    fix_width(uplink_address_, kUplinkAddressWidth, small);
+
+    uplink_speed_shown_ = uplink_speed_text(data);
+    uplink_speed_ = plain_label(pane.content, uplink_speed_shown_.c_str());
+    view::style::text(uplink_speed_, theme, view::FontRole::Small);
+    align_text_right(uplink_speed_, kSpeedWidth, small);
+    lv_obj_align(uplink_speed_, LV_ALIGN_TOP_RIGHT, 0, uplink_y);
 }
 
 void TerminalHomeLayout::build_mode(const HomeContext& context) {
@@ -251,19 +388,17 @@ void TerminalHomeLayout::build_mode(const HomeContext& context) {
     lv_obj_set_pos(pane.root, kModeX, kModeY);
     battery_shown_ = battery_note_text(data);
     battery_note_ = view::style::pane_note(pane, theme, battery_shown_.c_str(), theme.colors.muted);
+    if (link_view_) {
+        build_link_mode(context, pane.content);
+        return;
+    }
 
-    // The mode in bold with a round dot after it, drawn as a shape.
+    // The mode in bold with a round dot after it.
     const std::string word = home::lower_text(model::net_mode_name(data.mode));
     auto* mode = plain_label(pane.content, word.c_str());
     view::style::text(mode, theme, view::FontRole::Strong, theme.colors.accent);
     lv_obj_set_pos(mode, 0, 0);
-
-    auto* dot = plain_object(pane.content);
-    lv_obj_set_size(dot, kModeDotSize, kModeDotSize);
-    lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_color(dot, theme.colors.accent, 0);
-    lv_obj_set_style_bg_opa(dot, LV_OPA_COVER, 0);
-    lv_obj_align_to(dot, mode, LV_ALIGN_OUT_RIGHT_MID, kModeDotGap, 0);
+    mode_dot(pane.content, mode, theme);
 
     small_label(pane.content, theme, "ap", theme.colors.muted, 0, kRowStep);
     auto* access_point = small_label(pane.content, theme, data.ap_name.c_str(), theme.colors.text,
@@ -273,6 +408,31 @@ void TerminalHomeLayout::build_mode(const HomeContext& context) {
     small_label(pane.content, theme, "up", theme.colors.muted, 0, 2 * kRowStep);
     small_label(pane.content, theme, home::uptime_text(data.uptime_seconds).c_str(),
                 theme.colors.text, kModeValueX, 2 * kRowStep);
+}
+
+// The mode pane of the link view: the mode, the access point "off" and the
+// kind of link ("on wi-fi", "on cable", "on --" without a link). Without
+// any network the mode word reads "offline", muted and without the dot.
+void TerminalHomeLayout::build_link_mode(const HomeContext& context, lv_obj_t* parent) {
+    const auto& theme = context.theme;
+    const auto& colors = theme.colors;
+    const auto& data = context.data;
+    const bool offline = home::is_offline(data);
+
+    const std::string word = home::lower_text(home::mode_word(data));
+    auto* mode = plain_label(parent, word.c_str());
+    view::style::text(mode, theme, view::FontRole::Strong, offline ? colors.muted : colors.accent);
+    lv_obj_set_pos(mode, 0, 0);
+    if (!offline) {
+        mode_dot(parent, mode, theme);
+    }
+
+    small_label(parent, theme, "ap", colors.muted, 0, kRowStep);
+    small_label(parent, theme, "off", colors.text, kModeValueX, kRowStep);
+
+    const std::string kind = home::text_or_unknown(home::link_kind_text(data.uplink_kind));
+    small_label(parent, theme, "on", colors.muted, 0, 2 * kRowStep);
+    small_label(parent, theme, kind.c_str(), colors.text, kModeValueX, 2 * kRowStep);
 }
 
 void TerminalHomeLayout::build_clients(const HomeContext& context) {
@@ -332,7 +492,7 @@ void TerminalHomeLayout::build_clients(const HomeContext& context) {
         align_text_right(slot.signal, kSignalWidth, small);
         lv_obj_set_pos(slot.signal, kSignalEnd - kSignalWidth, 0);
 
-        const std::string client_rate = home::rate_text(client.rate_kbps) + "M";
+        const std::string client_rate = home::rate_short_text(client.rate_kbps);
         slot.rate = plain_label(slot.row, client_rate.c_str());
         align_text_right(slot.rate, kTableRateWidth, small);
         lv_obj_set_pos(slot.rate, kTableRateEnd - kTableRateWidth, 0);
@@ -345,9 +505,85 @@ void TerminalHomeLayout::build_clients(const HomeContext& context) {
     }
 }
 
+lv_obj_t* TerminalHomeLayout::link_row(const HomeContext& context,
+                                       lv_obj_t* parent,
+                                       int32_t y,
+                                       const char* label,
+                                       const std::string& value,
+                                       lv_color_t color,
+                                       int32_t width) {
+    const auto& theme = context.theme;
+    small_label(parent, theme, label, theme.colors.muted, kLinkLabelX, y);
+    auto* value_label = small_label(parent, theme, value.c_str(), color, kLinkValueX, y);
+    fix_width(value_label, width, theme.font(view::FontRole::Small));
+    return value_label;
+}
+
+lv_obj_t* TerminalHomeLayout::link_row_second(const HomeContext& context,
+                                              lv_obj_t* parent,
+                                              int32_t y,
+                                              const char* label,
+                                              const std::string& value) {
+    const auto& theme = context.theme;
+    small_label(parent, theme, label, theme.colors.muted, kLinkLabel2X, y);
+    auto* value_label = small_label(parent, theme, value.c_str(), theme.colors.text, kLinkValue2X, y);
+    fix_width(value_label, kLinkValue2Width, theme.font(view::FontRole::Small));
+    return value_label;
+}
+
+// The link pane, in the clients pane's place: the network, on Wi-Fi its
+// signal and security, the device's address with the link speed beside it,
+// and the router's address. Without a link it is titled "no network" and
+// shows the network, the address and the router as "--".
+void TerminalHomeLayout::build_link(const HomeContext& context) {
+    const auto& theme = context.theme;
+    const auto& colors = theme.colors;
+    const auto& data = context.data;
+    const bool wifi = data.uplink_kind == model::LinkKind::Wifi;
+    const bool linked = data.uplink_kind != model::LinkKind::None;
+
+    const std::string title = home::is_offline(data) ? home::network_text(data) : std::string("link");
+    const auto pane = view::style::pane(context.content, theme, title.c_str(), kClientsWidth,
+                                        kClientsHeight, colors.selection,
+                                        view::style::PaneDensity::Compact);
+    lv_obj_set_pos(pane.root, kClientsX, kClientsY);
+    if (data.sample) {
+        view::style::pane_note(pane, theme, "sample data", colors.warning);
+    }
+
+    int32_t y = 0;
+    network_shown_ = network_value_text(data);
+    network_ = link_row(context, pane.content, y, "network", network_shown_, colors.text,
+                        kLinkNameWidth);
+    y += kRowStep;
+
+    if (wifi) {
+        signal_shown_ = signal_value_text(data);
+        signal_ = link_row(context, pane.content, y, "signal", signal_shown_, colors.text,
+                           kLinkValueWidth);
+        security_shown_ = security_value_text(data);
+        security_ = link_row_second(context, pane.content, y, "auth", security_shown_);
+        y += kRowStep;
+    }
+
+    address_shown_ = address_value_text(data);
+    address_ = link_row(context, pane.content, y, "address", address_shown_, colors.accent2,
+                        kLinkValueWidth);
+    if (linked) {
+        speed_shown_ = speed_value_text(data);
+        speed_ = link_row_second(context, pane.content, y, "speed", speed_shown_);
+    }
+    y += kRowStep;
+
+    router_shown_ = router_value_text(data);
+    router_ = link_row(context, pane.content, y, "router", router_shown_, colors.accent2,
+                       kLinkValueWidth);
+}
+
 void TerminalHomeLayout::select(const HomeContext& context, int32_t index) {
     const auto& colors = context.theme.colors;
-    if (row_count_ == 0) {
+    // The link view has no clients to mark.
+    if (link_view_ || row_count_ == 0) {
         return;
     }
     // Like the other layouts: an index past the rows marks the last row.
@@ -375,12 +611,26 @@ void TerminalHomeLayout::select(const HomeContext& context, int32_t index) {
     }
 }
 
-// Only the two border notes follow the values for now. Each note keeps its
-// alignment to its pane's right end, so a wider text grows to the left and
-// the clock stays where it is.
+// The two border notes and the uplink's row of the net pane follow the
+// values. Each note keeps its alignment to its pane's right end, so a wider
+// text grows to the left and the clock stays where it is. The interface and
+// the address keep their fixed boxes, and the link speed stays right-aligned
+// in its own. In the link view the link pane's values follow too, each in
+// its fixed box. The labels the built view does not have are null, and
+// set_text_if_changed() skips them.
 void TerminalHomeLayout::update(const HomeContext& context) {
-    set_text_if_changed(clock_note_, clock_shown_, clock_note_text(context.data));
-    set_text_if_changed(battery_note_, battery_shown_, battery_note_text(context.data));
+    const auto& data = context.data;
+    set_text_if_changed(clock_note_, clock_shown_, clock_note_text(data));
+    set_text_if_changed(battery_note_, battery_shown_, battery_note_text(data));
+    set_text_if_changed(interface_, interface_shown_, interface_text(data));
+    set_text_if_changed(uplink_address_, uplink_address_shown_, uplink_address_text(data));
+    set_text_if_changed(uplink_speed_, uplink_speed_shown_, uplink_speed_text(data));
+    set_text_if_changed(network_, network_shown_, network_value_text(data));
+    set_text_if_changed(signal_, signal_shown_, signal_value_text(data));
+    set_text_if_changed(security_, security_shown_, security_value_text(data));
+    set_text_if_changed(address_, address_shown_, address_value_text(data));
+    set_text_if_changed(speed_, speed_shown_, speed_value_text(data));
+    set_text_if_changed(router_, router_shown_, router_value_text(data));
 }
 
 } // namespace

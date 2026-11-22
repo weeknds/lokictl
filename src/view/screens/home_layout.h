@@ -32,6 +32,14 @@ struct HomeContext {
 // context.data. It keeps pointers to the objects select() and update()
 // change, and the text each label of update() shows; LVGL owns the
 // objects, and they go when the page goes.
+//
+// A layout has two views: with an access point (HomeData::ap_active) the
+// router view, with the access point and its clients; without one the link
+// view, which shows the uplink's own details in that space. When a new
+// block differs from the shown one in more than the values of
+// home_values_only(), HomeScreen drops the layout and its objects and
+// builds a new one, so a layout never has to change from one view to the
+// other.
 class HomeLayout {
 public:
     virtual ~HomeLayout() = default;
@@ -41,18 +49,46 @@ public:
 
     // Marks client `index` as the selected one. Called once right after
     // build() and again whenever the selection changes; it may only restyle,
-    // move and retext objects build() made.
+    // move and retext objects build() made. It does nothing in a view
+    // without clients.
     virtual void select(const HomeContext& context, int32_t index) = 0;
 
     // Shows the values of context.data. Called once right after build(),
-    // when nothing has changed yet, and again whenever the values changed
-    // while the page is open. It may only change the text and the style of
-    // objects build() made; it never creates or deletes an object, and it
-    // sets a text only when that text really changed (see
+    // when nothing has changed yet, and again whenever only the values of
+    // home_values_only() changed while the page is open. It must show every
+    // one of those values the layout draws, in both views, so a page
+    // updated in place looks exactly like one built fresh. It may only
+    // change the text and the style of objects build() made, and move them
+    // (a caption may follow its number); it never creates or deletes an
+    // object, and it sets a text only when that text really changed (see
     // set_text_if_changed()), so nothing is redrawn for a value that stayed
     // the same.
     virtual void update(const HomeContext& context) = 0;
 };
+
+// True when `next` differs from `shown`, the block a layout shows, only in
+// the values update() shows in place: the clock, the battery, the uplink's
+// interface, address and link speed, the router's address and the Wi-Fi
+// network's name, security and signal. Every other difference (the kind of
+// link, the access point, the mode, the clients, the rates, the sample mark
+// and any field added later) means the page is built again. It copies
+// `shown`, takes over exactly those values from `next` and compares the
+// copy with `next`, so a new field counts as "build again" by itself. The
+// rates join this list once their numbers and graphs change in place.
+inline bool home_values_only(const model::HomeData& shown, const model::HomeData& next) {
+    model::HomeData copy = shown;
+    copy.clock_minutes = next.clock_minutes;
+    copy.battery_percent = next.battery_percent;
+    copy.battery_state = next.battery_state;
+    copy.uplink_name = next.uplink_name;
+    copy.uplink_address = next.uplink_address;
+    copy.uplink_speed_mbps = next.uplink_speed_mbps;
+    copy.gateway_address = next.gateway_address;
+    copy.wifi_name = next.wifi_name;
+    copy.wifi_security = next.wifi_security;
+    copy.wifi_signal_dbm = next.wifi_signal_dbm;
+    return copy == next;
+}
 
 // Small helpers the layouts share.
 

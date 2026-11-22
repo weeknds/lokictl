@@ -12,6 +12,7 @@
 
 #include "lvgl.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 
@@ -38,8 +39,11 @@ namespace app {
 // Log lines: "data: <source> (first reading in <n> ms)" once at the start;
 // "data: battery <n>% <state>" for the first reading and then only when the
 // charge or the state changed ("--%" for an unknown charge, "data: battery
-// unknown" when neither is known); "data: reader stopped" when a background
-// reader that ran has ended.
+// unknown" when neither is known); "data: link <none|wifi|cable>, access
+// point <on|off>, <n> clients" for the first reading and then only when the
+// kind of link, the access point or the number of clients changed, always
+// after the battery line of the same reading; "data: reader stopped" when a
+// background reader that ran has ended.
 //
 // Create it after the view model and destroy it before; like
 // app::ThemeController, it is not copied.
@@ -53,7 +57,8 @@ public:
     DataController& operator=(const DataController&) = delete;
 
     // Takes the first reading on the calling thread, hands it to the view
-    // model and logs how long it took, then the first battery line. Call it
+    // model and logs how long it took, then the first battery and link
+    // lines. Call it
     // once, before the first page is built, so the page never shows values
     // that are about to change.
     void read_first();
@@ -80,9 +85,12 @@ private:
     // nothing else happens then.
     bool poll();
     // Gives `data` to the view model, and logs the battery line when the
-    // charge or the state differs from the one logged last.
+    // charge or the state differs from the one logged last, then the link
+    // line when the kind of link, the access point or the number of clients
+    // does.
     void deliver(const model::HomeData& data);
     void log_battery(int32_t percent, model::BatteryState state);
+    void log_link(model::LinkKind kind, bool ap_active, std::size_t clients);
 
     viewmodel::BaseViewModel& view_model_;
     platform::DataReader reader_;
@@ -91,6 +99,10 @@ private:
     bool battery_logged_{false};
     int32_t logged_percent_{model::kBatteryPercentUnknown};
     model::BatteryState logged_state_{model::BatteryState::Unknown};
+    bool link_logged_{false};
+    model::LinkKind logged_kind_{model::LinkKind::None};
+    bool logged_ap_active_{false};
+    std::size_t logged_clients_{0};
 };
 
 } // namespace app

@@ -12,18 +12,48 @@ itself. Every other page keeps its title bar.
 
 The page looks different in each theme. Keys, soft keys and help are the
 same in all three; only the picture changes. This page explains what each
-theme shows, where the values come from, how the page is laid out on such
-a small screen, and how to add a layout for a new theme.
+theme shows, where the values come from, when the page changes a value in
+place and when it is built again, how the page is laid out on such a small
+screen, and how to add a layout for a new theme.
 
 ## What each theme shows
 
-All three layouts show the same things: the active network mode, the
-uplink, the access point, the traffic and the connected clients, with one
-client marked as selected.
+Every layout has two views:
+
+- **The router view**, while the device runs its own access point
+  (`HomeData::ap_active`). It shows the active network mode, the uplink,
+  the access point, the traffic and the connected clients, with one client
+  marked as selected.
+- **The link view**, without an access point. That is the device as it
+  usually is: joined to a Wi-Fi network, on a network cable, or with no
+  network at all. Without an access point there are no connected clients,
+  so there is no client list; that space shows the link's own details
+  instead: the network, the device's address and the router's address.
+
+Inside the link view, the kind of link decides the words and which values
+are there:
+
+- **Wi-Fi:** the network's name and security, the signal in dBm and the
+  link speed. When the name is not known the page says `wi-fi network`.
+- **Cable:** `wired network` and the link speed. A cable has no name,
+  security or signal.
+- **No network:** the page says `OFFLINE` where the mode word stands and
+  `no network` where the network is named, in the muted colour. It is a
+  calm state, not an alarm. The mode is still Client, so Instrument's
+  `CLIENT` chip stays filled.
+
+The words are the same in every theme: `wi-fi` and `cable` for the kind of
+link, `wi-fi network`, `wired network` and `no network` for the network.
+
+To see every view in every theme, take snapshots with the example sets
+(see [Sample data](#sample-data) and
+[Looking at the page](#looking-at-the-page)).
 
 ### Instrument: the gauge
 
 Drawn by `src/view/screens/home_instrument.cpp`.
+
+The router view:
 
 - A status strip along the top with a thin line under it: the app name on
   the left, the sample mark in the middle, clock and battery on the right.
@@ -38,9 +68,30 @@ Drawn by `src/view/screens/home_instrument.cpp`.
 - The selected client: its position in a filled tag (`1/3`), its name, its
   address and its signal.
 
+The link view keeps the status strip, the caption `MODE`, the upright
+line, the places of the three numbers and the four chips:
+
+- The big word is `CLIENT`, or `OFFLINE` in the muted colour when there is
+  no network.
+- The line under it names the network: `Harbour-Cafe · WPA2` (the name,
+  then the security when it is known), `wi-fi network`, `wired network` or
+  `no network`. A long name ends in dots.
+- The first number is the signal on Wi-Fi, `−57` with the caption `DBM`,
+  and the link speed on a cable and without a network, `100` with the
+  caption `MBIT`. The second and third stay download and upload. A number
+  that is not known reads `--`.
+- Where the access point line is in the router view: `LINK wlan0 · wi-fi`
+  or `LINK eth0 · cable` (`LINK --` without a network), and on Wi-Fi the
+  link speed in words at the right end, `72 Mbit/s`. On a cable the first
+  number already shows the speed, so the right end stays empty.
+- Where the client line is: `IP` and the device's address, then `ROUTER`
+  and the router's address, both addresses in the address colour.
+
 ### Constellation: the map
 
 Drawn by `src/view/screens/home_constellation.cpp`.
+
+The router view:
 
 - The map, on the left: the internet as a small square at the top, joined
   by a lime line to this device, a lime ring with a dot. The uplink's name
@@ -55,10 +106,41 @@ Drawn by `src/view/screens/home_constellation.cpp`.
   under a rule the selected client's position, name, signal and address.
 - The sample mark sits in the top left corner of the map.
 
+The link view:
+
+- The map is a chain down the middle: the internet square with its
+  caption, a thin muted line down to the router (a small ring with the
+  caption `ROUTER`), then the uplink, a lime line down to this device (the
+  lime ring with its dot and the caption `THIS DEVICE`). The link's
+  interface and kind, `wlan0 · wi-fi` or `eth0 · cable`, sit left of the
+  uplink line. Two faint rings surround the device; the outer one is
+  smaller than in the router view, so it stays clear of the text below. A
+  few stars as before.
+- Under the map, centred: the network's name in the bold font (the Wi-Fi
+  name, `wi-fi network` when it is not known, `wired network` on a cable;
+  a long name ends in dots), and under it in the muted colour the security
+  and the link speed, `WPA2 · 72 Mbit/s` or `100 Mbit/s`. A part that is
+  not known is left out.
+- With no network, only the internet square and this device are left: no
+  router and no lines, the device's ring and dot in the muted colour, and
+  `NO NETWORK` in large type under it.
+- The panel shows the clock and battery, the caption `MODE` and the mode
+  word (`CLIENT` in lime, `OFFLINE` in the muted colour), the traffic
+  (`↓2.4 ↑0.3 Mb/s`, `↓-- ↑-- Mb/s` when not known), and on Wi-Fi the
+  signal (`signal −57 dBm`), on a cable and without a network the link
+  speed (`link 100M`). Under the rule: the caption `IP` with the device's
+  address and the caption `ROUTER` with the router's address, both in
+  violet.
+- No client dots, no brackets, no client count, no uptime and no selected
+  client. The sample mark stays in the top left corner.
+
 ### Terminal: the panes
 
 Drawn by `src/view/screens/home_terminal.cpp`. Like every Terminal pane,
-each title sits in the top border line.
+each title sits in the top border line. Both views keep the three panes at
+the same places and sizes.
+
+The router view:
 
 - `net`, top left: a download row and an upload row, each a bar graph of
   the recent rates with the current rate at the right end (cyan for down,
@@ -71,8 +153,20 @@ each title sits in the top border line.
   joined. The selected row is filled magenta with black text. The sample
   mark sits in the border.
 
-To see all three, take a snapshot of each (see
-[Looking at the page](#looking-at-the-page)).
+The link view:
+
+- `net`: the same rows. A rate that is not known reads `--`, and a graph
+  without traffic shows only its 1 px floor. With no network the third row
+  is the muted text `no network` in place of the uplink.
+- `mode`: `client` in amber with the dot (with no network `offline` in the
+  muted colour, without the dot), then `ap off`, then `on wi-fi`,
+  `on cable` or `on --`.
+- The bottom pane is titled `link` (with no network: `no network`) and
+  keeps the `sample data` mark. It lists labels and values in two columns:
+  - Wi-Fi: `network` with the whole name (all 32 characters fit),
+    `signal` and `auth`, `address` and `speed`, `router`;
+  - cable: `network wired`, `address` and `speed`, `router`;
+  - no network: `network`, `address` and `router`, each `--`.
 
 ## Sample data
 
@@ -87,6 +181,24 @@ The mark matters on a network tool: nobody should take three made-up
 clients for a real reading. So it stays on, also next to a real clock,
 until the network values are real too.
 
+Next to the router sample there are made-up example sets for the other
+situations, so every layout can be looked at in each of them before real
+network values arrive. Each is a data source of its own (`--data <name>`):
+
+| Source | What the page shows |
+|---|---|
+| `--data sample` | the router sample: a router with its own access point and three clients (the router view) |
+| `--data wifi` | joined to the Wi-Fi network `Harbour-Cafe`, `WPA2`, −57 dBm, 72 Mbit/s, address `10.20.30.44`, router `10.20.30.1` |
+| `--data cable` | on a cable: `eth0`, 100 Mbit/s, address `10.0.0.12`, router `10.0.0.1` |
+| `--data offline` | no network at all: `OFFLINE`, every network value not known |
+| `--data tour` | walks through all of these and more, one stop at a time (see [The tour](data.md#the-tour)) |
+
+All of them are marked `sample data`, show the clock `07:46` and the
+battery `91%`, and never change, except the tour. All the names and
+addresses are made up. `--data live`, which the device uses by default,
+still shows the router sample with the real clock and battery; real
+network values come later.
+
 A snapshot uses the fixed sample values unless `--data` says otherwise, so
 the same state always gives the same picture. Two snapshots of the home
 page are the same file, byte for byte, which makes the page easy to check
@@ -98,52 +210,131 @@ snapshot Settings shows a different clock from the home page.
 - `model::HomeData` in `src/model/home_data.h` holds everything the page
   shows. Numbers are stored as numbers, in the unit written next to each
   field: the clock in minutes since midnight, the uptime in seconds, rates
-  in kbit/s, the signal in dBm, the battery in per cent (-1 when it is not
-  known). The battery's state is a `model::BatteryState`: unknown,
+  in kbit/s, the signal in dBm, the link speed in Mbit/s, the battery in
+  per cent. The battery's state is a `model::BatteryState`: unknown,
   discharging, charging or idle. Lists, such as the clients and the two
   traffic histories, are plain C++ containers. Each history value is a
   share (0 to 100) of that history's own recent peak, not of a fixed rate,
   so the quieter upload graph fills its height as well as the download
   graph does; the current rates give the real numbers.
-- `model::sample_home_data()` in `src/model/home_data.cpp` fills it with the
-  made-up values and sets `HomeData::sample` to true. It is the only place
-  in the app that writes them; no value is written in `src/view` or
-  `src/app`.
-- A data source fills in one whole `HomeData` block: `sample` (the sample
-  values), `demo` (the sample values, moving on a fixed script) or `live`
-  (the sample values with the real clock and battery put in). A background
+- The fields for the link and the access point:
+
+  | Field | What it holds |
+  |---|---|
+  | `uplink_kind` | the kind of link, a `model::LinkKind`: `None`, `Wifi` or `Cable` |
+  | `uplink_name`, `uplink_address` | the uplink's interface (`wlan0`) and the device's address on it |
+  | `gateway_address` | the address of the router the uplink leads to |
+  | `uplink_speed_mbps` | the link speed |
+  | `wifi_name`, `wifi_security`, `wifi_signal_dbm` | the Wi-Fi network's name, its security (`WPA2`) and the received signal; empty on a cable and without a network |
+  | `ap_active` | true while the device runs its own access point; it decides between the router view and the link view |
+  | `ap_name`, `ap_security`, `uptime_seconds`, `clients` | the access point, the time the mode has been up and the connected clients; they only mean something while `ap_active` is true |
+
+- A value that is not known has a value of its own, never 0 and never an
+  old number: an empty text for names and addresses, `kSignalUnknown` (0)
+  for the signal (a received signal is always below 0), `kSpeedUnknown` (0)
+  for the link speed, `kRateUnknown` (-1, or any negative value) for a
+  rate, and `kBatteryPercentUnknown` (-1) for the battery. The page shows
+  such a value as `--`, or leaves it out where a line is made of several
+  parts, so a line never starts or ends with a stray `·`.
+- `model::sample_home_data()` in `src/model/home_data.cpp` fills the block
+  with the router sample and sets `HomeData::sample` to true. The other
+  made-up situations are in `src/model/home_examples.h` and `.cpp`:
+  `wifi_home_data()`, `cable_home_data()`, `offline_home_data()` and
+  `home_tour_stop()`. These two files are the only places in the app that
+  write made-up values; nothing in `src/view` or `src/app` writes or asks
+  for one.
+- A data source fills in one whole `HomeData` block: `sample`, `demo` (the
+  sample, moving on a fixed script), `live` (the sample with the real clock
+  and battery put in), `wifi`, `cable`, `offline` or `tour`. A background
   reader asks the source and `app::DataController` hands every new block to
   `viewmodel::BaseViewModel::set_home_data()`. [data.md](data.md) explains
   the whole path.
 - `model::BaseModel` owns one `HomeData`, and
   `viewmodel::BaseViewModel::home()` hands it to the page.
 - A layout turns the numbers into text with the helpers in
-  `src/view/screens/home_format.h`: `clock_text()` gives `07:46`,
-  `battery_text()` gives `91%`, `91%+` while the battery charges and `--%`
-  when the charge is not known (it replaced the earlier `percent_text()`),
-  `uptime_text()` gives `00:12:31`, `rate_text()` gives `3.8` for 3800
-  kbit/s, `signal_text()` gives `−61 dBm` with a real minus sign, and
-  `count_text()` gives `1/3`. All layouts use the same helpers, so a value
-  reads the same in every theme, and a value out of range is clamped
-  instead of printed as garbage.
+  `src/view/screens/home_format.h`. All layouts use the same helpers, so a
+  value reads the same in every theme, and a value out of range is clamped
+  instead of printed as garbage:
 
-The page is built from the values once. When a new block arrives while it
-is open, the layout's `update()` changes the clock and the battery text in
-place; the page is not built again (see
-[How a page updates in place](data.md#how-a-page-updates-in-place)). When
-the page is built again, after a theme switch or when coming back from
-Settings, it shows the current values at once.
+  | Helper | Gives |
+  |---|---|
+  | `clock_text()` | `07:46` |
+  | `battery_text()` | `91%`, `91%+` while the battery charges, `--%` when the charge is not known |
+  | `uptime_text()` | `00:12:31` |
+  | `rate_text()`, `rate_short_text()` | `3.8` and `3.8M` for 3800 kbit/s; `--` when not known |
+  | `signal_text()`, `signal_number_text()` | `−61 dBm` and `−61`, with a real minus sign; `--` when not known |
+  | `speed_text()`, `speed_long_text()`, `speed_number_text()` | `100M`, `100 Mbit/s` and `100`; `--` when not known |
+  | `speed_part_text()` | `100 Mbit/s`, or an empty text when not known, for a line made of parts |
+  | `text_or_unknown()` | a name or an address as it is, `--` when it is empty |
+  | `network_text()` | the Wi-Fi name, `wi-fi network`, `wired network` or `no network` |
+  | `network_name_text()` | the Wi-Fi name (`--` when not known), `wired`, or `--` without a network |
+  | `link_kind_text()`, `link_text()` | `wi-fi` or `cable`; `wlan0 · wi-fi`, with `--` when nothing is known |
+  | `is_offline()`, `mode_word()` | true with no link and no access point; the mode's name, or `Offline` then |
+  | `join_parts()` | the parts that are not empty, joined by ` · ` |
+  | `count_text()` | `1/3` |
 
 More real values will replace the sample ones in the same place: the live
 source will fill more of the same `HomeData`, and once the last made-up
 value is gone it sets `sample` to false, which removes the mark. The
 layouts take every value from `HomeData` already, so none of them has to
-change for that, apart from showing any new value in `update()`.
+change for that.
+
+## Values in place, a new situation built again
+
+The page is built from the values once. When a new block arrives while it
+is open, `screen::HomeScreen` decides, in one place, whether the layout
+can show it in place or whether the page's content is built again.
+
+**Changed in place**, by the layout's `update()`, in both views: the
+clock, the battery (charge and state), the uplink's interface, the
+device's address, the router's address, the link speed, and the Wi-Fi
+network's name, security and signal. These are values that change while
+the situation stays the same, and each sits in a box of its own, so a new
+text moves nothing else. There are two exceptions: Instrument's caption
+follows its first number, and in Constellation's router view the star
+right of the uplink's text is hidden while a wide text (such as
+`eth0 · 1000M`) would come too close to it.
+
+**Built again** for any other change: the kind of link, the access point
+switched on or off, the mode, the list of clients, the rates and their
+graphs, the access point's name, the uptime, the sample mark, and any field
+added to `HomeData` later. Such a change can need other objects, so the
+content is built again, once.
+
+How it works:
+
+- `home_values_only(shown, next)` in `src/view/screens/home_layout.h`
+  makes the decision. It copies `shown`, the block the layout shows, takes
+  over exactly the in-place values from `next` and compares the copy with
+  `next`. When they are equal, only in-place values changed. A field it
+  does not know is never taken over, so a new field means "built again"
+  by itself, and no value can ever go stale on the page.
+- `HomeScreen` keeps a copy of the block the layout shows. When only
+  in-place values changed, it calls `update()`. Otherwise it throws the
+  layout away (its pointers go with it), empties the content area with
+  `lv_obj_clean()`, makes a new layout for the theme, lets it `build()`
+  the page with the new values, and marks the current selection with
+  `select()`.
+- Only the content area is emptied. The soft-key bar belongs to the page's
+  root, the help panel and messages live on LVGL's top layer, and both of
+  the page's observers are bound to the content area itself, which stays.
+  A layout adds no observers of its own. The screen manager is not asked:
+  it must not be called from an observer.
+- On the device a new situation costs one frame of roughly 20 to 40 ms,
+  depending on the theme. It happens once per new situation; a value that
+  changes inside a situation costs one label's text and nothing more.
+
+When the page is built again for another reason, after a theme switch or
+when coming back from Settings, it shows the current values at once.
+
+The rates are on the "built again" side for now: they do not move yet.
+Once their numbers and graphs change on their own, they join the in-place
+list, in `home_values_only()` and in every layout's `update()`.
 
 ## The selected client
 
-One client is selected, and the arrow keys move the selection. It lives in
-the view model, not in the page:
+In the router view one client is selected, and the arrow keys move the
+selection. It lives in the view model, not in the page:
 
 | Function | What it does |
 |---|---|
@@ -155,27 +346,35 @@ The page shows at most three clients for now
 (`viewmodel::kHomeClientRows`), so the selection never goes past the
 third. The client count on the page still shows how many there are.
 
+Without clients, in the link view or for a router that has none, the arrow
+keys do nothing, and a layout's `select()` does nothing in the link view.
+
 Because the selection lives in the view model, it is kept when Settings is
 opened and closed, and across a theme switch, which builds the page again
-in the new theme's layout. When new values bring fewer clients than the
+in the new theme's layout. A value that changes in place keeps the
+selection as it is. When new values bring fewer clients than the
 selection's place, `set_home_data()` pulls the selection back to the last
-client shown.
+client shown; a changed list of clients builds the page again, which then
+marks the pulled-back client.
 
 `screen::HomeScreen` adds one observer to `home_selection_subject()`,
 bound to the page's content area, so it goes away together with the page.
 LVGL calls it once when it is added and again whenever the selection
 changes, and it asks the layout to mark the new client. The layout then
 only restyles, moves or retexts objects it already built; it never creates
-or deletes anything there.
+or deletes anything there. `set_home_data()` sets the selection before it
+counts the new block, so the selection observer does nothing while the
+shown block and the new one differ in more than in-place values: the data
+observer, which always follows, builds the page with the new selection.
 
 ## Keys
 
-The keys are the same in every theme:
+The keys are the same in every theme and in both views:
 
 | Key | What it does |
 |---|---|
-| `z`, `f`, left or up | select the previous client |
-| `c`, `x`, right or down | select the next client |
+| `z`, `f`, left or up | select the previous client (nothing without clients) |
+| `c`, `x`, right or down | select the next client (nothing without clients) |
 | `6` SETUP | opens the Settings page |
 | `4` MODES, `5` SCAN, `7` TOOLS | shown switched off; their pages do not exist yet |
 | `8`, Enter | nothing |
@@ -184,8 +383,8 @@ The keys are the same in every theme:
 
 The help panel (fn+H) shows the badge `HOME` and four rows: `HOLD ESC`
 Exit, `F Z / X C` Previous / next client, `6` Settings and `4 / 5 / 7` Not
-available yet. [navigation.md](navigation.md) explains how keys travel
-through the app.
+available yet. It is the same in both views. [navigation.md](navigation.md)
+explains how keys travel through the app.
 
 The soft keys are set in `HomeScreen::soft_keys()`:
 
@@ -246,6 +445,8 @@ but their ink does not. That gives ten rows.
   height and baseline instead of a guessed offset.
 - Values that can grow, such as names and addresses, sit in boxes of fixed
   width. Longer text ends in dots instead of running into its neighbour.
+  The boxes for the device's and the router's address hold 15 characters,
+  so the widest address, `100.100.100.200`, fits whole.
 - Rows 138 and 139, right above the soft-key bar's line, stay empty.
   Constellation's upright panel line is the only thing that runs down to
   the bar.
@@ -259,7 +460,8 @@ but their ink does not. That gives ten rows.
   and vertical lines, so the map's links to the clients, which slant, are
   solid thin lines, and the rings are solid thin circles.
 - **Short words.** A soft-key word has at most 5 characters at 12 px, so
-  the keys say `MODES`, `SCAN`, `SETUP` and `TOOLS`.
+  the keys say `MODES`, `SCAN`, `SETUP` and `TOOLS`. For the same reason
+  Instrument says `OFFLINE` in big type: `NO NETWORK` does not fit there.
 - **Less on screen.** Terminal shows three clients under a header row
   instead of a longer host list, and it leaves out a hint line for the
   command bar, which does not exist yet.
@@ -303,18 +505,28 @@ fonts. To give it its own:
    namespace, like the three that exist. `build()` draws the page into
    `context.content`; `select()` marks the selected client; `update()`
    shows new values on the page that is already built.
-2. Add a factory such as `make_<theme>_home_layout()` to `home_layout.h`,
+2. Draw both views in `build()`: the router view while
+   `context.data.ap_active` is true, the link view otherwise, with its
+   Wi-Fi, cable and no-network forms. Let `build()` choose only by
+   `ap_active` and `uplink_kind`, never by an in-place value: a label that
+   can be empty, such as a speed that is not known, is still made, with an
+   empty text. Otherwise a page updated in place would not look like one
+   built fresh.
+3. Write `select()` for the router view. In the link view it does nothing.
+4. Write `update(context)`: for every in-place value the layout draws (see
+   [Values in place, a new situation built again](#values-in-place-a-new-situation-built-again)),
+   in both views, set the label's text with `set_text_if_changed()` from
+   `home_layout.h`. Make the text with the same function `build()` uses,
+   and keep a pointer to each label and the text it shows. `update()` may
+   only change the text and style of objects `build()` made, and move them
+   (Instrument's caption follows its first number when the number's width
+   changes); it never creates or deletes anything. `HomeScreen` calls it
+   once right after `build()`, when nothing has changed yet, and again
+   whenever only in-place values changed (see [data.md](data.md)).
+5. Add a factory such as `make_<theme>_home_layout()` to `home_layout.h`,
    and define it at the end of the new file.
-3. Write `update(context)`: for every value the data layer can change
-   (so far the clock and the battery), set the label's text with
-   `set_text_if_changed()` from `home_layout.h`. Make the text with the
-   same function `build()` uses, and keep a pointer to each label and the
-   text it shows. `update()` may only change the text and style of objects
-   `build()` made; it never creates or deletes anything. `HomeScreen`
-   calls it once right after `build()`, when nothing has changed yet, and again
-   whenever new values arrive (see [data.md](data.md)).
-4. Add a case for the theme's `view::ThemeId` to the switch in
-   `HomeScreen::build_content()`, and a line to the class comment in
+6. Add a case for the theme's `view::ThemeId` to the switch in
+   `HomeScreen::build_layout()`, and a line to the class comment in
    `home_screen.h`.
 
 The rules for a layout:
@@ -331,17 +543,33 @@ The rules for a layout:
   them, so the points must be a `static const` array at namespace scope,
   never a local array.
 - Keep pointers only to the objects `select()` and `update()` change.
-  LVGL owns every object, and they go when the page goes.
+  LVGL owns every object, and they go when the page goes or when its
+  content is built again. A new layout object is made for every build, so
+  no pointer outlives its objects.
+- Never delete an object yourself and never empty the content area:
+  building the page again is `HomeScreen`'s job.
 - `select()` gets an index from the view model; keep it within the clients
   shown, as the three layouts do.
-- A value that can change, such as the battery, must not move anything
-  else: give it a box of fixed width or align it so that it grows into
-  free space. Look at its widest text (`23:59` and `100%+`) and at `--%`.
+- A value that can change in place must not move anything else: give it a
+  box of fixed width or align it so that it grows into free space. Look at
+  its widest text and at its text when it is not known:
+  - the clock and the battery: `23:59`, `100%+` and `--%`;
+  - the network values: tour stop 15 has the widest texts (a 32-character
+    Wi-Fi name, `100.100.100.200`, −100 dBm, 1000 Mbit/s), stops 19 and 22
+    a fast cable and another uplink, and stops 16 and 20 values that are
+    not known, as does `--data offline`.
+  A long name ends in dots inside its box; an address, a speed or a signal
+  must always be whole.
+- What is not known shows `--` or is left out. Never `0`, `0M`, `0.0`,
+  `--M` or a line that starts or ends with ` · `; the helpers take care of
+  that when a line is made with `join_parts()`.
 - Show the sample mark while `context.data.sample` is true.
 
-Then take pictures of the page in the new theme with each client selected
-and with moving values (see [Looking at the page](#looking-at-the-page)),
-look at them at normal size and enlarged, and add the theme to this page.
+Then take pictures of the page in the new theme in every example set and
+at the tour's stops, with each client selected, look at them at normal
+size and enlarged, check that a page walked to in place equals one built
+fresh (see [Looking at the page](#looking-at-the-page)), and add the theme
+to this page.
 
 ## Looking at the page
 
@@ -365,10 +593,38 @@ $B --snapshot build/shots/home-b.png --page home --keys right
 cmp build/shots/home-a.png build/shots/home-b.png && echo same
 ```
 
-To see the page follow its data, take the demo values a number of steps
-on (see [The demo script](data.md#the-demo-script)). A page updated in
-place must be the same file as one built fresh with the same values, which
-`--switch-to` checks by building the page again at the end:
+The link view, in each situation:
+
+```sh
+for t in instrument constellation terminal; do
+  $B --snapshot "build/shots/wifi-$t.png" --page home --theme "$t" --data wifi
+  $B --snapshot "build/shots/cable-$t.png" --page home --theme "$t" --data cable
+  $B --snapshot "build/shots/offline-$t.png" --page home --theme "$t" --data offline
+  $B --snapshot "build/shots/widest-$t.png" --page home --theme "$t" --data tour --data-steps 15
+done
+```
+
+`--data tour --data-steps 15` shows the widest texts; steps 16 and 20 show
+values that are not known (see [The tour](data.md#the-tour) for every
+stop).
+
+To see the page follow its data, take a source a number of steps on. A
+page updated in place must be the same file as one built fresh with the
+same values, which `--switch-to` checks by building the page again at the
+end. With the tour this checks both ways of changing the page: step 15
+reaches the widest texts in place from step 14, and step 18 is a cable
+after a Wi-Fi network, built again:
+
+```sh
+for n in 15 18; do
+  $B --snapshot "build/shots/tour-$n.png" --page home --theme instrument --data tour --data-steps $n
+  $B --snapshot "build/shots/tour-$n-fresh.png" --page home --theme instrument --data tour --data-steps $n --switch-to terminal,instrument
+  cmp "build/shots/tour-$n.png" "build/shots/tour-$n-fresh.png" && echo same
+done
+```
+
+The same works with the demo, which moves the clock and the battery (see
+[The demo script](data.md#the-demo-script)):
 
 ```sh
 $B --snapshot build/shots/home-181.png --page home --theme instrument --data demo --data-steps 181
@@ -379,7 +635,11 @@ cmp build/shots/home-181.png build/shots/home-181-fresh.png && echo same
 Step 181 shows `10:47` and `100%+`, the widest battery text; step 82
 shows `9%`. `--data live` shows the computer's own clock.
 
+In a window, `./build/darwin-arm64/Debug/lokictl --data tour` takes one
+stop every 2 s, so you can watch the page go from one situation to the
+next.
+
 `--page home` can be left out, because `home` is the default page. On a
 device, `scripts/device.sh snapshot build/shots/device-home.png --page home
---theme terminal` draws the same page with the device's own font
-rendering (see the README).
+--theme terminal --data wifi` draws the same page with the device's own
+font rendering (see the README).

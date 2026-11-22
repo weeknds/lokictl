@@ -19,20 +19,25 @@
 namespace platform {
 
 enum class DataSourceKind {
-    Sample, // the fixed made-up values; they never change
-    Demo,   // the made-up values, moving on a fixed script (for the simulator and tests)
-    Live,   // real readings; values not read yet are still the made-up ones
+    Sample,  // the fixed made-up router values; they never change
+    Demo,    // the made-up values, moving on a fixed script (for the simulator and tests)
+    Live,    // real readings; values not read yet are still the made-up ones
+    Wifi,    // made-up and fixed: joined to a Wi-Fi network, no access point
+    Cable,   // made-up and fixed: on a network cable, no access point
+    Offline, // made-up and fixed: no network at all
+    Tour,    // walks through the made-up situations, one stop per reading
 };
 
-// The name of a source as the --data option takes it: "sample", "demo" or
-// "live".
+// The name of a source as the --data option takes it: "sample", "demo",
+// "live", "wifi", "cable", "offline" or "tour".
 const char* data_source_name(DataSourceKind kind);
 
 // Looks a source up by its exact (lowercase) name. Returns false and leaves
 // `kind` alone for any other name.
 bool find_data_source(std::string_view name, DataSourceKind& kind);
 
-// Every source name, separated by commas: "sample, demo, live".
+// Every source name, separated by commas, in the order of the help text:
+// "sample, demo, live, wifi, cable, offline, tour".
 std::string data_source_names();
 
 class DataSource {

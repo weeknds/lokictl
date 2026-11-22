@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstddef>
 #include <string>
 #include <utility>
 
@@ -53,6 +54,7 @@ void DataController::read_first() {
         LOG_WARN("data: the first reading failed; the values stay as they were");
         const model::HomeData& shown = view_model_.home();
         log_battery(logged_charge(shown.battery_percent), shown.battery_state);
+        log_link(shown.uplink_kind, shown.ap_active, shown.clients.size());
     }
 }
 
@@ -118,6 +120,12 @@ void DataController::deliver(const model::HomeData& data) {
     if (!battery_logged_ || charge != logged_percent_ || data.battery_state != logged_state_) {
         log_battery(charge, data.battery_state);
     }
+
+    const std::size_t clients = data.clients.size();
+    if (!link_logged_ || data.uplink_kind != logged_kind_ || data.ap_active != logged_ap_active_ ||
+        clients != logged_clients_) {
+        log_link(data.uplink_kind, data.ap_active, clients);
+    }
 }
 
 void DataController::log_battery(int32_t percent, model::BatteryState state) {
@@ -131,6 +139,18 @@ void DataController::log_battery(int32_t percent, model::BatteryState state) {
     }
     const std::string charge = percent < 0 ? std::string("--%") : std::to_string(percent) + "%";
     LOG_INFO("data: battery {} {}", charge, model::battery_state_name(state));
+}
+
+void DataController::log_link(model::LinkKind kind, bool ap_active, std::size_t clients) {
+    link_logged_ = true;
+    logged_kind_ = kind;
+    logged_ap_active_ = ap_active;
+    logged_clients_ = clients;
+
+    LOG_INFO("data: link {}, access point {}, {} clients",
+             model::link_kind_name(kind),
+             ap_active ? "on" : "off",
+             clients);
 }
 
 } // namespace app

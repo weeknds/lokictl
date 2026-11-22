@@ -39,6 +39,18 @@ const char* net_mode_name(NetMode mode) {
     return "Client";
 }
 
+const char* link_kind_name(LinkKind kind) {
+    switch (kind) {
+        case LinkKind::None:
+            return "none";
+        case LinkKind::Wifi:
+            return "wifi";
+        case LinkKind::Cable:
+            return "cable";
+    }
+    return "none";
+}
+
 const char* battery_state_name(BatteryState state) {
     switch (state) {
         case BatteryState::Unknown:
@@ -74,9 +86,15 @@ bool operator==(const HomeData& left, const HomeData& right) {
            left.battery_state == right.battery_state &&
            left.mode == right.mode &&
            left.mode_detail == right.mode_detail &&
+           left.uplink_kind == right.uplink_kind &&
            left.uplink_name == right.uplink_name &&
            left.uplink_address == right.uplink_address &&
+           left.gateway_address == right.gateway_address &&
            left.uplink_speed_mbps == right.uplink_speed_mbps &&
+           left.wifi_name == right.wifi_name &&
+           left.wifi_security == right.wifi_security &&
+           left.wifi_signal_dbm == right.wifi_signal_dbm &&
+           left.ap_active == right.ap_active &&
            left.ap_name == right.ap_name &&
            left.ap_security == right.ap_security &&
            left.uptime_seconds == right.uptime_seconds &&
@@ -94,8 +112,9 @@ bool operator!=(const HomeData& left, const HomeData& right) {
 // These are made-up example values, so the home page has something to show.
 // The data layer starts from them: the sample source hands them over as
 // they are, the demo source moves some of them, and the live source keeps
-// every value it does not read yet. Nothing else in the app writes sample
-// values.
+// every value it does not read yet. The other made-up situations, in
+// home_examples.cpp, are the only other place in the app that writes
+// made-up values.
 HomeData sample_home_data() {
     HomeData data;
     data.sample = true;
@@ -104,9 +123,12 @@ HomeData sample_home_data() {
     data.battery_state = BatteryState::Discharging;
     data.mode = NetMode::Router;
     data.mode_detail = "eth0 \u2192 wi-fi ap \u00b7 nat \u00b7 dhcp";
+    data.uplink_kind = LinkKind::Cable;
     data.uplink_name = "eth0";
     data.uplink_address = "10.0.0.12";
+    data.gateway_address = "10.0.0.1";
     data.uplink_speed_mbps = 100;
+    data.ap_active = true;
     data.ap_name = "LokiCTL-7F";
     data.ap_security = "WPA2";
     data.uptime_seconds = 751;

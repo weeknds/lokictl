@@ -277,8 +277,8 @@ int run_snapshot(const SnapshotRequest& request) {
     }
 
     // --data-steps: one reading after the other, each handed over and shown
-    // in place at once, then one settle for all of them, so even many steps
-    // take little time.
+    // at once, in place or by building the page's content again, then one
+    // settle for all of them.
     for (uint32_t step = 0; step < request.data_steps; ++step) {
         data.step();
     }

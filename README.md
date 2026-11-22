@@ -65,8 +65,11 @@ Notes:
 - The simulator's home page shows moving demo values: the clock runs one
   minute per second and the battery counts down, to show that the page
   follows its data. `--data <name>` picks other values for the run:
-  `sample` (fixed values), `demo` or `live` (the Mac's own clock). See
-  [Live data](#live-data).
+  `sample` (fixed values), `demo` or `live` (the Mac's own clock). The
+  made-up examples `--data wifi`, `--data cable` and `--data offline` show
+  the home page joined to a Wi-Fi network, on a cable and with no network,
+  and `--data tour` walks through all of them, one every 2 s. See
+  [Live data](#live-data) and [docs/home.md](docs/home.md).
 - The simulator reads its settings from `config/lokictl.conf`. Picking a
   theme on the Settings page (opened with `6` on the home page) saves the
   choice and rewrites that file. To keep the repository's file as it is,
@@ -132,6 +135,7 @@ building:
 ./build/darwin-arm64/Debug/lokictl --snapshot build/shots/counter-terminal.png --page demo-counter --theme terminal
 ./build/darwin-arm64/Debug/lokictl --snapshot build/shots/keys.png --page demo-counter --keys 8,x
 ./build/darwin-arm64/Debug/lokictl --snapshot build/shots/home-demo.png --data demo --data-steps 181
+./build/darwin-arm64/Debug/lokictl --snapshot build/shots/home-wifi.png --data wifi --theme terminal
 ./build/darwin-arm64/Debug/lokictl --list-pages
 ```
 
@@ -165,13 +169,18 @@ Options:
   docs/navigation.md for the details.
 - `--data <name>`: where the values come from: `sample` (fixed made-up
   values, the default for a snapshot), `demo` (the made-up values, moving
-  on a fixed script) or `live` (the real clock and battery). Any other name
-  is refused with a message that lists the three.
+  on a fixed script) or `live` (the real clock and battery). `wifi`,
+  `cable` and `offline` are fixed made-up examples of the other situations
+  the device can be in (joined to a Wi-Fi network, on a cable, no network),
+  and `tour` walks through all of them, one stop per reading; see
+  [docs/home.md](docs/home.md). Any other name is refused with a message
+  that lists all seven.
 - `--data-steps <n>`: takes `n` further readings, from 0 to 100000, right
   after the page is built and before `--keys`. With `--data demo` each
   reading is one step of the demo script, so
-  `--data demo --data-steps 181` shows `10:47` and `100%+`. See
-  [docs/data.md](docs/data.md).
+  `--data demo --data-steps 181` shows `10:47` and `100%+`; with
+  `--data tour` each reading is one stop, so `--data tour --data-steps 15`
+  shows the widest texts. See [docs/data.md](docs/data.md).
 - `--settle-ms <n>`: how long LVGL's own clock runs before the picture is
   taken, from 0 to 60000. The default is 300. With `--keys`, the app also
   runs this long after every key. The program does not really wait that
@@ -209,14 +218,21 @@ Notes:
 ## Live data
 
 The home page gets its values from a small data layer. A background reader
-collects them beside the screen, so reading never holds up drawing, and
-the page changes only the texts that changed, without being built again.
-So far the clock and the battery are real; the network values are still
-the made-up sample, and the page keeps its `sample data` mark.
+collects them beside the screen, so reading never holds up drawing. When a
+value changes, the page changes only that text; when the situation changes
+(for example from a Wi-Fi network to a cable), the page's content is built
+again, once. So far the clock and the battery are real; the network values
+are still made up, and the page keeps its `sample data` mark.
 
-`--data <name>` picks the source: `sample`, `demo` or `live`. Without it, a
-snapshot uses `sample`, and a normal start uses `live` on the device and
-`demo` in the simulator.
+`--data <name>` picks the source: `sample`, `demo`, `live`, `wifi`,
+`cable`, `offline` or `tour`. Without it, a snapshot uses `sample`, and a
+normal start uses `live` on the device and `demo` in the simulator. `live`
+still shows the made-up router sample with the real clock and battery.
+`--data wifi`, `--data cable` and `--data offline` are fixed made-up
+examples of the device joined to a Wi-Fi network, on a cable and with no
+network, and `--data tour` walks through every situation, one stop every
+2 s in a window. [docs/home.md](docs/home.md) shows what the page looks
+like in each.
 
 `--print-data` prints the values once as `name=value` lines, without a
 window and without reading the settings file:
@@ -225,13 +241,21 @@ window and without reading the settings file:
 ./build/darwin-arm64/Debug/lokictl --print-data --data sample
 ```
 
+It starts like this:
+
 ```text
 source=sample
 sample=yes
 clock=07:46
 battery_percent=91
 battery_state=discharging
+mode=router
+link=cable
 ```
+
+and goes on with the network's lines (`interface=`, `address=`, `router=`,
+`speed_mbps=` and more, down to `up_kbps=`). A value that is not known
+prints `unknown`.
 
 It takes `--data` and `--data-steps` and nothing else. The environment
 variable `LOKICTL_DATA_ROOT=<folder>` makes the `live` source read
@@ -397,9 +421,13 @@ The commands:
   this run only and does not save it; without it, the theme saved on the
   device decides, or else the default theme. A theme picked on the
   Settings page during the run is still saved. `--data` picks `sample`,
-  `demo` or `live` for this run only; without it the device reads live
-  values. If LokiCTL does not know a name, it exits at once: `run` then
-  shows LokiCTL's message, brings the launcher back and exits with code 1.
+  `demo`, `live`, `wifi`, `cable`, `offline` or `tour` for this run only;
+  without it the device reads live values. For example
+  `scripts/device.sh run --data wifi` shows the made-up Wi-Fi example on
+  the real screen, and `--data tour` changes the situation every 2 s (see
+  [docs/home.md](docs/home.md)). If LokiCTL does not know a name, it exits
+  at once: `run` then shows LokiCTL's message, brings the launcher back and
+  exits with code 1.
 - `stop`: stops LokiCTL, however it was started, and brings the launcher back
   on HOME. Running it when nothing runs does no harm.
 - `status`: shows the installed version, whether LokiCTL runs and which
@@ -417,7 +445,8 @@ The commands:
   [Screenshots without a window](#screenshots-without-a-window)) and saves
   the picture. It works while LokiCTL is running and does not touch the
   screen. Without `--data` the picture shows the fixed sample values;
-  `--data-steps` takes further readings before the keys. `--keys` presses
+  `--data` takes any of the seven sources, for example `--data offline`,
+  and `--data-steps` takes further readings before the keys. `--keys` presses
   keys inside that snapshot run, not on the device's keyboard, so LokiCTL
   does not need to be running; for example `scripts/device.sh snapshot
   build/shots/keys.png --page demo-counter --keys 8,x`. The name `data` in
@@ -426,8 +455,10 @@ The commands:
   computer's standard error.
 - `data [--data D]`: runs `lokictl --print-data` on the device and prints
   its `name=value` lines: the source, whether the values are sample data,
-  the clock and the battery's charge and state (see [Live data](#live-data)).
-  Without `--data` it reads the device's live values. It works while the
+  the clock, the battery's charge and state, and the network's lines (see
+  [Live data](#live-data)). Without `--data` it reads the device's live
+  values; `--data wifi`, `cable`, `offline` or `tour` print the made-up
+  examples, the same lines as on the computer. It works while the
   launcher is on screen and leaves the screen and a running LokiCTL alone.
 - `logs [-n N]`: shows the last N log lines (50 by default) of the latest
   `run` only, including systemd's lines about starting and stopping it.

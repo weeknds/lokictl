@@ -18,11 +18,25 @@ namespace {
 constexpr std::size_t kTextBufferSize = 48;
 
 constexpr const char* kMinusSign = "\u2212";
+constexpr const char* kPartSeparator = " \u00b7 ";
 
 constexpr int32_t kMinutesPerDay = 24 * 60;
 constexpr int32_t kSignalLimit = 999;
 // Rounding adds half a step of 100 kbit/s; this keeps the sum in range.
 constexpr int32_t kRateLimitKbps = 2000000000;
+
+// A signal clamped to -999..999, as text with the real minus sign.
+std::string signal_number(int32_t dbm) {
+    const int32_t clamped = std::clamp<int32_t>(dbm, -kSignalLimit, kSignalLimit);
+    if (clamped < 0) {
+        return std::string(kMinusSign) + std::to_string(-clamped);
+    }
+    return std::to_string(clamped);
+}
+
+bool speed_known(int32_t mbps) {
+    return mbps > model::kSpeedUnknown;
+}
 
 } // namespace
 
@@ -56,6 +70,9 @@ std::string uptime_text(int32_t seconds) {
 }
 
 std::string rate_text(int32_t kbps) {
+    if (kbps < 0) {
+        return kUnknownText;
+    }
     const int32_t clamped = std::clamp<int32_t>(kbps, 0, kRateLimitKbps);
     const int32_t tenths = (clamped + 50) / 100;
     char buffer[kTextBufferSize];
@@ -64,12 +81,125 @@ std::string rate_text(int32_t kbps) {
     return buffer;
 }
 
-std::string signal_text(int32_t dbm) {
-    const int32_t clamped = std::clamp<int32_t>(dbm, -kSignalLimit, kSignalLimit);
-    if (clamped < 0) {
-        return std::string(kMinusSign) + std::to_string(-clamped) + " dBm";
+std::string rate_short_text(int32_t kbps) {
+    if (kbps < 0) {
+        return kUnknownText;
     }
-    return std::to_string(clamped) + " dBm";
+    return rate_text(kbps) + "M";
+}
+
+std::string signal_text(int32_t dbm) {
+    if (dbm == model::kSignalUnknown) {
+        return kUnknownText;
+    }
+    return signal_number(dbm) + " dBm";
+}
+
+std::string signal_number_text(int32_t dbm) {
+    if (dbm == model::kSignalUnknown) {
+        return kUnknownText;
+    }
+    return signal_number(dbm);
+}
+
+std::string speed_text(int32_t mbps) {
+    if (!speed_known(mbps)) {
+        return kUnknownText;
+    }
+    return std::to_string(mbps) + "M";
+}
+
+std::string speed_long_text(int32_t mbps) {
+    if (!speed_known(mbps)) {
+        return kUnknownText;
+    }
+    return std::to_string(mbps) + " Mbit/s";
+}
+
+std::string speed_number_text(int32_t mbps) {
+    if (!speed_known(mbps)) {
+        return kUnknownText;
+    }
+    return std::to_string(mbps);
+}
+
+std::string speed_part_text(int32_t mbps) {
+    if (!speed_known(mbps)) {
+        return "";
+    }
+    return speed_long_text(mbps);
+}
+
+std::string text_or_unknown(std::string_view text) {
+    if (text.empty()) {
+        return kUnknownText;
+    }
+    return std::string(text);
+}
+
+std::string network_text(const model::HomeData& data) {
+    switch (data.uplink_kind) {
+        case model::LinkKind::Wifi:
+            return data.wifi_name.empty() ? std::string("wi-fi network") : data.wifi_name;
+        case model::LinkKind::Cable:
+            return "wired network";
+        case model::LinkKind::None:
+            return "no network";
+    }
+    return "no network";
+}
+
+std::string network_name_text(const model::HomeData& data) {
+    switch (data.uplink_kind) {
+        case model::LinkKind::Wifi:
+            return text_or_unknown(data.wifi_name);
+        case model::LinkKind::Cable:
+            return "wired";
+        case model::LinkKind::None:
+            return kUnknownText;
+    }
+    return kUnknownText;
+}
+
+std::string link_kind_text(model::LinkKind kind) {
+    switch (kind) {
+        case model::LinkKind::Wifi:
+            return "wi-fi";
+        case model::LinkKind::Cable:
+            return "cable";
+        case model::LinkKind::None:
+            return "";
+    }
+    return "";
+}
+
+std::string link_text(const model::HomeData& data) {
+    return text_or_unknown(join_parts({data.uplink_name, link_kind_text(data.uplink_kind)}));
+}
+
+bool is_offline(const model::HomeData& data) {
+    return !data.ap_active && data.uplink_kind == model::LinkKind::None;
+}
+
+std::string mode_word(const model::HomeData& data) {
+    if (is_offline(data)) {
+        return "Offline";
+    }
+    return model::net_mode_name(data.mode);
+}
+
+std::string join_parts(std::initializer_list<std::string> parts) {
+    std::string text;
+    for (const std::string& part : parts) {
+        if (part.empty()) {
+            continue;
+        }
+        if (!text.empty()) {
+            text += kPartSeparator;
+        }
+        text += part;
+    }
+    return text;
 }
 
 std::string count_text(int32_t index, int32_t count) {

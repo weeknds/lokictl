@@ -75,9 +75,7 @@ HomeContext HomeScreen::context() {
                        lv_subject_get_string(view_model().title_subject())};
 }
 
-void HomeScreen::build_content(lv_obj_t* content) {
-    home_content_ = content;
-
+void HomeScreen::build_layout() {
     switch (theme().id) {
         case view::ThemeId::Instrument:
             layout_ = make_instrument_home_layout();
@@ -95,6 +93,12 @@ void HomeScreen::build_content(lv_obj_t* content) {
     }
 
     layout_->build(context());
+    shown_ = view_model().home();
+}
+
+void HomeScreen::build_content(lv_obj_t* content) {
+    home_content_ = content;
+    build_layout();
 
     // LVGL calls each observer once right away. For the values that call
     // changes nothing, because build() has just shown them.
@@ -113,12 +117,41 @@ void HomeScreen::data_observer(lv_observer_t* observer, lv_subject_t* /*subject*
         return;
     }
 
-    screen->layout_->update(screen->context());
+    const model::HomeData& next = screen->view_model().home();
+    if (home_values_only(screen->shown_, next)) {
+        // Only values the layout shows in place changed.
+        screen->layout_->update(screen->context());
+        screen->shown_ = next;
+        return;
+    }
+
+    // A new situation: the content area is emptied and the layout is built
+    // afresh with the new values and the current selection. This is safe
+    // because both observers of this screen are bound to the content area
+    // itself, which stays, and only its children go; the layout's pointers
+    // go with the old layout, which is dropped first. The soft-key bar is a
+    // child of the screen's root, the help panel and the messages live on
+    // the top layer, and layouts add no observers of their own, so nothing
+    // else is touched. The content area itself is never deleted, and the
+    // screen manager is never asked: it must not be called from an
+    // observer.
+    screen->layout_.reset();
+    lv_obj_clean(screen->home_content_);
+    screen->build_layout();
+    screen->layout_->select(screen->context(), screen->view_model().home_selection());
 }
 
 void HomeScreen::selection_observer(lv_observer_t* observer, lv_subject_t* /*subject*/) {
     auto* screen = static_cast<HomeScreen*>(lv_observer_get_user_data(observer));
     if (!screen || !screen->layout_) {
+        return;
+    }
+
+    // When new values arrive, the view model pulls the selection back
+    // before it counts the new block. If that block is a new situation, the
+    // layout still shows the old one; the data observer, which always
+    // follows, builds the page again and marks the selection then.
+    if (!home_values_only(screen->shown_, screen->view_model().home())) {
         return;
     }
 

@@ -45,6 +45,28 @@ const char* battery_state_name(BatteryState state);
 // HomeData::battery_percent when the charge is not known.
 constexpr int32_t kBatteryPercentUnknown = -1;
 
+// What kind of link the uplink is.
+enum class LinkKind {
+    None = 0, // no link at all: no cable, no Wi-Fi network joined
+    Wifi,     // joined to a Wi-Fi network
+    Cable,    // a network cable (Ethernet)
+};
+
+// The name of a kind of link in lowercase: "none", "wifi" or "cable". Used
+// by the log and the --print-data readout.
+const char* link_kind_name(LinkKind kind);
+
+// HomeData::wifi_signal_dbm when the signal is not known. A received signal
+// is always below 0 dBm, so 0 can never be a real reading.
+constexpr int32_t kSignalUnknown = 0;
+
+// HomeData::uplink_speed_mbps when the link speed is not known.
+constexpr int32_t kSpeedUnknown = 0;
+
+// HomeData::down_kbps and up_kbps when the rate is not known. Any negative
+// rate counts as not known.
+constexpr int32_t kRateUnknown = -1;
+
 // One device connected to the access point.
 struct HomeClient {
     std::string name;    // host name, for example "printer"
@@ -60,7 +82,10 @@ bool operator==(const HomeClient& left, const HomeClient& right);
 bool operator!=(const HomeClient& left, const HomeClient& right);
 
 // Everything the home page shows. Numbers are stored as numbers in the units
-// noted on each field; the page turns them into text.
+// noted on each field; the page turns them into text. A value that is not
+// known has a value of its own (an empty text, or one of the constants
+// above), and the page shows it as "--" instead of an old or a made-up
+// number. Each field sits on one line.
 struct HomeData {
     bool sample{true};                 // true while the values are made up
     int32_t clock_minutes{0};          // time of day, minutes since midnight
@@ -70,12 +95,25 @@ struct HomeData {
     BatteryState battery_state{BatteryState::Unknown}; // what the battery is doing
     NetMode mode{NetMode::Client};     // the active mode
     std::string mode_detail;           // one line on what the mode does
+    LinkKind uplink_kind{LinkKind::None}; // what kind of link the uplink is
+    // The uplink's values. An empty text, kSpeedUnknown and kSignalUnknown
+    // mean "not known"; the Wi-Fi values are empty when the uplink is not
+    // a Wi-Fi network.
     std::string uplink_name;           // interface of the uplink, for example "eth0"
     std::string uplink_address;        // IPv4 address of the uplink as text
-    int32_t uplink_speed_mbps{0};      // link speed of the uplink, Mbit/s
+    std::string gateway_address;       // IPv4 address of the router the uplink leads to
+    int32_t uplink_speed_mbps{kSpeedUnknown}; // link speed of the uplink, Mbit/s
+    std::string wifi_name;             // name (SSID) of the Wi-Fi network the uplink joined
+    std::string wifi_security;         // security of that network, for example "WPA2"
+    int32_t wifi_signal_dbm{kSignalUnknown}; // received signal of that network, dBm (negative)
+    bool ap_active{false};             // true while the device runs its own access point
+    // The access point's values, the uptime and the clients only mean
+    // something while ap_active is true.
     std::string ap_name;               // network name (SSID) of the access point
     std::string ap_security;           // security of the access point, for example "WPA2"
     int32_t uptime_seconds{0};         // time since the mode started, seconds
+    // The current rates, kbit/s; kRateUnknown (or any negative value) when
+    // not known.
     int32_t down_kbps{0};              // current download rate, kbit/s
     int32_t up_kbps{0};                // current upload rate, kbit/s
     // The two traffic histories, oldest first. Each value is a share of
@@ -93,10 +131,12 @@ struct HomeData {
 bool operator==(const HomeData& left, const HomeData& right);
 bool operator!=(const HomeData& left, const HomeData& right);
 
-// Made-up example values for the home page. They are the `sample` data
-// source as they are, the starting point of the `demo` source, and every
-// value the `live` source does not read yet. HomeData::sample is true, so
-// the page marks them as sample data.
+// Made-up example values for the home page: a router that shares its
+// cable uplink through its own access point, with three clients. They are
+// the `sample` data source as they are, the starting point of the `demo`
+// source, and every value the `live` source does not read yet.
+// HomeData::sample is true, so the page marks them as sample data. The
+// other made-up situations are in home_examples.h.
 HomeData sample_home_data();
 
 } // namespace model
