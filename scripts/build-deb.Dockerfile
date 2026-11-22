@@ -20,6 +20,7 @@ RUN apt-get update \
         libfmt-dev \
         libfreetype-dev \
         libjpeg-dev \
+        libnm-dev \
         libpng-dev \
         zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*

@@ -231,8 +231,8 @@ pages shows the same clock, battery and link.
 `--data <name>` picks the source: `sample`, `demo`, `live`, `wifi`,
 `cable`, `offline` or `tour`. Without it, a snapshot uses `sample`, and a
 normal start uses `live` on the device and `demo` in the simulator. `live`
-shows the device in the Client mode with its real link; the Wi-Fi
-network's name is not known yet.
+shows the device in the Client mode with its real link, and on the device
+the Wi-Fi network's name and state from NetworkManager.
 `--data wifi`, `--data cable` and `--data offline` are fixed made-up
 examples of the device joined to a Wi-Fi network, on a cable and with no
 network, and `--data tour` walks through every situation, one stop every

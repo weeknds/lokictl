@@ -9,6 +9,7 @@
 #include "data_source.h"
 #include "home_data.h"
 
+#include <chrono>
 #include <condition_variable>
 #include <memory>
 #include <mutex>
@@ -48,6 +49,12 @@ public:
     // Takes one reading on the caller's thread and hands it over like the
     // background thread does. Does nothing while the background thread runs.
     void read_now();
+
+    // Lets the source wait, at most `limit`, for values it collects in the
+    // background after it was made (DataSource::wait_until_ready()). It
+    // blocks; the owner calls it before the first read_now(). Does nothing
+    // while the background thread runs.
+    void wait_until_ready(std::chrono::milliseconds limit);
 
     // Starts the background thread. Does nothing while it already runs. If
     // the system cannot start a thread, nothing runs and running() stays

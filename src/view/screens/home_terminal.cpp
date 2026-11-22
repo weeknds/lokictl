@@ -206,6 +206,19 @@ std::string router_value_text(const model::HomeData& data) {
     return home::text_or_unknown(data.gateway_address);
 }
 
+// The note in the corner of the lower pane: the sample mark, or else a note
+// when the internet can not be reached; both in the warning colour.
+void pane_mark(const view::style::Pane& pane, const view::Theme& theme, const model::HomeData& data) {
+    if (data.sample) {
+        view::style::pane_note(pane, theme, "sample data", theme.colors.warning);
+        return;
+    }
+    const std::string note = home::internet_note(data);
+    if (!note.empty()) {
+        view::style::pane_note(pane, theme, note.c_str(), theme.colors.warning);
+    }
+}
+
 // The round dot after the mode word, drawn as a shape.
 void mode_dot(lv_obj_t* parent, lv_obj_t* mode, const view::Theme& theme) {
     auto* dot = plain_object(parent);
@@ -457,9 +470,7 @@ void TerminalHomeLayout::build_clients(const HomeContext& context) {
                                         kClientsHeight, theme.colors.selection,
                                         view::style::PaneDensity::Compact);
     lv_obj_set_pos(pane.root, kClientsX, kClientsY);
-    if (data.sample) {
-        view::style::pane_note(pane, theme, "sample data", theme.colors.warning);
-    }
+    pane_mark(pane, theme, data);
 
     // The header row.
     auto* address = plain_label(pane.content, "");
@@ -559,9 +570,7 @@ void TerminalHomeLayout::build_link(const HomeContext& context) {
                                         kClientsHeight, colors.selection,
                                         view::style::PaneDensity::Compact);
     lv_obj_set_pos(pane.root, kClientsX, kClientsY);
-    if (data.sample) {
-        view::style::pane_note(pane, theme, "sample data", colors.warning);
-    }
+    pane_mark(pane, theme, data);
 
     int32_t y = 0;
     network_shown_ = network_value_text(data);

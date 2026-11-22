@@ -56,6 +56,33 @@ enum class LinkKind {
 // by the log and the --print-data readout.
 const char* link_kind_name(LinkKind kind);
 
+// Whether the internet can be reached through the uplink, as the system's
+// network service (NetworkManager) checks it by itself.
+enum class Internet {
+    Unknown = 0, // not known: no network service, no link, or not checked yet
+    None,        // no network at all
+    Portal,      // a login page stands in the way (a hotspot that wants a sign-in)
+    Limited,     // the local network answers, the internet does not
+    Full,        // the internet answers
+};
+
+// The name of an internet state in lowercase: "unknown", "none", "portal",
+// "limited" or "full". Used by the --print-data readout.
+const char* internet_name(Internet internet);
+
+// Why there is no link, as the system's network service tells it. It only
+// means something while the uplink is LinkKind::None.
+enum class OfflineState {
+    Unknown = 0, // not known, or nothing special: plainly no network
+    Connecting,  // a Wi-Fi or cable connection is being set up
+    WifiOff,     // the Wi-Fi radio is switched off
+    NetworkOff,  // networking as a whole is switched off
+};
+
+// The name of an offline state in lowercase: "unknown", "connecting",
+// "wifi-off" or "network-off". Used by the --print-data readout.
+const char* offline_state_name(OfflineState state);
+
 // HomeData::wifi_signal_dbm when the signal is not known. A received signal
 // is always below 0 dBm, so 0 can never be a real reading.
 constexpr int32_t kSignalUnknown = 0;
@@ -106,6 +133,8 @@ struct HomeData {
     std::string wifi_name;             // name (SSID) of the Wi-Fi network the uplink joined
     std::string wifi_security;         // security of that network, for example "WPA2"
     int32_t wifi_signal_dbm{kSignalUnknown}; // received signal of that network, dBm (negative)
+    Internet internet{Internet::Unknown}; // whether the internet answers; Unknown without a link
+    OfflineState offline_state{OfflineState::Unknown}; // why there is no link; Unknown with one
     bool ap_active{false};             // true while the device runs its own access point
     // The access point's values, the uptime and the clients only mean
     // something while ap_active is true.

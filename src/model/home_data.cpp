@@ -51,6 +51,36 @@ const char* link_kind_name(LinkKind kind) {
     return "none";
 }
 
+const char* internet_name(Internet internet) {
+    switch (internet) {
+        case Internet::Unknown:
+            return "unknown";
+        case Internet::None:
+            return "none";
+        case Internet::Portal:
+            return "portal";
+        case Internet::Limited:
+            return "limited";
+        case Internet::Full:
+            return "full";
+    }
+    return "unknown";
+}
+
+const char* offline_state_name(OfflineState state) {
+    switch (state) {
+        case OfflineState::Unknown:
+            return "unknown";
+        case OfflineState::Connecting:
+            return "connecting";
+        case OfflineState::WifiOff:
+            return "wifi-off";
+        case OfflineState::NetworkOff:
+            return "network-off";
+    }
+    return "unknown";
+}
+
 const char* battery_state_name(BatteryState state) {
     switch (state) {
         case BatteryState::Unknown:
@@ -94,6 +124,8 @@ bool operator==(const HomeData& left, const HomeData& right) {
            left.wifi_name == right.wifi_name &&
            left.wifi_security == right.wifi_security &&
            left.wifi_signal_dbm == right.wifi_signal_dbm &&
+           left.internet == right.internet &&
+           left.offline_state == right.offline_state &&
            left.ap_active == right.ap_active &&
            left.ap_name == right.ap_name &&
            left.ap_security == right.ap_security &&

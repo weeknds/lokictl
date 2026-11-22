@@ -63,6 +63,14 @@ public:
     // (the live one) uses it; every other source keeps this default, which
     // ignores it. Until the first call it counts as shown.
     virtual void set_traffic_shown(bool /*shown*/) {}
+
+    // Waits until values that a source collects in the background after it
+    // was made (the live source's connection to the network service) are
+    // there, at most `limit`. It blocks, so it is only called before the
+    // first read(), with a short limit (the app's first reading, a one-shot
+    // readout). Every other source keeps this default, which returns at
+    // once.
+    virtual void wait_until_ready(std::chrono::milliseconds /*limit*/) {}
 };
 
 // Creates a source. `data_root` only matters for the live source: it is a

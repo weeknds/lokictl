@@ -265,6 +265,19 @@ void ground_fill(lv_obj_t* label, const view::Theme& theme) {
     lv_obj_set_style_bg_opa(label, LV_OPA_COVER, 0);
 }
 
+// The caption beside the internet's square: "internet", or the note when
+// the internet can not be reached ("no internet", "login page"), then in
+// the warning colour.
+void internet_caption(lv_obj_t* map, const view::Theme& theme, const model::HomeData& data) {
+    const std::string note = home::internet_note(data);
+    auto* label = plain_label(map, "");
+    view::style::caption(label, theme, note.empty() ? "internet" : note.c_str());
+    if (!note.empty()) {
+        lv_obj_set_style_text_color(label, theme.colors.warning, 0);
+    }
+    lv_obj_set_pos(label, kInternetLabelX, kInternetLabelY);
+}
+
 // A filled rectangle from (x, top) to (x + width - 1, bottom), for a
 // straight upright line of the map.
 lv_obj_t* upright(lv_obj_t* parent, int32_t x, int32_t top, int32_t bottom, int32_t width,
@@ -525,9 +538,7 @@ void ConstellationHomeLayout::build_map(const HomeContext& context) {
         lv_obj_set_pos(mark, 4, 1);
     }
 
-    auto* internet_label = plain_label(map, "");
-    view::style::caption(internet_label, theme, "internet");
-    lv_obj_set_pos(internet_label, kInternetLabelX, kInternetLabelY);
+    internet_caption(map, theme, data);
 
     // Not a fixed box: a wider text grows to the right, into free space.
     uplink_shown_ = uplink_label_text(data);
@@ -610,9 +621,7 @@ void ConstellationHomeLayout::build_link_map(const HomeContext& context) {
         lv_obj_set_pos(mark, 4, 1);
     }
 
-    auto* internet_label = plain_label(map, "");
-    view::style::caption(internet_label, theme, "internet");
-    lv_obj_set_pos(internet_label, kInternetLabelX, kInternetLabelY);
+    internet_caption(map, theme, data);
 
     if (linked) {
         auto* router_label = plain_label(map, "");

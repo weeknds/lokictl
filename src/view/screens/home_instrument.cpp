@@ -269,9 +269,17 @@ void InstrumentHomeLayout::build_status_strip(const HomeContext& context) {
     view::style::caption(name, theme, context.app_name);
     lv_obj_align(name, LV_ALIGN_LEFT_MID, kStripInset, 0);
 
+    // The middle of the strip: the sample mark, or else a note when the
+    // internet can not be reached, in the warning colour.
+    const std::string note = home::internet_note(context.data);
     if (context.data.sample) {
         auto* mark = plain_label(strip, "");
         view::style::caption(mark, theme, "sample data");
+        lv_obj_align(mark, LV_ALIGN_CENTER, 0, 0);
+    } else if (!note.empty()) {
+        auto* mark = plain_label(strip, "");
+        view::style::caption(mark, theme, note.c_str());
+        lv_obj_set_style_text_color(mark, theme.colors.warning, 0);
         lv_obj_align(mark, LV_ALIGN_CENTER, 0, 0);
     }
 

@@ -50,6 +50,13 @@ void DataReader::read_now() {
     }
 }
 
+void DataReader::wait_until_ready(milliseconds limit) {
+    if (thread_.joinable() || !source_) {
+        return;
+    }
+    source_->wait_until_ready(limit);
+}
+
 void DataReader::start() {
     if (thread_.joinable() || !source_) {
         return;

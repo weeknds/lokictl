@@ -12,6 +12,7 @@
 #include "live_data_source.h"
 
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <string>
@@ -19,6 +20,9 @@
 
 namespace app {
 namespace {
+
+// How long the readout waits at most for the network service.
+constexpr std::chrono::milliseconds kServiceWait{2000};
 
 // One name=value line; `value` is printed as it is, or `unknown` when it
 // is empty.
@@ -53,8 +57,11 @@ void print_history(const char* name, const std::array<uint8_t, model::kHomeHisto
 
 int run_data_readout(platform::DataSourceKind kind, uint32_t steps, const std::string& data_root) {
     // The same hand-over the app uses, but every reading is taken here, one
-    // after the other: the background thread is never started.
+    // after the other: the background thread is never started. The live
+    // source's connection to the network service starts in the background,
+    // so the readout first waits for it (a short, bounded time).
     platform::DataReader reader(platform::make_data_source(kind, data_root));
+    reader.wait_until_ready(kServiceWait);
     reader.read_now();
     // A rate needs two readings of the byte counters. On the real system
     // they must be apart in time, so with a link the readout waits for the
@@ -95,6 +102,8 @@ int run_data_readout(platform::DataSourceKind kind, uint32_t steps, const std::s
     print_number("up_kbps", data.up_kbps, data.up_kbps >= 0);
     print_history("down_history", data.down_history);
     print_history("up_history", data.up_history);
+    std::printf("internet=%s\n", model::internet_name(data.internet));
+    std::printf("state=%s\n", model::offline_state_name(data.offline_state));
     return 0;
 }
 

@@ -152,9 +152,36 @@ std::string network_text(const model::HomeData& data) {
         case model::LinkKind::Cable:
             return "wired network";
         case model::LinkKind::None:
-            return "no network";
+            break;
+    }
+    switch (data.offline_state) {
+        case model::OfflineState::Connecting:
+            return "connecting";
+        case model::OfflineState::WifiOff:
+            return "wi-fi off";
+        case model::OfflineState::NetworkOff:
+            return "network off";
+        case model::OfflineState::Unknown:
+            break;
     }
     return "no network";
+}
+
+std::string internet_note(const model::HomeData& data) {
+    if (data.uplink_kind == model::LinkKind::None) {
+        return {};
+    }
+    switch (data.internet) {
+        case model::Internet::Portal:
+            return "login page";
+        case model::Internet::Limited:
+        case model::Internet::None:
+            return "no internet";
+        case model::Internet::Unknown:
+        case model::Internet::Full:
+            break;
+    }
+    return {};
 }
 
 std::string network_name_text(const model::HomeData& data) {

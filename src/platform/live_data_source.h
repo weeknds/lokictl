@@ -9,26 +9,33 @@
 #include "battery.h"
 #include "data_source.h"
 #include "network.h"
+#include "network_manager.h"
 #include "rate_history.h"
 
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <memory>
 #include <string>
 
 namespace platform {
 
 // Real readings: the local time, the battery, the uplink (see
-// read_network()) and its traffic (see read_traffic_counters()). The device
-// is shown in the Client mode, without an access point and without
-// clients. Nothing is made up, so HomeData::sample is false (unless the
-// system cannot tell the time; see read()).
+// read_network()) and its traffic (see read_traffic_counters()), with the
+// names and state the system's network service adds (see
+// apply_network_manager()). The device is shown in the Client mode, without
+// an access point and without clients. Nothing is made up, so
+// HomeData::sample is false (unless the system cannot tell the time; see
+// read()).
 class LiveDataSource final : public DataSource {
 public:
     // `data_root` stands in for the root of the file system (see
     // make_data_source()); empty means the real root. With a test folder
-    // the traffic is timed by the readings, not by the clock (see read()).
+    // the traffic is timed by the readings, not by the clock (see read()),
+    // and "<data_root>/networkmanager" stands in for the network service
+    // (see read_network_manager_file()). On the real root the connection to
+    // the service starts here, without waiting.
     explicit LiveDataSource(std::string data_root);
 
     DataSourceKind kind() const override;
@@ -51,16 +58,27 @@ public:
     // exactly kTrafficInterval after the one before, and call n reads line
     // n of the counter files (see read_traffic_counters()), so a run with
     // the same files always gives the same rates.
+    //
+    // The connection to the network service is read at every call: it
+    // applies the changes the service has announced since and asks the
+    // service nothing (see NetworkManagerClient). In a test folder the
+    // stand-in file is read at every call instead.
     void read(model::HomeData& data) override;
 
     // The earliest of "just after the next minute starts", "the battery is
     // due", "the network is due" and, while the traffic is shown and there
     // is an uplink, "the traffic is due"; never less than kMinimumDelay. Right
     // away (kMinimumDelay) when the traffic flag changed since the last
-    // read(), so the page gets the new state at once.
+    // read(), so the page gets the new state at once. At most
+    // kServiceStartInterval while the connection to the network service
+    // starts, so its first values follow soon.
     std::chrono::milliseconds next_read_delay() override;
 
     void set_traffic_shown(bool shown) override;
+
+    // Waits until the connection to the network service has started, at
+    // most `limit`.
+    void wait_until_ready(std::chrono::milliseconds limit) override;
 
     static constexpr std::chrono::milliseconds kBatteryInterval{10000};
     static constexpr std::chrono::milliseconds kNetworkInterval{5000};
@@ -69,6 +87,7 @@ public:
     // minute is surely there.
     static constexpr std::chrono::milliseconds kMinuteMargin{20};
     static constexpr std::chrono::milliseconds kMinimumDelay{20};
+    static constexpr std::chrono::milliseconds kServiceStartInterval{100};
 
 private:
     // Forgets the traffic: no counters, rates not known, empty histories.
@@ -83,6 +102,10 @@ private:
     // Empty on the real system; in a test folder, the file that stands in
     // for the system's list of addresses (see read_network()).
     std::filesystem::path addresses_file_;
+    // The network service: the connection on the real system, its stand-in
+    // file in a test folder (the other one is empty).
+    std::unique_ptr<NetworkManagerClient> network_manager_;
+    std::filesystem::path network_manager_file_;
     BatteryReading battery_;
     bool battery_read_{false};
     std::chrono::steady_clock::time_point battery_read_at_{};

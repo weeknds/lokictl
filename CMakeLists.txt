@@ -485,6 +485,35 @@ target_link_libraries(${PROJECT_NAME}_platform
         ${PROJECT_NAME}_model
 )
 
+# NetworkManager through libnm: device builds read the Wi-Fi network's name
+# and the network's state from it (src/platform/network_manager_client.cpp).
+# The Mac simulator has no libnm and builds a stand-in that is never
+# available. Only the platform library sees libnm and GLib.
+if(USE_DESKTOP)
+    set(APP_USE_LIBNM_DEFAULT OFF)
+else()
+    set(APP_USE_LIBNM_DEFAULT ON)
+endif()
+option(APP_USE_LIBNM "Read network names and state from NetworkManager through libnm" ${APP_USE_LIBNM_DEFAULT})
+if(APP_USE_LIBNM)
+    find_package(PkgConfig REQUIRED)
+    if(CMAKE_CROSSCOMPILING AND CMAKE_SYSROOT)
+        # Look for libnm inside the sysroot only.
+        set(ENV{PKG_CONFIG_SYSROOT_DIR} "${CMAKE_SYSROOT}")
+        set(ENV{PKG_CONFIG_LIBDIR} "${CMAKE_SYSROOT}/usr/lib/${CM0_MULTIARCH}/pkgconfig:${CMAKE_SYSROOT}/usr/lib/pkgconfig:${CMAKE_SYSROOT}/usr/share/pkgconfig")
+    endif()
+    pkg_check_modules(LIBNM IMPORTED_TARGET libnm)
+    if(NOT LIBNM_FOUND)
+        message(FATAL_ERROR
+            "libnm was not found. Install libnm-dev (the container of scripts/build-deb.sh has it), "
+            "or configure with -DAPP_USE_LIBNM=OFF to build without NetworkManager."
+        )
+    endif()
+    message(STATUS "NetworkManager support through libnm ${LIBNM_VERSION}")
+    target_compile_definitions(${PROJECT_NAME}_platform PRIVATE APP_USE_LIBNM=1)
+    target_link_libraries(${PROJECT_NAME}_platform PRIVATE PkgConfig::LIBNM)
+endif()
+
 # ====================================================
 # Model sources
 # ====================================================

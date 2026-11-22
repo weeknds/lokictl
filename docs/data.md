@@ -65,12 +65,15 @@ With `live`:
   the router's address, the Wi-Fi signal and the cable's speed (see
   [The network link](#the-network-link));
 - the traffic: the download and upload rates and their graphs (see
-  [The traffic](#the-traffic)).
+  [The traffic](#the-traffic));
+- on the device, from NetworkManager: the Wi-Fi network's name, security and
+  speed, whether the internet answers, and why there is no link (see
+  [Names and state from NetworkManager](#names-and-state-from-networkmanager)).
 
 The device is shown in the Client mode, without an access point and without
-clients (those come with the modes). The Wi-Fi network's name, its security
-and its speed are not known yet, so the page shows `wi-fi network` and `--`
-for them, never a made-up name.
+clients (those come with the modes). What NetworkManager does not tell (in
+the simulator, or when it is not running) shows `wi-fi network` and `--`,
+never a made-up name.
 
 Nothing is made up any more, so `live` sets `HomeData::sample` to false
 and the page shows no `sample data` mark. (Only if the system could not
@@ -171,7 +174,11 @@ reader thread.
   used again. A block that equals the last
   one is not handed over, so the page only changes when a shown value
   does (the Wi-Fi signal moves by a dBm now and then; that changes one
-  text).
+  text). While the connection to NetworkManager starts (about a tenth of a
+  second on the device) it reads every 100 ms; the app's first reading
+  waits up to 250 ms for that start, so the first page already shows the
+  names (see
+  [Names and state from NetworkManager](#names-and-state-from-networkmanager)).
 
 The reader sleeps on a clock that never jumps, and works out the next
 minute from the wall clock each time it wakes up. If the device's time is
@@ -311,6 +318,49 @@ battery, so a test folder works on any computer.
 Whatever is not known shows `--`. The title bar shows the Wi-Fi icon by
 signal (−60 dBm and above full, −75 and above medium, lower low, not known
 without bars) or the cable icon; only the uplink's icon is shown.
+
+## Names and state from NetworkManager
+
+The kernel picks the uplink; NetworkManager, the system's network service,
+adds what only it knows (`src/platform/network_manager.h`). On the device
+the app talks to it through libnm; the Mac simulator has no libnm and gets
+a stand-in that is never available, so there these values stay unknown
+(the made-up sources and test folders still show them).
+
+- **For a Wi-Fi uplink:** the network's name (SSID), its security and the
+  link speed, taken from the NetworkManager device whose interface is the
+  uplink's. The speed is the device's current bit rate, as
+  `nmcli -g CAPABILITIES.SPEED device show wlan0` shows it (not the
+  access point's top rate). The security is the strongest the access point
+  offers: `WPA3`, `WPA2/3` (both), `WPA2`, `WPA`, `WPA3-EAP`, `WPA2-EAP`,
+  `WPA-EAP`, `OWE`, `WEP` or `open`.
+- **With a link:** whether the internet answers, from NetworkManager's own
+  check. The page shows `no internet` (limited or none) or `login page`
+  (portal) in the warning colour: in the middle of Instrument's status
+  strip, in the corner of Terminal's link pane (where `sample data` stands
+  on made-up values, which win) and in place of Constellation's `internet`
+  caption.
+- **Without a link:** why. `network off` when networking is switched off,
+  else `connecting` while a Wi-Fi or cable device is being connected, else
+  `wi-fi off` when the radio is off, else `no network`. A cable that is not
+  plugged in is not named: the cable port is empty most of the time.
+- Devices NetworkManager does not manage (the USB Wi-Fi stick) and devices
+  that are neither Wi-Fi nor cable are skipped.
+
+It only reads: every libnm function the app calls is a getter, apart from
+making and releasing the client. It has no thread of its own. The client
+starts without waiting (and without asking polkit which actions the app may
+take) on its own GLib main context; NetworkManager's change messages queue
+up there, and the live source applies them, without waiting, at each of its
+readings, so nothing asks NetworkManager again. While the client starts,
+the live source reads every 100 ms; the app's first reading waits up to
+250 ms for it and `--print-data` up to 2 s.
+When NetworkManager is not running, or there is no system bus, the kernel's
+values are shown and these stay unknown. On quit the client is released and
+its context run until libnm has let go (at most half a second).
+
+The internet and offline states change seldom, so a change of either
+builds the page again instead of updating it in place.
 
 ## The traffic
 
@@ -553,6 +603,8 @@ down_kbps=2400
 up_kbps=300
 down_history=12,18,30,44,62,80,100,86,70,52,40,30,24,20,28,40,56,72,60,46,34,26,30,38
 up_history=8,10,8,14,22,12,8,10,30,55,100,60,28,14,8,8,12,20,12,8,10,16,10,8
+internet=unknown
+state=unknown
 ```
 
 The lines always come in this order:
@@ -577,6 +629,8 @@ The lines always come in this order:
 | `clients=` | the number of connected clients |
 | `down_kbps=`, `up_kbps=` | the current rates in kbit/s |
 | `down_history=`, `up_history=` | the two graphs: 24 shares of 0 to 100 (100 is the history's peak), oldest first, separated by commas |
+| `internet=` | NetworkManager's internet check: `full`, `limited`, `portal`, `none` or `unknown` (always `unknown` without a link) |
+| `state=` | why there is no link: `connecting`, `wifi-off`, `network-off` or `unknown` (always `unknown` with a link) |
 
 A value that is not known prints `unknown`. `network=`, `security=` and
 `signal_dbm=` belong to a Wi-Fi network only, so they say `unknown` on a
@@ -600,6 +654,21 @@ on the Mac. It only matters for `live`.
 The system keeps its list of addresses in no file, so in a test folder the
 system is not asked at all: `<folder>/addresses` stands in for it, one line
 per address, `<interface> <IPv4 address>`.
+
+NetworkManager is never asked in a test folder either: `<folder>/networkmanager`
+stands in for it (see `read_network_manager_file()` in
+`src/platform/network_manager.h`). Without the file NetworkManager counts as
+not running, which leaves every value it adds unknown. For example:
+
+```text
+running yes
+internet portal
+link wlan0 WPA2 72 Harbour-Cafe
+```
+
+gives `network=Harbour-Cafe`, `security=WPA2`, `speed_mbps=72` and
+`internet=portal` on a Wi-Fi uplink `wlan0`. Other lines: `networking on|off`,
+`wifi on|off` and `connecting yes|no`; in a `link` line `-` means not known.
 
 A small test folder with a charger and a battery (all made up):
 

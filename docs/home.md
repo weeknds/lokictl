@@ -195,9 +195,11 @@ network values arrive. Each is a data source of its own (`--data <name>`):
 All of them are marked `sample data`, show the clock `07:46` and the
 battery `91%`, and never change, except the tour. All the names and
 addresses are made up. `--data live`, which the device uses by default,
-shows the device's real link and traffic in the link view (the Wi-Fi
-network's name is not known yet, so it reads `wi-fi network`), without the
-mark.
+shows the device's real link and traffic in the link view, with the Wi-Fi
+network's name and state from NetworkManager on the device (in the
+simulator the name reads `wi-fi network`), without the mark. A note
+(`no internet`, `login page`) and the words without a link (`connecting`,
+`wi-fi off`, `network off`) are described in [docs/data.md](data.md).
 
 A snapshot uses the fixed sample values unless `--data` says otherwise, so
 the same state always gives the same picture. Two snapshots of the home
@@ -229,6 +231,8 @@ home page.
   | `gateway_address` | the address of the router the uplink leads to |
   | `uplink_speed_mbps` | the link speed |
   | `wifi_name`, `wifi_security`, `wifi_signal_dbm` | the Wi-Fi network's name, its security (`WPA2`) and the received signal; empty on a cable and without a network |
+  | `internet` | whether the internet answers (`model::Internet`: full, limited, portal, none, unknown); only with a link; a problem shows as a note |
+  | `offline_state` | why there is no link (`model::OfflineState`: connecting, Wi-Fi off, network off, unknown); only without a link; it picks the words in place of `no network` |
   | `ap_active` | true while the device runs its own access point; it decides between the router view and the link view |
   | `ap_name`, `ap_security`, `uptime_seconds`, `clients` | the access point, the time the mode has been up and the connected clients; they only mean something while `ap_active` is true |
 

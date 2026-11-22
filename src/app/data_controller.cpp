@@ -49,6 +49,9 @@ DataController::~DataController() {
 
 void DataController::read_first() {
     const auto started = std::chrono::steady_clock::now();
+    // The live source's connection to the network service starts in the
+    // background; a short, bounded wait lets the first page show its names.
+    reader_.wait_until_ready(kFirstReadingWait);
     reader_.read_now();
     const auto elapsed = std::chrono::steady_clock::now() - started;
     const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();

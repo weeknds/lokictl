@@ -71,8 +71,10 @@ public:
 // interface, address and link speed, the router's address, the Wi-Fi
 // network's name, security and signal, and the two rates with their
 // histories. Every other difference (the kind of link, the access point,
-// the mode, the clients, the sample mark and any field added later) means
-// the page is built again. It copies `shown`, takes over exactly those
+// the mode, the clients, the sample mark, the internet state, the offline
+// state and any field added later) means the page is built again. The
+// internet and offline states change seldom, so a layout shows them in
+// build() only. It copies `shown`, takes over exactly those
 // values from `next` and compares the copy with `next`, so a new field
 // counts as "build again" by itself.
 inline bool home_values_only(const model::HomeData& shown, const model::HomeData& next) {

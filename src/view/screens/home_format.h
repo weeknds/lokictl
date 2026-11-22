@@ -81,8 +81,16 @@ std::string text_or_unknown(std::string_view text);
 
 // The words for the network the uplink leads to: the Wi-Fi network's name,
 // or "wi-fi network" when the name is not known; "wired network" on a
-// cable; "no network" without a link.
+// cable. Without a link they say why, as far as it is known (see
+// model::OfflineState): "connecting", "wi-fi off", "network off", else "no
+// network".
 std::string network_text(const model::HomeData& data);
+
+// A short note when the internet can not be reached through the link:
+// "login page" (model::Internet::Portal), "no internet" (Limited or None).
+// An empty text when there is nothing to say: the internet answers, it is
+// not known, or there is no link.
+std::string internet_note(const model::HomeData& data);
 
 // The network the uplink leads to in one short word or name, for a value
 // set beside its own label: the Wi-Fi network's name ("--" when it is not

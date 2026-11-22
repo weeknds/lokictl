@@ -55,6 +55,9 @@ LiveDataSource::LiveDataSource(std::string data_root)
     power_supply_dir_ = root_ / "sys/class/power_supply";
     if (test_folder_) {
         addresses_file_ = root_ / "addresses";
+        network_manager_file_ = root_ / "networkmanager";
+    } else {
+        network_manager_ = std::make_unique<NetworkManagerClient>();
     }
 }
 
@@ -64,6 +67,12 @@ DataSourceKind LiveDataSource::kind() const {
 
 void LiveDataSource::set_traffic_shown(bool shown) {
     traffic_shown_ = shown;
+}
+
+void LiveDataSource::wait_until_ready(milliseconds limit) {
+    if (network_manager_) {
+        network_manager_->wait_started(limit);
+    }
 }
 
 void LiveDataSource::read(model::HomeData& data) {
@@ -100,6 +109,14 @@ void LiveDataSource::read(model::HomeData& data) {
     data.gateway_address = network_.gateway;
     data.uplink_speed_mbps = network_.speed_mbps;
     data.wifi_signal_dbm = network_.signal_dbm;
+
+    NetworkManagerReading service;
+    if (network_manager_) {
+        network_manager_->read(service);
+    } else {
+        service = read_network_manager_file(network_manager_file_);
+    }
+    apply_network_manager(service, data);
 
     traffic_shown_read_ = traffic_shown_;
     if (network_.kind == model::LinkKind::None || !traffic_shown_) {
@@ -166,7 +183,9 @@ void LiveDataSource::read_traffic() {
 // Worked out from the current time at every call: the reader then wakes at
 // most about nineteen times a minute (once for the minute, every 5 s for the
 // network and every 10 s for the battery; those two often fall together),
-// and once a second more while the home page shows the traffic. A wake-up
+// and once a second more while the home page shows the traffic; every
+// 100 ms only while the connection to the network service starts (well under
+// a second on the device). A wake-up
 // that comes early, or a jump of the wall clock, corrects itself at the
 // next call. The minute follows the wall clock, while the battery, the
 // network, the traffic and the waiting follow the steady clock, which never
@@ -194,6 +213,9 @@ milliseconds LiveDataSource::next_read_delay() {
         if (traffic_shown_ && network_.kind != model::LinkKind::None) {
             const auto traffic_due = traffic_tried_ ? traffic_tried_at_ + kTrafficInterval : now;
             delay = std::min(delay, ceil<milliseconds>(traffic_due - now));
+        }
+        if (network_manager_ && network_manager_->starting()) {
+            delay = std::min(delay, kServiceStartInterval);
         }
     }
     return std::max(delay, kMinimumDelay);

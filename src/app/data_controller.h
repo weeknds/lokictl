@@ -12,6 +12,7 @@
 
 #include "lvgl.h"
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -54,6 +55,10 @@ namespace app {
 // app::ThemeController, it is not copied.
 class DataController {
 public:
+    // The longest read_first() waits for values a source collects in the
+    // background (the live source's connection to the network service).
+    static constexpr std::chrono::milliseconds kFirstReadingWait{250};
+
     // Starts following the current page at once.
     DataController(viewmodel::BaseViewModel& view_model, std::unique_ptr<platform::DataSource> source);
     // Calls stop() and stops following the current page.
@@ -64,7 +69,9 @@ public:
 
     // Takes the first reading on the calling thread, hands it to the view
     // model and logs how long it took, then the first battery and link
-    // lines. Call it
+    // lines. Before it, it waits up to kFirstReadingWait for values the
+    // source collects in the background (DataReader::wait_until_ready()),
+    // and the logged time includes that wait. Call it
     // once, before the first page is built, so the page never shows values
     // that are about to change.
     void read_first();
