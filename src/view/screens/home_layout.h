@@ -11,9 +11,11 @@
 
 #include "lvgl.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace screen {
 
@@ -66,14 +68,34 @@ public:
     virtual void update(const HomeContext& context) = 0;
 };
 
+// True when `left` and `right` list the same devices in the same order:
+// the same hardware address, name, address and new mark at each place. Their
+// signal, rate and time may differ.
+inline bool same_clients(const std::vector<model::HomeClient>& left,
+                         const std::vector<model::HomeClient>& right) {
+    if (left.size() != right.size()) {
+        return false;
+    }
+    for (std::size_t index = 0; index < left.size(); ++index) {
+        const auto& a = left[index];
+        const auto& b = right[index];
+        if (a.hardware_address != b.hardware_address || a.name != b.name || a.address != b.address ||
+            a.is_new != b.is_new) {
+            return false;
+        }
+    }
+    return true;
+}
+
 // True when `next` differs from `shown`, the block a layout shows, only in
 // the values update() shows in place: the clock, the battery, the uplink's
 // interface, address and link speed, the router's address, the Wi-Fi
 // network's name, security and signal, the router view's uptime, the two
-// rates with their histories, the Status page's details
+// rates with their histories, the clients' signal, rate and time while the
+// same devices are listed (same_clients()), the Status page's details
 // (HomeData::details) and the switch between modes
 // (HomeData::mode_switch); the home page shows neither of the last two. Every other difference (the kind of link, the access point,
-// the mode, the clients, the sample mark, the internet state, the offline
+// the mode, another list of clients, the sample mark, the internet state, the offline
 // state and any field added later) means the page is built again. The
 // internet and offline states change seldom, so a layout shows them in
 // build() only. It copies `shown`, takes over exactly those
@@ -96,6 +118,9 @@ inline bool home_values_only(const model::HomeData& shown, const model::HomeData
     copy.up_kbps = next.up_kbps;
     copy.down_history = next.down_history;
     copy.up_history = next.up_history;
+    if (same_clients(shown.clients, next.clients)) {
+        copy.clients = next.clients;
+    }
     // The Status page's values: the home page shows none of them, so they
     // never build it again (update() then finds nothing to retext).
     copy.details = next.details;

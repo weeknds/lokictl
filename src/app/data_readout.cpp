@@ -167,6 +167,19 @@ int run_data_readout(platform::DataSourceKind kind, uint32_t steps, const std::s
     std::printf("internet=%s\n", model::internet_name(data.internet));
     std::printf("state=%s\n", model::offline_state_name(data.offline_state));
     print_details(data.details);
+    // One line per client, last, since there may be none.
+    for (const model::HomeClient& client : data.clients) {
+        auto text = [](const std::string& value) { return value.empty() ? std::string("unknown") : value; };
+        auto number = [](int32_t value, bool known) { return known ? std::to_string(value) : std::string("unknown"); };
+        std::printf("client=%s address=%s signal_dbm=%s rate_kbps=%s joined_s=%s new=%s name=%s\n",
+                    text(client.hardware_address).c_str(),
+                    text(client.address).c_str(),
+                    number(client.signal_dbm, client.signal_dbm != model::kSignalUnknown).c_str(),
+                    number(client.rate_kbps, client.rate_kbps >= 0).c_str(),
+                    number(client.connected_seconds, client.connected_seconds >= 0).c_str(),
+                    client.is_new ? "yes" : "no",
+                    text(client.name).c_str());
+    }
     return 0;
 }
 

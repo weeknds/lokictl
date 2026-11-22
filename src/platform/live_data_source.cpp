@@ -33,31 +33,20 @@ bool read_local_clock(int32_t& minutes) {
     return true;
 }
 
-// `bytes` sent or received in `elapsed_ms` as kbit/s (one kbit/s is one bit
-// per millisecond), rounded; at most the largest int32_t. `elapsed_ms` is
-// above 0.
-int32_t rate_kbps(uint64_t bytes, int64_t elapsed_ms) {
-    constexpr auto kMaxRate = static_cast<uint64_t>(std::numeric_limits<int32_t>::max());
-    const auto ms = static_cast<uint64_t>(elapsed_ms);
-    if (bytes > (std::numeric_limits<uint64_t>::max() - ms / 2) / 8) {
-        return std::numeric_limits<int32_t>::max();
-    }
-    return static_cast<int32_t>(std::min((bytes * 8 + ms / 2) / ms, kMaxRate));
-}
-
 } // namespace
 
 LiveDataSource::LiveDataSource(std::string data_root, bool may_change_network)
     : sample_(model::sample_home_data()),
       test_folder_(!data_root.empty()),
-      changes_network_(may_change_network && data_root.empty() && NetworkManagerClient::can_change_network()) {
+      root_(test_folder_ ? std::filesystem::path(data_root) : std::filesystem::path("/")),
+      addresses_file_(test_folder_ ? root_ / "addresses" : std::filesystem::path()),
+      changes_network_(may_change_network && data_root.empty() && NetworkManagerClient::can_change_network()),
+      clients_(root_, addresses_file_, test_folder_) {
     // Reads the time zone once, so localtime_r() below shows local time.
     tzset();
-    root_ = test_folder_ ? std::filesystem::path(std::move(data_root)) : std::filesystem::path("/");
     // Relative on purpose: an absolute path on the right would drop the root.
     power_supply_dir_ = root_ / "sys/class/power_supply";
     if (test_folder_) {
-        addresses_file_ = root_ / "addresses";
         network_manager_file_ = root_ / "networkmanager";
     } else {
         network_manager_ = std::make_unique<NetworkManagerClient>();
@@ -153,7 +142,8 @@ void LiveDataSource::read(model::HomeData& data) {
     data.battery_percent = battery_.percent;
     data.battery_state = battery_.state;
 
-    if (!network_read_ || details_started || now - network_read_at_ >= kNetworkInterval) {
+    const bool network_due = !network_read_ || details_started || now - network_read_at_ >= kNetworkInterval;
+    if (network_due) {
         network_ = read_network(root_, addresses_file_);
         if (details_shown_) {
             details_.ports = read_ports(root_, addresses_file_, network_.interface_name);
@@ -176,6 +166,20 @@ void LiveDataSource::read(model::HomeData& data) {
         service = read_network_manager_file(network_manager_file_);
     }
     apply_network_manager(service, data);
+
+    // The devices on the hotspot. Read before a pretend switch is applied,
+    // so a pretend Client drops them with the access point.
+    const std::string& hotspot_interface = service.hotspot.interface_name;
+    if (service.available && service.hotspot.active && !hotspot_interface.empty()) {
+        if (test_folder_ || network_due || !clients_.has_read() || clients_.interface_name() != hotspot_interface) {
+            const bool switching = network_manager_ && network_manager_->busy();
+            clients_.read(hotspot_interface, !switching);
+        }
+        data.clients = clients_.clients();
+    } else {
+        clients_.clear();
+    }
+
     if (changes_network_) {
         data.mode_switch = refused_ ? refusal_ : service.mode_switch;
     } else {

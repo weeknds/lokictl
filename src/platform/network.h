@@ -116,4 +116,15 @@ bool read_traffic_counters(const std::filesystem::path& root,
                            std::size_t line,
                            TrafficCounters& counters);
 
+// The first IPv4 address of `interface_name` as text, from the system
+// (getifaddrs()), or from `addresses_file` when one is named (see
+// read_network()). Empty when it has none. Never throws.
+std::string interface_address(const std::filesystem::path& addresses_file,
+                              const std::string& interface_name);
+
+// `bytes` sent or received in `elapsed_ms` as kbit/s (one kbit/s is one bit
+// per millisecond), rounded; at most the largest int32_t. `elapsed_ms` must
+// be above 0.
+int32_t rate_kbps(uint64_t bytes, int64_t elapsed_ms);
+
 } // namespace platform

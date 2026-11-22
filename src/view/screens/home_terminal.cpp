@@ -309,6 +309,9 @@ private:
         lv_obj_t* signal{nullptr};
         lv_obj_t* rate{nullptr};
         lv_obj_t* fresh{nullptr}; // the "new" mark, or nullptr
+        // The texts update() follows while the same devices are listed.
+        std::string signal_shown;
+        std::string rate_shown;
     };
     std::array<ClientRow, viewmodel::kHomeClientRows> rows_{};
     int32_t row_count_{0};
@@ -510,20 +513,21 @@ void TerminalHomeLayout::build_clients(const HomeContext& context) {
         lv_obj_set_size(slot.row, LV_PCT(100), kTableRowHeight);
         lv_obj_set_style_text_font(slot.row, small, 0);
 
-        slot.address = plain_label(slot.row, client.address.c_str());
+        slot.address = plain_label(slot.row, home::text_or_unknown(client.address).c_str());
         fix_width(slot.address, kAddressWidth, small);
         lv_obj_set_pos(slot.address, kAddressX, 0);
 
-        slot.name = plain_label(slot.row, client.name.c_str());
+        slot.name = plain_label(slot.row, home::client_name_text(client).c_str());
         fix_width(slot.name, kNameWidth, small);
         lv_obj_set_pos(slot.name, kNameX, 0);
 
-        slot.signal = plain_label(slot.row, home::signal_text(client.signal_dbm).c_str());
+        slot.signal_shown = home::signal_text(client.signal_dbm);
+        slot.signal = plain_label(slot.row, slot.signal_shown.c_str());
         align_text_right(slot.signal, kSignalWidth, small);
         lv_obj_set_pos(slot.signal, kSignalEnd - kSignalWidth, 0);
 
-        const std::string client_rate = home::rate_short_text(client.rate_kbps);
-        slot.rate = plain_label(slot.row, client_rate.c_str());
+        slot.rate_shown = home::rate_short_text(client.rate_kbps);
+        slot.rate = plain_label(slot.row, slot.rate_shown.c_str());
         align_text_right(slot.rate, kTableRateWidth, small);
         lv_obj_set_pos(slot.rate, kTableRateEnd - kTableRateWidth, 0);
 
@@ -645,8 +649,9 @@ void TerminalHomeLayout::select(const HomeContext& context, int32_t index) {
 // Each rate stays right-aligned in its box, and each graph's bars change
 // height in place. The interface and the address keep their fixed boxes,
 // and the link speed stays right-aligned in its own. In the link view the link pane's values follow too, each in
-// its fixed box. The labels the built view does not have are null, and
-// set_text_if_changed() skips them.
+// its fixed box; in the router view each client row's signal and rate,
+// right-aligned in their boxes. The labels the built view does not have are
+// null, and set_text_if_changed() skips them.
 void TerminalHomeLayout::update(const HomeContext& context) {
     const auto& data = context.data;
     set_text_if_changed(clock_note_, clock_shown_, clock_note_text(data));
@@ -666,6 +671,14 @@ void TerminalHomeLayout::update(const HomeContext& context) {
     set_text_if_changed(speed_, speed_shown_, speed_value_text(data));
     set_text_if_changed(router_, router_shown_, router_value_text(data));
     set_text_if_changed(uptime_, uptime_shown_, home::uptime_text(data.uptime_seconds));
+    // Each client row's signal and rate; the same devices are listed (see
+    // home_values_only()), in the same rows.
+    for (int32_t index = 0; index < row_count_ && static_cast<std::size_t>(index) < data.clients.size(); ++index) {
+        auto& slot = rows_[static_cast<std::size_t>(index)];
+        const auto& client = data.clients[static_cast<std::size_t>(index)];
+        set_text_if_changed(slot.signal, slot.signal_shown, home::signal_text(client.signal_dbm));
+        set_text_if_changed(slot.rate, slot.rate_shown, home::rate_short_text(client.rate_kbps));
+    }
 }
 
 } // namespace

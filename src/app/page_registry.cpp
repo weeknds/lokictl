@@ -17,6 +17,7 @@ const std::vector<PageInfo>& page_registry() {
         {"status", model::AppPage::Status},
         {"modes", model::AppPage::Modes},
         {"hotspot", model::AppPage::Hotspot},
+        {"devices", model::AppPage::Devices},
         // The two demo pages are kept for navigation and key tests. Like the
         // dev- pages, they are opened by name only (snapshot --page), since
         // nothing in the app links to them; the counter page's key 8 opens

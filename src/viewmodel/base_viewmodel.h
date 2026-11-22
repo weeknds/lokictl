@@ -115,6 +115,18 @@ public:
     // at the top.
     bool open_status();
 
+    // The Devices page.
+    // The highlighted device, as its place in home().clients; starts at 0.
+    // The page shows it clamped to the devices there are (the list changes
+    // while the page is open), like the Status page's first row.
+    lv_subject_t* devices_selection_subject();
+    int32_t devices_selection() const;
+    // Stores `index` (0 or more); nothing is written when it stays the same.
+    void set_devices_selection(int32_t index);
+    // Puts the highlight on the home page's selected client, then opens the
+    // Devices page (see open_page()). The home page's Enter uses it.
+    bool open_devices();
+
     // The Modes page.
     // The highlighted row (one row per model::NetMode, in its order), or
     // kModesFollowsActive while the highlight is on the active mode; starts
@@ -236,6 +248,7 @@ private:
     reactive::IntSubject settings_theme_selection_subject_;
     reactive::BoolSubject screen_dimming_subject_;
     reactive::IntSubject status_scroll_subject_;
+    reactive::IntSubject devices_selection_subject_;
     reactive::IntSubject modes_selection_subject_;
     reactive::IntSubject mode_request_subject_;
     model::NetMode requested_mode_{model::NetMode::Client};

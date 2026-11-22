@@ -14,6 +14,7 @@
 #include "home_screen.h"
 #include "key_test_screen.h"
 #include "logger.h"
+#include "devices_screen.h"
 #include "hotspot_screen.h"
 #include "modes_screen.h"
 #include "page_registry.h"
@@ -122,6 +123,14 @@ bool ScreenManager::show_hotspot_screen() {
     return true;
 }
 
+bool ScreenManager::show_devices_screen() {
+    if (!load_screen(std::make_unique<screen::DevicesScreen>(view_model_, assets_, theme_engine_))) {
+        return false;
+    }
+    page_loaded(model::AppPage::Devices);
+    return true;
+}
+
 bool ScreenManager::show_dev_fonts_screen(model::AppPage page) {
     if (!load_screen(
             std::make_unique<screen::DevFontsScreen>(view_model_, assets_, theme_engine_, page))) {
@@ -226,6 +235,10 @@ bool ScreenManager::show_page(model::AppPage page) {
 
     if (screen::HotspotScreen::handles(page)) {
         return show_hotspot_screen();
+    }
+
+    if (screen::DevicesScreen::handles(page)) {
+        return show_devices_screen();
     }
 
     return show_home_screen();

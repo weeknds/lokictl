@@ -191,7 +191,7 @@ Options:
   long; it finishes in a fraction of a second.
 - `--help`: shows a short summary of all options.
 
-The app has 15 pages. `--list-pages` prints them in this order:
+The app has 18 pages. `--list-pages` prints them in this order:
 
 - `home`, the home page, where the app starts (see
   [docs/home.md](docs/home.md));
@@ -200,6 +200,9 @@ The app has 15 pages. `--list-pages` prints them in this order:
 - `status`, the Status page with every detail (ports, DNS, battery,
   device), which the home page's key 8 opens (see
   [docs/navigation.md](docs/navigation.md#the-status-page));
+- `modes`, `hotspot` and `devices`: the Modes page (home key 4), the
+  Hotspot page with the join code (key 7 there) and the Devices page (home
+  `enter`);
 - `demo-counter` and `demo-keys`, two demo pages kept for navigation and
   key tests: a counter and a key test page. Nothing in the app opens them
   any more, so they are drawn by name only, with `--page`; the counter
@@ -237,7 +240,8 @@ pages shows the same clock, battery and link.
 normal start uses `live` on the device and `demo` in the simulator. `live`
 shows the device's real mode (Client, or Router while LokiCTL's hotspot
 runs) with its real link, and on the device the Wi-Fi network's name and
-state from NetworkManager.
+state from NetworkManager. While Router runs it also lists the devices on
+the hotspot (see [docs/data.md](docs/data.md#devices-on-the-hotspot)).
 `--data wifi`, `--data cable` and `--data offline` are fixed made-up
 examples of the device joined to a Wi-Fi network, on a cable and with no
 network, and `--data tour` walks through every situation, one stop every
@@ -535,8 +539,8 @@ but sample network data for now (see [docs/home.md](docs/home.md)):
   port, DNS, battery, processor, memory) that scrolls with `f`/`x` and
   jumps between its parts with `z`/`c` or `5`/`6`;
 - `4` MODES opens the Modes page (below);
-- `5` SCAN and `7` TOOLS are dimmed and do nothing yet; `enter` does
-  nothing either;
+- `enter` opens the Devices page (below), on the selected client;
+- `5` SCAN and `7` TOOLS are dimmed and do nothing yet;
 - a short `esc` shows the hint `Hold ESC to exit`, and holding `esc` quits.
 
 The Settings page lists the three themes; a tick marks the active one:
@@ -592,6 +596,16 @@ shows the name and password Router will use.
   the hotspot starts again at once with the new name or password (the page
   says `Applying…`), so phones and laptops on it must join again.
 - `4` BACK or a short `esc` goes back.
+
+`enter` on the home page opens the Devices page: every phone, laptop or
+other device on the hotspot, two at a time. Each shows its name (the one it
+gave when it joined, or `unnamed`), `new` for the first five minutes, its
+address, its traffic, its hardware address and how long ago it joined. The
+home page's router view shows the same devices (at most three). `f`/`x`,
+`z`/`c` or `5`/`6` move the highlight, `7` QR opens the Hotspot page and
+`4` BACK or a short `esc` goes back. While Router is off the page says so.
+The built-in Wi-Fi does not report each device's signal while it runs a
+hotspot, so the page leaves the signal out there.
 
 The package installs a polkit rule, `/usr/share/polkit-1/rules.d/60-lokictl.rules`,
 because apps started by the launcher may not change NetworkManager's

@@ -230,11 +230,14 @@ private:
     lv_obj_t* up_caption_{nullptr};
 
     // The router view's selected client's line; select() changes their
-    // text only. They stay null in the link view.
+    // text only. They stay null in the link view. update() follows the
+    // selected client's signal, which select() last showed (`selected_`).
     lv_obj_t* tag_{nullptr};
     lv_obj_t* name_{nullptr};
     lv_obj_t* address_{nullptr};
     lv_obj_t* signal_{nullptr};
+    std::string signal_shown_;
+    int32_t selected_{0};
 
     // The router view's uptime and the text it shows; update() changes the
     // text only. It stays null in the link view.
@@ -538,16 +541,20 @@ void InstrumentHomeLayout::select(const HomeContext& context, int32_t index) {
 
     lv_label_set_text(tag_, home::count_text(index, shown).c_str());
     if (shown == 0) {
+        selected_ = 0;
         lv_label_set_text(name_, "");
         lv_label_set_text(address_, "");
+        signal_shown_.clear();
         lv_label_set_text(signal_, "");
         return;
     }
 
-    const auto& client = clients[static_cast<std::size_t>(std::clamp<int32_t>(index, 0, shown - 1))];
-    lv_label_set_text(name_, client.name.c_str());
-    lv_label_set_text(address_, client.address.c_str());
-    lv_label_set_text(signal_, home::signal_text(client.signal_dbm).c_str());
+    selected_ = std::clamp<int32_t>(index, 0, shown - 1);
+    const auto& client = clients[static_cast<std::size_t>(selected_)];
+    lv_label_set_text(name_, home::client_name_text(client).c_str());
+    lv_label_set_text(address_, home::text_or_unknown(client.address).c_str());
+    signal_shown_ = home::signal_text(client.signal_dbm);
+    lv_label_set_text(signal_, signal_shown_.c_str());
 }
 
 // The strip's clock and battery and the download and upload numbers follow
@@ -556,8 +563,9 @@ void InstrumentHomeLayout::select(const HomeContext& context, int32_t index) {
 // caption moves with its number's width. In the link view the network line,
 // the first number, the link line, the link speed and both addresses follow
 // too; each keeps its box, and the first number's caption moves with the
-// number's width. The labels of the other view are null, and
-// set_text_if_changed() skips them.
+// number's width. In the router view the selected client's signal follows
+// too. The labels of the other view are null, and set_text_if_changed()
+// skips them.
 void InstrumentHomeLayout::update(const HomeContext& context) {
     const auto& data = context.data;
     set_text_if_changed(status_, status_shown_, status_text(data, context.theme));
@@ -576,6 +584,12 @@ void InstrumentHomeLayout::update(const HomeContext& context) {
     set_text_if_changed(link_address_, link_address_shown_, address_text(data));
     set_text_if_changed(router_address_, router_address_shown_, router_address_text(data));
     set_text_if_changed(uptime_, uptime_shown_, "UP " + home::uptime_text(data.uptime_seconds));
+    // The selected client's signal; the same devices are listed (see
+    // home_values_only()), so `selected_` still points at one of them.
+    if (signal_ && static_cast<std::size_t>(selected_) < data.clients.size()) {
+        set_text_if_changed(signal_, signal_shown_,
+                            home::signal_text(data.clients[static_cast<std::size_t>(selected_)].signal_dbm));
+    }
 }
 
 } // namespace

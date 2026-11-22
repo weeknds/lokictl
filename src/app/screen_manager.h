@@ -42,6 +42,7 @@ public:
     bool show_status_screen();
     bool show_modes_screen();
     bool show_hotspot_screen();
+    bool show_devices_screen();
     bool show_dev_fonts_screen(model::AppPage page);
     bool show_dev_theme_screen();
     bool show_dev_overlays_screen(model::AppPage page);

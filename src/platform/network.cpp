@@ -589,6 +589,27 @@ std::vector<std::string> read_dns_servers(const std::filesystem::path& root) {
     return servers;
 }
 
+std::string interface_address(const std::filesystem::path& addresses_file,
+                              const std::string& interface_name) {
+    if (!valid_interface_name(interface_name)) {
+        return {};
+    }
+    return addresses_file.empty() ? system_address(interface_name)
+                                  : file_address(addresses_file, interface_name);
+}
+
+int32_t rate_kbps(uint64_t bytes, int64_t elapsed_ms) {
+    constexpr auto kMaxRate = static_cast<uint64_t>(std::numeric_limits<int32_t>::max());
+    if (elapsed_ms <= 0) {
+        return model::kRateUnknown;
+    }
+    const auto ms = static_cast<uint64_t>(elapsed_ms);
+    if (bytes > (std::numeric_limits<uint64_t>::max() - ms / 2) / 8) {
+        return std::numeric_limits<int32_t>::max();
+    }
+    return static_cast<int32_t>(std::min((bytes * 8 + ms / 2) / ms, kMaxRate));
+}
+
 bool read_traffic_counters(const std::filesystem::path& root,
                            const std::string& interface_name,
                            std::size_t line,

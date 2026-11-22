@@ -21,6 +21,7 @@ enum class AppPage {
     Status   = 4,
     Modes    = 5,
     Hotspot  = 6,
+    Devices  = 7,
 
     // Developer pages. They are opened by name only (snapshot --page) and
     // are never linked from the normal UI.

@@ -28,9 +28,9 @@ view::widgets::HelpContent HomeScreen::help_content() {
             {
                 {"HOLD ESC", "Exit"},
                 {"F Z / X C", "Previous / next client"},
+                {"ENTER", "Devices"},
                 {"4", "Modes"},
                 {"6 / 8", "Settings / Status"},
-                {"5 / 7", "Not available yet"},
             }};
 }
 
@@ -53,7 +53,8 @@ view::widgets::SoftKeySet HomeScreen::soft_keys() {
 }
 
 // Left and up select the previous client, right and down the next one. The
-// view model stops the selection at the first and the last client.
+// view model stops the selection at the first and the last client. Enter
+// opens the Devices page, on the selected client.
 bool HomeScreen::on_key(uint32_t key) {
     switch (key) {
         case LV_KEY_LEFT:
@@ -63,6 +64,9 @@ bool HomeScreen::on_key(uint32_t key) {
         case LV_KEY_RIGHT:
         case LV_KEY_DOWN:
             view_model().home_select(1);
+            return true;
+        case LV_KEY_ENTER:
+            view_model().open_devices();
             return true;
         default:
             return false;

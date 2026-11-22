@@ -237,6 +237,37 @@ std::string join_parts(std::initializer_list<std::string> parts) {
     return text;
 }
 
+std::string client_name_text(const model::HomeClient& client) {
+    return client.name.empty() ? std::string("unnamed") : client.name;
+}
+
+std::string joined_text(int32_t seconds) {
+    constexpr int32_t kMinute = 60;
+    constexpr int32_t kHour = 60 * kMinute;
+    constexpr int32_t kDay = 24 * kHour;
+    if (seconds < 0) {
+        return kUnknownText;
+    }
+    if (seconds < kMinute) {
+        return "joined just now";
+    }
+    if (seconds < kHour) {
+        return "joined " + std::to_string(seconds / kMinute) + " min ago";
+    }
+    if (seconds < kDay) {
+        const int32_t minutes = (seconds % kHour) / kMinute;
+        return "joined " + std::to_string(seconds / kHour) + " h" +
+               (minutes > 0 ? " " + std::to_string(minutes) + " min" : std::string()) + " ago";
+    }
+    const int32_t hours = (seconds % kDay) / kHour;
+    return "joined " + std::to_string(seconds / kDay) + " d" +
+           (hours > 0 ? " " + std::to_string(hours) + " h" : std::string()) + " ago";
+}
+
+std::string client_rate_text(int32_t kbps) {
+    return kbps < 0 ? std::string(kUnknownText) : rate_text(kbps) + " Mbit/s";
+}
+
 std::string count_text(int32_t index, int32_t count) {
     if (count <= 0) {
         return "0/0";

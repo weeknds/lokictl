@@ -34,7 +34,8 @@ namespace screen {
 //
 // Keys are the same in every theme. Left and up (Z/F) select the previous
 // client and right and down (C/X) the next one; the selection stops at the
-// first and the last client shown, and without clients they do nothing. Key
+// first and the last client shown, and without clients they do nothing.
+// Enter opens the Devices page with every device, on the selected client. Key
 // 4 (Modes) opens the Modes page, key 6 (Setup) Settings and key 8 (Info)
 // the Status page. Keys 5 and 7 (Scan, Tools) are shown switched off until
 // their pages exist.

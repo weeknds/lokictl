@@ -315,7 +315,7 @@ it. Its keys are the same in every theme:
 | `8` INFO | opens the Status page |
 | `4` MODES | opens the Modes page |
 | `5` SCAN, `7` TOOLS | shown switched off; they do nothing yet |
-| `Enter` | nothing |
+| `Enter` | opens the Devices page, with the highlight on the selected client |
 | ESC | the ESC rule for the first page: a short press shows `Hold ESC to exit`, holding it for 700 ms quits |
 
 The selection lives in the view model, so it is kept when Settings is
@@ -378,6 +378,30 @@ typing. The page only asks (`BaseViewModel::request_hotspot_rename()` and
 and, while Router runs, starts the hotspot again (see
 [data.md](data.md#switching-modes)). Typing and the name typed so far live
 in the view model. The help panel shows the badge `HOTSPOT` and four rows.
+
+## The Devices page
+
+`devices` lists every device on the hotspot, two at a time under the title
+bar. Each card has three lines: the name (or `unnamed`) with `new` for the
+first five minutes and the signal at the right (left out when not known);
+the address with the traffic; the hardware address with
+`joined N min ago`. [data.md](data.md#devices-on-the-hotspot) says where
+the values come from. Without the hotspot a box says `Router is off`; with
+the hotspot and nobody on it, `No devices yet` and the hotspot's name. A
+thin mark at the right edge shows where the cards lie when there are more
+than two.
+
+| Key | What it does |
+|---|---|
+| `f`/`x`, `z`/`c`, the arrows, `5` UP, `6` DOWN | move the highlight; it stops at the first and the last device |
+| `7` QR | opens the Hotspot page with the join code |
+| `4` BACK or a short ESC | goes back |
+
+The highlight lives in the view model (`devices_selection_*`); the home
+page's Enter puts it on the selected client. The highlighted card is the top
+one unless the list ends. Only the two cards exist as LVGL objects: new
+values and the highlight retext and restyle them, nothing is built again.
+The help panel shows the badge `DEVICES` and three rows.
 
 ## The Status page
 

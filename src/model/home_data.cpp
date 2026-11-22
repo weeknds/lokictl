@@ -11,15 +11,18 @@ namespace {
 
 HomeClient make_client(const char* name,
                        const char* address,
+                       const char* hardware_address,
                        int32_t signal_dbm,
                        int32_t rate_kbps,
-                       bool is_new) {
+                       int32_t connected_seconds) {
     HomeClient client;
     client.name = name;
     client.address = address;
+    client.hardware_address = hardware_address;
     client.signal_dbm = signal_dbm;
     client.rate_kbps = rate_kbps;
-    client.is_new = is_new;
+    client.connected_seconds = connected_seconds;
+    client.is_new = connected_seconds < kClientNewSeconds;
     return client;
 }
 
@@ -133,8 +136,10 @@ const char* battery_state_name(BatteryState state) {
 bool operator==(const HomeClient& left, const HomeClient& right) {
     return left.name == right.name &&
            left.address == right.address &&
+           left.hardware_address == right.hardware_address &&
            left.signal_dbm == right.signal_dbm &&
            left.rate_kbps == right.rate_kbps &&
+           left.connected_seconds == right.connected_seconds &&
            left.is_new == right.is_new;
 }
 
@@ -270,9 +275,11 @@ HomeData sample_home_data() {
                          72, 90, 100, 84, 66, 50, 36, 28, 34, 52, 70, 62};
     data.up_history = {8, 8, 12, 25, 12, 8, 17, 42, 17, 8, 8, 12,
                        33, 58, 25, 12, 8, 8, 17, 100, 50, 25, 12, 17};
-    data.clients.push_back(make_client("phone", "10.42.0.11", -61, 400, false));
-    data.clients.push_back(make_client("laptop", "10.42.0.14", -48, 2100, false));
-    data.clients.push_back(make_client("tv", "10.42.0.23", -70, 1300, true));
+    // Made-up, locally administered hardware addresses (02:...), in the
+    // order the device lists them: the longest joined first.
+    data.clients.push_back(make_client("phone", "10.42.0.11", "02:5e:11:7a:c3:01", -61, 400, 1931));
+    data.clients.push_back(make_client("laptop", "10.42.0.14", "02:5e:11:7a:c3:02", -48, 2100, 742));
+    data.clients.push_back(make_client("tv", "10.42.0.23", "02:5e:11:7a:c3:03", -70, 1300, 95));
     return data;
 }
 

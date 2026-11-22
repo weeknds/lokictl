@@ -72,8 +72,9 @@ With `live`:
   [Names and state from NetworkManager](#names-and-state-from-networkmanager)).
 
 The device is shown in the Client mode, or in Router while LokiCTL's
-hotspot runs (see [Switching modes](#switching-modes)); there are no
-clients yet. What NetworkManager does not tell (in
+hotspot runs (see [Switching modes](#switching-modes)), with the devices
+on the hotspot (see [Devices on the hotspot](#devices-on-the-hotspot)).
+What NetworkManager does not tell (in
 the simulator, or when it is not running) shows `wi-fi network` and `--`,
 never a made-up name.
 
@@ -229,11 +230,13 @@ new block needs, with `home_values_only()` in
 - **In place**, when the new block differs only in the clock, the battery,
   the uplink's interface, address and link speed, the router's address,
   the Wi-Fi network's name, security and signal, the router view's
-  uptime, or the two rates and their histories (or in values the home page
-  does not show: the Status page's details and the switch between modes):
-  `HomeScreen` calls `update()`.
+  uptime, the two rates and their histories, or the clients' signal, rate
+  and time while the same devices are listed in the same order (same
+  hardware address, name, address and `new` mark; `same_clients()`), or in
+  values the home page does not show (the Status page's details and the
+  switch between modes): `HomeScreen` calls `update()`.
 - **Built again**, for any other difference (the kind of link, the access
-  point, the mode, the clients, the sample mark, or a field added
+  point, the mode, another list of clients, the sample mark, or a field added
   later): `HomeScreen` throws the layout away, empties the page's
   content area, and a new layout builds it afresh, once (on the device a
   new situation costs one frame of roughly 20 to 40 ms, depending on the
@@ -574,6 +577,46 @@ counters, which every user may read:
   does not fit its panel (two rates of 10 Mbit/s or more), it writes
   `↓12.3M ↑10.2M` instead.
 
+## Devices on the hotspot
+
+While LokiCTL's hotspot is active, `live` fills `HomeData::clients` with
+the devices on it (`platform::HotspotClients`, in
+`src/platform/hotspot_clients.h`). They are read with the network (every
+5 s), and at once when the hotspot comes up; when it stops they are
+forgotten. Each device has:
+
+- **its hardware address, time joined and traffic**, from the Wi-Fi
+  driver's list of devices on the access point (a station dump of the
+  kernel's nl80211 interface over plain generic netlink, which every user
+  may read; only Linux headers, no extra library). A device that is listed
+  but not let in yet is left out. The traffic is the bytes it received and
+  sent since the reading before, per second; `--` at its first reading or
+  when its counter went back;
+- **its address**, from the neighbour table `/proc/net/arp` (complete
+  entries on the hotspot's interface, by hardware address);
+- **its name**, the one it sent when it got its address. NetworkManager's
+  own DNS server on the hotspot (dnsmasq) knows it, and the lease file is
+  readable by root only, so LokiCTL asks that server for the name of each
+  address (a reverse lookup) at the hotspot's own address. All questions
+  go out at once and it waits at most 250 ms per reading in all; nothing
+  is asked while a switch between modes runs. An address is asked once,
+  and again after a minute while the server knew no name. Only the first
+  label is kept, at most 32 characters, and every byte that is not
+  printable ASCII becomes `?`. A device without a name shows `unnamed`;
+- **its signal**, when the driver tells it. The built-in Wi-Fi (brcmfmac)
+  does not in access point mode, so on the device it is not known (`--` on
+  the home page, left out on the Devices page).
+
+A device keeps its place from one reading to the next, and newcomers go
+after it, the longest joined first (then by hardware address), so the order
+never changes under the highlight; at most 16 are listed. A station dump
+that fails or comes too late keeps the last list. A device is `new` for its first five
+minutes. While the same devices are listed, their signal, traffic and time
+change in place on the home page (see
+[How a page updates in place](#how-a-page-updates-in-place)). The made-up
+sources keep their own clients; the sample's three have made-up,
+locally administered hardware addresses (`02:5e:11:7a:c3:0n`).
+
 ## The Status page's details
 
 The Status page (home page, key 8) shows the extra values of
@@ -871,6 +914,7 @@ The lines always come in this order:
 | `dns=` | the DNS servers, separated by commas |
 | `battery_voltage_mv=` to `battery_full_min=` | the battery's details: voltage (mV), current (mA, negative while discharging), temperature (tenths of a degree), health, cycles, charge and full charge (mAh), minutes until empty and until full |
 | `cpu_temp_tenths=`, `memory_free_mb=`, `memory_total_mb=`, `uptime_s=` | the processor's temperature (tenths of a degree), free and total memory (MiB) and the seconds since the device started |
+| `client=` | one line per connected client, in the page's order (none without clients): its hardware address, then `address=`, `signal_dbm=`, `rate_kbps=` (both ways together), `joined_s=` (seconds on the access point), `new=` (`yes` for the first five minutes) and, last because it may hold spaces, `name=` |
 
 A value that is not known prints `unknown`. `network=`, `security=` and
 `signal_dbm=` belong to a Wi-Fi network only, so they say `unknown` on a
@@ -917,6 +961,30 @@ gives `network=Harbour-Cafe`, `security=WPA2`, `speed_mbps=72` and
 Modes page only pretends (see [Switching modes](#switching-modes)), and
 `fail permission` or `fail <reason>` makes it fail as not allowed or with
 that reason.
+
+While an `ap` line says the hotspot runs, three more files stand in for
+the devices on it (see [Devices on the hotspot](#devices-on-the-hotspot)):
+`<folder>/stations` for the Wi-Fi driver's list, one line per device,
+`<interface> <hardware address> <signal|-> <seconds joined|-> <bytes|->`
+(the seconds and the bytes may be lists, `1000,6000`: reading n takes the
+n-th value, the last one past the end, so a rate or a moving time can be
+tested); `<folder>/proc/net/arp`
+for the neighbour table, as the kernel writes it; and `<folder>/hostnames`
+for the names, `<IPv4 address> <name>` per line. Nothing is asked of a DNS
+server then, and each reading counts as 5 s after the one before. For
+example, with the lines `running yes` and `ap wlan0 WPA2 LokiCTL-TEST` in
+`networkmanager`:
+
+```text
+stations          wlan0 02:5e:11:7a:c3:04 - 17 1000,6000
+proc/net/arp      IP address  HW type  Flags  HW address         Mask  Device
+                  10.42.0.183 0x1      0x2    02:5e:11:7a:c3:04  *     wlan0
+hostnames         10.42.0.183 phone
+```
+
+`--print-data --data live --data-steps 1` prints `clients=1` and, at the
+end, `client=02:5e:11:7a:c3:04 address=10.42.0.183 signal_dbm=unknown
+rate_kbps=8 joined_s=17 new=yes name=phone`.
 
 A small test folder with a charger and a battery (all made up):
 

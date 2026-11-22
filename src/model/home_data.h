@@ -139,13 +139,23 @@ constexpr int32_t kSpeedUnknown = 0;
 // rate counts as not known.
 constexpr int32_t kRateUnknown = -1;
 
-// One device connected to the access point.
+// HomeClient::connected_seconds when the time is not known.
+constexpr int32_t kConnectedUnknown = -1;
+
+// A device counts as new while it has been on the access point for less
+// than this (HomeClient::is_new).
+constexpr int32_t kClientNewSeconds = 5 * 60;
+
+// One device connected to the access point. A text that is not known is
+// empty; a number has the "not known" value noted beside it.
 struct HomeClient {
-    std::string name;    // host name, for example "printer"
-    std::string address; // IPv4 address as text
-    int32_t signal_dbm;  // received signal strength, dBm (negative)
-    int32_t rate_kbps;   // current traffic, kbit/s
-    bool is_new;         // connected since the user last looked
+    std::string name;             // host name, for example "printer"; empty when not known
+    std::string address;          // IPv4 address as text; empty when not known
+    std::string hardware_address; // "02:00:00:00:00:01"; empty when not known
+    int32_t signal_dbm{kSignalUnknown}; // received signal strength, dBm (negative)
+    int32_t rate_kbps{kRateUnknown};    // current traffic, both ways together, kbit/s
+    int32_t connected_seconds{kConnectedUnknown}; // time on the access point, seconds
+    bool is_new{false};           // joined less than kClientNewSeconds ago
 };
 
 // Every field is compared. A new field must be added here too: the data

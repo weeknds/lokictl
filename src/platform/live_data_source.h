@@ -8,6 +8,7 @@
 
 #include "battery.h"
 #include "data_source.h"
+#include "hotspot_clients.h"
 #include "mode_switch.h"
 #include "network.h"
 #include "network_manager.h"
@@ -26,7 +27,8 @@ namespace platform {
 // read_network()) and its traffic (see read_traffic_counters()), with the
 // names and state the system's network service adds (see
 // apply_network_manager()). The mode is Client unless LokiCTL's hotspot is
-// active (Router, still without clients). Nothing is made up, so
+// active (Router, with the devices on it; see HotspotClients). Nothing is
+// made up, so
 // HomeData::sample is false (unless the system cannot tell the time; see
 // read()).
 //
@@ -82,6 +84,12 @@ public:
     // the network, the battery details and the device values with the
     // battery; when the page has just opened, both are read at once. While
     // the details are not shown, HomeData::details is left unknown (empty).
+    //
+    // The devices on the hotspot (HomeData::clients): only while LokiCTL's
+    // hotspot is active, read with the network and at once when the hotspot
+    // has just come up (in a test folder at every call); in between the
+    // last reading is used again. No names are asked while a switch between
+    // modes runs. When the hotspot stops, they are forgotten.
     void read(model::HomeData& data) override;
 
     // The earliest of "just after the next minute starts", "the battery is
@@ -143,6 +151,7 @@ private:
     NetworkReading network_;
     bool network_read_{false};
     std::chrono::steady_clock::time_point network_read_at_{};
+    HotspotClients clients_;
 
     // The Status page's details.
     bool details_shown_{false};      // the flag set_details_shown() gave last

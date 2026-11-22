@@ -417,11 +417,14 @@ private:
     lv_obj_t* uptime_{nullptr};
     std::string uptime_shown_;
 
-    // The panel's lines about the selected client.
+    // The panel's lines about the selected client. update() follows its
+    // signal, for the client select() last marked (`selected_`).
     lv_obj_t* selected_caption_{nullptr};
     lv_obj_t* selected_name_{nullptr};
     lv_obj_t* selected_signal_{nullptr};
+    std::string selected_signal_shown_;
     lv_obj_t* selected_address_{nullptr};
+    int32_t selected_{0};
 
     // True when build() drew the link view: no access point, no clients.
     bool link_view_{false};
@@ -565,7 +568,7 @@ void ConstellationHomeLayout::build_map(const HomeContext& context) {
     for (int32_t index = 0; index < client_count_; ++index) {
         const auto position = static_cast<std::size_t>(index);
         const auto& slot = kSlots[slots_[position]];
-        auto* name = plain_label(map, data.clients[position].name.c_str());
+        auto* name = plain_label(map, home::client_name_text(data.clients[position]).c_str());
         lv_label_set_long_mode(name, LV_LABEL_LONG_DOT);
         lv_obj_set_style_text_align(name, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_set_x(name, slot.x - kNameWidth / 2);
@@ -867,14 +870,17 @@ void ConstellationHomeLayout::select(const HomeContext& context, int32_t index) 
     view::style::caption(selected_caption_, theme, caption.c_str());
 
     if (listed == 0) {
+        selected_ = 0;
         lv_obj_add_flag(left_bracket_, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(right_bracket_, LV_OBJ_FLAG_HIDDEN);
         lv_label_set_text(selected_name_, "");
+        selected_signal_shown_.clear();
         lv_label_set_text(selected_signal_, "");
         lv_label_set_text(selected_address_, "");
         return;
     }
     const int32_t selected = std::clamp<int32_t>(index, 0, listed - 1);
+    selected_ = selected;
 
     // The map: the selected name in the bold font, the others in Small; the
     // name keeps its baseline either way.
@@ -901,9 +907,10 @@ void ConstellationHomeLayout::select(const HomeContext& context, int32_t index) 
 
     // The panel.
     const auto& client = clients[static_cast<std::size_t>(selected)];
-    lv_label_set_text(selected_name_, client.name.c_str());
-    lv_label_set_text(selected_signal_, home::signal_text(client.signal_dbm).c_str());
-    lv_label_set_text(selected_address_, client.address.c_str());
+    lv_label_set_text(selected_name_, home::client_name_text(client).c_str());
+    selected_signal_shown_ = home::signal_text(client.signal_dbm);
+    lv_label_set_text(selected_signal_, selected_signal_shown_.c_str());
+    lv_label_set_text(selected_address_, home::text_or_unknown(client.address).c_str());
 }
 
 // The panel's clock, battery and traffic line follow the values in both
@@ -912,8 +919,9 @@ void ConstellationHomeLayout::select(const HomeContext& context, int32_t index) 
 // router view the uplink beside its line follows too: its text grows to the
 // right, and the star beside it gives way to a wide text. In the link view
 // the link's label, the network's name and details, the signal or link
-// speed and both addresses follow, each in its fixed box. The labels the
-// built view does not have are null, and set_text_if_changed() skips them.
+// speed and both addresses follow, each in its fixed box. In the router
+// view the selected client's signal follows too. The labels the built view
+// does not have are null, and set_text_if_changed() skips them.
 void ConstellationHomeLayout::update(const HomeContext& context) {
     const auto& data = context.data;
     set_text_if_changed(clock_, clock_shown_, clock_label_text(data));
@@ -931,6 +939,12 @@ void ConstellationHomeLayout::update(const HomeContext& context) {
     set_text_if_changed(address_, address_shown_, address_text(data));
     set_text_if_changed(router_address_, router_address_shown_, router_address_text(data));
     set_text_if_changed(uptime_, uptime_shown_, "up " + home::uptime_text(data.uptime_seconds));
+    // The selected client's signal; the same devices are listed (see
+    // home_values_only()), so `selected_` still points at one of them.
+    if (selected_signal_ && static_cast<std::size_t>(selected_) < data.clients.size()) {
+        set_text_if_changed(selected_signal_, selected_signal_shown_,
+                            home::signal_text(data.clients[static_cast<std::size_t>(selected_)].signal_dbm));
+    }
 }
 
 } // namespace

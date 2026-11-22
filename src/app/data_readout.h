@@ -52,6 +52,10 @@ namespace app {
 //   battery_full_mah=, battery_empty_min=, battery_full_min=,
 //   cpu_temp_tenths=, memory_free_mb=, memory_total_mb=, uptime_s=
 //     (one line each, in this order)
+// then the connected clients:
+//   client=<hardware address> address=<IPv4> signal_dbm=<n> rate_kbps=<n>
+//     joined_s=<seconds on the access point> new=<yes|no> name=<host name,
+//     may hold spaces> (one line per client, in the page's order)
 // A value that is not known (an empty text, an unknown speed or signal, a
 // negative rate) prints `unknown`. The first five lines came first and
 // stay first. With the live source on the real system (an empty

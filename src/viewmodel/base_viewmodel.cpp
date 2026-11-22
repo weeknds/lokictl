@@ -35,6 +35,7 @@ BaseViewModel::BaseViewModel()
       settings_theme_selection_subject_(kSettingsThemeFollowsActive),
       screen_dimming_subject_(true),
       status_scroll_subject_(0),
+      devices_selection_subject_(0),
       modes_selection_subject_(kModesFollowsActive),
       mode_request_subject_(0),
       hotspot_subject_(0),
@@ -170,6 +171,26 @@ void BaseViewModel::set_status_scroll(int32_t row) {
 bool BaseViewModel::open_status() {
     set_status_scroll(0);
     return open_page(model::AppPage::Status);
+}
+
+lv_subject_t* BaseViewModel::devices_selection_subject() {
+    return devices_selection_subject_.native();
+}
+
+int32_t BaseViewModel::devices_selection() const {
+    return devices_selection_subject_.value();
+}
+
+void BaseViewModel::set_devices_selection(int32_t index) {
+    const int32_t next = std::max<int32_t>(index, 0);
+    if (next != devices_selection_subject_.value()) {
+        devices_selection_subject_.set(next);
+    }
+}
+
+bool BaseViewModel::open_devices() {
+    set_devices_selection(home_selection());
+    return open_page(model::AppPage::Devices);
 }
 
 lv_subject_t* BaseViewModel::modes_selection_subject() {

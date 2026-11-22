@@ -125,6 +125,21 @@ std::string join_parts(std::initializer_list<std::string> parts);
 // from 0: (1, 4) -> "2/4". With no clients it is "0/0".
 std::string count_text(int32_t index, int32_t count);
 
+// A connected device's name as the pages show it: its host name, or
+// "unnamed" when it sent none (or it is not known yet).
+std::string client_name_text(const model::HomeClient& client);
+
+// How long a device has been on the access point, in words: "joined just
+// now" under a minute, "joined 12 min ago", "joined 1 h 5 min ago" (the
+// minutes left out when 0), "joined 3 d 4 h ago" from a day on (the hours
+// left out when 0). A time that is not known (negative, such as
+// model::kConnectedUnknown) gives "--".
+std::string joined_text(int32_t seconds);
+
+// A device's current traffic in words: 2450 -> "2.5 Mbit/s" (see
+// rate_text()). Not known gives "--".
+std::string client_rate_text(int32_t kbps);
+
 // `text` with the ASCII letters a-z in capitals; every other byte, including
 // each byte of a multi-byte UTF-8 character, is kept as it is.
 std::string upper_text(std::string_view text);
