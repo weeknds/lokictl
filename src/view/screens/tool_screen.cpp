@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdio>
 
 namespace screen {
 namespace {
@@ -42,8 +43,18 @@ constexpr int32_t kThumbX         = kTrackX - 1;
 constexpr int32_t kThumbWidth     = 3;
 constexpr int32_t kThumbMinHeight = 8;
 constexpr int32_t kHopRight       = kThumbX - 4;
-// The Ports page's host detail: how far in a note starts.
+// The Ports page's host detail: how far in a note starts, and the space
+// before a line's muted part.
 constexpr int32_t kNoteIndent     = 12;
+constexpr const char* kAsideGap   = "  ";
+// A finding's view: the QR code at the top right (a version 4 code, 33
+// modules, two pixels each, in a quiet zone of two modules), the lines
+// beside and under it at most this far apart.
+constexpr int32_t kFindingCodeSize = 74;
+constexpr int32_t kFindingPitch    = 15;
+constexpr int32_t kFindingGap      = 8;
+// The lines beside the code; the others are under it, the whole width.
+constexpr std::size_t kFindingBesideCode = 5;
 
 // Three spaces between addresses on one line.
 constexpr const char* kAddressGap = "   ";
@@ -124,9 +135,72 @@ std::vector<std::string> pack_lines(const std::vector<std::string>& items,
     return lines;
 }
 
+// "#rrggbb " and "#" around `text`, for a label with recoloring on.
+std::string colored(const std::string& text, lv_color_t color) {
+    char head[10];
+    std::snprintf(head, sizeof(head), "#%02x%02x%02x ", color.red, color.green, color.blue);
+    return head + text + "#";
+}
+
+// Packs the open ports with their tags as pack_lines() packs addresses,
+// measuring "22 ssh Old" and giving "22 ssh #rrggbb Old#" in the tag's
+// colour. When they do not all fit, the tagged ports come first, so none
+// of them hides behind "+2".
+std::vector<std::string> pack_port_lines(const std::vector<tools::PortItem>& items,
+                                         const view::Theme& theme,
+                                         const lv_font_t* font,
+                                         int32_t width,
+                                         std::size_t max_lines);
+
 // Lowercase letters, digits and the dot: the only characters a target has.
 bool target_character(uint32_t key) {
     return (key >= 'a' && key <= 'z') || (key >= '0' && key <= '9') || key == '.';
+}
+
+std::vector<std::string> pack_port_lines(const std::vector<tools::PortItem>& items,
+                                         const view::Theme& theme,
+                                         const lv_font_t* font,
+                                         int32_t width,
+                                         std::size_t max_lines) {
+    const auto pack = [&](const std::vector<const tools::PortItem*>& order, bool& all) {
+        std::vector<std::string> lines;
+        std::size_t next = 0;
+        const auto plain = [](const tools::PortItem& item) {
+            return item.tag.text.empty() ? item.text : item.text + " " + item.tag.text;
+        };
+        const auto marked = [&theme](const tools::PortItem& item) {
+            return item.tag.text.empty() ? item.text
+                                         : item.text + " " + colored(item.tag.text, tone_color(theme, item.tag.tone));
+        };
+        while (next < order.size() && lines.size() < max_lines) {
+            std::string measured = plain(*order[next]);
+            std::string line = marked(*order[next]);
+            ++next;
+            while (next < order.size() && text_width(measured + kAddressGap + plain(*order[next]), font) <= width) {
+                measured += kAddressGap + plain(*order[next]);
+                line += kAddressGap + marked(*order[next]);
+                ++next;
+            }
+            lines.push_back(line);
+        }
+        all = next >= order.size();
+        if (!all && !lines.empty()) {
+            lines.back() += "  +" + std::to_string(order.size() - next);
+        }
+        return lines;
+    };
+    std::vector<const tools::PortItem*> order;
+    for (const tools::PortItem& item : items) {
+        order.push_back(&item);
+    }
+    bool all = true;
+    std::vector<std::string> lines = pack(order, all);
+    if (!all) {
+        std::stable_partition(order.begin(), order.end(),
+                              [](const tools::PortItem* item) { return !item->tag.text.empty(); });
+        lines = pack(order, all);
+    }
+    return lines;
 }
 
 } // namespace
@@ -159,11 +233,11 @@ view::widgets::HelpContent ToolScreen::help_content(model::ToolKind kind) {
     if (kind == model::ToolKind::Ports) {
         return {"PORTS",
                 {
-                    {"ESC / 4", "Back (a scan goes on)"},
-                    {"Z / C", "Previous / next target"},
-                    {"5", "Type a target (ENTER keeps)"},
-                    {"6 twice", "Scan 50 ports, sends"},
-                    {"7", "Host details after a scan"},
+                    {"6 twice", "Scan; 7 host details"},
+                    {"Attacked", "Attackers use its hole"},
+                    {"3 holes", "Known security holes"},
+                    {"Old", "No more security fixes"},
+                    {"Check", "May be fixed already"},
                 }};
     }
     if (kind == model::ToolKind::Trace) {
@@ -187,12 +261,24 @@ view::widgets::HelpContent ToolScreen::help_content(model::ToolKind kind) {
 }
 
 view::widgets::HelpContent ToolScreen::help() const {
+    if (finding_open()) {
+        return {"HOLE",
+                {
+                    {"ESC / 4", "Back to the host"},
+                    {"Z / C", "Previous / next"},
+                    {"QR code", "Read more on a phone"},
+                    {"Score", "0 to 10, 10 is worst"},
+                    {"Version", "Checked by number only"},
+                }};
+    }
     if (detail_open()) {
         return {"HOST",
                 {
                     {"ESC / 4", "Back to the scan"},
                     {"F / X", "Scroll"},
-                    {"Notes", "Under risky ports"},
+                    {"6 / ENTER", "One finding at a time"},
+                    {"CVE", "A hole's official number"},
+                    {"Version", "Checked by number only"},
                 }};
     }
     return help_content(kind_);
@@ -401,7 +487,42 @@ void ToolScreen::open_detail() {
 }
 
 void ToolScreen::close_detail() {
+    view_model().set_ports_finding(viewmodel::BaseViewModel::kPortsFindingClosed);
     view_model().set_ports_detail(viewmodel::BaseViewModel::kPortsDetailClosed);
+}
+
+bool ToolScreen::finding_open() const {
+    return detail_open() && view_model().ports_finding() != viewmodel::BaseViewModel::kPortsFindingClosed &&
+           !view_model().tools().ports.findings.empty();
+}
+
+void ToolScreen::open_finding() {
+    if (!detail_open() || view_model().tools().ports.findings.empty()) {
+        return;
+    }
+    // The first finding at or below the top line shown, else the first.
+    int32_t index = 0;
+    for (std::size_t line = static_cast<std::size_t>(std::max<int32_t>(detail_first_, 0));
+         line < detail_findings_.size(); ++line) {
+        if (detail_findings_[line] >= 0) {
+            index = detail_findings_[line];
+            break;
+        }
+    }
+    view_model().set_ports_finding(index);
+}
+
+void ToolScreen::close_finding() {
+    view_model().set_ports_finding(viewmodel::BaseViewModel::kPortsFindingClosed);
+}
+
+void ToolScreen::step_finding(int32_t delta) {
+    const auto count = static_cast<int32_t>(view_model().tools().ports.findings.size());
+    if (!finding_open() || count == 0) {
+        return;
+    }
+    const int32_t index = std::clamp<int32_t>(view_model().ports_finding(), 0, count - 1);
+    view_model().set_ports_finding((index + delta + count) % count);
 }
 
 void ToolScreen::scroll_detail(int32_t delta) {
@@ -414,6 +535,10 @@ void ToolScreen::scroll_detail(int32_t delta) {
 }
 
 void ToolScreen::back_key() {
+    if (finding_open()) {
+        close_finding();
+        return;
+    }
     if (detail_open()) {
         close_detail();
         return;
@@ -444,11 +569,25 @@ bool ToolScreen::on_key(uint32_t key) {
     if (view_model().tool_typing()) {
         return type_key(key);
     }
+    if (finding_open()) {
+        if (key == LV_KEY_UP || key == LV_KEY_LEFT) {
+            step_finding(-1);
+        } else if (key == LV_KEY_DOWN || key == LV_KEY_RIGHT) {
+            step_finding(1);
+        } else if (key == LV_KEY_ENTER) {
+            close_finding();
+        }
+        return true;  // the pages under it take no key
+    }
     if (detail_open()) {
         if (key == LV_KEY_UP || key == LV_KEY_DOWN) {
             scroll_detail(key == LV_KEY_UP ? -1 : 1);
         } else if (key == LV_KEY_ENTER) {
-            close_detail();
+            if (view_model().tools().ports.findings.empty()) {
+                close_detail();
+            } else {
+                open_finding();
+            }
         }
         return true;  // the page under it takes no key
     }
@@ -537,6 +676,10 @@ bool ToolScreen::type_key(uint32_t key) {
 
 // A short ESC cancels typing; otherwise the app goes back, and a run goes on.
 bool ToolScreen::on_back() {
+    if (finding_open()) {
+        close_finding();
+        return true;
+    }
     if (detail_open()) {
         close_detail();
         return true;
@@ -607,6 +750,11 @@ void ToolScreen::build_content(lv_obj_t* content) {
     build_typing_panel(content);
     if (kind_ == model::ToolKind::Ports) {
         build_detail_panel(content);
+        build_finding_panel(content);
+        // The open ports' tags are coloured inline.
+        for (lv_obj_t* line : lines_) {
+            lv_label_set_recolor(line, true);
+        }
     }
 
     // LVGL calls each observer once right away; the first call draws it all.
@@ -622,6 +770,7 @@ void ToolScreen::build_content(lv_obj_t* content) {
     }
     if (kind_ == model::ToolKind::Ports) {
         lv_subject_add_observer_obj(view_model().ports_detail_subject(), observer_cb, content, this);
+        lv_subject_add_observer_obj(view_model().ports_finding_subject(), observer_cb, content, this);
     }
     // Last, so a start the command bar asked for finds the page built.
     lv_subject_add_observer_obj(view_model().tool_start_subject(), start_cb, content, this);
@@ -845,13 +994,45 @@ void ToolScreen::build_detail_panel(lv_obj_t* content) {
     lv_obj_add_flag(detail_thumb_, LV_OBJ_FLAG_HIDDEN);
 }
 
+// One finding: its lines at the left and the QR code of its link at the
+// top right; the last lines run under the code, the whole width.
+void ToolScreen::build_finding_panel(lv_obj_t* content) {
+    const auto& theme = this->theme();
+    const lv_font_t* small = theme.font(view::FontRole::Small);
+    finding_panel_ = plain_object(content);
+    lv_obj_set_size(finding_panel_, view::kScreenWidth, kContentHeight);
+    lv_obj_add_flag(finding_panel_, LV_OBJ_FLAG_HIDDEN);
+
+    finding_code_ = lv_qrcode_create(finding_panel_);
+    lv_qrcode_set_size(finding_code_, kFindingCodeSize);
+    lv_qrcode_set_dark_color(finding_code_, lv_color_black());
+    lv_qrcode_set_light_color(finding_code_, lv_color_white());
+    lv_qrcode_set_quiet_zone(finding_code_, true);
+    lv_obj_set_pos(finding_code_, kRight - kFindingCodeSize, kTargetTop);
+
+    const int32_t pitch = std::min<int32_t>(lv_font_get_line_height(small), kFindingPitch);
+    const int32_t beside = kRight - kFindingCodeSize - kFindingGap - kSideMargin;
+    for (std::size_t line = 0; line < kFindingLines; ++line) {
+        lv_obj_t* label = plain_label(finding_panel_, "");
+        view::style::text(label, theme, view::FontRole::Small);
+        lv_label_set_long_mode(label, LV_LABEL_LONG_DOT);
+        lv_obj_set_size(label, line < kFindingBesideCode ? beside : kWidth, lv_font_get_line_height(small));
+        lv_obj_set_pos(label, kSideMargin, kTargetTop + static_cast<int32_t>(line) * pitch);
+        finding_lines_[line] = label;
+    }
+}
+
 void ToolScreen::refresh_keys() {
     // 0: idle; 1: this tool runs (Edit off, Stop); 2: the other tool runs
     // (Run off); 3: typing (all off, keys 4-8 type digits).
-    // 4: the host detail is open (only Back). Ports: + 8 when Host may open.
+    // 4: the host detail is open (Back, and More with findings); 5: a
+    // finding is shown (Back, Prev, Next). Ports: + 8 when Host may open,
+    // + 16 with findings (More) or more than one (Prev, Next).
     int32_t keys = 0;
     if (view_model().tool_typing()) {
         keys = 3;
+    } else if (finding_open()) {
+        keys = 5;
     } else if (detail_open()) {
         keys = 4;
     } else if (this_running()) {
@@ -860,7 +1041,9 @@ void ToolScreen::refresh_keys() {
         keys = 2;
     }
     const bool host = kind_ == model::ToolKind::Ports && keys == 0 && detail_allowed();
-    const int32_t shown = keys + (host ? 8 : 0);
+    const std::size_t findings = view_model().tools().ports.findings.size();
+    const bool more = (keys == 4 && findings > 0) || (keys == 5 && findings > 1);
+    const int32_t shown = keys + (host ? 8 : 0) + (more ? 16 : 0);
     if (shown == shown_keys_) {
         return;
     }
@@ -870,9 +1053,17 @@ void ToolScreen::refresh_keys() {
         return;
     }
     bar->set_key(0, {"Back", [this] { back_key(); }, false, keys != 3});
-    bar->set_key(1, {"Edit", [this] { start_edit(); }, false, keys == 0 || keys == 2});
-    const char* run = kind_ == model::ToolKind::Ports ? "Scan" : "Run";
-    bar->set_key(2, {keys == 1 ? "Stop" : run, [this] { run_or_stop(); }, true, keys == 0 || keys == 1});
+    if (keys == 5) {
+        bar->set_key(1, {"Prev", [this] { step_finding(-1); }, false, more});
+        bar->set_key(2, {"Next", [this] { step_finding(1); }, true, more});
+    } else if (keys == 4) {
+        bar->set_key(1, {"Edit", [this] { start_edit(); }, false, false});
+        bar->set_key(2, {"More", [this] { open_finding(); }, true, more});
+    } else {
+        bar->set_key(1, {"Edit", [this] { start_edit(); }, false, keys == 0 || keys == 2});
+        const char* run = kind_ == model::ToolKind::Ports ? "Scan" : "Run";
+        bar->set_key(2, {keys == 1 ? "Stop" : run, [this] { run_or_stop(); }, true, keys == 0 || keys == 1});
+    }
     if (kind_ == model::ToolKind::Ports) {
         bar->set_key(3, {"Host", [this] { open_detail(); }, false, host});
     }
@@ -1060,7 +1251,7 @@ void ToolScreen::refresh_ports() {
         lines.push_back("Results show here");
         tone = tools::kToneMuted;
     } else {
-        lines = pack_lines(tools::open_port_items(run), theme.font(view::FontRole::Mono), kWidth, kAddressLines);
+        lines = pack_port_lines(tools::port_items(run), theme, theme.font(view::FontRole::Mono), kWidth, kAddressLines);
         if (lines.empty() && run.state != model::ToolState::Failed) {
             lines.push_back(run.state == model::ToolState::Running ? "None open yet" : "No open ports");
             tone = tools::kToneMuted;
@@ -1246,22 +1437,73 @@ void ToolScreen::refresh_detail() {
         column = std::max(column, text_width(line.left, small));
     }
     column = kSideMargin + std::min(column, kWidth / 2) + kStatusGap;
-    const auto count = static_cast<int32_t>(lines.size());
+
+    // Each line as it fits, measured against the narrower width a scroll
+    // mark leaves: its text, else a shorter one; the muted part only when
+    // it fits too; an optional line that does not fit is left out.
+    struct Drawn {
+        std::string left;
+        std::string text;
+        std::string aside;
+        int32_t tone;
+        int32_t finding;
+    };
+    std::vector<Drawn> drawn;
+    drawn.reserve(lines.size());
+    for (const tools::DetailLine& line : lines) {
+        const int32_t room = kHopRight - (line.left.empty() ? kSideMargin + kNoteIndent : column);
+        std::string text = line.right.text;
+        std::string aside;
+        if (text_width(text, small) <= room) {
+            if (!line.aside.empty() && text_width(text + kAsideGap + line.aside, small) <= room) {
+                aside = line.aside;
+            }
+        } else {
+            bool fits = false;
+            for (const std::string& shorter : line.shorter) {
+                text = shorter;
+                if (text_width(text, small) <= room) {
+                    fits = true;
+                    break;
+                }
+            }
+            if (!fits && line.optional) {
+                continue;
+            }
+        }
+        drawn.push_back({line.left, text, aside, line.right.tone, line.finding});
+    }
+    detail_findings_.clear();
+    for (const Drawn& line : drawn) {
+        detail_findings_.push_back(line.finding);
+    }
+
+    const auto count = static_cast<int32_t>(drawn.size());
     const int32_t last_top = std::max<int32_t>(count - visible_detail_rows_, 0);
     detail_last_top_ = last_top;
     const int32_t first = std::clamp<int32_t>(view_model().ports_detail(), 0, last_top);
+    detail_first_ = first;
     const bool scrolls = count > visible_detail_rows_;
     const int32_t right_end = scrolls ? kHopRight : kRight;
     const int32_t row_height = lv_font_get_line_height(small);
     for (int32_t index = 0; index < visible_detail_rows_; ++index) {
         DetailRow& row = detail_rows_[static_cast<std::size_t>(index)];
-        tools::DetailLine line;
+        Drawn line{"", "", "", tools::kToneText, -1};
         if (first + index < count) {
-            line = lines[static_cast<std::size_t>(first + index)];
+            line = drawn[static_cast<std::size_t>(first + index)];
         }
         set_text_if_changed(row.left, row.left_shown, line.left);
-        set_text_if_changed(row.right, row.right_shown, line.right.text);
-        set_tone_if_changed(row.right, row.right_tone, line.right.tone, theme);
+        // A muted part after the text needs the label's recolouring; any
+        // other text is shown as it is ("#" and all).
+        const bool recolor = !line.aside.empty();
+        if (recolor != row.recolor) {
+            lv_label_set_recolor(row.right, recolor);
+            row.recolor = recolor;
+            row.right_shown.clear();
+        }
+        set_text_if_changed(row.right, row.right_shown,
+                            recolor ? line.text + kAsideGap + colored(line.aside, theme.colors.muted) : line.text);
+        set_tone_if_changed(row.right, row.right_tone, line.tone, theme);
         if (column != detail_column_) {
             lv_obj_set_size(row.left, column - kStatusGap - kSideMargin, row_height);
         }
@@ -1292,20 +1534,58 @@ void ToolScreen::refresh_detail() {
     }
 }
 
+void ToolScreen::refresh_finding() {
+    const auto& theme = this->theme();
+    const model::PortRun& run = view_model().tools().ports;
+    const auto index = static_cast<std::size_t>(std::max<int32_t>(view_model().ports_finding(), 0));
+    const tools::FindingView view = tools::finding_view(run, index);
+    std::array<tools::ToneText, kFindingLines> texts{};
+    texts[0] = {view.place, tools::kToneMuted};
+    texts[1] = {view.product, tools::kToneText};
+    texts[2] = view.severity;
+    for (std::size_t sentence = 0; sentence < view.sentences.size() && sentence < 2; ++sentence) {
+        texts[3 + sentence] = view.sentences[sentence];
+    }
+    texts[5] = {view.official, tools::kToneMuted};
+    texts[6] = {view.link_text, tools::kToneAccent};
+    for (std::size_t line = 0; line < kFindingLines; ++line) {
+        set_text_if_changed(finding_lines_[line], finding_shown_[line], texts[line].text);
+        if (texts[line].tone != finding_tones_[line]) {
+            // The link in the theme's link colour, the rest by tone.
+            lv_obj_set_style_text_color(finding_lines_[line],
+                                        line == 6 ? theme.colors.accent2 : tone_color(theme, texts[line].tone), 0);
+            finding_tones_[line] = texts[line].tone;
+        }
+    }
+    if (view.link != finding_code_shown_) {
+        finding_code_shown_ = view.link;
+        const bool shown = !view.link.empty() &&
+                           lv_qrcode_update(finding_code_, view.link.data(), static_cast<uint32_t>(view.link.size())) ==
+                               LV_RESULT_OK;
+        set_hidden(finding_code_, !shown);
+    }
+}
+
 void ToolScreen::refresh() {
     const bool typing = view_model().tool_typing();
     // The host detail goes when its scan is no longer the one shown (the
     // target changed, a scan started) or the page types. The nested
     // refresh this causes draws the page; this one then changes nothing.
     if (detail_open() && (typing || !detail_allowed())) {
-        view_model().set_ports_detail(viewmodel::BaseViewModel::kPortsDetailClosed);
+        close_detail();
     }
-    const int32_t panel = typing ? 1 : detail_open() ? 2 : 0;
+    if (!finding_open() && view_model().ports_finding() != viewmodel::BaseViewModel::kPortsFindingClosed) {
+        close_finding();
+    }
+    const int32_t panel = typing ? 1 : finding_open() ? 3 : detail_open() ? 2 : 0;
     if (panel != shown_panel_) {
         set_hidden(main_panel_, panel != 0);
         set_hidden(typing_panel_, panel != 1);
         if (detail_panel_) {
             set_hidden(detail_panel_, panel != 2);
+        }
+        if (finding_panel_) {
+            set_hidden(finding_panel_, panel != 3);
         }
         shown_panel_ = panel;
     }
@@ -1326,6 +1606,10 @@ void ToolScreen::refresh() {
     }
     if (panel == 2) {
         refresh_detail();
+        return;
+    }
+    if (panel == 3) {
+        refresh_finding();
         return;
     }
     refresh_target();

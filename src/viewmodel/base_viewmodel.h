@@ -320,6 +320,15 @@ public:
     int32_t ports_detail() const;
     // Stores `row`; nothing is written when it stays the same.
     void set_ports_detail(int32_t row);
+    // Over the host detail, one finding of the check against the list of
+    // known holes at a time: kPortsFindingClosed (the start value) while
+    // none is shown, else its place in PortRun::findings (the page clamps
+    // it). open_tool() closes it.
+    static constexpr int32_t kPortsFindingClosed = -1;
+    lv_subject_t* ports_finding_subject();
+    int32_t ports_finding() const;
+    // Stores `index`; nothing is written when it stays the same.
+    void set_ports_finding(int32_t index);
 
     // The Wi-Fi page.
     // Sets the first row shown back to 0, then opens the page (see
@@ -468,6 +477,7 @@ private:
     reactive::IntSubject tools_subject_;
     reactive::IntSubject trace_scroll_subject_;
     reactive::IntSubject ports_detail_subject_;
+    reactive::IntSubject ports_finding_subject_;
     reactive::IntSubject wifi_scroll_subject_;
     reactive::IntSubject wifi_scan_request_subject_;
     reactive::IntSubject discover_scroll_subject_;

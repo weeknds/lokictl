@@ -46,7 +46,18 @@ bool port_scan_allowed(uint32_t target, const std::vector<OwnNetwork>& networks,
 // say what they are (made-up greetings, a little after they open; a TLS
 // port says "TLS"), the others keep the run going for
 // model::kBannerReadMs. `sent` is the number of attempts made by then,
-// plus one request for each open web port; `done` says the run has ended.
+// plus one request for each open web port and one version question for an
+// open port 53; `done` says the run has ended.
 model::PortRun pretend_port_scan(uint32_t elapsed_ms, const std::string& target, uint32_t& sent, bool& done);
+
+// Checks what the open ports of the finished scan `run` said against the
+// list of known security holes at `list_path` (model::check_services()),
+// read line by line and closed again, and notes the result in `run`. A
+// list that cannot be read leaves run.list_date empty.
+void check_port_services(model::PortRun& run, const std::string& list_path);
+
+// The date of the list at `list_path` (its first lines only); empty when
+// it cannot be read.
+std::string read_list_date(const std::string& list_path);
 
 } // namespace platform

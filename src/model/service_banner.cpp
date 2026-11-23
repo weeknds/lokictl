@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <array>
+#include <string_view>
 
 namespace model {
 namespace {
@@ -26,6 +27,7 @@ constexpr std::size_t kTextMin = 3;
 constexpr std::array<uint16_t, 15> kHttpPorts{80,   631,  1900, 3000, 5000,  7000,  7547, 8000,
                                               8008, 8080, 8123, 8888, 10000, 32400, 49152};
 constexpr std::array<uint16_t, 7> kTlsPorts{443, 465, 853, 993, 995, 8443, 8883};
+constexpr uint16_t kDnsPort = 53;
 
 bool printable(uint8_t byte) {
     return byte >= 0x20 && byte <= 0x7E;
@@ -44,8 +46,8 @@ std::string trimmed(const std::string& text) {
 }
 
 std::string capped(std::string text) {
-    if (text.size() > kBannerShownMax) {
-        text.resize(kBannerShownMax);
+    if (text.size() > kBannerKeptMax) {
+        text.resize(kBannerKeptMax);
         text = trimmed(text);
     }
     return text;
@@ -151,11 +153,11 @@ bool http_answer(const uint8_t* data, std::size_t size, bool& maybe) {
     return size >= kStartSize;
 }
 
-// The value of the "Server:" line of an HTTP answer, printable characters
-// only; false without one. `whole` says the line ended within the bytes.
-bool server_line(const uint8_t* data, std::size_t size, std::string& value, bool& whole) {
-    static constexpr char kName[] = "server:";
-    constexpr std::size_t kNameSize = sizeof(kName) - 1;
+// The value of the header line `name` ("server:", lowercase with its
+// colon) of an HTTP answer, printable characters only; false without one.
+// `whole` says the line ended within the bytes.
+bool header_line(const uint8_t* data, std::size_t size, std::string_view name, std::string& value, bool& whole) {
+    const std::size_t kNameSize = name.size();
     std::size_t start = 0;
     while (start < size) {
         std::size_t end = start;
@@ -165,7 +167,7 @@ bool server_line(const uint8_t* data, std::size_t size, std::string& value, bool
         if (end - start >= kNameSize) {
             bool match = true;
             for (std::size_t index = 0; index < kNameSize && match; ++index) {
-                match = lower(data[start + index]) == kName[index];
+                match = lower(data[start + index]) == name[index];
             }
             if (match) {
                 std::string text;
@@ -197,6 +199,9 @@ bool headers_end(const uint8_t* data, std::size_t size) {
 } // namespace
 
 BannerProbe banner_probe(uint16_t port) {
+    if (port == kDnsPort) {
+        return BannerProbe::Dns;
+    }
     if (std::find(kTlsPorts.begin(), kTlsPorts.end(), port) != kTlsPorts.end()) {
         return BannerProbe::Tls;
     }
@@ -219,15 +224,21 @@ std::string banner_text(BannerProbe probe, const uint8_t* data, std::size_t size
     if (probe == BannerProbe::Tls) {
         return "TLS";
     }
-    if (data == nullptr || size == 0) {
+    if (data == nullptr || size == 0 || probe == BannerProbe::Dns) {
         return {};
     }
     bool whole = false;
     if (probe == BannerProbe::Http) {
         bool maybe = false;
         if (http_answer(data, size, maybe)) {
-            std::string value;
-            return server_line(data, size, value, whole) ? capped(value) : std::string();
+            std::string server;
+            std::string powered;
+            header_line(data, size, "server:", server, whole);
+            header_line(data, size, "x-powered-by:", powered, whole);
+            if (!server.empty() && !powered.empty()) {
+                server += "; ";
+            }
+            return capped(server + powered);
         }
         if (maybe) {
             return {};
@@ -244,18 +255,34 @@ bool banner_complete(BannerProbe probe, const uint8_t* data, std::size_t size) {
     if (data == nullptr || size == 0) {
         return false;
     }
+    if (probe == BannerProbe::Dns) {
+        return size >= 2 && size >= 2 + ((static_cast<std::size_t>(data[0]) << 8) | data[1]);
+    }
     bool whole = false;
     if (probe == BannerProbe::Http) {
         bool maybe = false;
         if (http_answer(data, size, maybe)) {
-            std::string value;
-            return (server_line(data, size, value, whole) && whole) || headers_end(data, size);
+            return headers_end(data, size);
         }
         if (maybe) {
             return false;
         }
     }
     return !listen_text(data, size, whole).empty() && whole;
+}
+
+std::string dns_version_text(const std::string& answer) {
+    std::string text;
+    for (const char character : answer) {
+        if (printable(static_cast<uint8_t>(character))) {
+            text.push_back(character);
+        }
+    }
+    text = trimmed(text);
+    if (!text.empty() && text[0] >= '0' && text[0] <= '9') {
+        text = "BIND " + text;
+    }
+    return capped(text);
 }
 
 } // namespace model

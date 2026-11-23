@@ -65,6 +65,8 @@ void ToolController::start() {
     if (!poll_timer_) {
         LOG_WARN("tools: no timer to fetch the results; the tools stay off");
     }
+    // The first take at once, so the pages built next find the list's date.
+    poll();
 }
 
 void ToolController::stop() {

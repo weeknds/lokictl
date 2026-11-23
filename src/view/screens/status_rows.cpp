@@ -291,7 +291,7 @@ std::string uptime_long_text(int32_t seconds) {
            std::to_string(minutes % 60) + " min";
 }
 
-std::vector<StatusRow> status_rows(const model::HomeData& data) {
+std::vector<StatusRow> status_rows(const model::HomeData& data, const std::string& list_date) {
     const model::StatusDetails& details = data.details;
     std::vector<StatusRow> rows;
     rows.reserve(40);
@@ -332,6 +332,14 @@ std::vector<StatusRow> status_rows(const model::HomeData& data) {
     add_row(rows, "processor", temperature_text(details.cpu_temp_tenths));
     add_row(rows, "memory", memory_text(details));
     add_row(rows, "uptime", uptime_long_text(details.uptime_seconds));
+
+    // The list of known security holes, and the notice NVD asks for.
+    add_heading(rows, "holes list", list_date.empty() ? "missing" : list_date,
+                list_date.empty() ? NoteTone::Quiet : NoteTone::Plain);
+    add_row(rows, "from", "NVD and CISA");
+    add_row(rows, "notice", "This product uses the NVD");
+    add_row(rows, "", "API but is not endorsed or");
+    add_row(rows, "", "certified by the NVD.");
     return rows;
 }
 

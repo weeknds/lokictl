@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include "vuln_list.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -262,7 +264,7 @@ const char* port_plain(uint16_t port);
 // What one open port said about itself (service_banner.h).
 struct PortBanner {
     uint16_t port{0};
-    std::string text;  // "OpenSSH_9.6p1 Debian-3", "lighttpd/1.4.76", "TLS"; at most kBannerShownMax printable characters
+    std::string text;  // "OpenSSH_9.6p1 Debian-3", "lighttpd/1.4.76", "TLS"; at most kBannerKeptMax printable characters
 };
 
 bool operator==(const PortBanner& left, const PortBanner& right);
@@ -282,6 +284,13 @@ struct PortRun {
     int32_t silent{0};           // ports that did not answer in kPortTimeoutMs
     std::vector<uint16_t> open;  // ports that took the connection, ascending
     std::vector<PortBanner> banners;  // open ports that said what they are, ascending; at most one each
+    // Once the scan is done, what it said is checked against the list of
+    // known security holes and outdated versions (vuln_list.h): the list's
+    // date (empty while not checked, or when the list could not be read),
+    // the ports with findings and the findings themselves.
+    std::string list_date;
+    std::vector<PortVerdict> verdicts;
+    std::vector<ServiceFinding> findings;
 };
 
 bool operator==(const PortRun& left, const PortRun& right);
@@ -355,6 +364,9 @@ struct ToolsData {
     SpeedRun speed;
     ToolKind latest{ToolKind::Listen};  // Listen or Probe: the Discover run started last
     uint64_t sent{0};
+    // The date of the installed list of known security holes
+    // (vuln_list.h), "2026-11-23"; empty when the app finds no list.
+    std::string list_date;
 };
 
 bool operator==(const ToolsData& left, const ToolsData& right);

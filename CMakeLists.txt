@@ -797,5 +797,20 @@ target_link_libraries(${PROJECT_NAME}
         ${PROJECT_NAME}_viewmodel
 )
 
+# Checks of the service and version reading and of the list of known
+# security holes (tests/vuln_checks.cpp), on the Mac only:
+# build/darwin-arm64/Debug/lokictl_tests, or ctest.
+if(USE_DESKTOP)
+    add_executable(${PROJECT_NAME}_tests tests/vuln_checks.cpp src/platform/dns_message.cpp)
+    target_include_directories(${PROJECT_NAME}_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/platform)
+    target_link_libraries(${PROJECT_NAME}_tests PRIVATE ${PROJECT_NAME}_model)
+    target_compile_definitions(${PROJECT_NAME}_tests
+        PRIVATE
+            VULN_LIST_PATH="${CMAKE_CURRENT_SOURCE_DIR}/assets/data/vulndb.tsv"
+    )
+    enable_testing()
+    add_test(NAME vuln_checks COMMAND ${PROJECT_NAME}_tests)
+endif()
+
 # Package deb
 include(cmake/cm0-package.cmake)

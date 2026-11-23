@@ -569,7 +569,10 @@ same target row, typing and status line as the Ping page. It checks one
 device for open TCP ports from a fixed list of 50 common ones (see
 [data.md](data.md#port-scan)) and shows the open ones with their services,
 several to a line (`22 ssh   80 http   443 https`, `+2` beyond three
-lines), then `3 open · 45 closed · 2 no answer`. The status line says
+lines), then `3 open · 45 closed · 2 no answer`. After the check against
+the list of known holes ([checks.md](checks.md)) a port can carry a tag in
+its colour: `Attacked` (error), `3 holes`, `Old` or `Check` (warning).
+When not all ports fit, the tagged ones come first. The status line says
 `Scanning 20 of 50`, `Scanned 50, 3 open`, `Scan stopped at 20 of 50` or
 why it failed (`Not on the Cardputer's networks`). A finished scan shows
 only while its target is the selected one; another target shows the page
@@ -592,20 +595,39 @@ refuses anything else; names are never looked up.
 | `4` BACK or a short ESC | goes back; a scan goes on |
 
 The confirmation lives in the page only, so nothing remembers it. The help
-panel shows the badge `PORTS` and five rows, one of them `6 twice`.
+panel shows the badge `PORTS` and five rows: `6 twice` (with `7`) and the
+four tags `Attacked`, `3 holes`, `Old` and `Check`. The host detail's
+panel (`HOST`) and a finding's (`HOLE`) also say that only the version
+number is checked.
 
 **Host detail.** It takes the page's place: the target's caption and
 address with `3 open` at the right, then two columns: `name` and `MAC` when
 the Discover list or the hotspot knows them, and each open port with its
 service (`22 ssh`), what it is in everyday words (`model::port_plain()`)
-and what the port said about itself (`remote login · OpenSSH_9.9p2
-Debian-1`, `web page · lighttpd/1.4.76`, `web page · encrypted (TLS)`).
+and the software it named, in short when known (`remote login · OpenSSH
+10.0`, `web page · lighttpd 1.4.76`, `web page · encrypted (TLS)`); the
+whole text follows muted on its own line when it says more and fits
+(`OpenSSH_10.0p2 Debian-7`). A line too long for its place takes a shorter
+form (the software alone, then the plain words), so no word is ever cut.
 Under a well-known
 risky port a one-line note follows, slightly indented, from
 `model::service_rules()` (`src/model/service_rules.*`): muted for info, the
-warning colour for a warning, the error colour for a risk. `f`/`x` scroll
-it (a thin scroll mark shows when it does not fit); Enter, `4` BACK or a
-short ESC close it. It closes by itself when the target changes or a scan
+warning colour for a warning, the error colour for a risk. Then what the
+check found: `Debian may have fixed these` for a vendor's build, one line
+per hole (`Hole attackers use`, `Very serious hole`, `Serious hole`,
+`Known hole`) with its CVE number muted beside it when it fits, `+5 more
+holes`, `Old: no more security fixes`; the last line is `Holes list from
+<date>` (or `No holes list: versions not checked`). `f`/`x` scroll it (a
+thin scroll mark shows when it does not fit); `4` BACK or a short ESC
+close it, and so does Enter when nothing was found. With findings, `6`
+MORE or Enter opens them one at a time (help badge `HOLE`): `1 of 12 ·
+port 22`, the product, `Serious hole, 8.1 of 10`, up to two short
+sentences (`Attackers are using it`, `Debian may have fixed it`, `Fix:
+update its software`), `Official number CVE-…` and the link as text and
+as a QR code (74 px, top right). `z`/`c`, `f`/`x`, `5` PREV and `6` NEXT
+step through them (round), Enter, `4` BACK or a short ESC go back to the
+host detail. Which one is open lives in the view model
+(`ports_finding()`). It closes by itself when the target changes or a scan
 starts. Whether it is open and its scroll live in the view model
 (`ports_detail()`), so a theme switch keeps it; opening the page from the
 Tools page or the command bar starts without it. Its help shows the badge

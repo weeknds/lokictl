@@ -1010,25 +1010,48 @@ after the page's confirmation (key 6 twice), for that target only.
   port (443, 465, 853, 993, 995, 8443, 8883) is closed at once and keeps
   `TLS`, shown as `encrypted (TLS)` (there is no TLS library). A plain web port (80, 631, 1900, 3000,
   5000, 7000, 7547, 8000, 8008, 8080, 8123, 8888, 10000, 32400, 49152)
-  gets one `HEAD / HTTP/1.0` request with a Host line, and the value of the
-  answer's `Server:` line is kept. Every other port is only listened to,
-  so nothing is ever written to a printer's raw port (9100, 515). What
-  comes in is read for at most 1.5 s and 256 bytes, and reading ends early
-  once a whole greeting or the end of the headers is in. The page keeps
-  printable ASCII only, at most 40 characters: the first piece of text
-  without its protocol's prefix (`SSH-2.0-`, `220 `, `+OK`, `* OK`), with
-  Telnet's option bytes skipped.
+  gets one `HEAD / HTTP/1.0` request with a Host line, and the values of
+  the answer's `Server:` and `X-Powered-By:` lines are kept, joined by
+  `; ` (`nginx/1.18.0; PHP/7.4.33`). Port 53 gets one DNS question over TCP
+  for the server's version (TXT `version.bind`, class CHAOS, no recursion,
+  `platform::dns::build_version_query()`); the first text of the answer is
+  kept, with `BIND ` before a bare version number. Every other port is
+  only listened to, so nothing is ever written to a printer's raw port
+  (9100, 515). What comes in is read for at most 1.5 s and 512 bytes, and
+  reading ends early once a whole greeting, the end of the headers or the
+  whole DNS answer is in. The run keeps printable ASCII only, at most 120
+  characters (`model::kBannerKeptMax`): the first piece of text without its
+  protocol's prefix (`SSH-2.0-`, `220 `, `+OK`, `* OK`), with Telnet's
+  option bytes skipped. Pages show what fits.
+- **The check** (`model::check_services()`, `src/model/vuln_list.*`): when
+  a scan ends (not when it is stopped), the runner reads the software and
+  version each port named (`model::read_service()`,
+  `src/model/service_version.*`) and compares them with the built-in list
+  `data/vulndb.tsv`, read line by line from the app's data folder and
+  closed again, on the runner's own thread (in the pretend runner once, as
+  the scan ends). `PortRun::list_date`, `verdicts` (per port: holes,
+  exploited, outdated, vendor) and `findings` (at most 8 holes per port,
+  worst first, then its outdated line) hold the result; the list's date is
+  also `ToolsData::list_date` from the start, for the Status page. See
+  [checks.md](checks.md).
 - **Sent** counts one per attempt the system takes (its handshake packets
-  and retries are not counted, like ARP for a probe), and one per request
-  to a web port. The log gets attempt counts only: never the target, a
-  port, what a port said or how many were open.
+  and retries are not counted, like ARP for a probe), one per request to a
+  web port and one per version question. The log gets attempt counts
+  only: never the target, a port, what a port said, how many were open or
+  what the check found.
 - **The pretend runner** (`platform::pretend_port_scan()`) times the same
   attempts on the examples' networks (10.0.0.0/24, 10.42.0.0/24,
   10.20.30.0/24). The router (.1) has DNS, HTTP, HTTPS and UPnP open and
   two silent ports, the Cardputer itself SSH, and any other device one of
   three made-up sets; other addresses fail as not on the Cardputer's
   networks. So `--keys 6,6 --settle-ms 1500` on `ports` shows a scan under
-  way and `--keys 6,6 --settle-ms 6000` its end.
+  way and `--keys 6,6 --settle-ms 6000` its end. The made-up greetings
+  give the check something to find: the router's dnsmasq 2.85 and
+  MiniUPnPd 2.3.7 have holes, the Cardputer's own Debian OpenSSH reads
+  `Check`, a printer's GoAhead (any address ending in a multiple of 3)
+  `Attacked`, a media player's nginx 1.28 (addresses ending 3n+1) `Old`,
+  and a storage box (3n+2, like the sample's hotspot devices) holes in
+  Dropbear 2019.78 and an attacked PHP 7.4.33 behind nginx 1.18.0.
 
 ### Speed test
 

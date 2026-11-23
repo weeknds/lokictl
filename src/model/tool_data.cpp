@@ -219,7 +219,8 @@ bool operator==(const PortRun& left, const PortRun& right) {
     return left.state == right.state && left.error == right.error && left.reason == right.reason &&
            left.target == right.target && left.total == right.total && left.asked == right.asked &&
            left.closed == right.closed && left.silent == right.silent && left.open == right.open &&
-           left.banners == right.banners;
+           left.banners == right.banners && left.list_date == right.list_date && left.verdicts == right.verdicts &&
+           left.findings == right.findings;
 }
 
 bool operator!=(const PortRun& left, const PortRun& right) {
@@ -279,7 +280,8 @@ std::string speed_server_host(std::string_view text) {
 bool operator==(const ToolsData& left, const ToolsData& right) {
     return left.ping == right.ping && left.dns == right.dns && left.trace == right.trace &&
            left.listen == right.listen && left.probe == right.probe && left.ports == right.ports &&
-           left.speed == right.speed && left.latest == right.latest && left.sent == right.sent;
+           left.speed == right.speed && left.latest == right.latest && left.sent == right.sent &&
+           left.list_date == right.list_date;
 }
 
 bool operator!=(const ToolsData& left, const ToolsData& right) {

@@ -284,7 +284,7 @@ int run_snapshot(const SnapshotRequest& request) {
 
     // The tools always use the pretend runner here: no thread, no socket,
     // its runs follow the LVGL time, so the same keys give the same picture.
-    ToolController tools(view_model, platform::make_tool_runner(false));
+    ToolController tools(view_model, platform::make_tool_runner(false, assets.resolve(model::kVulnListFile).string()));
     tools.start();
 
     ScreenManager screen_manager(view_model, assets, theme_engine);

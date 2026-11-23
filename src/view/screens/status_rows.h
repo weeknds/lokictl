@@ -58,8 +58,11 @@ constexpr std::size_t kValueChars = 26;
 // - "battery" with the charge as the note (in the warning tone while the
 //   battery is low): state, voltage, current, temp, health, cycles, charge
 //   and time left;
-// - "device": processor, memory and uptime.
-std::vector<StatusRow> status_rows(const model::HomeData& data);
+// - "device": processor, memory and uptime;
+// - "holes list" with the date of the list of known security holes the
+//   Ports page checks against (`list_date`; "missing" when the app found
+//   none) as the note: where it comes from and NVD's notice.
+std::vector<StatusRow> status_rows(const model::HomeData& data, const std::string& list_date);
 
 // The values as text, as the rows show them; each reads "--" when not known.
 std::string voltage_text(int32_t millivolts);      // 3920 -> "3.92 V"

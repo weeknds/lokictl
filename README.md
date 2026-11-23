@@ -96,8 +96,9 @@ for each network shows up as a new device.
 
 `8` on Home. Everything the home page has no room for: each network port
 with its addresses, signal and speed, the VPN, any USB Wi-Fi adapter, the
-DNS servers, the battery, the processor temperature, free memory and
-uptime. F/X scroll, Z/C jump between sections.
+DNS servers, the battery, the processor temperature, free memory,
+uptime and the date of the built-in list of security holes. F/X scroll,
+Z/C jump between sections.
 
 ### Settings
 
@@ -125,11 +126,20 @@ how many packets LokiCTL has sent.
   private addresses (like `192.168.x.x`) on a network the Cardputer is on,
   and it sends nothing until you press `6` a second time. Open ports are
   asked what they run: SSH, FTP, mail and Telnet servers by their
-  greeting, web servers by one request for their name. After a scan,
+  greeting, web servers by one request for their name, a name server
+  (port 53) by one question for its version. After a scan,
   `Enter` or `7` shows the device: its name and MAC address if Discover
   knows them, each open port in plain words ("remote login", "web page")
   with the software it named, and a short note under ports that are often
   a risk (Telnet sends passwords in plain text, for example).
+- Ports also checks each version it read against a built-in list of
+  known security holes and old versions, so you can see what needs an
+  update. A port gets a short tag (see [Words used in
+  LokiCTL](#words-used-in-lokictl)), the device view lists each hole, and
+  `6` shows one at a time with what to do and a QR code that opens its
+  page on your phone. It only compares version numbers, so a device that
+  was fixed quietly can still show up. [docs/checks.md](docs/checks.md)
+  explains it all.
 - Speed downloads and then uploads for 10 seconds each, or 50 MB each,
   whichever comes first. It uses Cloudflare's speed test over HTTPS. You
   can use another server with a `speed_test_server=` line in the
@@ -270,12 +280,27 @@ Only root and the `netdev` group can run the two helpers. Removing the
 package removes all three. [docs/permissions.md](docs/permissions.md) has
 the details and lists every file LokiCTL writes.
 
+## Words used in LokiCTL
+
+| Word | Meaning |
+|---|---|
+| Hole | A known security hole (a weakness) in a version of some software. Each has an official number, the CVE number, such as CVE-2024-6387. |
+| `3 holes` | The software on that port has three known serious holes (7 or more out of 10). Update it. |
+| `Attacked` | At least one of those holes is being used by attackers right now. Update it first. |
+| `Old` | That version no longer gets security fixes at all. |
+| `Check` | The software was built by a system like Debian or Ubuntu, which often fixes holes without a new version number. Install the device's updates; the holes may already be gone. |
+| Score | How bad a hole is, from 0 to 10 (10 is worst). |
+| Encrypted | The port uses TLS, so others on the network can't read what is sent. |
+| Sent | How many packets LokiCTL has sent since it started. |
+
 ## Data use
 
 - A speed test moves up to about 100 MB, so be careful on a metered
   connection. It talks to Cloudflare unless you set another server.
 - Apart from the tools you start yourself, LokiCTL sends nothing to the
-  internet. There are no accounts and no analytics.
+  internet. There are no accounts and no analytics. The list of known
+  security holes is built in and works offline; it is updated with each
+  release.
 - Settings, the hotspot password and saved captures stay on the device,
   and only your user can read them.
 
@@ -354,6 +379,8 @@ the project layout.
   themes
 - [docs/data.md](docs/data.md): where the values come from and how the
   tools and modes work
+- [docs/checks.md](docs/checks.md): the check for known security holes
+  and old versions, and how its list is made
 - [docs/remote.md](docs/remote.md): Remote view and how it is kept private
 - [docs/fonts.md](docs/fonts.md): the bundled fonts
 
@@ -367,6 +394,11 @@ LokiCTL is released under the MIT license, see [LICENSE](LICENSE).
 - [LVGL](https://lvgl.io) (MIT) draws the screens. Its copy of Project
   Nayuki's [QR Code generator](https://www.nayuki.io/page/qr-code-generator-library)
   (MIT) makes the hotspot's join code.
+- The list of known security holes is made from NIST's National
+  Vulnerability Database and CISA's Known Exploited Vulnerabilities
+  catalog (CC0 1.0). This product uses the NVD API but is not endorsed or
+  certified by the NVD. Details are in
+  [docs/third-party/vulnerability-data.md](docs/third-party/vulnerability-data.md).
 - Fonts: Space Grotesk, Inter, IBM Plex Mono, Geist Mono and JetBrains
   Mono, under the SIL Open Font License 1.1. Icons: Phosphor Icons (MIT).
   The licenses are in [assets/fonts/](assets/fonts/LICENSE.txt).

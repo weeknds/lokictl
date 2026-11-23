@@ -66,6 +66,16 @@ Notes:
 - On the Mac, mode switches, scans and probes only pretend, so every page
   can be tried without touching your network.
 
+## Checks
+
+The same build makes `build/darwin-arm64/Debug/lokictl_tests` (Mac only;
+`ctest --test-dir build/darwin-arm64 -C Debug` runs it too). It checks how LokiCTL
+reads what a port says and the check against the shipped list of known
+security holes (`tests/vuln_checks.cpp`), and exits with 1 when a check
+fails. Given a text, it prints what the list says about it:
+`lokictl_tests "nginx/1.18.0 (Ubuntu)"`. The list itself is rebuilt with
+`python3 scripts/vulndb/build.py`; see [checks.md](checks.md).
+
 ## Screenshots without a window
 
 The same program can draw one page straight into a PNG file without opening

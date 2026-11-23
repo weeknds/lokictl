@@ -305,7 +305,7 @@ void StatusScreen::data_observer(lv_observer_t* observer, lv_subject_t* /*subjec
     if (!screen) {
         return;
     }
-    screen->rows_ = status::status_rows(screen->view_model().home());
+    screen->rows_ = status::status_rows(screen->view_model().home(), screen->view_model().tools().list_date);
     screen->show_rows();
 }
 

@@ -632,7 +632,8 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override,
     // only with the live data source on the device, the pretend one with
     // made-up results otherwise. Stopped right after the main loop, next to
     // the data controller.
-    ToolController tools(view_model, platform::make_tool_runner(data_source == platform::DataSourceKind::Live));
+    ToolController tools(view_model, platform::make_tool_runner(data_source == platform::DataSourceKind::Live,
+                                                                assets.resolve(model::kVulnListFile).string()));
 
     ScreenManager screen_manager(view_model, assets, theme_engine);
     screen_manager.start();

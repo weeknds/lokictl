@@ -9,7 +9,9 @@
 #include "home_format.h"
 #include "service_banner.h"
 #include "service_rules.h"
+#include "service_version.h"
 
+#include <algorithm>
 #include <cstdio>
 
 namespace screen::tools {
@@ -267,6 +269,82 @@ std::string ports_counts_text(const model::PortRun& run) {
            std::to_string(run.silent) + " no answer";
 }
 
+namespace {
+
+const model::PortVerdict* verdict_of(const model::PortRun& run, uint16_t port) {
+    for (const model::PortVerdict& verdict : run.verdicts) {
+        if (verdict.port == port) {
+            return &verdict;
+        }
+    }
+    return nullptr;
+}
+
+// "Debian may have fixed these", or "Its maker may have fixed these" for a
+// build tag that names no system.
+std::string vendor_note(const std::string& vendor, const char* what) {
+    return (vendor == "vendor" ? std::string("Its maker") : vendor) + " may have fixed " + what;
+}
+
+// A hole's words on the host detail's line.
+ToneText hole_words(const model::ServiceFinding& finding) {
+    const int32_t tone = !finding.vendor.empty() ? kToneWarning
+                         : finding.exploited || finding.score >= 90 ? kToneError
+                                                                     : kToneWarning;
+    if (finding.exploited) {
+        return {"Hole attackers use", tone};
+    }
+    if (finding.score >= 90) {
+        return {"Very serious hole", tone};
+    }
+    if (finding.score >= 70) {
+        return {"Serious hole", tone};
+    }
+    return {"Known hole", tone};
+}
+
+// "8.1"
+std::string score_text(int32_t tenths) {
+    return std::to_string(tenths / 10) + "." + std::to_string(tenths % 10);
+}
+
+std::string without_scheme(const std::string& link) {
+    static constexpr char kScheme[] = "https://";
+    return link.compare(0, sizeof(kScheme) - 1, kScheme) == 0 ? link.substr(sizeof(kScheme) - 1) : link;
+}
+
+} // namespace
+
+ToneText port_tag(const model::PortRun& run, uint16_t port) {
+    const model::PortVerdict* verdict = verdict_of(run, port);
+    if (verdict == nullptr) {
+        return {};
+    }
+    if (!verdict->vendor.empty()) {
+        return {"Check", kToneWarning};
+    }
+    if (verdict->exploited > 0) {
+        return {"Attacked", kToneError};
+    }
+    if (verdict->holes > 0) {
+        return {std::to_string(verdict->holes) + (verdict->holes == 1 ? " hole" : " holes"), kToneWarning};
+    }
+    if (verdict->outdated) {
+        return {"Old", kToneWarning};
+    }
+    return {};
+}
+
+std::vector<PortItem> port_items(const model::PortRun& run) {
+    const std::vector<std::string> texts = open_port_items(run);
+    std::vector<PortItem> items;
+    items.reserve(texts.size());
+    for (std::size_t index = 0; index < texts.size() && index < run.open.size(); ++index) {
+        items.push_back({run.open[index], texts[index], port_tag(run, run.open[index])});
+    }
+    return items;
+}
+
 std::vector<DetailLine> host_detail_lines(const model::PortRun& run,
                                           const std::string& name,
                                           const std::string& hardware_address) {
@@ -280,28 +358,137 @@ std::vector<DetailLine> host_detail_lines(const model::PortRun& run,
     const std::vector<std::string> items = open_port_items(run);
     for (std::size_t index = 0; index < run.open.size() && index < items.size(); ++index) {
         const uint16_t port = run.open[index];
-        // Everyday words first, then what the port said ("encrypted" for
-        // a TLS port).
-        std::string text = model::port_plain(port);
-        std::string said = model::port_banner(run, port);
+        // Everyday words first, then what the port said: in short when a
+        // known product was read ("OpenSSH 10.0"), "encrypted" for a TLS
+        // port.
+        const std::string plain = model::port_plain(port);
+        const std::string said = model::port_banner(run, port);
+        std::string shown = said;
         if (!said.empty() && model::banner_probe(port) == model::BannerProbe::Tls) {
-            said = "encrypted (" + said + ")";
+            shown = "encrypted (" + said + ")";
         }
-        if (!said.empty()) {
-            text += (text.empty() ? "" : " · ") + said;
+        const model::ServiceInfo info = model::read_service(said);
+        const std::string short_text = model::service_short_text(info);
+        if (!short_text.empty()) {
+            shown = short_text;
         }
-        lines.push_back({items[index], {text, kToneText}});
+        DetailLine line{items[index], {plain, kToneText}};
+        if (!shown.empty()) {
+            line.right.text = plain.empty() ? shown : plain + " · " + shown;
+            if (!plain.empty()) {
+                line.shorter.push_back(shown);
+                line.shorter.push_back(plain);
+            }
+        }
+        lines.push_back(line);
+        // The whole text when it says more than the short form (more words
+        // than products, as "OpenSSH_10.0p2 Debian-7"), and fits.
+        std::size_t words = 0;
+        for (std::size_t at = 0; at < said.size(); ++at) {
+            words += (said[at] != ' ' && (at == 0 || said[at - 1] == ' ')) ? 1 : 0;
+        }
+        if (!short_text.empty() && words > info.products.size()) {
+            DetailLine whole{"", {said, kToneMuted}};
+            whole.optional = true;
+            lines.push_back(whole);
+        }
         if (const model::ServiceRule* rule = model::service_rule(port)) {
             const int32_t tone = rule->level == model::RiskLevel::Risk      ? kToneError
                                  : rule->level == model::RiskLevel::Warning ? kToneWarning
                                                                             : kToneMuted;
             lines.push_back({"", {rule->note, tone}});
         }
+        const model::PortVerdict* verdict = verdict_of(run, port);
+        if (verdict == nullptr) {
+            continue;
+        }
+        if (!verdict->vendor.empty()) {
+            lines.push_back({"", {vendor_note(verdict->vendor, "these"), kToneMuted}});
+        }
+        int32_t kept = 0;
+        for (std::size_t place = 0; place < run.findings.size(); ++place) {
+            const model::ServiceFinding& finding = run.findings[place];
+            if (finding.port != port) {
+                continue;
+            }
+            DetailLine row;
+            row.finding = static_cast<int32_t>(place);
+            if (finding.kind == model::FindingKind::Hole) {
+                row.right = hole_words(finding);
+                row.aside = finding.cve;
+                ++kept;
+            } else {
+                row.right = {"Old: no more security fixes", kToneWarning};
+                row.shorter.push_back("Old version");
+            }
+            if (finding.kind == model::FindingKind::Outdated && verdict->holes > kept) {
+                const int32_t more = verdict->holes - kept;
+                lines.push_back({"", {"+" + std::to_string(more) + (more == 1 ? " more hole" : " more holes"),
+                                      kToneMuted}});
+                kept = verdict->holes;
+            }
+            lines.push_back(row);
+        }
+        if (verdict->holes > kept) {
+            const int32_t more = verdict->holes - kept;
+            lines.push_back(
+                {"", {"+" + std::to_string(more) + (more == 1 ? " more hole" : " more holes"), kToneMuted}});
+        }
     }
     if (run.open.empty()) {
         lines.push_back({"", {"No open ports", kToneMuted}});
     }
+    if (run.state == model::ToolState::Done) {
+        if (run.list_date.empty()) {
+            lines.push_back({"", {"No holes list: versions not checked", kToneMuted}, {"Versions not checked"}});
+        } else {
+            lines.push_back({"", {"Holes list from " + run.list_date, kToneMuted}});
+        }
+    }
     return lines;
+}
+
+FindingView finding_view(const model::PortRun& run, std::size_t index) {
+    FindingView view;
+    if (run.findings.empty()) {
+        return view;
+    }
+    index = std::min(index, run.findings.size() - 1);
+    const model::ServiceFinding& finding = run.findings[index];
+    view.place = std::to_string(index + 1) + " of " + std::to_string(run.findings.size()) + " · port " +
+                 std::to_string(finding.port);
+    model::ServiceInfo info;
+    info.products.push_back({finding.product, finding.name, finding.version});
+    view.product = model::service_short_text(info);
+    view.link = finding.link;
+    view.link_text = without_scheme(finding.link);
+    if (finding.kind == model::FindingKind::Outdated) {
+        view.severity = {"Old version", kToneWarning};
+        view.sentences.push_back({"No more security fixes", kToneWarning});
+        view.sentences.push_back(finding.vendor.empty() ? ToneText{"Fix: update or replace it", kToneText}
+                                                        : ToneText{vendor_note(finding.vendor, "it"), kToneMuted});
+        view.official = "Read more on this page";
+        return view;
+    }
+    const ToneText words = hole_words(finding);
+    std::string severity = finding.score >= 90 ? "Very serious hole" : finding.score >= 70 ? "Serious hole" : "Known hole";
+    if (finding.score >= 0) {
+        severity += ", " + score_text(finding.score) + " of 10";
+    }
+    view.severity = {severity, words.tone};
+    if (finding.exploited) {
+        // A vendor's build may already be fixed, so it is a warning there.
+        view.sentences.push_back({"Attackers are using it", finding.vendor.empty() ? kToneError : kToneWarning});
+    }
+    if (!finding.vendor.empty()) {
+        view.sentences.push_back({vendor_note(finding.vendor, "it"), kToneMuted});
+    }
+    if (view.sentences.size() < 2) {
+        view.sentences.push_back({finding.vendor.empty() ? "Fix: update its software" : "Fix: install its updates",
+                                  kToneText});
+    }
+    view.official = "Official number " + finding.cve;
+    return view;
 }
 
 ToneText ports_status(const model::PortRun& run) {

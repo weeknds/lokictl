@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <fstream>
 
 namespace platform {
 namespace {
@@ -66,16 +67,33 @@ const std::vector<uint16_t> kMediaOpen{7000, 8008, 8009, 8443};
 const std::vector<uint16_t> kStorageOpen{22, 139, 445, 5000, 32400};
 const std::vector<uint16_t> kDeviceSilent{3389};
 
-// What the made-up open ports say about themselves; an open port not
-// listed says nothing. TLS ports say "TLS" by themselves
-// (model::banner_text()).
-const std::vector<model::PortBanner> kPretendBanners{
-    {22, "OpenSSH_9.9p2 Debian-1"},
+// What the made-up open ports of each kind of device say about themselves;
+// an open port not listed says nothing. TLS ports say "TLS" by themselves
+// (model::banner_text()). Some versions are old on purpose, so the check
+// against the list of known holes has something to show: the router's
+// name server and UPnP have holes, the Cardputer's own SSH is a Debian
+// build ("check"), the printer's web server has a hole attackers use, the
+// storage box has holes and outdated versions, the media player an
+// outdated web server.
+const std::vector<model::PortBanner> kRouterBanners{
+    {53, "dnsmasq-2.85"},
     {80, "lighttpd/1.4.76"},
-    {631, "CUPS/2.4 IPP/2.1"},
     {1900, "Linux/6.1 UPnP/1.0 MiniUPnPd/2.3.7"},
-    {5000, "nginx/1.26.3"},
+};
+const std::vector<model::PortBanner> kOwnBanners{
+    {22, "OpenSSH_10.0p2 Debian-7"},
+};
+const std::vector<model::PortBanner> kPrinterBanners{
+    {80, "GoAhead-http/3.6.2"},
+    {631, "CUPS/2.4 IPP/2.1"},
+};
+const std::vector<model::PortBanner> kMediaBanners{
     {7000, "MediaRenderer/3.2"},
+    {8008, "nginx/1.28.0"},
+};
+const std::vector<model::PortBanner> kStorageBanners{
+    {22, "dropbear_2019.78"},
+    {5000, "nginx/1.18.0; PHP/7.4.33"},
 };
 // A made-up greeting comes this long after its port took the connection.
 constexpr uint32_t kPretendBannerMs = 200;
@@ -84,15 +102,16 @@ bool contains(const std::vector<uint16_t>& list, uint16_t port) {
     return std::find(list.begin(), list.end(), port) != list.end();
 }
 
-// What the made-up `port` says, and how long after its connection it is
-// done reading (model::kBannerReadMs when it says nothing).
-std::string pretend_banner(uint16_t port, uint32_t& reading_ms) {
+// What the made-up `port` says, out of `banners`, and how long after its
+// connection it is done reading (model::kBannerReadMs when it says
+// nothing).
+std::string pretend_banner(const std::vector<model::PortBanner>& banners, uint16_t port, uint32_t& reading_ms) {
     const model::BannerProbe probe = model::banner_probe(port);
     if (probe == model::BannerProbe::Tls) {
         reading_ms = 0;
         return model::banner_text(probe, nullptr, 0);
     }
-    for (const model::PortBanner& banner : kPretendBanners) {
+    for (const model::PortBanner& banner : banners) {
         if (banner.port == port) {
             reading_ms = kPretendBannerMs;
             return banner.text;
@@ -166,22 +185,27 @@ model::PortRun pretend_port_scan(uint32_t elapsed_ms, const std::string& target,
 
     const std::vector<uint16_t>* open = &kRouterOpen;
     const std::vector<uint16_t>* silent = &kDeviceSilent;
+    const std::vector<model::PortBanner>* banners = &kRouterBanners;
     const bool own = std::any_of(pretend_networks().begin(), pretend_networks().end(),
                                  [address](const OwnNetwork& network) { return network.address == address; });
     if (own) {
         open = &kOwnOpen;
+        banners = &kOwnBanners;
     } else if ((address & 0xFFU) == 1) {
         silent = &kRouterSilent;
     } else {
         switch ((address & 0xFFU) % 3) {
             case 0:
                 open = &kPrinterOpen;
+                banners = &kPrinterBanners;
                 break;
             case 1:
                 open = &kMediaOpen;
+                banners = &kMediaBanners;
                 break;
             default:
                 open = &kStorageOpen;
+                banners = &kStorageBanners;
                 break;
         }
     }
@@ -194,7 +218,7 @@ model::PortRun pretend_port_scan(uint32_t elapsed_ms, const std::string& target,
         const bool is_open = !quiet && contains(*open, port);
         const uint32_t settled_at = sent_at + (quiet ? static_cast<uint32_t>(model::kPortTimeoutMs) : 2u);
         uint32_t reading_ms = 0;
-        const std::string banner = is_open ? pretend_banner(port, reading_ms) : std::string();
+        const std::string banner = is_open ? pretend_banner(*banners, port, reading_ms) : std::string();
         end = std::max(end, settled_at + reading_ms);
         if (elapsed_ms < sent_at) {
             continue;
@@ -208,8 +232,9 @@ model::PortRun pretend_port_scan(uint32_t elapsed_ms, const std::string& target,
             ++run.silent;
         } else if (is_open) {
             run.open.push_back(port);
-            if (model::banner_probe(port) == model::BannerProbe::Http) {
-                ++sent;  // the request for its headers
+            const model::BannerProbe probe = model::banner_probe(port);
+            if (probe == model::BannerProbe::Http || probe == model::BannerProbe::Dns) {
+                ++sent;  // the request for its headers, or the version question
             }
             if (!banner.empty() && elapsed_ms >= settled_at + reading_ms) {
                 run.banners.push_back({port, banner});
@@ -223,6 +248,31 @@ model::PortRun pretend_port_scan(uint32_t elapsed_ms, const std::string& target,
         done = true;
     }
     return run;
+}
+
+void check_port_services(model::PortRun& run, const std::string& list_path) {
+    run.list_date.clear();
+    run.verdicts.clear();
+    run.findings.clear();
+    if (list_path.empty()) {
+        return;
+    }
+    std::ifstream list(list_path);
+    if (!list) {
+        return;
+    }
+    model::VulnCheck check = model::check_services(list, run);
+    run.list_date = std::move(check.date);
+    run.verdicts = std::move(check.verdicts);
+    run.findings = std::move(check.findings);
+}
+
+std::string read_list_date(const std::string& list_path) {
+    if (list_path.empty()) {
+        return {};
+    }
+    std::ifstream list(list_path);
+    return list ? model::vuln_list_date(list) : std::string();
 }
 
 } // namespace platform

@@ -57,14 +57,29 @@ namespace screen {
 // target is the selected one, so one device's ports never stand under
 // another's address.
 //
+// A finished scan's ports were checked against the list of known security
+// holes (model::check_services()): each port gets a short tag in the list
+// ("Attacked", "3 holes", "Old", "Check"; tools::port_tag()), and a list
+// too long for its lines puts the tagged ports first.
+//
 // The Ports page's host detail takes the page's place when Enter or 7
 // (Host) is pressed on a finished scan of the selected target: the
 // address with its caption, the name and hardware address when Discover
 // or the hotspot knows them, then each open port with what it said about
 // itself and, under a well-known risky one, a one-line note
-// (model::service_rules()). Up and down (F/X) scroll it; Enter, 4 (Back)
-// or a short ESC close it. It closes when the target changes or a scan
-// starts; it is kept in the view model (ports_detail()).
+// (model::service_rules()), then what the check found
+// (tools::host_detail_lines()). A line that does not fit takes its shorter
+// form or, when optional, is left out, so no word is cut. Up and down (F/X)
+// scroll it; 4 (Back) or a short ESC close it, and so does Enter when
+// nothing was found. It closes when the target changes or a scan starts;
+// it is kept in the view model (ports_detail()).
+//
+// With findings, 6 (More) or Enter opens them one at a time, from the
+// first one at or below the top line: the product and port, what it is and
+// what to do in a few short sentences, the official number and the link
+// to read more, as text and as a QR code for a phone. Left and right (Z/C),
+// up and down (F/X), 5 (Prev) and 6 (Next) step through them; Enter, 4
+// (Back) or a short ESC go back to the host detail (ports_finding()).
 //
 // Typing: a panel takes the page's place. Letters, digits and '.' are
 // added (at most model::kToolTargetMax), Backspace takes one away, Enter
@@ -128,6 +143,7 @@ private:
     void build_trace_results(lv_obj_t* panel);
     void build_ports_results(lv_obj_t* panel);
     void build_detail_panel(lv_obj_t* content);
+    void build_finding_panel(lv_obj_t* content);
     void build_typing_panel(lv_obj_t* content);
 
     // The targets to step through: the presets, then the typed one.
@@ -149,7 +165,12 @@ private:
     void open_detail();
     void close_detail();
     void scroll_detail(int32_t delta);
-    // 4 (Back): closes the host detail, or goes back.
+    // Ports: the view of one finding over the host detail.
+    bool finding_open() const;
+    void open_finding();
+    void close_finding();
+    void step_finding(int32_t delta);
+    // 4 (Back): closes a finding, the host detail, or goes back.
     void back_key();
     // True while this page's tool runs, and while either runs.
     bool this_running() const;
@@ -181,6 +202,7 @@ private:
     void refresh_status();
     void refresh_typing();
     void refresh_detail();
+    void refresh_finding();
 
     static void observer_cb(lv_observer_t* observer, lv_subject_t* subject);
 
@@ -218,6 +240,7 @@ private:
         std::string right_shown;
         int32_t right_tone{-1};
         int32_t right_x{-1};
+        bool recolor{false};  // the right text has a muted part (DetailLine::aside)
     };
     static constexpr std::size_t kDetailRows = 8;
     lv_obj_t* detail_panel_{nullptr};
@@ -236,6 +259,18 @@ private:
     std::string detail_caption_shown_;
     std::string detail_address_shown_;
     std::string detail_count_shown_;
+    // The finding (its place in PortRun::findings, -1 none) of each line of
+    // the host detail as last drawn, and the first line shown.
+    std::vector<int32_t> detail_findings_;
+    int32_t detail_first_{0};
+    // Ports: one finding's view: its lines and the QR code of its link.
+    static constexpr std::size_t kFindingLines = 7;
+    lv_obj_t* finding_panel_{nullptr};
+    std::array<lv_obj_t*, kFindingLines> finding_lines_{};
+    std::array<std::string, kFindingLines> finding_shown_{};
+    std::array<int32_t, kFindingLines> finding_tones_{-1, -1, -1, -1, -1, -1, -1};
+    lv_obj_t* finding_code_{nullptr};
+    std::string finding_code_shown_;
     // All
     lv_obj_t* status_{nullptr};
     lv_obj_t* sent_caption_{nullptr};
@@ -264,7 +299,7 @@ private:
     std::string count_shown_;
     std::string typing_note_shown_;
     int32_t typing_note_tone_{-1};
-    int32_t shown_panel_{-1};   // 0 the page, 1 typing, 2 the host detail; -1 before the first
+    int32_t shown_panel_{-1};   // 0 the page, 1 typing, 2 the host detail, 3 a finding; -1 before the first
     int32_t shown_keys_{-1};    // what refresh_keys() set last
     bool draft_invalid_{false}; // Enter was pressed on a target that is not taken
     std::string confirm_shown_;

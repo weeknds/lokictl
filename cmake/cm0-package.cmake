@@ -65,6 +65,12 @@ install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/assets/images/"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/${APP_NAME}/images"
     PATTERN ".DS_Store" EXCLUDE
 )
+# The list of known security holes and outdated versions the Ports page
+# checks against (made by scripts/vulndb/build.py).
+install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/assets/data/"
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/${APP_NAME}/data"
+    PATTERN ".DS_Store" EXCLUDE
+)
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/assets/images/"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/APPLaunch/share/images"
     FILES_MATCHING
@@ -107,6 +113,9 @@ install(FILES "${LVGL_SOURCE_DIR}/LICENCE.txt"
     RENAME "lvgl-license.txt"
 )
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/docs/third-party/qrcodegen-license.txt"
+    DESTINATION "${CMAKE_INSTALL_DOCDIR}"
+)
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/docs/third-party/vulnerability-data.md"
     DESTINATION "${CMAKE_INSTALL_DOCDIR}"
 )
 

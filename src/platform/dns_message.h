@@ -22,8 +22,10 @@ namespace platform::dns {
 constexpr uint16_t kTypeA     = 1;
 constexpr uint16_t kTypeCname = 5;
 constexpr uint16_t kTypePtr   = 12;
+constexpr uint16_t kTypeTxt   = 16;
 constexpr uint16_t kTypeAaaa  = 28;
 constexpr uint16_t kClassIn   = 1;
+constexpr uint16_t kClassChaos = 3;
 
 constexpr uint8_t kRcodeNoError  = 0;
 constexpr uint8_t kRcodeServFail = 2;
@@ -60,6 +62,18 @@ struct Message {
 // allowed) and `type`, with recursion desired, into `out`. Returns false,
 // with `out` emptied, for a name it refuses.
 bool build_query(uint16_t id, std::string_view name, uint16_t type, std::vector<uint8_t>& out);
+// The same with the question's class and the recursion-desired bit given.
+bool build_query(uint16_t id, std::string_view name, uint16_t type, uint16_t klass, bool recursion,
+                 std::vector<uint8_t>& out);
+
+// The question a DNS server answers with its software's version: TXT
+// "version.bind" in the CHAOS class, no recursion (dnsmasq says
+// "dnsmasq-2.90", BIND its version number).
+bool build_version_query(uint16_t id, std::vector<uint8_t>& out);
+// The first text of the first TXT answer in the reply `data` to the
+// question of build_version_query() with `id`, printable ASCII only;
+// empty for anything else.
+std::string version_answer(const uint8_t* data, std::size_t size, uint16_t id);
 
 // Reads a whole message: the header, the first question (others are
 // skipped) and the answer section; the authority and additional sections

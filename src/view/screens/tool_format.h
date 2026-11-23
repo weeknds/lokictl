@@ -76,21 +76,66 @@ std::string bytes_text(uint64_t bytes);
 std::vector<std::string> open_port_items(const model::PortRun& run);
 std::string ports_counts_text(const model::PortRun& run);
 
+// The short tag of an open port after the check against the list of known
+// holes, the worst one winning: "Check" (warning) when the port named the
+// system that built it, whose updates may already have fixed what was
+// found; "Attacked" (error) for a hole attackers are known to use; "3
+// holes" or "1 hole" (warning); "Old" (warning) for a version that no longer
+// gets security fixes. Empty when nothing was found. The help panel
+// explains each.
+ToneText port_tag(const model::PortRun& run, uint16_t port);
+
+// One open port of the Ports page's list: "22 ssh" with its tag.
+struct PortItem {
+    uint16_t port{0};
+    std::string text;
+    ToneText tag;
+};
+std::vector<PortItem> port_items(const model::PortRun& run);
+
 // One line of the Ports page's host detail: a caption or an open port at
 // the left, its value at the right.
 struct DetailLine {
     std::string left;  // "name", "MAC", or a port with its service ("22 ssh"); empty on a note's line
     ToneText right;    // the value, what the port is and said about itself, or a note
+    // Shorter texts for `right`, tried in order when it does not fit the
+    // line; the last one is used when none does.
+    std::vector<std::string> shorter;
+    // Said after `right` in the muted colour ("CVE-2024-6387"); left out
+    // when the line would not fit.
+    std::string aside;
+    bool optional{false};  // the whole line is left out when it does not fit
+    int32_t finding{-1};   // a finding's line: its place in run.findings; -1 otherwise
 };
 // The host detail of `run`: the host's name and hardware address when
 // known (an empty text is left out), then each open port with what it is
-// in everyday words and what it said ("web page · lighttpd/1.4.76",
-// "web page · encrypted (TLS)"), followed by its note from
+// in everyday words and what it said, in short when a known product was
+// read ("remote login · OpenSSH 10.0", "web page · encrypted (TLS)"; the
+// whole text on a line of its own when it fits), followed by its note from
 // model::service_rules() in the tone of its level (info muted, warning,
-// risk as an error). "No open ports" when there are none.
+// risk as an error) and what the check found, worst first: "Debian may
+// have fixed these" for a vendor's build, one line per hole kept ("Hole
+// attackers use", "Very serious hole", "Serious hole", "Known hole", with
+// its official number aside), "+5 more holes", "Old: no more security
+// fixes". "No open ports" when there are none. A finished scan ends with the
+// list's date ("Holes list from 2026-11-23"), or "No holes list: versions
+// not checked".
 std::vector<DetailLine> host_detail_lines(const model::PortRun& run,
                                           const std::string& name,
                                           const std::string& hardware_address);
+
+// One finding of the check, as its own view shows it.
+struct FindingView {
+    std::string place;    // "1 of 12 · port 22"
+    std::string product;  // "OpenSSH 10.0"
+    ToneText severity;    // "Serious hole, 8.1 of 10", "Very serious hole", "Old version"
+    std::vector<ToneText> sentences;  // at most two: "Attackers are using it", "Fix: update its software"
+    std::string official;  // "Official number CVE-2024-6387"; "Read more on this page" for an old version
+    std::string link_text; // the link without "https://": "nvd.nist.gov/vuln/detail/CVE-2024-6387"
+    std::string link;      // the whole link, for the QR code
+};
+// The finding at `index` of run.findings (clamped); empty without findings.
+FindingView finding_view(const model::PortRun& run, std::size_t index);
 
 // The short state on the Tools page next to each tool: "running", the
 // last result, or nothing.

@@ -47,6 +47,11 @@ char lower(char character) {
 } // namespace
 
 bool build_query(uint16_t id, std::string_view name, uint16_t type, std::vector<uint8_t>& out) {
+    return build_query(id, name, type, kClassIn, true, out);
+}
+
+bool build_query(uint16_t id, std::string_view name, uint16_t type, uint16_t klass, bool recursion,
+                 std::vector<uint8_t>& out) {
     out.clear();
     if (!name.empty() && name.back() == '.') {
         name.remove_suffix(1);
@@ -56,7 +61,7 @@ bool build_query(uint16_t id, std::string_view name, uint16_t type, std::vector<
     }
 
     put_u16(out, id);
-    put_u16(out, 0x0100);  // a standard query, recursion desired
+    put_u16(out, recursion ? 0x0100 : 0x0000);  // a standard query, with or without recursion desired
     put_u16(out, 1);       // one question
     put_u16(out, 0);
     put_u16(out, 0);
@@ -85,8 +90,40 @@ bool build_query(uint16_t id, std::string_view name, uint16_t type, std::vector<
     }
     out.push_back(0);
     put_u16(out, type);
-    put_u16(out, kClassIn);
+    put_u16(out, klass);
     return true;
+}
+
+bool build_version_query(uint16_t id, std::vector<uint8_t>& out) {
+    return build_query(id, "version.bind", kTypeTxt, kClassChaos, false, out);
+}
+
+std::string version_answer(const uint8_t* data, std::size_t size, uint16_t id) {
+    Message message;
+    if (data == nullptr || !parse_message(data, size, message) || !message.response || message.id != id ||
+        message.rcode != kRcodeNoError || message.question_name != "version.bind") {
+        return {};
+    }
+    for (const Record& record : message.answers) {
+        if (record.type != kTypeTxt || record.data_length == 0 ||
+            record.data_offset + record.data_length > size) {
+            continue;
+        }
+        // TXT data: strings of one length byte and that many characters.
+        const std::size_t length = data[record.data_offset];
+        if (length + 1 > record.data_length) {
+            continue;
+        }
+        std::string text;
+        for (std::size_t index = 0; index < length; ++index) {
+            const uint8_t byte = data[record.data_offset + 1 + index];
+            if (byte >= 0x20 && byte <= 0x7E) {
+                text.push_back(static_cast<char>(byte));
+            }
+        }
+        return text;
+    }
+    return {};
 }
 
 bool read_name(const uint8_t* data, std::size_t size, std::size_t& offset, std::string& out) {

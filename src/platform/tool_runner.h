@@ -83,7 +83,8 @@ public:
     // no listen run, nothing was kept, or the run was already saved.
     virtual bool save_capture() = 0;
     // Copies the latest runs into data.ping, data.dns, data.trace,
-    // data.listen, data.probe, data.ports and data.speed (data.sent is left alone) and returns true, but only when any changed
+    // data.listen, data.probe, data.ports and data.speed, and the list's
+    // date into data.list_date (data.sent is left alone) and returns true, but only when any changed
     // since the last take(); otherwise leaves `data` alone and returns
     // false.
     virtual bool take(model::ToolsData& data) = 0;
@@ -93,7 +94,9 @@ public:
 };
 
 // The live runner on device builds when `live` is true; otherwise the
-// pretend runner.
-std::unique_ptr<ToolRunner> make_tool_runner(bool live);
+// pretend runner. Both check a finished port scan against the list of
+// known security holes at `list_path` (check_port_services(), port_scan.h;
+// empty: no list) and give its date in ToolsData::list_date.
+std::unique_ptr<ToolRunner> make_tool_runner(bool live, const std::string& list_path);
 
 } // namespace platform

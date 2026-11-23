@@ -162,6 +162,11 @@ bool private_ipv4(const std::string& text) {
 
 class PretendToolRunner : public ToolRunner {
 public:
+    explicit PretendToolRunner(std::string list_path) : list_path_(std::move(list_path)) {
+        latest_.list_date = read_list_date(list_path_);
+        fresh_ = true;
+    }
+
     bool start(const ToolJob& job) override {
         if (closed_ || running_ || !model::valid_tool_target(job.kind, job.target)) {
             return false;
@@ -257,6 +262,7 @@ public:
         data.ports = latest_.ports;
         data.speed = latest_.speed;
         data.latest = latest_.latest;
+        data.list_date = latest_.list_date;
         fresh_ = false;
         return true;
     }
@@ -292,9 +298,15 @@ private:
             case model::ToolKind::Probe:
                 keep(pretend_probe(elapsed, job_.target, sent, done), latest_.probe);
                 break;
-            case model::ToolKind::Ports:
-                keep(pretend_port_scan(elapsed, job_.target, sent, done), latest_.ports);
+            case model::ToolKind::Ports: {
+                model::PortRun run = pretend_port_scan(elapsed, job_.target, sent, done);
+                if (done && run.state == model::ToolState::Done) {
+                    // Checked once, as the scan ends.
+                    check_port_services(run, list_path_);
+                }
+                keep(std::move(run), latest_.ports);
                 break;
+            }
             case model::ToolKind::Speed:
                 keep(pretend_speed_test(elapsed, job_.target, sent, done), latest_.speed);
                 break;
@@ -494,6 +506,7 @@ private:
         return run;
     }
 
+    const std::string list_path_;
     bool running_{false};
     bool closed_{false};
     bool fresh_{false};
@@ -896,8 +909,12 @@ struct Lookup {
 
 class LiveToolRunner : public ToolRunner {
 public:
-    // The folder is found here, on the UI thread, once.
-    LiveToolRunner() : capture_folder_(capture_folder()) {}
+    // The folder and the list's date are found here, on the UI thread, once.
+    explicit LiveToolRunner(std::string list_path)
+        : capture_folder_(capture_folder()), list_path_(std::move(list_path)) {
+        latest_.list_date = read_list_date(list_path_);
+        fresh_ = true;
+    }
 
     ~LiveToolRunner() override {
         shutdown();
@@ -1002,6 +1019,7 @@ public:
         data.ports = latest_.ports;
         data.speed = latest_.speed;
         data.latest = latest_.latest;
+        data.list_date = latest_.list_date;
         fresh_ = false;
         return true;
     }
@@ -2127,6 +2145,7 @@ private:
             Clock::time_point deadline;
             bool reading{false};
             model::BannerProbe probe{model::BannerProbe::Listen};
+            uint16_t dns_id{0};  // Dns: the version question's id
             std::array<uint8_t, model::kBannerBytesMax> bytes{};
             std::size_t size{0};
         };
@@ -2172,8 +2191,19 @@ private:
                 ::close(attempt.fd);
                 return false;
             }
-            if (attempt.probe == model::BannerProbe::Http) {
-                const std::string request = model::http_head_request(target, attempt.port);
+            if (attempt.probe == model::BannerProbe::Http || attempt.probe == model::BannerProbe::Dns) {
+                std::string request;
+                if (attempt.probe == model::BannerProbe::Http) {
+                    request = model::http_head_request(target, attempt.port);
+                } else {
+                    // DNS over TCP: the question after its two length bytes.
+                    attempt.dns_id = static_cast<uint16_t>(Clock::now().time_since_epoch().count());
+                    std::vector<uint8_t> question;
+                    dns::build_version_query(attempt.dns_id, question);
+                    request.push_back(static_cast<char>((question.size() >> 8) & 0xFF));
+                    request.push_back(static_cast<char>(question.size() & 0xFF));
+                    request.append(question.begin(), question.end());
+                }
                 const ssize_t written = ::send(attempt.fd, request.data(), request.size(), MSG_NOSIGNAL);
                 if (written > 0) {
                     count_sent();
@@ -2206,7 +2236,14 @@ private:
             if (!over) {
                 return true;
             }
-            note_banner(attempt.port, model::banner_text(attempt.probe, attempt.bytes.data(), attempt.size));
+            if (attempt.probe == model::BannerProbe::Dns) {
+                if (attempt.size > 2) {
+                    note_banner(attempt.port, model::dns_version_text(dns::version_answer(
+                                                  attempt.bytes.data() + 2, attempt.size - 2, attempt.dns_id)));
+                }
+            } else {
+                note_banner(attempt.port, model::banner_text(attempt.probe, attempt.bytes.data(), attempt.size));
+            }
             ::close(attempt.fd);
             return false;
         };
@@ -2333,6 +2370,9 @@ private:
             waiting.swap(still);
             publish(run);
         }
+        // What the ports said is checked against the list of known holes
+        // here, on this thread; nothing of the list is kept.
+        check_port_services(run, list_path_);
         run.state = model::ToolState::Done;
         publish(run);
     }
@@ -2550,20 +2590,21 @@ private:
     bool kept_full_{false};
     uint64_t listen_generation_{0};
     const std::string capture_folder_;
+    const std::string list_path_;
 };
 #endif
 
 } // namespace
 
-std::unique_ptr<ToolRunner> make_tool_runner(bool live) {
+std::unique_ptr<ToolRunner> make_tool_runner(bool live, const std::string& list_path) {
 #if !USE_DESKTOP
     if (live) {
-        return std::make_unique<LiveToolRunner>();
+        return std::make_unique<LiveToolRunner>(list_path);
     }
 #else
     (void)live;
 #endif
-    return std::make_unique<PretendToolRunner>();
+    return std::make_unique<PretendToolRunner>(list_path);
 }
 
 } // namespace platform
