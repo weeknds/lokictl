@@ -8,11 +8,12 @@
  * lokictl-capture: the only part of LokiCTL that may listen to raw network
  * traffic. It only ever receives; it never sends a packet.
  *
- * LokiCTL runs as the normal user. Hearing the ARP and DHCP traffic of the
- * network (the Discover page) needs a packet socket, which takes one Linux
- * capability, CAP_NET_RAW. This small program holds it as a file capability
- * (set by the package's postinst; it is not setuid), and only root and
- * members of the netdev group may run it (root:netdev, mode 0750).
+ * LokiCTL runs as the normal user. Hearing the ARP, DHCP, mDNS and SSDP
+ * traffic of the network (the Discover page) needs a packet socket, which
+ * takes one Linux capability, CAP_NET_RAW. This small program holds it as a
+ * file capability (set by the package's postinst; it is not setuid), and
+ * only root and members of the netdev group may run it (root:netdev, mode
+ * 0750).
  *
  * It does exactly one fixed command:
  *
@@ -26,8 +27,11 @@
  * In order:
  * 1. A packet socket is opened with protocol 0, so it receives nothing yet.
  * 2. A fixed classic BPF filter is attached and locked: ARP, and IPv4 UDP
- *    with both ports 67 or 68 (DHCP), not fragments; every frame cut to
+ *    that is not a fragment and either has both ports 67 or 68 (DHCP) or
+ *    goes to port 5353 (mDNS) or 1900 (SSDP); every frame cut to
  *    CAPTURE_SNAP_LENGTH bytes. Nothing else ever reaches this program.
+ *    No multicast group is joined: it hears only the mDNS and SSDP frames
+ *    that reach the Cardputer anyway.
  * 3. The socket is bound to the interface. It is never put into
  *    promiscuous mode, so it hears only what reaches the Cardputer anyway.
  * 4. Every capability is dropped, no_new_privs is set, and a seccomp filter
@@ -109,25 +113,30 @@ enum {
 
 static const char kProgram[] = "lokictl-capture";
 
-/* ARP; IPv4 UDP whose source and destination port are each 67 or 68 and
- * that is not a fragment. Accepted frames are cut to CAPTURE_SNAP_LENGTH. */
+/* ARP; IPv4 UDP that is not a fragment and goes to port 5353 (mDNS) or
+ * 1900 (SSDP), or whose source and destination port are each 67 or 68
+ * (DHCP). Accepted frames are cut to CAPTURE_SNAP_LENGTH. A load past the
+ * end of a frame drops it. */
 static struct sock_filter kFrameFilter[] = {
     /* 0 */ BPF_STMT(BPF_LD | BPF_H | BPF_ABS, 12),           /* EtherType */
-    /* 1 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, ETH_P_ARP, 12, 0), /* ARP: 14 */
-    /* 2 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, ETH_P_IP, 0, 12),  /* not IPv4: 15 */
+    /* 1 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, ETH_P_ARP, 15, 0), /* ARP: 17 */
+    /* 2 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, ETH_P_IP, 0, 15),  /* not IPv4: 18 */
     /* 3 */ BPF_STMT(BPF_LD | BPF_B | BPF_ABS, 23),           /* IPv4 protocol */
-    /* 4 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 17, 0, 10),   /* not UDP: 15 */
+    /* 4 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 17, 0, 13),   /* not UDP: 18 */
     /* 5 */ BPF_STMT(BPF_LD | BPF_H | BPF_ABS, 20),           /* flags, fragment offset */
-    /* 6 */ BPF_JUMP(BPF_JMP | BPF_JSET | BPF_K, 0x3fff, 8, 0), /* a fragment: 15 */
+    /* 6 */ BPF_JUMP(BPF_JMP | BPF_JSET | BPF_K, 0x3fff, 11, 0), /* a fragment: 18 */
     /* 7 */ BPF_STMT(BPF_LDX | BPF_B | BPF_MSH, 14),          /* X = IPv4 header length */
-    /* 8 */ BPF_STMT(BPF_LD | BPF_H | BPF_IND, 14),           /* UDP source port */
-    /* 9 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 67, 1, 0),    /* 67: 11 */
-    /* 10 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 68, 0, 4),   /* not 68: 15 */
-    /* 11 */ BPF_STMT(BPF_LD | BPF_H | BPF_IND, 16),          /* UDP destination port */
+    /* 8 */ BPF_STMT(BPF_LD | BPF_H | BPF_IND, 16),           /* UDP destination port */
+    /* 9 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 5353, 7, 0),  /* mDNS: 17 */
+    /* 10 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 1900, 6, 0), /* SSDP: 17 */
+    /* 11 */ BPF_STMT(BPF_LD | BPF_H | BPF_IND, 14),          /* UDP source port */
     /* 12 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 67, 1, 0),   /* 67: 14 */
-    /* 13 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 68, 0, 1),   /* not 68: 15 */
-    /* 14 */ BPF_STMT(BPF_RET | BPF_K, CAPTURE_SNAP_LENGTH),  /* accept */
-    /* 15 */ BPF_STMT(BPF_RET | BPF_K, 0),                    /* drop */
+    /* 13 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 68, 0, 4),   /* not 68: 18 */
+    /* 14 */ BPF_STMT(BPF_LD | BPF_H | BPF_IND, 16),          /* UDP destination port */
+    /* 15 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 67, 1, 0),   /* 67: 17 */
+    /* 16 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 68, 0, 1),   /* not 68: 18 */
+    /* 17 */ BPF_STMT(BPF_RET | BPF_K, CAPTURE_SNAP_LENGTH),  /* accept */
+    /* 18 */ BPF_STMT(BPF_RET | BPF_K, 0),                    /* drop */
 };
 
 /* One allowed system call: on a match it is allowed, otherwise the next

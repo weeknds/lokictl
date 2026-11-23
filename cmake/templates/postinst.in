@@ -9,8 +9,8 @@
 # - the firewall helper may change the firewall (only its own nftables
 #   table, "inet lokictl") or add an interface (only Share's lokiap0):
 #   CAP_NET_ADMIN;
-# - the capture helper may listen to the network's ARP and DHCP traffic,
-#   and only receive: CAP_NET_RAW.
+# - the capture helper may listen to the network's ARP, DHCP, mDNS and
+#   SSDP traffic, and only receive: CAP_NET_RAW.
 # chgrp clears a file capability, so setcap comes last.
 
 set -e

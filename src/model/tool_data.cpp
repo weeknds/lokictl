@@ -72,7 +72,8 @@ bool operator!=(const TraceRun& left, const TraceRun& right) {
 
 bool operator==(const HeardDevice& left, const HeardDevice& right) {
     return left.hardware_address == right.hardware_address && left.address == right.address &&
-           left.name == right.name && left.own_port == right.own_port && left.heard_s == right.heard_s;
+           left.name == right.name && left.kind == right.kind && left.own_port == right.own_port &&
+           left.heard_s == right.heard_s;
 }
 
 bool operator!=(const HeardDevice& left, const HeardDevice& right) {
@@ -82,7 +83,9 @@ bool operator!=(const HeardDevice& left, const HeardDevice& right) {
 bool operator==(const ListenRun& left, const ListenRun& right) {
     return left.state == right.state && left.error == right.error && left.reason == right.reason &&
            left.interface_name == right.interface_name && left.elapsed_s == right.elapsed_s &&
-           left.frames == right.frames && left.devices == right.devices;
+           left.frames == right.frames && left.devices == right.devices && left.save == right.save &&
+           left.save_name == right.save_name && left.save_reason == right.save_reason &&
+           left.save_bytes == right.save_bytes && left.save_full == right.save_full;
 }
 
 bool operator!=(const ListenRun& left, const ListenRun& right) {

@@ -552,9 +552,11 @@ but sample network data for now (see [docs/home.md](docs/home.md)):
   every packet LokiCTL sent;
 - `5` SCAN opens the Discover page: `6` START listens on the network the
   Cardputer is on for 5 minutes and lists every device it hears (hardware
-  address, IPv4 address, the name it gave over DHCP, how long ago it was
-  heard), while sending nothing (`Sent` does not move); `6` STOP ends it
-  early, `f`/`x` scroll;
+  address, IPv4 address, the name it gave over DHCP or mDNS, what kind of
+  device it says it is over mDNS or SSDP, how long ago it was heard),
+  while sending nothing (`Sent` does not move); `6` STOP ends it early,
+  `f`/`x` scroll; `7` SAVE keeps the run as a PCAP file (see "Saved
+  captures" below);
 - a short `esc` shows the hint `Hold ESC to exit`, and holding `esc` quits.
 
 The Settings page lists the three themes; a tick marks the active one:
@@ -675,15 +677,30 @@ A second, separate helper does that,
 with the single capability `CAP_NET_RAW`, again not setuid and only for
 root and the `netdev` group. It does one fixed command (`discover`, an
 interface and a number of seconds, at most 30 minutes). It opens a packet
-socket with a fixed filter that lets only ARP and DHCP through, never in
-promiscuous mode, then drops every capability and locks itself (seccomp)
+socket with a fixed filter that lets only ARP, DHCP, mDNS (UDP to port
+5353) and SSDP (UDP to port 1900) through, never in promiscuous mode and
+without joining any multicast group, then drops every capability and
+locks itself (seccomp)
 so that it can only receive, never send. It writes what it hears to the
 app as a PCAP stream on a pipe (no file) and stops at its time limit,
 after 16 MiB, or when the app goes away; the app reads the stream without
 any rights. **Every program of a `netdev` member may run it too**, so it
-could listen to the ARP and DHCP traffic that reaches the Cardputer, and
-nothing else. The store may refuse either helper; both are optional for
-the rest of the app.
+could listen to the ARP, DHCP, mDNS and SSDP traffic that reaches the
+Cardputer, and nothing else. The store may refuse either helper; both are
+optional for the rest of the app.
+
+**Saved captures:** `7` SAVE on the Discover page writes the run to a standard PCAP file that
+Wireshark or `tcpdump -r` opens: what was heard so far, then the rest of
+the run as it comes. The app writes it, not the helper, with the user's
+own rights, to `~/.local/share/lokictl/captures/` (or
+`$XDG_DATA_HOME/lokictl/captures/`), named after the time it was made, for
+example `20261123-075130.pcap`. The folder is private (0700) and so is
+each file (0600). A file holds at most one run (5 minutes) and at most
+4 MB of it (the page then says `full`). A run is kept in memory until the
+next run starts, so it can still be saved after it ended. Nothing is sent
+anywhere; copy the file off the Cardputer yourself, for example with
+`scp`, and delete it when you no longer need it: it holds what your
+network's devices said about themselves.
 
 The two demo pages, the counter and the key test page, are not opened from
 the home page. They are reached with `--page` in snapshot runs (see
@@ -746,7 +763,9 @@ installing. LokiCTL keeps one file of its own there: picking a theme or
 switching "Dim when idle" on the Settings page saves it in
 `~/.config/lokictl/lokictl.conf`, and so do the first switch to Router
 (the hotspot's password), a new name or password on the Hotspot page and
-blocking a device (the `blocked_devices=` list). The package also installs
+blocking a device (the `blocked_devices=` list). `7` SAVE on the Discover
+page writes a capture file under `~/.local/share/lokictl/captures/` (see
+"Saved captures" above). The package also installs
 the polkit rule and the two helpers described above. Switching to Router or Share changes the network (see the Modes
 page above); quitting LokiCTL switches back to Client. While it runs, LokiCTL dims the screen
 through `/sys/class/backlight/backlight/brightness` and puts the old value

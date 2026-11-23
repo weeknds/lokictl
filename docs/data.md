@@ -768,8 +768,9 @@ nothing.
   (`platform::CaptureProcess` in `platform/listen.*`), with `posix_spawn`,
   an empty environment, no blocked signals and its standard output on a
   pipe (closed on exec, read without blocking). The helper alone holds
-  `CAP_NET_RAW`; it hears only ARP and DHCP, drops every capability and
-  can then only receive (see the README). The runner reads its PCAP stream
+  `CAP_NET_RAW`; it hears only ARP, DHCP, mDNS (UDP to 5353) and SSDP
+  (UDP to 1900), joins no multicast group, drops every capability and can
+  then only receive (see the README). The runner reads its PCAP stream
   without any rights (`platform::CaptureReader`: a wrong file header or a
   record longer than 2048 bytes ends the run with `bad capture data`) and
   hands each frame to `platform::HeardDevices`. Stop and quitting send the
@@ -784,18 +785,49 @@ nothing.
   frame's sender, which may be the server), its address (`ciaddr`, the
   requested address of a request, or the address an acknowledgement gives)
   and its host name (option 12: the first label, at most 32 printable ASCII
-  characters, anything else `?`), plus the server itself. Every length is
-  checked against the captured bytes; a frame cut short or an option
-  running past the end is read only as far as it is whole. The Cardputer's
-  own ports (`/sys/class/net/*/address`, without `lo`) are marked with
-  their interface.
+  characters, anything else `?`), plus the server itself. From mDNS and
+  SSDP it takes the frame's sender and the packet's source address. An
+  mDNS response (sent from port 5353, read with
+  `dns::parse_all_records()`, every section, the cache-flush bit masked)
+  also gives a host name, from an A record whose address is the packet's
+  source (so a proxy answering for others is not named after them), and a
+  kind from the service types it names (`_ipp._tcp` printer,
+  `_googlecast._tcp` Google Cast, `_airplay._tcp` AirPlay, `_hap._tcp`
+  HomeKit, `_smb._tcp` file share, `_ssh._tcp` SSH and more; the first in
+  the table wins). An SSDP `NOTIFY` gives a kind from its `NT` device type
+  (router, access point, printer, media player, media server, TV for
+  DIAL), else the product its `SERVER` header names after `UPnP/1.x`.
+  Questions (mDNS queries, SSDP `M-SEARCH`) only say the sender is there.
+  A DHCP name wins over an mDNS one; a kind is only replaced by a surer
+  one (mDNS, then SSDP's device type, then its server product). Every
+  length is checked against the captured bytes; a frame cut short or an
+  option or record running past the end is read only as far as it is
+  whole. The Cardputer's own ports (`/sys/class/net/*/address`, without
+  `lo`) are marked with their interface. On a network whose switch or
+  port filter keeps SSDP's multicast group away, no SSDP is heard (the
+  helper does not join the group).
+- **Saving** (`ToolRunner::save_capture()`, key 7): the reader keeps the
+  stream as read, the file header and then whole records, at most 4 MiB
+  (`model::kCaptureSaveMax`), until the next listen starts. A save during
+  a run creates the file (`platform::CaptureFile`: `capture_folder()`,
+  made 0700; a new file named after the local time, 0600, `O_EXCL` and
+  `O_NOFOLLOW`), writes what was kept and appends the rest on each read
+  until the run ends; a save after a run writes what it kept. Both happen
+  on the runner's thread. The run's `save`, `save_name`, `save_bytes`,
+  `save_full` and `save_reason` say how it goes; the log gets byte counts
+  only, never the path.
 - **The pretend runner** reads a made-up capture
   (`platform::pretend_capture()`) through the same reader and list, each
   frame at its own time: this device's cable and Wi-Fi ports, the router
   (asking again every 10 s), a TV, a printer and a phone that take their
   addresses over DHCP, a speaker that probes first, one frame cut short
-  and one DHCP option that runs past the end, all with made-up locally
-  administered hardware addresses on the sample's 10.0.0.x network.
+  and one DHCP option that runs past the end, mDNS answers from the
+  printer and the TV shaped like real ones (the cache-flush bit,
+  compressed names, the address in the additional section, the TV's cut
+  short in its last record), a phone's mDNS question and SSDP
+  announcements from the router and the speaker, all with made-up locally
+  administered hardware addresses on the sample's 10.0.0.x network. Its
+  save writes no file and shows the made-up name `20260614-074600.pcap`.
 
 ## The Wi-Fi list
 

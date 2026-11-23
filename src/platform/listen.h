@@ -53,8 +53,21 @@ public:
 
     bool broken() const { return broken_; }
 
+    // From now on also keeps the stream as read, for saving it as a PCAP
+    // file: the file header and then each whole record, as long as all of
+    // it stays within `max_bytes`. Once a record does not fit, nothing more
+    // is kept and kept_full() is true. Call it before the first feed().
+    void keep(std::size_t max_bytes) { keep_max_ = max_bytes; }
+    const std::vector<uint8_t>& kept() const { return kept_; }
+    bool kept_full() const { return kept_full_; }
+    // Hands the kept bytes over, leaving none here.
+    std::vector<uint8_t> take_kept() { return std::move(kept_); }
+
 private:
     std::vector<uint8_t> pending_;
+    std::vector<uint8_t> kept_;
+    std::size_t keep_max_{0};
+    bool kept_full_{false};
     bool header_read_{false};
     bool broken_{false};
 };
@@ -69,9 +82,21 @@ private:
 //   address of a request, or the address an acknowledgement gives) and the
 //   host name of option 12 (the first label, at most model::kHostNameMax
 //   printable ASCII characters, anything else '?'); and the server itself
-//   (the frame's sender and the packet's source address).
-// Every length is checked against the captured bytes; a frame cut short or
-// an option running past the end is read only as far as it is whole.
+//   (the frame's sender and the packet's source address);
+// - from mDNS (UDP to port 5353) and SSDP (UDP to port 1900): the frame's
+//   sender and the packet's source address. An mDNS response (from port
+//   5353) also gives a host name, from an A record whose address is the
+//   packet's source (its first label, cleaned like a DHCP name), and a kind
+//   from the service types it names (owner names and PTR targets, such as
+//   "_ipp._tcp" for a printer). An SSDP NOTIFY gives a kind from its NT
+//   device type, else from the product its SERVER header names.
+// A DHCP host name always wins over an mDNS one; a kind, once known, is
+// replaced only by one from a surer source (an mDNS service, then an SSDP
+// device type, then an SSDP server product), so nothing flips back and
+// forth. Kinds are at most model::kDeviceKindMax printable ASCII
+// characters. Every length is checked against the captured bytes; a frame
+// cut short or an option or record running past the end is read only as
+// far as it is whole.
 class HeardDevices {
 public:
     explicit HeardDevices(std::vector<OwnPort> own_ports);
@@ -88,10 +113,32 @@ public:
     int32_t frames() const { return frames_; }
 
 private:
+    // How sure a name or a kind is: a surer one replaces a less sure one,
+    // never the other way round.
+    enum Rank : int32_t {
+        kRankNone = 0,
+        kRankSsdpServer = 1,  // kind: the product an SSDP SERVER header names
+        kRankSsdpType = 2,    // kind: an SSDP NT device type
+        kRankMdns = 3,        // name: an mDNS A record; kind: an mDNS service type
+        kRankDhcp = 4,        // name: DHCP option 12
+    };
+
+    // What one frame says about one device.
+    struct Heard {
+        uint32_t address{0};
+        std::string name;
+        int32_t name_rank{kRankNone};
+        std::string kind;
+        int32_t kind_rank{kRankNone};
+    };
+
     struct Entry {
         uint8_t hardware[6]{};
         uint32_t address{0};  // 0: none heard
         std::string name;
+        int32_t name_rank{kRankNone};
+        std::string kind;
+        int32_t kind_rank{kRankNone};
         std::string own_port;
         int32_t heard_s{0};
     };
@@ -99,7 +146,10 @@ private:
     bool note_arp(const uint8_t* arp, std::size_t size, int32_t at_s);
     bool note_ipv4(const uint8_t* frame, std::size_t size, int32_t at_s);
     bool note_dhcp(const uint8_t* bootp, std::size_t size, const uint8_t* sender, uint32_t source, int32_t at_s);
-    bool note(const uint8_t* hardware, uint32_t address, const std::string& name, int32_t at_s);
+    bool note_mdns(const uint8_t* message, std::size_t size, bool response, const uint8_t* sender, uint32_t source,
+                   int32_t at_s);
+    bool note_ssdp(const uint8_t* text, std::size_t size, const uint8_t* sender, uint32_t source, int32_t at_s);
+    bool note(const uint8_t* hardware, const Heard& heard, int32_t at_s);
     void rebuild();
 
     std::vector<OwnPort> own_ports_;
@@ -112,9 +162,52 @@ private:
 // run hears in its first `elapsed_ms` milliseconds (record times count from
 // 0). Made-up, locally administered hardware addresses on the sample's
 // 10.0.0.x network, including the two pretend_own_ports(), one frame cut
-// short and one DHCP option running past its packet's end.
+// short, one DHCP option running past its packet's end, mDNS answers shaped
+// like real ones (the cache-flush bit, compressed names, the address in the
+// additional section, one cut short) and SSDP NOTIFY announcements.
 std::vector<uint8_t> pretend_capture(uint32_t elapsed_ms);
 std::vector<OwnPort> pretend_own_ports();
+// The made-up file name the pretend runner shows for a saved capture (it
+// writes no file).
+constexpr const char* kPretendCaptureName = "20260614-074600.pcap";
+
+// The folder saved captures go to: $XDG_DATA_HOME/lokictl/captures when
+// XDG_DATA_HOME is an absolute path, otherwise
+// ~/.local/share/lokictl/captures ($HOME, else the account's home folder).
+// Empty when no home folder is known.
+std::string capture_folder();
+
+// One saved capture: a new PCAP file written from the bytes a CaptureReader
+// kept. Only ever used on the tool runner's thread.
+class CaptureFile {
+public:
+    CaptureFile() = default;
+    // Calls close().
+    ~CaptureFile();
+
+    CaptureFile(const CaptureFile&) = delete;
+    CaptureFile& operator=(const CaptureFile&) = delete;
+
+    // Makes `folder` (and the folders above it) when missing, sets it to
+    // 0700, and creates a new file in it named after the local time,
+    // "YYYYMMDD-HHMMSS.pcap" ("-2" to "-9" added when the name is taken),
+    // mode 0600, never through a link and never over an existing file.
+    // Returns false with a short `reason` ("no home folder", "disk full").
+    bool create(const std::string& folder, std::string& reason);
+    // Adds `size` bytes at the end. Returns false with `reason` when they
+    // could not all be written; the file is closed then.
+    bool append(const uint8_t* data, std::size_t size, std::string& reason);
+    void close();
+
+    bool is_open() const { return fd_ >= 0; }
+    const std::string& name() const { return name_; }
+    uint64_t bytes() const { return bytes_; }
+
+private:
+    int fd_{-1};
+    std::string name_;
+    uint64_t bytes_{0};
+};
 
 #if !USE_DESKTOP
 // The capture helper, run for one listen (device builds only). All of it is

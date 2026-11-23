@@ -67,6 +67,16 @@ bool build_query(uint16_t id, std::string_view name, uint16_t type, std::vector<
 // lengths.
 bool parse_message(const uint8_t* data, std::size_t size, Message& out);
 
+// Reads every record of a message, as mDNS needs (RFC 6762: an announced
+// host's address often comes in the additional section): the header, the
+// questions (the first one into `out.question_*`, as parse_message() does)
+// and then the answer, authority and additional sections, in that order,
+// all into `out.answers`. Unlike parse_message() it keeps the records read
+// before one that does not fit, as in a frame cut short, and returns true
+// when the header and the questions were whole. The class is kept as sent,
+// with mDNS's cache-flush bit (0x8000) in it.
+bool parse_all_records(const uint8_t* data, std::size_t size, Message& out);
+
 // Reads a name at `offset` of the message, following compression pointers
 // (each must point before the place it was read from, at most 32 of them),
 // in lowercase without the final dot ("" for the root). On success `offset`

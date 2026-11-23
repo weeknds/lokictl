@@ -229,14 +229,17 @@ public:
     void set_tool_typing(bool typing);
     const std::string& tool_draft() const;
     void set_tool_draft(const std::string& draft);
-    // Asks to run `kind` on `target`, or to stop the run. The view model
-    // only passes the request on: app::ToolController hands it to the tool
-    // runner, and the run comes back in tools(). Counts every request, like
-    // request_mode(); requested_tool_stop(), requested_tool() and
+    // Asks to run `kind` on `target`, to stop the run, or to save the
+    // latest listen run as a PCAP file. The view model only passes the
+    // request on: app::ToolController hands it to the tool runner, and the
+    // run comes back in tools(). Counts every request, like request_mode();
+    // requested_capture_save(), requested_tool_stop(), requested_tool() and
     // requested_tool_target() say what was asked.
     void request_tool_run(model::ToolKind kind, const std::string& target);
     void request_tool_stop();
+    void request_capture_save();
     lv_subject_t* tool_request_subject();
+    bool requested_capture_save() const;
     bool requested_tool_stop() const;
     model::ToolKind requested_tool() const;
     const std::string& requested_tool_target() const;
@@ -370,6 +373,7 @@ private:
     std::string tool_draft_;
     reactive::IntSubject tool_request_subject_;
     bool requested_tool_stop_{false};
+    bool requested_capture_save_{false};
     model::ToolKind requested_tool_{model::ToolKind::Ping};
     std::string requested_tool_target_;
     model::ToolsData tools_;

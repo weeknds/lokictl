@@ -36,7 +36,9 @@ struct ToolJob {
 // sends nothing: it runs the capture helper (platform::CaptureProcess,
 // which alone may open the packet socket and only receives) and reads its
 // stream into the device list (listen.h). It never changes a network
-// setting.
+// setting. A listen run keeps what it heard (whole PCAP records, at most
+// model::kCaptureSaveMax) until the next listen starts, so it can be saved
+// as a file (save_capture()); the file is written on this thread too.
 //
 // The pretend runner (the Mac simulator, snapshots, and the made-up data
 // sources) has no thread and never opens a socket: each take() works out
@@ -44,7 +46,8 @@ struct ToolJob {
 // results (documentation addresses only; a listen reads a made-up capture,
 // pretend_capture()), so the same keys and settle time always give the same
 // picture. It still adds the packets it pretends to send to the Sent count
-// (none for a listen).
+// (none for a listen). It never writes a file: a save reads as saved under
+// the made-up name kPretendCaptureName (listen.h).
 //
 // All functions are called on the UI thread.
 class ToolRunner {
@@ -58,6 +61,13 @@ public:
     // Asks the running job to end; it then reads Stopped. Never waits; does
     // nothing without a job.
     virtual void stop() = 0;
+    // Asks to save the latest listen run as a PCAP file (capture_folder(),
+    // listen.h): while it runs, the file gets what was heard so far and
+    // then grows until the run ends; after it, the file gets what the run
+    // kept. The run's save fields (model::ListenRun::save...) then say how
+    // it goes. Never waits. Returns false and changes nothing when there is
+    // no listen run, nothing was kept, or the run was already saved.
+    virtual bool save_capture() = 0;
     // Copies the latest runs into data.ping, data.dns, data.trace and
     // data.listen (data.sent is left alone) and returns true, but only when any changed
     // since the last take(); otherwise leaves `data` alone and returns

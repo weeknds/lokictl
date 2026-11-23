@@ -163,6 +163,11 @@ public:
         job_ = job;
         started_ms_ = lv_tick_get();
         counted_ = 0;
+        if (job.kind == model::ToolKind::Listen) {
+            save_asked_ = false;
+            kept_bytes_ = 0;
+            kept_full_ = false;
+        }
         advance();
         return true;
     }
@@ -188,9 +193,35 @@ public:
                 break;
             case model::ToolKind::Listen:
                 latest_.listen.state = model::ToolState::Stopped;
+                if (latest_.listen.save == model::CaptureSave::Saving) {
+                    latest_.listen.save = model::CaptureSave::Saved;
+                }
                 break;
         }
         fresh_ = true;
+    }
+
+    bool save_capture() override {
+        advance();
+        model::ListenRun& run = latest_.listen;
+        if (closed_ || run.state == model::ToolState::Idle || run.save != model::CaptureSave::None) {
+            return false;
+        }
+        if (running_ && job_.kind == model::ToolKind::Listen) {
+            // The run shows Saving from now on, and Saved when it ends.
+            save_asked_ = true;
+            advance();
+            return true;
+        }
+        if (kept_bytes_ == 0) {
+            return false;
+        }
+        run.save = model::CaptureSave::Saved;
+        run.save_name = kPretendCaptureName;
+        run.save_bytes = kept_bytes_;
+        run.save_full = kept_full_;
+        fresh_ = true;
+        return true;
     }
 
     bool take(model::ToolsData& data) override {
@@ -394,7 +425,8 @@ private:
     // A listen run: the made-up capture of the time so far, read by the
     // same code as the helper's stream (in small pieces, so records arrive
     // split), each frame at its own time.
-    model::ListenRun listen_at(uint32_t elapsed, bool& done) const {
+    // Notes how much the reader kept, for a save after the run.
+    model::ListenRun listen_at(uint32_t elapsed, bool& done) {
         constexpr uint32_t kLimitMs = static_cast<uint32_t>(model::kListenSeconds) * 1000u;
         constexpr std::size_t kPiece = 7;
         const uint32_t shown = std::min(elapsed, kLimitMs);
@@ -404,6 +436,7 @@ private:
         run.elapsed_s = static_cast<int32_t>(shown / 1000);
         const std::vector<uint8_t> stream = pretend_capture(shown);
         CaptureReader reader;
+        reader.keep(model::kCaptureSaveMax);
         HeardDevices heard(pretend_own_ports());
         const auto on_frame = [&heard](const uint8_t* frame, std::size_t size, uint32_t seconds) {
             heard.note_frame(frame, size, static_cast<int32_t>(seconds));
@@ -413,9 +446,17 @@ private:
         }
         run.frames = heard.frames();
         run.devices = heard.devices();
+        kept_bytes_ = reader.kept().size();
+        kept_full_ = reader.kept_full();
         if (elapsed >= kLimitMs) {
             run.state = model::ToolState::Done;
             done = true;
+        }
+        if (save_asked_) {
+            run.save = done ? model::CaptureSave::Saved : model::CaptureSave::Saving;
+            run.save_name = kPretendCaptureName;
+            run.save_bytes = kept_bytes_;
+            run.save_full = kept_full_;
         }
         return run;
     }
@@ -427,6 +468,11 @@ private:
     uint32_t started_ms_{0};
     uint32_t counted_{0};      // packets of this job already added to the Sent count
     model::ToolsData latest_;  // sent is not used
+    // The latest listen run: whether a save was asked while it ran, and how
+    // much its reader kept.
+    bool save_asked_{false};
+    uint64_t kept_bytes_{0};
+    bool kept_full_{false};
 };
 
 #if !USE_DESKTOP
@@ -817,6 +863,9 @@ struct Lookup {
 
 class LiveToolRunner : public ToolRunner {
 public:
+    // The folder is found here, on the UI thread, once.
+    LiveToolRunner() : capture_folder_(capture_folder()) {}
+
     ~LiveToolRunner() override {
         shutdown();
     }
@@ -857,6 +906,9 @@ public:
                     latest_.listen = model::ListenRun{};
                     latest_.listen.state = model::ToolState::Running;
                     latest_.listen.interface_name = job.target;
+                    // A save asked for the run before is dropped with it.
+                    save_flag_.store(false);
+                    ++listen_generation_;
                     break;
             }
             fresh_ = true;
@@ -867,6 +919,22 @@ public:
 
     void stop() override {
         stop_flag_.store(true);
+    }
+
+    bool save_capture() override {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            const model::ListenRun& run = latest_.listen;
+            if (closed_ || run.state == model::ToolState::Idle || run.save != model::CaptureSave::None) {
+                return false;
+            }
+            if (run.state != model::ToolState::Running && kept_.empty()) {
+                return false;
+            }
+            save_flag_.store(true);
+        }
+        wake_.notify_all();
+        return true;
     }
 
     bool take(model::ToolsData& data) override {
@@ -920,9 +988,10 @@ private:
     void run() {
         while (true) {
             ToolJob job;
+            bool save = false;
             {
                 std::unique_lock<std::mutex> lock(mutex_);
-                wake_.wait(lock, [this] { return quit_ || has_job_; });
+                wake_.wait(lock, [this] { return quit_ || has_job_ || save_flag_.load(); });
                 if (quit_) {
                     if (has_job_) {
                         // Taken but never run: it reads as stopped.
@@ -932,8 +1001,18 @@ private:
                     busy_ = false;
                     return;
                 }
-                job = job_;
-                has_job_ = false;
+                // A job first: a listen that waits to start sees the save
+                // itself.
+                if (has_job_) {
+                    job = job_;
+                    has_job_ = false;
+                } else {
+                    save = save_flag_.exchange(false);
+                }
+            }
+            if (save) {
+                save_kept();
+                continue;
             }
             try {
                 switch (job.kind) {
@@ -1622,8 +1701,17 @@ private:
         model::ListenRun run;
         run.state = model::ToolState::Running;
         run.interface_name = interface_name;
+        {
+            // The run before is gone; so is what it kept.
+            std::lock_guard<std::mutex> lock(mutex_);
+            kept_ = std::vector<uint8_t>();
+            kept_full_ = false;
+        }
         HeardDevices heard(read_own_ports());
         CaptureReader reader;
+        reader.keep(model::kCaptureSaveMax);
+        CaptureFile file;
+        std::size_t file_upto = 0;  // how much of what the reader kept is in the file
         CaptureProcess capture;
         if (!capture.start(interface_name, model::kListenSeconds, run.error, run.reason)) {
             run.state = model::ToolState::Failed;
@@ -1670,6 +1758,15 @@ private:
             run.elapsed_s = std::min(at_s, model::kListenSeconds);
             run.frames = heard.frames();
             run.devices = heard.devices();
+            if (run.save == model::CaptureSave::None && save_flag_.exchange(false)) {
+                if (file.create(capture_folder_, run.save_reason)) {
+                    run.save = model::CaptureSave::Saving;
+                    run.save_name = file.name();
+                } else {
+                    run.save = model::CaptureSave::Failed;
+                }
+            }
+            save_more(file, reader, file_upto, run);
             if (end == End::Running) {
                 publish(run);
             }
@@ -1698,7 +1795,85 @@ private:
                 break;
             }
         }
-        publish(run);
+        if (file.is_open()) {
+            save_more(file, reader, file_upto, run);
+            file.close();
+            if (run.save == model::CaptureSave::Saving) {
+                run.save = model::CaptureSave::Saved;
+            }
+        }
+        // The end of the run and what it kept show together, so a save
+        // asked from now on finds them both.
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (run != latest_.listen) {
+            latest_.listen = run;
+            fresh_ = true;
+        }
+        if (run.save == model::CaptureSave::None) {
+            kept_ = reader.take_kept();
+            kept_full_ = reader.kept_full();
+        }
+    }
+
+    // While a listen run is saved: adds what the reader kept since the last
+    // call to the file, and notes the file's size in `run`.
+    static void save_more(CaptureFile& file,
+                          const CaptureReader& reader,
+                          std::size_t& file_upto,
+                          model::ListenRun& run) {
+        if (run.save != model::CaptureSave::Saving) {
+            return;
+        }
+        const std::vector<uint8_t>& kept = reader.kept();
+        if (file.is_open() && kept.size() > file_upto) {
+            if (file.append(kept.data() + file_upto, kept.size() - file_upto, run.save_reason)) {
+                file_upto = kept.size();
+            } else {
+                run.save = model::CaptureSave::Failed;
+            }
+        }
+        run.save_bytes = file.bytes();
+        run.save_full = reader.kept_full();
+    }
+
+    // Saves the latest listen run, which has ended, from what it kept.
+    void save_kept() {
+        std::vector<uint8_t> bytes;
+        bool full = false;
+        uint64_t generation = 0;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            model::ListenRun& run = latest_.listen;
+            if (run.save != model::CaptureSave::None || run.state == model::ToolState::Idle ||
+                run.state == model::ToolState::Running) {
+                return;
+            }
+            bytes = std::move(kept_);
+            kept_ = std::vector<uint8_t>();
+            full = kept_full_;
+            generation = listen_generation_;
+            run.save = model::CaptureSave::Saving;
+            fresh_ = true;
+        }
+        CaptureFile file;
+        std::string reason;
+        const bool saved = !bytes.empty() && file.create(capture_folder_, reason) &&
+                           file.append(bytes.data(), bytes.size(), reason);
+        if (bytes.empty()) {
+            reason = "nothing to save";
+        }
+        file.close();
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (generation != listen_generation_) {
+            return;  // a new listen started meanwhile
+        }
+        model::ListenRun& run = latest_.listen;
+        run.save = saved ? model::CaptureSave::Saved : model::CaptureSave::Failed;
+        run.save_name = file.name();
+        run.save_reason = saved ? std::string() : reason;
+        run.save_bytes = file.bytes();
+        run.save_full = full;
+        fresh_ = true;
     }
 
     std::thread thread_;
@@ -1707,6 +1882,8 @@ private:
     std::mutex mutex_;
     std::condition_variable wake_;
     std::atomic<bool> stop_flag_{false};
+    // A save was asked (save_capture()); read and cleared by the thread.
+    std::atomic<bool> save_flag_{false};
     bool quit_{false};
     bool closed_{false};
     bool busy_{false};     // a job was started and has not ended yet
@@ -1714,6 +1891,12 @@ private:
     ToolJob job_;
     model::ToolsData latest_;  // sent is not used
     bool fresh_{false};
+    // What the latest listen run kept, until it is saved or the next listen
+    // starts; and which listen run is the latest.
+    std::vector<uint8_t> kept_;
+    bool kept_full_{false};
+    uint64_t listen_generation_{0};
+    const std::string capture_folder_;
 };
 #endif
 

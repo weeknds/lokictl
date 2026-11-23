@@ -506,13 +506,14 @@ its end.
 
 `discover` (the home page's key 5) is step 1 of discovery, Listen: it
 lists the devices heard on the network the Cardputer is on (the uplink
-interface) from their ARP and DHCP traffic, and sends nothing (see
-[data.md](data.md#listening)). Under the title bar: the interface with how
+interface) from their ARP, DHCP, mDNS and SSDP traffic, and sends nothing
+(see [data.md](data.md#listening)). Under the title bar: the interface with how
 many devices were heard and `STEP 1 OF 3: LISTEN` at the right, then two
 lines per device: its name with its IPv4 address (`no address` while none
-was heard), then its hardware address with how long ago it was last heard
-(`now`, `12 s ago`, `3 min ago`). The name is the host name it gave over
-DHCP, `router` for the uplink's router when it gave none, `unnamed` in the
+was heard), then its hardware address, its kind when known (`printer`,
+`Google Cast`, `media player`, from mDNS or SSDP) and how long ago it was
+last heard (`now`, `12 s ago`, `3 min ago`). The name is the host name it
+gave over DHCP or else mDNS, `router` for the uplink's router when it gave none, `unnamed` in the
 muted colour, or `this device, eth0` in the accent colour for the
 Cardputer's own ports (both of them can be heard when they are on the same
 network). Two devices fit in every theme, with the thin scroll mark of the
@@ -521,11 +522,15 @@ no network, not listened yet, listening, nothing heard, or a helper
 problem. The status line says `Listening, 4:12 left`, `Listened 5:00, 40
 frames`, `Stopped after 1:23`, `Join a network first` or what went wrong
 (`Capture not allowed`, `Capture helper not installed`), with `SENT N` at
-its right, which does not move while listening.
+its right, which does not move while listening. Saving takes the status
+line over: `Saving, 4:12 left, 14 KB` while the run lasts, then `Saved
+20261123-075130.pcap` (`, full` when the run heard more than 4 MB) or
+`Save failed: disk full` (see the README's "Saved captures").
 
 | Key | What it does |
 |---|---|
 | `6` START / STOP | listens for 5 minutes on the uplink interface, or stops; off without a network and while another tool runs |
+| `7` SAVE | saves the latest run as a PCAP file: on while one runs and after one that heard something, until it is saved; off while another tool runs |
 | `f`/`x` or the arrows up and down | scroll the devices |
 | `4` BACK or a short ESC | goes back; a run goes on |
 
@@ -536,8 +541,10 @@ view model (`discover_scroll_*`, back to the top each time the page opens
 or a run starts). The help panel shows the badge `DISCOVER` and five rows.
 Snapshots: `--page discover` shows the page before a run, `--keys 6
 --settle-ms 1600` a run under way with the first made-up devices and
-`--settle-ms 12000` all of them; `--data offline` shows `Join a network
-first`.
+`--settle-ms 12000` all of them; `--keys 6,down,down,down --settle-ms 3000`
+the printer and the TV with their kinds; `--keys 6,7 --settle-ms 4000`
+saving and `--keys 6,7,6 --settle-ms 2000` saved (the pretend runner
+writes no file); `--data offline` shows `Join a network first`.
 
 ## The Status page
 

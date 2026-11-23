@@ -111,6 +111,18 @@ std::string age_text(int32_t seconds) {
     return std::to_string(seconds / 60) + " min ago";
 }
 
+// A file's size: "512 B", "14 KB", "3.2 MB".
+std::string size_text(uint64_t bytes) {
+    if (bytes < 1024) {
+        return std::to_string(bytes) + " B";
+    }
+    if (bytes < 1024 * 1024) {
+        return std::to_string(bytes / 1024) + " KB";
+    }
+    const uint64_t tenths = bytes * 10 / (1024 * 1024);
+    return std::to_string(tenths / 10) + "." + std::to_string(tenths % 10) + " MB";
+}
+
 std::string capitalized(std::string text) {
     if (!text.empty() && text[0] >= 'a' && text[0] <= 'z') {
         text[0] = static_cast<char>(text[0] - 'a' + 'A');
@@ -119,11 +131,26 @@ std::string capitalized(std::string text) {
 }
 
 // The status line for the latest run (another tool running is handled by
-// the caller).
+// the caller). Saving the run as a file shows here too.
 tools::ToneText status_text(const model::ListenRun& run, bool has_uplink) {
+    const std::string left = minutes_text(model::kListenSeconds - run.elapsed_s) + " left";
+    switch (run.save) {
+        case model::CaptureSave::Saving:
+            if (run.state == model::ToolState::Running) {
+                return {"Saving, " + left + ", " + size_text(run.save_bytes), tools::kToneAccent};
+            }
+            return {"Saving…", tools::kToneAccent};
+        case model::CaptureSave::Saved:
+            return {"Saved " + run.save_name + (run.save_full ? ", full" : ""), tools::kToneSuccess};
+        case model::CaptureSave::Failed:
+            return {"Save failed: " + (run.save_reason.empty() ? std::string("error") : run.save_reason),
+                    tools::kToneError};
+        case model::CaptureSave::None:
+            break;
+    }
     switch (run.state) {
         case model::ToolState::Running:
-            return {"Listening, " + minutes_text(model::kListenSeconds - run.elapsed_s) + " left", tools::kToneAccent};
+            return {"Listening, " + left, tools::kToneAccent};
         case model::ToolState::Done:
             return {"Listened " + minutes_text(run.elapsed_s) + ", " + std::to_string(run.frames) + " frames",
                     tools::kToneMuted};
@@ -187,9 +214,9 @@ view::widgets::HelpContent DiscoverScreen::help_content() {
             {
                 {"ESC / 4", "Back (listening goes on)"},
                 {"F / X", "Scroll the devices"},
-                {"6", "Start / stop listening"},
+                {"6", "Listen 5 min, sends none"},
+                {"7", "Save as PCAP, 4 MB at most"},
                 {"Accent", "This Cardputer's own ports"},
-                {"Sent", "Listening sends nothing"},
             }};
 }
 
@@ -205,7 +232,7 @@ view::widgets::SoftKeySet DiscoverScreen::soft_keys() {
         {"Back", [&view_model] { view_model.go_back(); }},
         {},
         {"Start", [this] { listen_or_stop(); }, true},
-        {},
+        {"Save", [this] { save(); }, false, false},
         {},
     }};
 }
@@ -232,6 +259,24 @@ void DiscoverScreen::listen_or_stop() {
     } else if (can_listen()) {
         view_model().set_discover_scroll(0);
         view_model().request_tool_run(model::ToolKind::Listen, uplink());
+    }
+}
+
+bool DiscoverScreen::can_save() const {
+    const model::ToolsData& data = view_model().tools();
+    const model::ListenRun& run = data.listen;
+    if (run.save != model::CaptureSave::None) {
+        return false;
+    }
+    if (run.state == model::ToolState::Running) {
+        return true;
+    }
+    return run.state != model::ToolState::Idle && !model::tool_running(data) && run.frames > 0;
+}
+
+void DiscoverScreen::save() {
+    if (can_save()) {
+        view_model().request_capture_save();
     }
 }
 
@@ -293,7 +338,11 @@ void DiscoverScreen::build_content(lv_obj_t* content) {
     const int32_t name_width = std::max<int32_t>(address_x - kColumnGap - kSideMargin, 0);
     const int32_t age_width = text_width("59 min ago", small);
     const int32_t age_x = kEntryRight - age_width;
-    const int32_t hardware_width = std::max<int32_t>(age_x - kColumnGap - kSideMargin, 0);
+    // The kind takes the room between the hardware address and the time.
+    const int32_t hardware_room = std::max<int32_t>(age_x - kColumnGap - kSideMargin, 0);
+    const int32_t hardware_width = std::min<int32_t>(text_width("00:00:00:00:00:00", small), hardware_room);
+    const int32_t kind_x = kSideMargin + hardware_width + kColumnGap;
+    const int32_t kind_width = std::max<int32_t>(age_x - kColumnGap - kind_x, 0);
 
     for (int32_t index = 0; index < visible_entries_; ++index) {
         Entry& entry = entries_[static_cast<std::size_t>(index)];
@@ -313,6 +362,11 @@ void DiscoverScreen::build_content(lv_obj_t* content) {
         lv_label_set_long_mode(entry.hardware, LV_LABEL_LONG_CLIP);
         lv_obj_set_size(entry.hardware, hardware_width, second_line);
         lv_obj_set_pos(entry.hardware, kSideMargin, top + first_line);
+        entry.kind = plain_label(content, "");
+        view::style::text(entry.kind, theme, view::FontRole::Small);
+        lv_label_set_long_mode(entry.kind, LV_LABEL_LONG_DOT);
+        lv_obj_set_size(entry.kind, kind_width, second_line);
+        lv_obj_set_pos(entry.kind, kind_x, top + first_line);
         entry.age = plain_label(content, "");
         view::style::text(entry.age, theme, view::FontRole::Small, theme.colors.muted);
         lv_obj_set_size(entry.age, age_width, second_line);
@@ -366,6 +420,7 @@ void DiscoverScreen::set_entry_hidden(Entry& entry, bool hidden) {
     set_hidden(entry.name, hidden);
     set_hidden(entry.address, hidden);
     set_hidden(entry.hardware, hidden);
+    set_hidden(entry.kind, hidden);
     set_hidden(entry.age, hidden);
     entry.hidden = hidden;
 }
@@ -402,6 +457,7 @@ void DiscoverScreen::refresh_entries() {
         set_tone_if_changed(entry.address, entry.address_tone, has_address ? tools::kToneText : tools::kToneMuted,
                             theme);
         set_text_if_changed(entry.hardware, entry.hardware_shown, device.hardware_address);
+        set_text_if_changed(entry.kind, entry.kind_shown, device.kind);
         set_text_if_changed(entry.age, entry.age_shown, age_text(run.elapsed_s - device.heard_s));
     }
 
@@ -484,6 +540,13 @@ void DiscoverScreen::refresh() {
         shown_key_ = key;
         if (auto* bar = soft_key_bar()) {
             bar->set_key(2, {key == 2 ? "Stop" : "Start", [this] { listen_or_stop(); }, true, key != 0});
+        }
+    }
+    const int32_t save_key = can_save() ? 1 : 0;
+    if (save_key != shown_save_key_) {
+        shown_save_key_ = save_key;
+        if (auto* bar = soft_key_bar()) {
+            bar->set_key(3, {"Save", [this] { save(); }, false, save_key != 0});
         }
     }
 }

@@ -23,7 +23,8 @@ namespace app {
 // The screen's side of the tools (ping, DNS lookup, trace, and listening
 // on the Discover page). It owns a
 // platform::ToolRunner, hands it the tool pages' requests
-// (BaseViewModel::request_tool_run() and request_tool_stop()) and, from an
+// (BaseViewModel::request_tool_run(), request_tool_stop() and
+// request_capture_save()) and, from an
 // LVGL timer four times a second, takes the latest runs from it and gives
 // them to the view model with the app-wide Sent count
 // (platform::sent_packets()). Everything here runs on the UI thread; the
@@ -39,8 +40,10 @@ namespace app {
 // (or "unreachable at hop <n>", "not reached in <n> hops"), "tools: trace
 // failed: <why>", "tools: listen done, devices heard: <n>, frames: <f>",
 // "tools: listen ended, devices heard: <n>" (after a stop), "tools: listen
-// failed: <why>" (never a target, an address, a hardware address or a
-// name), and "tools: runner stopped" at the end.
+// failed: <why>", "tools: listen capture save asked", "tools: listen
+// capture saved, <n> bytes" (", full" at the limit), "tools: listen capture
+// save failed: <why>" (never a target, an address, a hardware address, a
+// name or a path), and "tools: runner stopped" at the end.
 //
 // Create it after the view model and destroy it before; it is not copied.
 class ToolController {

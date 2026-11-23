@@ -8,6 +8,8 @@
 
 #include <arpa/inet.h>
 
+#include <algorithm>
+
 #include <netinet/in.h>
 
 namespace platform::dns {
@@ -142,7 +144,11 @@ bool read_name(const uint8_t* data, std::size_t size, std::size_t& offset, std::
     return true;
 }
 
-bool parse_message(const uint8_t* data, std::size_t size, Message& out) {
+namespace {
+
+// Reads the header and the questions of a message into `out`; `offset` ends
+// after the questions. False when they do not fit.
+bool read_header(const uint8_t* data, std::size_t size, Message& out, std::size_t& offset) {
     out = Message{};
     if (!data || size < kHeaderSize) {
         return false;
@@ -153,9 +159,8 @@ bool parse_message(const uint8_t* data, std::size_t size, Message& out) {
     out.truncated = (flags & 0x0200) != 0;
     out.rcode = static_cast<uint8_t>(flags & 0x000F);
     const uint16_t questions = read_u16(data, 4);
-    const uint16_t answers = read_u16(data, 6);
 
-    std::size_t offset = kHeaderSize;
+    offset = kHeaderSize;
     for (uint16_t index = 0; index < questions; ++index) {
         std::string name;
         if (!read_name(data, size, offset, name) || offset + 4 > size) {
@@ -168,7 +173,36 @@ bool parse_message(const uint8_t* data, std::size_t size, Message& out) {
         }
         offset += 4;
     }
+    return true;
+}
 
+// Reads one resource record at `offset` into `record`, moving `offset`
+// past it. False when it does not fit.
+bool read_record(const uint8_t* data, std::size_t size, std::size_t& offset, Record& record) {
+    if (!read_name(data, size, offset, record.name) || offset + 10 > size) {
+        return false;
+    }
+    record.type = read_u16(data, offset);
+    record.klass = read_u16(data, offset + 2);
+    record.ttl = read_u32(data, offset + 4);
+    record.data_length = read_u16(data, offset + 8);
+    offset += 10;
+    if (record.data_length > size - offset) {
+        return false;
+    }
+    record.data_offset = offset;
+    offset += record.data_length;
+    return true;
+}
+
+} // namespace
+
+bool parse_message(const uint8_t* data, std::size_t size, Message& out) {
+    std::size_t offset = 0;
+    if (!read_header(data, size, out, offset)) {
+        return false;
+    }
+    const uint16_t answers = read_u16(data, 6);
     // Every record takes at least 11 bytes, so a count larger than what is
     // left is refused before anything is reserved.
     if (answers > (size - offset) / 11) {
@@ -177,19 +211,28 @@ bool parse_message(const uint8_t* data, std::size_t size, Message& out) {
     out.answers.reserve(answers);
     for (uint16_t index = 0; index < answers; ++index) {
         Record record;
-        if (!read_name(data, size, offset, record.name) || offset + 10 > size) {
+        if (!read_record(data, size, offset, record)) {
             return false;
         }
-        record.type = read_u16(data, offset);
-        record.klass = read_u16(data, offset + 2);
-        record.ttl = read_u32(data, offset + 4);
-        record.data_length = read_u16(data, offset + 8);
-        offset += 10;
-        if (record.data_length > size - offset) {
-            return false;
+        out.answers.push_back(std::move(record));
+    }
+    return true;
+}
+
+bool parse_all_records(const uint8_t* data, std::size_t size, Message& out) {
+    std::size_t offset = 0;
+    if (!read_header(data, size, out, offset)) {
+        return false;
+    }
+    const std::size_t records =
+        static_cast<std::size_t>(read_u16(data, 6)) + read_u16(data, 8) + read_u16(data, 10);
+    // At most as many as could fit in what is left (11 bytes each).
+    out.answers.reserve(std::min(records, (size - offset) / 11));
+    for (std::size_t index = 0; index < records; ++index) {
+        Record record;
+        if (!read_record(data, size, offset, record)) {
+            break;  // cut short: keep what came before
         }
-        record.data_offset = offset;
-        offset += record.data_length;
         out.answers.push_back(std::move(record));
     }
     return true;

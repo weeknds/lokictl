@@ -110,7 +110,12 @@ void ToolController::handle_request() {
     if (!poll_timer_) {
         return;  // nothing would show the run
     }
-    if (view_model_.requested_tool_stop()) {
+    if (view_model_.requested_capture_save()) {
+        if (!runner_->save_capture()) {
+            return;  // nothing to save, or saved already
+        }
+        LOG_INFO("tools: listen capture save asked");
+    } else if (view_model_.requested_tool_stop()) {
         for (const model::ToolKind kind :
              {model::ToolKind::Ping, model::ToolKind::Dns, model::ToolKind::Trace, model::ToolKind::Listen}) {
             if (model::tool_state(data_, kind) == model::ToolState::Running) {
@@ -193,6 +198,14 @@ void ToolController::log_change(const model::ToolsData& next) const {
             LOG_INFO("tools: listen ended, devices heard: {}", listen.devices.size());
         } else if (listen.state == model::ToolState::Failed) {
             LOG_INFO("tools: listen failed: {}", why(listen.error, listen.reason));
+        }
+    }
+    // Sizes only: never the file's path.
+    if (listen.save != data_.listen.save) {
+        if (listen.save == model::CaptureSave::Saved) {
+            LOG_INFO("tools: listen capture saved, {} bytes{}", listen.save_bytes, listen.save_full ? ", full" : "");
+        } else if (listen.save == model::CaptureSave::Failed) {
+            LOG_INFO("tools: listen capture save failed: {}", listen.save_reason);
         }
     }
 }

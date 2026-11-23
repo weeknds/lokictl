@@ -149,10 +149,14 @@ bool operator==(const TraceRun& left, const TraceRun& right);
 bool operator!=(const TraceRun& left, const TraceRun& right);
 
 // Discover, step 1: listening. A run listens this long, keeps at most this
-// many devices, and keeps a host name at most this long.
+// many devices, keeps a host name at most this long and a kind ("printer")
+// at most this long.
 constexpr int32_t kListenSeconds = 5 * 60;
 constexpr std::size_t kListenMaxDevices = 64;
 constexpr std::size_t kHostNameMax = 32;
+constexpr std::size_t kDeviceKindMax = 16;
+// A saved capture holds at most this many bytes of one run (whole frames).
+constexpr std::size_t kCaptureSaveMax = 4u * 1024u * 1024u;
 // An interface name is at most this long (the system's limit, IFNAMSIZ - 1).
 constexpr std::size_t kInterfaceNameMax = 15;
 
@@ -160,13 +164,22 @@ constexpr std::size_t kInterfaceNameMax = 15;
 struct HeardDevice {
     std::string hardware_address;  // "02:00:00:00:00:01"
     std::string address;           // its IPv4 address as text; empty while none was heard
-    std::string name;              // the host name it gave over DHCP; empty when none
+    std::string name;              // its host name: from DHCP, else from mDNS; empty when none
+    std::string kind;              // what it is, from mDNS services or SSDP ("printer"); empty when not known
     std::string own_port;          // one of the Cardputer's own ports: its interface ("wlan0"); else empty
     int32_t heard_s{0};            // seconds into the run when it was last heard
 };
 
 bool operator==(const HeardDevice& left, const HeardDevice& right);
 bool operator!=(const HeardDevice& left, const HeardDevice& right);
+
+// Where saving a listen run as a PCAP file stands.
+enum class CaptureSave : int32_t {
+    None = 0,  // not asked
+    Saving,    // the file is being written (and grows while the run lasts)
+    Saved,     // the file is complete
+    Failed,    // ListenRun::save_reason says why
+};
 
 // The latest listen run of the Discover page. It only receives: nothing is
 // sent, so the Sent count does not move.
@@ -176,8 +189,13 @@ struct ListenRun {
     std::string reason;               // with ToolError::Failed
     std::string interface_name;       // the interface listened on, for example "eth0"
     int32_t elapsed_s{0};             // seconds since the run started; stops when it ends
-    int32_t frames{0};                // ARP and DHCP frames heard
+    int32_t frames{0};                // ARP, DHCP, mDNS and SSDP frames heard
     std::vector<HeardDevice> devices; // by IPv4 address, those without one last; at most kListenMaxDevices
+    CaptureSave save{CaptureSave::None};
+    std::string save_name;            // the file's name, without its folder ("20261123-075130.pcap")
+    std::string save_reason;          // with CaptureSave::Failed ("disk full")
+    uint64_t save_bytes{0};           // bytes in the file so far
+    bool save_full{false};            // the run heard more than kCaptureSaveMax; the file has its start
 };
 
 bool operator==(const ListenRun& left, const ListenRun& right);

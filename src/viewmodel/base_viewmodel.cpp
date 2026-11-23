@@ -436,6 +436,7 @@ void BaseViewModel::set_tool_draft(const std::string& draft) {
 void BaseViewModel::request_tool_run(model::ToolKind kind, const std::string& target) {
     // Stored first: the observers run inside set() and read it from there.
     requested_tool_stop_ = false;
+    requested_capture_save_ = false;
     requested_tool_ = kind;
     requested_tool_target_ = target;
     bump(tool_request_subject_);
@@ -443,8 +444,20 @@ void BaseViewModel::request_tool_run(model::ToolKind kind, const std::string& ta
 
 void BaseViewModel::request_tool_stop() {
     requested_tool_stop_ = true;
+    requested_capture_save_ = false;
     requested_tool_target_.clear();
     bump(tool_request_subject_);
+}
+
+void BaseViewModel::request_capture_save() {
+    requested_tool_stop_ = false;
+    requested_capture_save_ = true;
+    requested_tool_target_.clear();
+    bump(tool_request_subject_);
+}
+
+bool BaseViewModel::requested_capture_save() const {
+    return requested_capture_save_;
 }
 
 lv_subject_t* BaseViewModel::tool_request_subject() {
