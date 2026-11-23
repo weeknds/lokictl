@@ -7,6 +7,7 @@
 #pragma once
 
 #include "base_model.h"
+#include "command_bar.h"
 
 #include <cstdint>
 #include <functional>
@@ -30,7 +31,6 @@ class Toast;
 namespace app {
 
 class ScreenManager;
-struct CommandResult;
 
 // Decides what every key does, the same way in the simulator, on the device
 // and in snapshot runs with --keys. platform/linux_input only reads the keys
@@ -48,9 +48,12 @@ struct CommandResult;
 //  4. While the command bar is open, it takes every key: printable
 //     characters type (keys 4-8 are digits, F/X/Z/C letters), Backspace
 //     deletes, Enter runs the line (see command_bar.h), ESC closes the bar
-//     at once, and a TAB let go before 700 ms completes the command. A
-//     tool command opens the tool's page, which then starts as its own key
-//     would (a first press: Ports and Probe still ask first).
+//     at once, a TAB let go before 700 ms completes the first or second
+//     word, and the real Up and Down step through the last lines that ran
+//     (CommandHistory, memory only). A tool command opens the tool's page,
+//     which then starts as its own key would (a first press: Ports and
+//     Probe still ask first); `mode` opens the Modes page on that row and
+//     asks for the switch as its key 6 does.
 //  5. ESC: on the first page (nothing below it, and not typing) it shows
 //     "Hold ESC to exit" while held and quits after 700 ms. Otherwise a
 //     short ESC (let go before 700 ms) first goes to the page, which may use
@@ -123,6 +126,13 @@ private:
     // (BaseViewModel::request_tool_start()).
     bool open_tool_page(const CommandResult& result);
     void start_command_tool(const CommandResult& result);
+    // `mode`: open_modes_page() opens the Modes page unless it is shown
+    // (false when the page path is full); switch_command_mode() then puts
+    // its highlight on the mode and asks for the switch.
+    bool open_modes_page();
+    void switch_command_mode(const CommandResult& result);
+    // Up and Down in the command bar.
+    void recall_command(bool older);
     // Follows ESC (or TAB in the command bar) from its press to its release.
     // `armed`: holding it quits the app.
     void track(uint32_t key, bool armed);
@@ -142,6 +152,7 @@ private:
     std::unique_ptr<view::widgets::HelpPopup> help_popup_;
     std::unique_ptr<view::widgets::CommandBar> command_bar_;
     std::string command_line_; // what is typed in the command bar
+    CommandHistory command_history_;
     std::function<bool()> wake_handler_;
     uint32_t tracked_key_{0};      // ESC, or TAB in the command bar, while held; 0 for none
     bool exit_armed_{false};       // holding the tracked key quits the app

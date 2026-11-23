@@ -16,7 +16,7 @@ namespace view::widgets {
 namespace {
 
 constexpr int32_t kCursorWidth = 2;
-constexpr const char* kHint = "help lists the commands";
+constexpr const char* kHint = "help, TAB completes, up recalls";
 
 lv_obj_t* plain_object(lv_obj_t* parent) {
     auto* obj = lv_obj_create(parent);

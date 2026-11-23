@@ -23,7 +23,7 @@ namespace screen {
 // - dev-help: the keyboard help panel for the home page;
 // - dev-toast: three toasts, one per highlight tone;
 // - dev-command: two command bars, an empty one with an error and one with
-//   the choices TAB found.
+//   the choices TAB found after `ping ` (more than fit, ending in a count).
 // The widgets are placed on the page itself instead of the top layer, which
 // snapshots do not capture. Opened by name only (snapshot --page); not
 // reachable from the normal UI.

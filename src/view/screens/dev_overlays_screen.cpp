@@ -6,6 +6,7 @@
 
 #include "dev_overlays_screen.h"
 
+#include "command_bar.h"
 #include "home_screen.h"
 #include "theme.h"
 #include "theme_engine.h"
@@ -120,8 +121,11 @@ void DevOverlaysScreen::build_command_bars(lv_obj_t* content) {
     auto choices = std::make_unique<view::widgets::CommandBar>(content, theme_engine());
     choices->build();
     choices->show();
-    choices->set_line("t");
-    choices->set_message("theme  tools", view::widgets::CommandBarTone::Choices);
+    // TAB after `ping `: more choices than fit, so the line ends in a count.
+    choices->set_line("ping ");
+    choices->set_message(app::command_choices_text({"router", "this", "9.9.9.9", "1.1.1.1", "10.0.0.21",
+                                                    "10.0.0.34", "10.0.0.112"}),
+                         view::widgets::CommandBarTone::Choices);
     command_bars_[1] = std::move(choices);
 }
 

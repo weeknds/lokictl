@@ -125,14 +125,19 @@ first step that takes the key ends it:
 2. **fn+H** opens or closes the help panel of the page that is shown.
 3. **While the help panel is open,** ESC closes it and every other key is
    swallowed.
-4. **ESC** follows the ESC rule above.
-5. **Keys 4 to 8** press the page's soft keys (not while typing). An empty
+4. **While the command bar is open,** it takes every key (see
+   [The command bar](#the-command-bar)).
+5. **ESC** follows the ESC rule above.
+6. **TAB** does nothing outside the command bar.
+7. **`:`** opens the command bar (not while typing).
+8. **Keys 4 to 8** press the page's soft keys (not while typing). An empty
    or switched-off key does nothing, and the page never gets the digit.
-6. **F, X, Z and C** become up, down, left and right (not while typing).
-7. **The page** gets the key, through its `on_key()`.
+9. **F, X, Z and C** become up, down, left and right (not while typing).
+10. **The page** gets the key, through its `on_key()`.
 
 fn+H and fn+J work on every page, also while typing. Never give them
-another job. Holding TAB is reserved as well; the app does not use TAB yet.
+another job. Holding TAB is reserved as well: only a short TAB in the
+command bar does something.
 
 **A held key acts once.** The keyboard layer reports a key once when it
 goes down, and once more if it is still held after 700 ms. Only a held ESC
@@ -181,6 +186,73 @@ test page does this.
 On the device, letters arrive in lowercase for now: shift and sym are not
 handled yet. The key test page shows how the switch works; the Hotspot
 page uses typing mode to rename the hotspot.
+
+## The command bar
+
+`:` (sym+S on the device) opens a one-line command bar at the bottom of any
+page that is not typing. It covers the soft keys; a message line above it
+shows choices or what went wrong. While it is open it takes every key:
+
+| Key | What it does |
+|---|---|
+| letters, digits, `.`, space | type (keys 4 to 8 are digits here, F/X/Z/C letters) |
+| `Backspace` | deletes the last character |
+| `Enter` | runs the line; an empty line just closes the bar. A command that can't run keeps the bar open with the reason |
+| a short `TAB` | completes the first or the second word (a held TAB does nothing) |
+| up / down (fn+F / fn+X) | step through the last commands that ran |
+| a short `ESC` | closes the bar at once; holding it never quits |
+
+fn+H and fn+J still work: the help panel opens over the bar, and its ESC
+closes only the help.
+
+The commands, read without regard to case:
+
+| Command | What it does |
+|---|---|
+| `help` | lists the commands in the help panel (badge `COMMANDS`) |
+| `theme <name>` | switches the theme: `instrument`, `constellation` or `terminal` |
+| `mode <name>` | switches the mode: `client`, `router` or `share` (see below) |
+| `home`, `map`, `tools`, `discover`, `wifi`, `status`, `settings` | open that page, the same way its key does |
+| `ping`, `dns`, `trace` `[target]` | open the tool's page and run it, on the target when one is given |
+| `ports [address]` | opens the Ports page and asks first, as its key 6 does; nothing is sent until the second 6 |
+| `scan` | starts Discover's passive Listen run |
+| `probe` | opens Discover's probe question; nothing is sent until the second 8 |
+
+**Mode.** `mode router` takes the Modes page's own path: it opens the
+Modes page (it stays when it is open already), puts the highlight on the
+mode and asks for the switch as key 6 does, without a question. The bar
+says no only to what key 6 can't do: the mode that is on already (`Already
+in Router mode`), a switch under way, VPN (`VPN comes later`). Everything
+else the switch finds out (`Plug in a cable first`, `Back to Client first`,
+...) shows on the Modes page's status line.
+
+**Targets.** A target is checked in the bar the way the tool's page checks
+a typed one, and becomes that page's typed target. For `ping`, `trace` and
+`ports`, `router` and `this` stand for the router's address and this
+device's address (`dns router` still looks up the name `router`). A tool
+command is only ever a first press: it does nothing while a tool runs, and
+it never confirms a scan or a probe.
+
+**Completion.** A short TAB completes the word being typed: one
+command or name that fits is filled in; several grow to the part they share
+and are listed above the bar, as many as fit and then a count (`+3`). The
+first word completes from the commands; the second from the command's
+names: theme and mode names, for `ping` and `trace` `router`, `this`, the
+presets (9.9.9.9, 1.1.1.1) and the addresses Discover found, for `ports`
+`router`, `this` and Discover's private addresses, for `dns` the presets.
+
+**Recall.** The last 8 lines that ran (the ones that closed the bar) are
+kept, without a repeat of the newest. Up shows the newest, then older ones,
+and stops at the oldest; Down goes back towards the newest and past it
+gives back what was typed before. Typing, Backspace or TAB go on from the
+shown line. The list lives in memory only: it is never saved and never
+written to the log, and it is gone when the app quits.
+
+The log says which command ran (`command: ping`, `command: mode router`),
+never a target. The commands are plain functions in
+`src/app/command_bar.cpp`; `app::KeyController` reads the keys and carries
+them out. The bar floats on the top layer, so snapshots never show it; the
+developer page `dev-command` draws two bars on a page of its own.
 
 ## How a page takes part
 
@@ -349,7 +421,9 @@ The page only asks (`BaseViewModel::request_mode()`); the data layer does
 the switch (see [data.md](data.md#switching-modes)), so the page never
 waits, and it follows the values as they arrive. The highlight lives in the
 view model and starts on the mode that is on each time the page is opened
-from the home page. The help panel shows the badge `MODES` and four rows.
+from the home page. The command bar's `mode <name>` opens this page with
+the highlight on that mode and does what key 6 does there. The help panel
+shows the badge `MODES` and four rows.
 
 ## The Hotspot page
 

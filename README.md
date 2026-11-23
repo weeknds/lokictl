@@ -28,6 +28,14 @@ CardputerZero. From your computer, `scripts/device.sh` installs and starts it
 on the device, saves what the device's screen shows, presses keys on the
 device and reports memory and CPU use (see [Run on a device](#run-on-a-device)).
 
+**Command bar:** `:` (sym+S) opens a one-line command bar on any page.
+Typed commands open pages (`map`, `tools`, `wifi`, ...), switch the theme
+or the mode (`theme terminal`, `mode router`) and start the network tools
+(`ping 9.9.9.9`, `dns example.com`, `ping router`, `scan`); port scans and
+probes still ask first. TAB completes commands and names, up and down
+recall the last commands, and `help` lists them all (see
+[docs/navigation.md](docs/navigation.md#the-command-bar)).
+
 **Remote view** shows the Cardputer's screen in a web browser on another
 computer on the same network and takes key presses from there. It is off at
 every start; you switch it on on the Settings page, and the browser needs a

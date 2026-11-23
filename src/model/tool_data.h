@@ -62,6 +62,10 @@ constexpr std::size_t kPingShownReplies = 5;
 constexpr std::size_t kDnsMaxAddresses = 6;
 // A typed target is at most this long.
 constexpr std::size_t kToolTargetMax = 63;
+// The preset targets the tool pages offer (Ping and Trace after the router)
+// and the command bar completes.
+constexpr const char* kPingPresets[] = {"9.9.9.9", "1.1.1.1"};
+constexpr const char* kDnsPresets[] = {"example.com", "wikipedia.org"};
 // A time not known.
 constexpr int32_t kTimeUnknown = -1;
 // A trace probes at most this many hops, and waits this long for each.

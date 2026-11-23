@@ -7,7 +7,6 @@
 #include "key_controller.h"
 
 #include "base_viewmodel.h"
-#include "command_bar.h"
 #include "command_bar_widget.h"
 #include "help_popup.h"
 #include "linux_input.h"
@@ -21,6 +20,8 @@
 
 #include "lvgl.h"
 
+#include <algorithm>
+#include <cctype>
 #include <cstddef>
 #include <string>
 #include <utility>
@@ -31,6 +32,7 @@ namespace {
 constexpr uint32_t kThemeToastDurationMs = 2500;
 constexpr uint32_t kBatteryToastDurationMs = 5000;
 constexpr uint32_t kBlockToastDurationMs = 4000;
+constexpr const char* kPagePathFull = "Too many pages open: go back first";
 
 bool is_soft_key(uint32_t key) {
     return key >= '4' && key <= '8';
@@ -230,6 +232,7 @@ void KeyController::toggle_help() {
 void KeyController::open_command_bar() {
     toast_->hide();
     command_line_.clear();
+    command_history_.reset();
     command_bar_->show();
 }
 
@@ -250,16 +253,22 @@ void KeyController::handle_command_key(uint32_t key) {
         case LV_KEY_ENTER:
             run_command_line();
             return;
+        case LV_KEY_UP:
+        case LV_KEY_DOWN:
+            recall_command(key == LV_KEY_UP);
+            return;
         case LV_KEY_BACKSPACE:
             if (!command_line_.empty()) {
                 command_line_.pop_back();
             }
+            command_history_.reset();
             break;
         default:
             if (!is_command_character(key) || command_line_.size() >= kCommandMaxLength) {
                 return;
             }
             command_line_ += static_cast<char>(key);
+            command_history_.reset();
             break;
     }
     command_bar_->set_line(command_line_);
@@ -267,38 +276,49 @@ void KeyController::handle_command_key(uint32_t key) {
 }
 
 void KeyController::complete_command_line() {
-    const CommandCompletion completion = complete_command(command_line_);
+    const CommandCompletion completion = complete_command(command_line_, view_model_.tools(), view_model_.home());
     command_line_ = completion.line.substr(0, kCommandMaxLength);
+    command_history_.reset();
     command_bar_->set_line(command_line_);
+    command_bar_->set_message(command_choices_text(completion.choices), view::widgets::CommandBarTone::Choices);
+}
 
-    std::string choices;
-    for (const auto& choice : completion.choices) {
-        if (!choices.empty()) {
-            choices += "  ";
-        }
-        choices += choice;
+void KeyController::recall_command(bool older) {
+    std::string line;
+    if (!(older ? command_history_.older(command_line_, line) : command_history_.newer(line))) {
+        return;
     }
-    command_bar_->set_message(choices, view::widgets::CommandBarTone::Choices);
+    command_line_ = line.substr(0, kCommandMaxLength);
+    command_bar_->set_line(command_line_);
+    command_bar_->set_message("", view::widgets::CommandBarTone::Choices);
 }
 
 void KeyController::run_command_line() {
-    const CommandResult result = parse_command(command_line_);
+    const CommandResult result = parse_command(command_line_, view_model_.home());
     if (result.action == CommandAction::Error) {
         command_bar_->set_message(result.message, view::widgets::CommandBarTone::Error);
         return;
     }
+    // Refused as the pages refuse it; the bar stays open and says why.
+    std::string refusal;
     if (result.action == CommandAction::Tool) {
-        // Refused as the pages refuse it; the bar stays open and says why.
-        std::string refusal = tool_command_refusal(result.tool, view_model_.tools(), view_model_.home());
+        refusal = tool_command_refusal(result.tool, view_model_.tools(), view_model_.home());
         if (refusal.empty() && !open_tool_page(result)) {
-            refusal = "Too many pages open: go back first";
+            refusal = kPagePathFull;
         }
-        if (!refusal.empty()) {
-            command_bar_->set_message(refusal, view::widgets::CommandBarTone::Error);
-            return;
+    } else if (result.action == CommandAction::Mode) {
+        refusal = mode_command_refusal(result.mode, view_model_.home());
+        if (refusal.empty() && !open_modes_page()) {
+            refusal = kPagePathFull;
         }
     }
+    if (!refusal.empty()) {
+        command_bar_->set_message(refusal, view::widgets::CommandBarTone::Error);
+        return;
+    }
 
+    // Only lines that ran are kept for Up.
+    command_history_.add(command_line_);
     close_command_bar();
     switch (result.action) {
         case CommandAction::Help:
@@ -322,6 +342,9 @@ void KeyController::run_command_line() {
         }
         case CommandAction::OpenPage:
             open_command_page(result.page);
+            return;
+        case CommandAction::Mode:
+            switch_command_mode(result);
             return;
         case CommandAction::Tool:
             start_command_tool(result);
@@ -377,6 +400,21 @@ void KeyController::start_command_tool(const CommandResult& result) {
     // The page (shown now, or built later from the request above) takes it
     // and does its own key's first press.
     view_model_.request_tool_start(result.tool);
+}
+
+bool KeyController::open_modes_page() {
+    // Nothing to open when the page is shown already.
+    return view_model_.current_page() == model::AppPage::Modes || view_model_.open_modes();
+}
+
+void KeyController::switch_command_mode(const CommandResult& result) {
+    std::string name = model::net_mode_name(result.mode);
+    std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    LOG_INFO("command: mode {}", name);
+    // As the Modes page's key 6 on that row: the highlight first (the
+    // page's "Switching…" line leans on it), then the request.
+    view_model_.select_mode_row(static_cast<int32_t>(result.mode));
+    view_model_.request_mode(result.mode);
 }
 
 void KeyController::track(uint32_t key, bool armed) {

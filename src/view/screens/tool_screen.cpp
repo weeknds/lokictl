@@ -46,10 +46,6 @@ constexpr int32_t kHopRight       = kThumbX - 4;
 // Three spaces between addresses on one line.
 constexpr const char* kAddressGap = "   ";
 
-// The preset targets, after the router for Ping and Trace.
-constexpr const char* kPingPresets[] = {"9.9.9.9", "1.1.1.1"};
-constexpr const char* kDnsPresets[] = {"example.com", "wikipedia.org"};
-
 lv_obj_t* plain_object(lv_obj_t* parent) {
     auto* obj = lv_obj_create(parent);
     lv_obj_remove_style_all(obj);
@@ -214,11 +210,11 @@ std::vector<ToolScreen::Target> ToolScreen::targets() const {
         if (model::is_ipv4_text(router)) {
             list.push_back({router, "router"});
         }
-        for (const char* preset : kPingPresets) {
+        for (const char* preset : model::kPingPresets) {
             list.push_back({preset, ""});
         }
     } else {
-        for (const char* preset : kDnsPresets) {
+        for (const char* preset : model::kDnsPresets) {
             list.push_back({preset, ""});
         }
     }
