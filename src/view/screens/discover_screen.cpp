@@ -262,7 +262,7 @@ view::widgets::SoftKeySet DiscoverScreen::soft_keys() {
     auto& view_model = this->view_model();
     return {{
         {"Back", [&view_model] { view_model.go_back(); }},
-        {},
+        {"Map", [this] { open_map(); }},
         {"Start", [this] { listen_or_stop(); }, true},
         {"Save", [this] { save(); }, false, false},
         {"Probe", [this] { probe_or_stop(); }, false, false},
@@ -296,6 +296,14 @@ void DiscoverScreen::listen_or_stop() {
         view_model().set_discover_scroll(0);
         view_model().request_tool_run(model::ToolKind::Listen, uplink());
     }
+}
+
+void DiscoverScreen::open_map() {
+    if (confirming_) {
+        cancel_confirm();  // like any other key: only cancels
+        return;
+    }
+    view_model().open_map();
 }
 
 bool DiscoverScreen::can_save() const {

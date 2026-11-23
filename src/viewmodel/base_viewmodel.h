@@ -12,6 +12,7 @@
 
 #include "lvgl.h"
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -31,6 +32,18 @@ constexpr int32_t kHomeClientRows = 3;
 
 // The highlighted row of the Modes page while it follows the active mode.
 constexpr int32_t kModesFollowsActive = -1;
+
+// The Map page's nodes, as map_selection() names them: the router, the
+// network devices' slots (slot s is kMapFirstSlot + s), this device, and
+// the hotspot's clients (client i of the home page's list is
+// kMapFirstClient + i, at most kHomeClientRows of them). A node keeps its
+// number while the page is open, so the selection stays on it when other
+// nodes come and go.
+constexpr int32_t kMapSlots = 6;
+constexpr int32_t kMapRouter = 0;
+constexpr int32_t kMapFirstSlot = 1;
+constexpr int32_t kMapDevice = kMapFirstSlot + kMapSlots;
+constexpr int32_t kMapFirstClient = kMapDevice + 1;
 
 // A change of the hotspot the Hotspot page asks for (see
 // BaseViewModel::request_hotspot_rename()).
@@ -288,6 +301,23 @@ public:
     // Stores `row` (0 or more); nothing is written when it stays the same.
     void set_discover_scroll(int32_t row);
 
+    // The Map page (Discover key 5).
+    // Puts the selection back on the router and empties the slots, then
+    // opens the page (see open_page()).
+    bool open_map();
+    // The selected node (kMapRouter and the other kMap* numbers); starts at
+    // kMapRouter. The page shows it moved to a node that is there.
+    lv_subject_t* map_selection_subject();
+    int32_t map_selection() const;
+    // Stores `node`; nothing is written when it stays the same.
+    void set_map_selection(int32_t node);
+    // The hardware address of the network device in each slot; empty for a
+    // free slot. The page fills them as devices are first seen (see
+    // screen::MapScreen). Kept here, like the selection, so a theme switch
+    // keeps every device in its place.
+    const std::array<std::string, kMapSlots>& map_slots() const;
+    void set_map_slots(const std::array<std::string, kMapSlots>& slots);
+
     // The home page.
     // The values it shows (see model::HomeData). The page reads them while
     // it is built, and they change while it is open: the data layer hands
@@ -382,6 +412,8 @@ private:
     reactive::IntSubject wifi_scroll_subject_;
     reactive::IntSubject wifi_scan_request_subject_;
     reactive::IntSubject discover_scroll_subject_;
+    reactive::IntSubject map_selection_subject_;
+    std::array<std::string, kMapSlots> map_slots_;
     reactive::IntSubject home_selection_subject_;
     reactive::IntSubject home_data_subject_;
     reactive::IntSubject key_test_selection_subject_;

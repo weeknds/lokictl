@@ -191,7 +191,7 @@ Options:
   long; it finishes in a fraction of a second.
 - `--help`: shows a short summary of all options.
 
-The app has 24 pages. `--list-pages` prints them in this order:
+The app has 26 pages. `--list-pages` prints them in this order:
 
 - `home`, the home page, where the app starts (see
   [docs/home.md](docs/home.md));
@@ -211,6 +211,10 @@ The app has 24 pages. `--list-pages` prints them in this order:
 - `discover`, the Discover page (home key 5), which lists the devices it
   hears on the network while sending nothing, and those a probe finds (see
   [docs/navigation.md](docs/navigation.md#the-discover-page));
+- `map`, the Map page (Discover key 5), which draws the network as a map:
+  the internet, the router, this device, the devices Discover found and
+  the hotspot's clients (see
+  [docs/navigation.md](docs/navigation.md#the-map-page));
 - `demo-counter` and `demo-keys`, two demo pages kept for navigation and
   key tests: a counter and a key test page. Nothing in the app opens them
   any more, so they are drawn by name only, with `--page`; the counter

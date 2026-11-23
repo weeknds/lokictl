@@ -29,6 +29,7 @@ enum class AppPage {
     Wifi     = 12,
     Discover = 13,
     Ports    = 14,
+    Map      = 15,
 
     // Developer pages. They are opened by name only (snapshot --page) and
     // are never linked from the normal UI.

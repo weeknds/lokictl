@@ -44,7 +44,8 @@ namespace screen {
 //   with the app-wide Sent count at its right (it does not move while
 //   listening).
 //
-// Keys: 4 (Back) or a short ESC goes back (a run goes on); 6 (Start /
+// Keys: 4 (Back) or a short ESC goes back (a run goes on); 5 (Map) opens
+// the Map page with the same devices (a run goes on); 6 (Start /
 // Stop) starts a run of model::kListenSeconds on the uplink interface or
 // stops it (switched off without a network and while another tool runs);
 // 7 (Save) saves the latest run as a PCAP file (on while one runs, and
@@ -103,6 +104,8 @@ private:
     // name the helper takes; empty otherwise.
     std::string uplink() const;
     bool listening() const;
+    // Key 5: opens the Map page.
+    void open_map();
     // True when key 6 does something now: stop this run, or start one.
     bool can_listen() const;
     void listen_or_stop();

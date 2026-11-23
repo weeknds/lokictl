@@ -17,6 +17,7 @@
 #include "devices_screen.h"
 #include "discover_screen.h"
 #include "hotspot_screen.h"
+#include "map_screen.h"
 #include "modes_screen.h"
 #include "page_registry.h"
 #include "settings_screen.h"
@@ -159,6 +160,14 @@ bool ScreenManager::show_discover_screen() {
     return true;
 }
 
+bool ScreenManager::show_map_screen() {
+    if (!load_screen(std::make_unique<screen::MapScreen>(view_model_, assets_, theme_engine_))) {
+        return false;
+    }
+    page_loaded(model::AppPage::Map);
+    return true;
+}
+
 bool ScreenManager::show_tool_screen(model::AppPage page) {
     if (!load_screen(std::make_unique<screen::ToolScreen>(view_model_, assets_, theme_engine_, page))) {
         return false;
@@ -291,6 +300,10 @@ bool ScreenManager::show_page(model::AppPage page) {
 
     if (screen::DiscoverScreen::handles(page)) {
         return show_discover_screen();
+    }
+
+    if (screen::MapScreen::handles(page)) {
+        return show_map_screen();
     }
 
     return show_home_screen();

@@ -57,6 +57,7 @@ BaseViewModel::BaseViewModel()
       wifi_scroll_subject_(0),
       wifi_scan_request_subject_(0),
       discover_scroll_subject_(0),
+      map_selection_subject_(kMapRouter),
       home_selection_subject_(0),
       home_data_subject_(0),
       key_test_selection_subject_(0),
@@ -556,6 +557,34 @@ void BaseViewModel::set_discover_scroll(int32_t row) {
     if (next != discover_scroll_subject_.value()) {
         discover_scroll_subject_.set(next);
     }
+}
+
+bool BaseViewModel::open_map() {
+    set_map_selection(kMapRouter);
+    map_slots_ = {};
+    return open_page(model::AppPage::Map);
+}
+
+lv_subject_t* BaseViewModel::map_selection_subject() {
+    return map_selection_subject_.native();
+}
+
+int32_t BaseViewModel::map_selection() const {
+    return map_selection_subject_.value();
+}
+
+void BaseViewModel::set_map_selection(int32_t node) {
+    if (node != map_selection_subject_.value()) {
+        map_selection_subject_.set(node);
+    }
+}
+
+const std::array<std::string, kMapSlots>& BaseViewModel::map_slots() const {
+    return map_slots_;
+}
+
+void BaseViewModel::set_map_slots(const std::array<std::string, kMapSlots>& slots) {
+    map_slots_ = slots;
 }
 
 const model::HomeData& BaseViewModel::home() const {

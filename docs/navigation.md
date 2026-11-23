@@ -560,6 +560,7 @@ line over: `Saving, 4:12 left, 14 KB` while the run lasts, then `Saved
 
 | Key | What it does |
 |---|---|
+| `5` MAP | opens the Map page with the same devices (see [The Map page](#the-map-page)); a run goes on |
 | `6` START / STOP | listens for 5 minutes on the uplink interface, or stops; off without a network and while another tool runs |
 | `7` SAVE | saves the latest run as a PCAP file: on while one runs and after one that heard something, until it is saved; off while another tool runs |
 | `8` PROBE / STOP | first shows step 2, `STEP 2 OF 3: YOUR ADDRESS`: the Cardputer's IPv4 address and router, what a probe asks (`Asks 10.0.0.1-254, 20 a second`) and, in the warning colour, `Only networks you own or may test. Press 8 again to probe.`; nothing is sent (`Nothing sent yet`). A second `8` starts step 3, Probe (see [data.md](data.md#probing)); any other key, a short ESC, leaving the page or 10 s cancels. While a probe runs it reads STOP. Off without a network and while another tool runs; on a network that is not private, step 2 says so and the second `8` does nothing |
@@ -588,6 +589,64 @@ writes no file); `--data offline` shows `Join a network first`; `--keys 8`
 step 2, `--keys 8,8 --settle-ms 5000` a probe under way, and `--keys
 6,6,8,8,data,data --settle-ms 9000` a finished probe merged with a short
 listen run (add `down` keys to see the quiet file server and camera).
+
+## The Map page
+
+`map` (the Discover page's key 5) draws the network as a map, in the same
+layout in every theme, coloured from the theme. It has no title bar, like
+the home page. Opening it sends nothing.
+
+- **The map** (left, 188 px): the internet at the top, the router under it
+  (a ring, joined by a thin muted line) and this device under that,
+  joined to the router by the uplink line in the accent colour. The
+  devices of the Discover list sit in six fixed slots around the router,
+  each joined to it by a thin muted line; more than six are counted as
+  `+N` at the bottom left. While the hotspot runs (Router or Share), its
+  clients sit in three slots below this device, joined by lines in the
+  second accent colour. A device without a name, or not heard for two
+  minutes, is muted. The map writes no names; brackets mark the selected
+  node. Without a network only the internet and a muted this device are
+  left, with `Join a network first` at the bottom; with a network and no
+  devices yet the bottom says `Press 6 to listen` (`Listening…` while a run
+  has heard nothing yet, `No devices heard` after one).
+- **The panel** (right, behind a thin line): clock and battery, the
+  interface (`NO NETWORK` without one), `devices N` and the state of
+  listening (`listening 4:12`, `listened 5:00`, `stopped at 1:23`,
+  `another tool runs`), and under a rule the selected node: its name
+  (`router`, `this device`, the device's name, or `unnamed` in the muted
+  colour), its kind (`printer`, `hotspot client`, `eth0 · cable` for this
+  device, `--` when not known), its IPv4 address, its hardware address and
+  `heard 12 s ago` (a client: its signal; this device: its Wi-Fi signal or
+  link speed).
+
+The Cardputer's own ports fold into this device and the entry with the
+router's address into the router; neither takes a slot. A device keeps its
+slot (by hardware address) while the page is open, also while it is not
+listed for a moment (a new run starts with an empty list), so it comes back
+to the same place. A new device takes the first empty slot (left and right
+of the router first, then above, then below), and only when none is left a
+slot whose device is not listed now. Values change in place; the page is
+built again only when the set of nodes changes.
+
+| Key | What it does |
+|---|---|
+| `f`/`x`/`z`/`c` or the arrows | step through the router, the network devices (clockwise from the lower left), this device and the clients; no wrap |
+| `6` START / STOP | the same passive listen run as the Discover page's key 6 (5 minutes on the uplink interface, sends nothing), or stops it; off without a network and while another tool runs |
+| `enter` | on a hotspot client: opens the Devices page on it |
+| `4` BACK or a short ESC | goes back; a run goes on |
+
+Keys 5, 7 and 8 are empty; a probe can only be started on the Discover
+page. The slots and the selected node live in the view model
+(`map_slots()`, `map_selection_*`), so a theme switch keeps both; opening
+the page from Discover starts with empty slots and the router selected. The
+help panel shows the badge `MAP` and four rows.
+Snapshots: `--page map` shows the page before a run (the sample router
+with its three clients), `--keys 6 --settle-ms 12000` the made-up devices
+around the router, `--data cable --keys 6,right,right,right --settle-ms
+12000` the brackets and the panel on the unnamed speaker, `--keys
+right,right,right` a client, and `--data offline` the page without a
+network. The made-up runs have at most six devices, so `+N` does not show
+on the Mac.
 
 ## The Status page
 

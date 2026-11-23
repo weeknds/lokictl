@@ -31,6 +31,7 @@
 #include "base_viewmodel.h"
 #include "home_format.h"
 #include "home_layout.h"
+#include "map_parts.h"
 #include "style.h"
 
 #include <algorithm>
@@ -44,6 +45,8 @@
 
 namespace screen {
 namespace {
+
+namespace parts = view::widgets;
 
 // --- The map. Shapes are centred on the device; even-sized ones on the
 // point between pixels 99 and 100 (x) and 61 and 62 (y).
@@ -89,7 +92,6 @@ struct Point {
     int32_t y;
 };
 constexpr Point kStars[] = {{26, 34}, {58, 76}, {14, 96}, {192, 36}, {190, 88}};
-constexpr int32_t kStarSize = 3;
 // The star on the uplink label's row, right of its text. A wide uplink text
 // ("eth0 · 1000M") would run into it, so it is hidden while the text leaves
 // less than kStarClearance px before it.
@@ -110,10 +112,9 @@ constexpr int32_t kClientDotSize  = 7;
 constexpr int32_t kNameWidth      = 76;
 constexpr int32_t kNameGap        = 6;  // from the dot's centre to the top of a Small name
 
-// The brackets around the selected client's dot: 4x16, 3 px from the dot.
-constexpr int32_t kBracketWidth  = 4;
+// The brackets around the selected client's dot: 16 px tall, 3 px from
+// the dot (parts::kMapBracketGap).
 constexpr int32_t kBracketHeight = 16;
-constexpr int32_t kBracketGap    = 3;
 
 // --- The map of the link view: a chain down the middle (pixels 99-100).
 
@@ -229,42 +230,6 @@ lv_obj_t* plain_label(lv_obj_t* parent, const char* text) {
     return label;
 }
 
-// A round, filled shape of `size` at (x, y).
-lv_obj_t* dot(lv_obj_t* parent, int32_t x, int32_t y, int32_t size, lv_color_t color) {
-    auto* obj = plain_object(parent);
-    lv_obj_set_pos(obj, x, y);
-    lv_obj_set_size(obj, size, size);
-    lv_obj_set_style_radius(obj, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_color(obj, color, 0);
-    lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, 0);
-    return obj;
-}
-
-// A line through `points`, drawn in the parent's coordinates. lv_line keeps
-// the pointer, so `points` must be one of the static arrays above.
-lv_obj_t* line(lv_obj_t* parent,
-               const lv_point_precise_t* points,
-               uint32_t count,
-               int32_t width,
-               lv_color_t color) {
-    auto* obj = lv_line_create(parent);
-    lv_obj_remove_style_all(obj);
-    lv_obj_set_pos(obj, 0, 0);
-    lv_line_set_points(obj, points, count);
-    lv_obj_set_style_line_width(obj, width, 0);
-    lv_obj_set_style_line_color(obj, color, 0);
-    lv_obj_set_style_line_opa(obj, LV_OPA_COVER, 0);
-    lv_obj_set_style_line_rounded(obj, false, 0);
-    return obj;
-}
-
-// Fills a label's box with the ground colour, so a ring or a line that
-// crosses it does not run through its text.
-void ground_fill(lv_obj_t* label, const view::Theme& theme) {
-    lv_obj_set_style_bg_color(label, theme.colors.background, 0);
-    lv_obj_set_style_bg_opa(label, LV_OPA_COVER, 0);
-}
-
 // The caption beside the internet's square: "internet", or the note when
 // the internet can not be reached ("no internet", "login page"), then in
 // the warning colour.
@@ -276,34 +241,6 @@ void internet_caption(lv_obj_t* map, const view::Theme& theme, const model::Home
         lv_obj_set_style_text_color(label, theme.colors.warning, 0);
     }
     lv_obj_set_pos(label, kInternetLabelX, kInternetLabelY);
-}
-
-// A filled rectangle from (x, top) to (x + width - 1, bottom), for a
-// straight upright line of the map.
-lv_obj_t* upright(lv_obj_t* parent, int32_t x, int32_t top, int32_t bottom, int32_t width,
-                  lv_color_t color) {
-    auto* obj = plain_object(parent);
-    lv_obj_set_pos(obj, x, top);
-    lv_obj_set_size(obj, width, bottom - top + 1);
-    lv_obj_set_style_bg_color(obj, color, 0);
-    lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, 0);
-    return obj;
-}
-
-// A ring of `size` at (x, y): a 1 px border, filled with the ground colour,
-// so what lies behind it does not show through.
-lv_obj_t* ring(lv_obj_t* parent, int32_t x, int32_t y, int32_t size, int32_t border,
-               lv_color_t color, const view::Theme& theme) {
-    auto* obj = plain_object(parent);
-    lv_obj_set_pos(obj, x, y);
-    lv_obj_set_size(obj, size, size);
-    lv_obj_set_style_radius(obj, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_color(obj, theme.colors.background, 0);
-    lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_color(obj, color, 0);
-    lv_obj_set_style_border_width(obj, border, 0);
-    lv_obj_set_style_border_opa(obj, LV_OPA_COVER, 0);
-    return obj;
 }
 
 // The panel's clock and battery texts.
@@ -393,8 +330,7 @@ private:
     std::array<lv_obj_t*, kSlotCount> names_{};
     std::array<std::size_t, kSlotCount> slots_{};
     int32_t client_count_{0};
-    lv_obj_t* left_bracket_{nullptr};
-    lv_obj_t* right_bracket_{nullptr};
+    parts::MapBrackets brackets_;
 
     // The uplink beside its line, and the text it shows; update() changes
     // the text, and shows or hides the star right of it.
@@ -472,74 +408,33 @@ void ConstellationHomeLayout::build_map(const HomeContext& context) {
 
     // Drawn back to front: rings, stars, lines, shapes, then labels.
     for (const int32_t size : kRingSizes) {
-        auto* ring = plain_object(map);
-        lv_obj_set_pos(ring, (kRingCentreX2 - size) / 2, (kRingCentreY2 - size) / 2);
-        lv_obj_set_size(ring, size, size);
-        lv_obj_set_style_radius(ring, LV_RADIUS_CIRCLE, 0);
-        lv_obj_set_style_border_color(ring, colors.border_subtle, 0);
-        lv_obj_set_style_border_width(ring, 1, 0);
-        lv_obj_set_style_border_opa(ring, LV_OPA_COVER, 0);
+        parts::map_orbit(map, kRingCentreX2, kRingCentreY2, size, theme);
     }
 
     for (std::size_t index = 0; index < std::size(kStars); ++index) {
         const auto& star = kStars[index];
-        auto* obj = dot(map, star.x - kStarSize / 2, star.y - kStarSize / 2, kStarSize,
-                        colors.border_strong);
+        auto* obj = parts::map_star(map, star.x, star.y, theme);
         if (index == kUplinkStar) {
             uplink_star_ = obj;
         }
     }
 
-    line(map, kUplinkPoints, static_cast<uint32_t>(std::size(kUplinkPoints)), kUplinkWidth,
-         colors.accent);
+    parts::map_line(map, kUplinkPoints, static_cast<uint32_t>(std::size(kUplinkPoints)), kUplinkWidth,
+                    colors.accent);
     for (int32_t index = 0; index < client_count_; ++index) {
-        line(map, kLinkPoints[slots_[static_cast<std::size_t>(index)]], 2, 1, colors.accent2);
+        parts::map_line(map, kLinkPoints[slots_[static_cast<std::size_t>(index)]], 2, 1, colors.accent2);
     }
 
-    auto* internet = plain_object(map);
-    lv_obj_set_pos(internet, kInternetX, kInternetY);
-    lv_obj_set_size(internet, kInternetSize, kInternetSize);
-    lv_obj_set_style_bg_color(internet, colors.background, 0);
-    lv_obj_set_style_bg_opa(internet, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_color(internet, colors.text, 0);
-    lv_obj_set_style_border_width(internet, 1, 0);
-    lv_obj_set_style_border_opa(internet, LV_OPA_COVER, 0);
-
-    auto* device = plain_object(map);
-    lv_obj_set_pos(device, kDeviceX, kDeviceY);
-    lv_obj_set_size(device, kDeviceSize, kDeviceSize);
-    lv_obj_set_style_radius(device, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_color(device, colors.background, 0);
-    lv_obj_set_style_bg_opa(device, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_color(device, colors.accent, 0);
-    lv_obj_set_style_border_width(device, kDeviceBorder, 0);
-    lv_obj_set_style_border_opa(device, LV_OPA_COVER, 0);
-    const int32_t device_dot = kDeviceX + (kDeviceSize - kDeviceDotSize) / 2;
-    dot(map, device_dot, kDeviceY + (kDeviceSize - kDeviceDotSize) / 2, kDeviceDotSize, colors.accent);
+    parts::map_internet(map, kInternetX, kInternetY, kInternetSize, theme);
+    parts::map_device(map, kDeviceX, kDeviceY, kDeviceSize, kDeviceBorder, kDeviceDotSize, colors.accent, theme);
 
     for (int32_t index = 0; index < client_count_; ++index) {
         const auto& slot = kSlots[slots_[static_cast<std::size_t>(index)]];
-        dot(map, slot.x - kClientDotSize / 2, slot.y - kClientDotSize / 2, kClientDotSize, colors.text);
+        parts::map_dot(map, slot.x - kClientDotSize / 2, slot.y - kClientDotSize / 2, kClientDotSize, colors.text);
     }
 
     // The brackets: open towards the dot, placed by select().
-    left_bracket_ = plain_object(map);
-    right_bracket_ = plain_object(map);
-    for (auto* bracket : {left_bracket_, right_bracket_}) {
-        lv_obj_set_size(bracket, kBracketWidth, kBracketHeight);
-        lv_obj_set_style_border_color(bracket, colors.accent, 0);
-        lv_obj_set_style_border_width(bracket, 1, 0);
-        lv_obj_set_style_border_opa(bracket, LV_OPA_COVER, 0);
-        lv_obj_add_flag(bracket, LV_OBJ_FLAG_HIDDEN);
-    }
-    lv_obj_set_style_border_side(
-        left_bracket_,
-        static_cast<lv_border_side_t>(LV_BORDER_SIDE_LEFT | LV_BORDER_SIDE_TOP | LV_BORDER_SIDE_BOTTOM),
-        0);
-    lv_obj_set_style_border_side(
-        right_bracket_,
-        static_cast<lv_border_side_t>(LV_BORDER_SIDE_RIGHT | LV_BORDER_SIDE_TOP | LV_BORDER_SIDE_BOTTOM),
-        0);
+    brackets_ = parts::make_map_brackets(map, kBracketHeight, theme);
 
     if (data.sample) {
         auto* mark = plain_label(map, "");
@@ -553,7 +448,7 @@ void ConstellationHomeLayout::build_map(const HomeContext& context) {
     uplink_shown_ = uplink_label_text(data);
     uplink_ = plain_label(map, uplink_shown_.c_str());
     view::style::text(uplink_, theme, view::FontRole::Small, colors.muted);
-    ground_fill(uplink_, theme);
+    parts::map_ground_fill(uplink_, theme);
     lv_obj_set_pos(uplink_, kUplinkLabelX, kUplinkLabelY);
     show_uplink_star(theme);
 
@@ -561,7 +456,7 @@ void ConstellationHomeLayout::build_map(const HomeContext& context) {
     auto* ap_label = plain_label(map, access_point.c_str());
     view::style::text(ap_label, theme, view::FontRole::Small, colors.accent);
     fix_width(ap_label, kApLabelWidth, theme.font(view::FontRole::Small));
-    ground_fill(ap_label, theme);
+    parts::map_ground_fill(ap_label, theme);
     lv_obj_set_pos(ap_label, kApLabelX, kApLabelY);
 
     // Client names, centred under their dots; select() sets font and colour.
@@ -586,43 +481,28 @@ void ConstellationHomeLayout::build_link_map(const HomeContext& context) {
 
     // Drawn back to front: rings, stars, lines, shapes, then labels.
     for (const int32_t size : kLinkRingSizes) {
-        auto* obj = plain_object(map);
-        lv_obj_set_pos(obj, (kRingCentreX2 - size) / 2, (kRingCentreY2 - size) / 2);
-        lv_obj_set_size(obj, size, size);
-        lv_obj_set_style_radius(obj, LV_RADIUS_CIRCLE, 0);
-        lv_obj_set_style_border_color(obj, colors.border_subtle, 0);
-        lv_obj_set_style_border_width(obj, 1, 0);
-        lv_obj_set_style_border_opa(obj, LV_OPA_COVER, 0);
+        parts::map_orbit(map, kRingCentreX2, kRingCentreY2, size, theme);
     }
 
     for (const auto& star : kLinkStars) {
-        dot(map, star.x - kStarSize / 2, star.y - kStarSize / 2, kStarSize, colors.border_strong);
+        parts::map_star(map, star.x, star.y, theme);
     }
 
     if (linked) {
-        upright(map, kRouterLinkX, kRouterLinkTop, kRouterLinkBottom, 1, colors.muted);
-        upright(map, kLinkLineX, kLinkLineTop, kLinkLineBottom, kUplinkWidth, colors.accent);
+        parts::map_upright(map, kRouterLinkX, kRouterLinkTop, kRouterLinkBottom, 1, colors.muted);
+        parts::map_upright(map, kLinkLineX, kLinkLineTop, kLinkLineBottom, kUplinkWidth, colors.accent);
     }
 
     // The internet, as in the router view.
-    auto* internet = plain_object(map);
-    lv_obj_set_pos(internet, kInternetX, kInternetY);
-    lv_obj_set_size(internet, kInternetSize, kInternetSize);
-    lv_obj_set_style_bg_color(internet, colors.background, 0);
-    lv_obj_set_style_bg_opa(internet, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_color(internet, colors.text, 0);
-    lv_obj_set_style_border_width(internet, 1, 0);
-    lv_obj_set_style_border_opa(internet, LV_OPA_COVER, 0);
+    parts::map_internet(map, kInternetX, kInternetY, kInternetSize, theme);
 
     if (linked) {
-        ring(map, kRouterX, kRouterY, kRouterSize, 1, colors.text, theme);
+        parts::map_ring(map, kRouterX, kRouterY, kRouterSize, 1, colors.text, theme);
     }
 
     // This device, where the router view has it; muted without a link.
     const lv_color_t device_color = linked ? colors.accent : colors.muted;
-    ring(map, kDeviceX, kDeviceY, kDeviceSize, kDeviceBorder, device_color, theme);
-    const int32_t device_dot = kDeviceX + (kDeviceSize - kDeviceDotSize) / 2;
-    dot(map, device_dot, kDeviceY + (kDeviceSize - kDeviceDotSize) / 2, kDeviceDotSize, device_color);
+    parts::map_device(map, kDeviceX, kDeviceY, kDeviceSize, kDeviceBorder, kDeviceDotSize, device_color, theme);
 
     if (data.sample) {
         auto* mark = plain_label(map, "");
@@ -635,7 +515,7 @@ void ConstellationHomeLayout::build_link_map(const HomeContext& context) {
     if (linked) {
         auto* router_label = plain_label(map, "");
         view::style::caption(router_label, theme, "router");
-        ground_fill(router_label, theme);
+        parts::map_ground_fill(router_label, theme);
         lv_obj_set_pos(router_label, kRouterLabelX, kRouterLabelY);
 
         // Right-aligned against the uplink, in a fixed box; a text too long
@@ -645,13 +525,13 @@ void ConstellationHomeLayout::build_link_map(const HomeContext& context) {
         view::style::text(link_label_, theme, view::FontRole::Small, colors.muted);
         fix_width(link_label_, kLinkLabelWidth, small);
         lv_obj_set_style_text_align(link_label_, LV_TEXT_ALIGN_RIGHT, 0);
-        ground_fill(link_label_, theme);
+        parts::map_ground_fill(link_label_, theme);
         lv_obj_set_pos(link_label_, kLinkLabelX, kLinkLabelY);
     }
 
     auto* device_label = plain_label(map, "");
     view::style::caption(device_label, theme, "this device");
-    ground_fill(device_label, theme);
+    parts::map_ground_fill(device_label, theme);
     lv_obj_set_pos(device_label, kDeviceLabelX, kDeviceLabelY);
 
     if (!linked) {
@@ -687,7 +567,7 @@ void ConstellationHomeLayout::show_uplink_star(const view::Theme& theme) {
     lv_point_t size{};
     lv_text_get_size(&size, uplink_shown_.c_str(), theme.font(view::FontRole::Small), 0, 0,
                      LV_COORD_MAX, LV_TEXT_FLAG_NONE);
-    const int32_t star_left = kStars[kUplinkStar].x - kStarSize / 2;
+    const int32_t star_left = kStars[kUplinkStar].x - parts::kMapStarSize / 2;
     if (kUplinkLabelX + size.x + kStarClearance <= star_left) {
         lv_obj_clear_flag(uplink_star_, LV_OBJ_FLAG_HIDDEN);
     } else {
@@ -871,8 +751,7 @@ void ConstellationHomeLayout::select(const HomeContext& context, int32_t index) 
 
     if (listed == 0) {
         selected_ = 0;
-        lv_obj_add_flag(left_bracket_, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(right_bracket_, LV_OBJ_FLAG_HIDDEN);
+        parts::hide_map_brackets(brackets_);
         lv_label_set_text(selected_name_, "");
         selected_signal_shown_.clear();
         lv_label_set_text(selected_signal_, "");
@@ -899,11 +778,7 @@ void ConstellationHomeLayout::select(const HomeContext& context, int32_t index) 
     const auto& slot = kSlots[slots_[static_cast<std::size_t>(selected)]];
     const int32_t dot_left = slot.x - kClientDotSize / 2;
     const int32_t dot_right = dot_left + kClientDotSize;
-    const int32_t bracket_top = slot.y - kBracketHeight / 2;
-    lv_obj_set_pos(left_bracket_, dot_left - kBracketGap - kBracketWidth, bracket_top);
-    lv_obj_set_pos(right_bracket_, dot_right + kBracketGap, bracket_top);
-    lv_obj_clear_flag(left_bracket_, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_clear_flag(right_bracket_, LV_OBJ_FLAG_HIDDEN);
+    parts::show_map_brackets(brackets_, dot_left, dot_right, slot.y - kBracketHeight / 2, kBracketHeight);
 
     // The panel.
     const auto& client = clients[static_cast<std::size_t>(selected)];
