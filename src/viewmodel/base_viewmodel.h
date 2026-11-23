@@ -8,6 +8,7 @@
 
 #include "subjects.h"
 #include "base_model.h"
+#include "tool_data.h"
 
 #include "lvgl.h"
 
@@ -197,6 +198,56 @@ public:
     const std::string& hotspot_draft() const;
     void set_hotspot_draft(const std::string& draft);
 
+    // The Tools page and its Ping and DNS pages.
+    // The highlighted row of the Tools page; starts at 0. The page shows it
+    // clamped to the rows that can be opened.
+    lv_subject_t* tools_selection_subject();
+    int32_t tools_selection() const;
+    // Stores `row`; nothing is written when it stays the same.
+    void select_tools_row(int32_t row);
+    // Opens the Tools page (see open_page()). The home page's key 7 uses it.
+    bool open_tools();
+    // Sets typing back to off, then opens the Ping or DNS page (see
+    // open_page()).
+    bool open_tool(model::ToolKind kind);
+    // The target each tool uses, as its place in the page's list of
+    // targets (the presets, then the typed target); starts at 0. The page
+    // shows it clamped to the list, which can change (the router comes and
+    // goes).
+    int32_t tool_target(model::ToolKind kind) const;
+    void set_tool_target(model::ToolKind kind, int32_t index);
+    // The target typed for each tool; empty while none was typed.
+    const std::string& tool_typed_target(model::ToolKind kind) const;
+    void set_tool_typed_target(model::ToolKind kind, const std::string& target);
+    // Counts every change made with the four setters above, so the pages
+    // follow. Starts at 0.
+    lv_subject_t* tool_target_subject();
+    // True while the Ping or DNS page is in typing mode; the target typed
+    // so far is tool_draft(). Kept here like the hotspot's rename.
+    lv_subject_t* tool_typing_subject();
+    bool tool_typing() const;
+    void set_tool_typing(bool typing);
+    const std::string& tool_draft() const;
+    void set_tool_draft(const std::string& draft);
+    // Asks to run `kind` on `target`, or to stop the run. The view model
+    // only passes the request on: app::ToolController hands it to the tool
+    // runner, and the run comes back in tools(). Counts every request, like
+    // request_mode(); requested_tool_stop(), requested_tool() and
+    // requested_tool_target() say what was asked.
+    void request_tool_run(model::ToolKind kind, const std::string& target);
+    void request_tool_stop();
+    lv_subject_t* tool_request_subject();
+    bool requested_tool_stop() const;
+    model::ToolKind requested_tool() const;
+    const std::string& requested_tool_target() const;
+    // The latest run of each tool and the Sent count. Only ever set on the
+    // UI thread, by app::ToolController. set_tools() returns false and tells
+    // nobody when `data` equals what is held; otherwise it stores it and
+    // tools_subject() counts one more change.
+    const model::ToolsData& tools() const;
+    bool set_tools(const model::ToolsData& data);
+    lv_subject_t* tools_subject();
+
     // The home page.
     // The values it shows (see model::HomeData). The page reads them while
     // it is built, and they change while it is open: the data layer hands
@@ -274,6 +325,18 @@ private:
     std::string requested_hotspot_name_;
     reactive::BoolSubject hotspot_typing_subject_;
     std::string hotspot_draft_;
+    reactive::IntSubject tools_selection_subject_;
+    int32_t tool_targets_[2]{0, 0};          // by model::ToolKind
+    std::string tool_typed_targets_[2];      // by model::ToolKind
+    reactive::IntSubject tool_target_subject_;
+    reactive::BoolSubject tool_typing_subject_;
+    std::string tool_draft_;
+    reactive::IntSubject tool_request_subject_;
+    bool requested_tool_stop_{false};
+    model::ToolKind requested_tool_{model::ToolKind::Ping};
+    std::string requested_tool_target_;
+    model::ToolsData tools_;
+    reactive::IntSubject tools_subject_;
     reactive::IntSubject home_selection_subject_;
     reactive::IntSubject home_data_subject_;
     reactive::IntSubject key_test_selection_subject_;

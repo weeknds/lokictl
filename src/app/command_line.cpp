@@ -301,8 +301,8 @@ std::string usage_text() {
             "keys to press before the picture (and before any\n";
     text += indent + "--switch-to), in order and separated by commas,\n";
     text += indent + "pressed the way the keyboard does. Names: 0-9, a-z,\n";
-    text += indent + "esc, enter, space, backspace, up, down, left, right,\n";
-    text += indent + "help. :long after a name holds that key for one\n";
+    text += indent + "esc, enter, space, dot (.), backspace, up, down, left,\n";
+    text += indent + "right, help. :long after a name holds that key for one\n";
     text += indent + "second, for example esc:long. The name data is not\n";
     text += indent + "a key: it takes one further reading at that point\n";
     text += indent + "(it has no :long).\n";

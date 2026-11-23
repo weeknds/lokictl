@@ -389,14 +389,16 @@ The keys are the same in every theme and in both views:
 | `6` SETUP | opens the Settings page |
 | `8` INFO | opens the Status page (see [navigation.md](navigation.md#the-status-page)) |
 | `4` MODES | opens the Modes page (see [navigation.md](navigation.md#the-modes-page)) |
-| `5` SCAN, `7` TOOLS | shown switched off; their pages do not exist yet |
+| `7` TOOLS | opens the Tools page (see [navigation.md](navigation.md#the-tools-page)) |
+| `5` SCAN | shown switched off; its page does not exist yet |
 | Enter | opens the Devices page on the selected client (see [navigation.md](navigation.md#the-devices-page)) |
 | ESC | shows `Hold ESC to exit` while it is held; letting go sooner only hides it |
 | ESC held for 700 ms | quits the app |
 
 The help panel (fn+H) shows the badge `HOME` and five rows: `HOLD ESC`
 Exit, `F Z / X C` Previous / next client, `ENTER` Devices, `4` Modes and
-`6 / 8` Settings / Status (the dimmed keys 5 and 7 need no row). It is the
+`6 / 8` Settings / Status (key 7 shows TOOLS on the bar itself, and the
+dimmed key 5 needs no row). It is the
 same in both views. [navigation.md](navigation.md)
 explains how keys travel through the app.
 
@@ -405,14 +407,14 @@ The soft keys are set in `HomeScreen::soft_keys()`:
 ```cpp
 view::widgets::SoftKeySet HomeScreen::soft_keys() {
     // Called from init(), before build_content(): it uses nothing but the
-    // view model, which outlives every screen. Scan and Tools open pages
-    // that do not exist yet, so they are shown switched off.
+    // view model, which outlives every screen. Scan opens a page that does
+    // not exist yet, so it is shown switched off.
     auto& view_model = this->view_model();
     return {{
         {"Modes", [&view_model] { view_model.open_modes(); }},
         {"Scan", {}, false, false},
         {"Setup", [&view_model] { view_model.open_settings(); }, true},
-        {"Tools", {}, false, false},
+        {"Tools", [&view_model] { view_model.open_tools(); }},
         {"Info", [&view_model] { view_model.open_status(); }},
     }};
 }

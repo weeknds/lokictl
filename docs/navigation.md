@@ -409,6 +409,58 @@ one unless the list ends. Only the two cards exist as LVGL objects: new
 values and the highlight retext and restyle them, nothing is built again.
 The help panel shows the badge `DEVICES` and four rows.
 
+## The Tools page
+
+`tools` (home key 7) lists the tools in two columns: Ping, DNS and Trace on
+the left, Wi-Fi, Ports and Speed on the right. Only Ping and DNS open a
+page so far; the others are muted with `coming`. Next to Ping and DNS a tag
+tells how the latest run stands (`running`, the average time, `3 found`).
+The status line says what the highlighted tool does, with `SENT N` at its
+right: every packet LokiCTL has sent in this run of the app (see
+[data.md](data.md#the-tools)).
+
+| Key | What it does |
+|---|---|
+| `f`/`x` or the arrows up and down | move between Ping and DNS |
+| `6` OPEN or Enter | opens the highlighted tool |
+| `4` BACK or a short ESC | goes back |
+
+The highlight lives in the view model (`tools_selection_*`).
+
+## The Ping and DNS pages
+
+`ping` and `dns` share one screen class (`screen::ToolScreen`). Under the
+title bar: the target row (`TARGET`, `ROUTER` or `NAME`, the target and
+`‹ 2/3 ›`), the results, and the status line with `SENT N`. Ping shows its
+last five echoes as a table (`#6` over `12.4`, `lost`, `…` while one
+waits) and two summary lines (sent, received and lost; min, avg and max in
+ms). DNS shows up to six addresses, IPv4 first and several to a line when
+they fit, and the server that answered with the time taken.
+
+| Key | What it does |
+|---|---|
+| `z`/`c` or the arrows left and right | step through the targets; off while this tool runs |
+| `5` EDIT | types a target; off while this tool runs |
+| `6` RUN / STOP or Enter | starts a run on the target, or stops it |
+| `4` BACK or a short ESC | goes back; a run goes on and the page shows it again later |
+
+Targets: for Ping the router (when the network has one), `9.9.9.9` and
+`1.1.1.1`; for DNS `example.com` and `wikipedia.org`; then the typed
+target. Only one tool runs at a time: while Ping runs, DNS has RUN switched
+off and says `Ping is running`, and the other way round.
+
+Typing works like the Hotspot page's rename: a panel takes the page's
+place, letters, digits and `.` are added (at most 63), Backspace takes one
+away, Enter keeps a valid target and selects it (Enter on an empty text
+drops the typed one), and a short ESC cancels. A valid target has no dot at
+either end and no two in a row; digits and dots only must be an IPv4
+address, which DNS refuses (it needs a name). The keyboard sends `.` as a
+key of its own (`KEY_DOT`); `--keys` and the device kit call it `dot`.
+
+The target choice, the typed target, the draft and the runs live in the
+view model, so they survive leaving the page and a theme switch. The help
+panel shows the badge `PING` or `DNS` and five rows.
+
 ## The Status page
 
 `status` lists every detail the home page has no room for: each network

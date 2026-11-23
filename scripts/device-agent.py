@@ -76,6 +76,7 @@ KEY_CODES = {
     "tab": 15,
     "enter": 28,
     "space": 57,
+    "dot": 52,  # KEY_DOT
     "screenshot": 99,  # KEY_SYSRQ, what the keyboard sends for fn+J
     "up": 103,
     "left": 105,
@@ -1442,7 +1443,7 @@ def cmd_selftest(args):
     assert rows32[0][3:6] == b"\x12\x34\x56", "32 bpp decode"
 
     documented = [str(n) for n in range(10)] + [chr(c) for c in range(ord("a"), ord("z") + 1)] + [
-        "esc", "enter", "tab", "space", "backspace", "up", "down", "left", "right", "help",
+        "esc", "enter", "tab", "space", "dot", "backspace", "up", "down", "left", "right", "help",
         "screenshot"]
     for name in documented + list(KEY_ALIASES):
         assert resolve_key(name) is not None, "key %s" % name

@@ -42,6 +42,11 @@ BaseViewModel::BaseViewModel()
       hotspot_subject_(0),
       hotspot_request_subject_(0),
       hotspot_typing_subject_(false),
+      tools_selection_subject_(0),
+      tool_target_subject_(0),
+      tool_typing_subject_(false),
+      tool_request_subject_(0),
+      tools_subject_(0),
       home_selection_subject_(0),
       home_data_subject_(0),
       key_test_selection_subject_(0),
@@ -333,6 +338,126 @@ const std::string& BaseViewModel::hotspot_draft() const {
 
 void BaseViewModel::set_hotspot_draft(const std::string& draft) {
     hotspot_draft_ = draft;
+}
+
+lv_subject_t* BaseViewModel::tools_selection_subject() {
+    return tools_selection_subject_.native();
+}
+
+int32_t BaseViewModel::tools_selection() const {
+    return tools_selection_subject_.value();
+}
+
+void BaseViewModel::select_tools_row(int32_t row) {
+    if (row != tools_selection_subject_.value()) {
+        tools_selection_subject_.set(row);
+    }
+}
+
+bool BaseViewModel::open_tools() {
+    return open_page(model::AppPage::Tools);
+}
+
+bool BaseViewModel::open_tool(model::ToolKind kind) {
+    set_tool_typing(false);
+    return open_page(kind == model::ToolKind::Dns ? model::AppPage::Dns : model::AppPage::Ping);
+}
+
+int32_t BaseViewModel::tool_target(model::ToolKind kind) const {
+    return tool_targets_[kind == model::ToolKind::Dns ? 1 : 0];
+}
+
+void BaseViewModel::set_tool_target(model::ToolKind kind, int32_t index) {
+    int32_t& target = tool_targets_[kind == model::ToolKind::Dns ? 1 : 0];
+    if (index != target) {
+        target = index;
+        bump(tool_target_subject_);
+    }
+}
+
+const std::string& BaseViewModel::tool_typed_target(model::ToolKind kind) const {
+    return tool_typed_targets_[kind == model::ToolKind::Dns ? 1 : 0];
+}
+
+void BaseViewModel::set_tool_typed_target(model::ToolKind kind, const std::string& target) {
+    std::string& typed = tool_typed_targets_[kind == model::ToolKind::Dns ? 1 : 0];
+    if (target != typed) {
+        typed = target;
+        bump(tool_target_subject_);
+    }
+}
+
+lv_subject_t* BaseViewModel::tool_target_subject() {
+    return tool_target_subject_.native();
+}
+
+lv_subject_t* BaseViewModel::tool_typing_subject() {
+    return tool_typing_subject_.native();
+}
+
+bool BaseViewModel::tool_typing() const {
+    return tool_typing_subject_.value();
+}
+
+void BaseViewModel::set_tool_typing(bool typing) {
+    if (typing != tool_typing_subject_.value()) {
+        tool_typing_subject_.set(typing);
+    }
+}
+
+const std::string& BaseViewModel::tool_draft() const {
+    return tool_draft_;
+}
+
+void BaseViewModel::set_tool_draft(const std::string& draft) {
+    tool_draft_ = draft;
+}
+
+void BaseViewModel::request_tool_run(model::ToolKind kind, const std::string& target) {
+    // Stored first: the observers run inside set() and read it from there.
+    requested_tool_stop_ = false;
+    requested_tool_ = kind;
+    requested_tool_target_ = target;
+    bump(tool_request_subject_);
+}
+
+void BaseViewModel::request_tool_stop() {
+    requested_tool_stop_ = true;
+    requested_tool_target_.clear();
+    bump(tool_request_subject_);
+}
+
+lv_subject_t* BaseViewModel::tool_request_subject() {
+    return tool_request_subject_.native();
+}
+
+bool BaseViewModel::requested_tool_stop() const {
+    return requested_tool_stop_;
+}
+
+model::ToolKind BaseViewModel::requested_tool() const {
+    return requested_tool_;
+}
+
+const std::string& BaseViewModel::requested_tool_target() const {
+    return requested_tool_target_;
+}
+
+const model::ToolsData& BaseViewModel::tools() const {
+    return tools_;
+}
+
+bool BaseViewModel::set_tools(const model::ToolsData& data) {
+    if (data == tools_) {
+        return false;
+    }
+    tools_ = data;
+    bump(tools_subject_);
+    return true;
+}
+
+lv_subject_t* BaseViewModel::tools_subject() {
+    return tools_subject_.native();
 }
 
 const model::HomeData& BaseViewModel::home() const {

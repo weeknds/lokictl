@@ -27,7 +27,7 @@ struct ScriptedKey {
 
 // The names --keys accepts, for messages.
 constexpr const char* kScriptedKeyNames =
-    "0-9, a-z, esc, enter, space, backspace, up, down, left, right or help, each "
+    "0-9, a-z, esc, enter, space, dot, backspace, up, down, left, right or help, each "
     "optionally followed by :long; or data, which takes one further reading";
 
 // Turns one --keys name into an entry: one of the key names of

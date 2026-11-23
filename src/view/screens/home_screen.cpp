@@ -40,14 +40,14 @@ view::widgets::HelpContent HomeScreen::help() const {
 
 view::widgets::SoftKeySet HomeScreen::soft_keys() {
     // Called from init(), before build_content(): it uses nothing but the
-    // view model, which outlives every screen. Scan and Tools open pages
-    // that do not exist yet, so they are shown switched off.
+    // view model, which outlives every screen. Scan opens a page that does
+    // not exist yet, so it is shown switched off.
     auto& view_model = this->view_model();
     return {{
         {"Modes", [&view_model] { view_model.open_modes(); }},
         {"Scan", {}, false, false},
         {"Setup", [&view_model] { view_model.open_settings(); }, true},
-        {"Tools", {}, false, false},
+        {"Tools", [&view_model] { view_model.open_tools(); }},
         {"Info", [&view_model] { view_model.open_status(); }},
     }};
 }

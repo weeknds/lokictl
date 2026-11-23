@@ -36,9 +36,9 @@ namespace screen {
 // client and right and down (C/X) the next one; the selection stops at the
 // first and the last client shown, and without clients they do nothing.
 // Enter opens the Devices page with every device, on the selected client. Key
-// 4 (Modes) opens the Modes page, key 6 (Setup) Settings and key 8 (Info)
-// the Status page. Keys 5 and 7 (Scan, Tools) are shown switched off until
-// their pages exist.
+// 4 (Modes) opens the Modes page, key 6 (Setup) Settings, key 7 (Tools)
+// the Tools page and key 8 (Info) the Status page. Key 5 (Scan) is shown
+// switched off until its page exists.
 // Holding ESC quits, as on every first page.
 //
 // The values come from the view model (home()), which the data layer fills

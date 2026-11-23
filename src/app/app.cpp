@@ -28,6 +28,8 @@
 #include "theme.h"
 #include "theme_controller.h"
 #include "theme_engine.h"
+#include "tool_controller.h"
+#include "tool_runner.h"
 
 #include <chrono>
 #include <csignal>
@@ -600,6 +602,12 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override,
     });
     data.read_first();
 
+    // The tools (ping, DNS lookup) run on their own thread; the live runner
+    // only with the live data source on the device, the pretend one with
+    // made-up results otherwise. Stopped right after the main loop, next to
+    // the data controller.
+    ToolController tools(view_model, platform::make_tool_runner(data_source == platform::DataSourceKind::Live));
+
     ScreenManager screen_manager(view_model, assets, theme_engine);
     screen_manager.start();
 
@@ -662,6 +670,7 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override,
              lv_display_get_horizontal_resolution(display),
              lv_display_get_vertical_resolution(display));
     data.start();
+    tools.start();
     while (running && stop_signal == 0
 #if USE_DESKTOP
            && simulator_frame.process_events()
@@ -673,6 +682,7 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override,
     // First on the way out: the backlight goes back to what it was, and no
     // new values arrive while the rest is torn down.
     power.stop();
+    tools.stop();
     data.set_block_failure_listener({});
     data.stop();
 

@@ -1,0 +1,166 @@
+/*
+ * SPDX-FileCopyrightText: 2026 LokiCTL contributors
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
+#include "tool_controller.h"
+
+#include "base_viewmodel.h"
+#include "logger.h"
+#include "sent_counter.h"
+
+#include <string>
+#include <utility>
+
+namespace app {
+namespace {
+
+const char* error_name(model::ToolError error) {
+    switch (error) {
+        case model::ToolError::None:
+            return "none";
+        case model::ToolError::NotAllowed:
+            return "not allowed for this user";
+        case model::ToolError::NoServer:
+            return "no DNS server";
+        case model::ToolError::NoSuchName:
+            return "no such name";
+        case model::ToolError::NoAnswer:
+            return "no answer";
+        case model::ToolError::NoAddress:
+            return "no address";
+        case model::ToolError::BadTarget:
+            return "not a valid target";
+        case model::ToolError::Failed:
+            return "failed";
+    }
+    return "failed";
+}
+
+std::string why(model::ToolError error, const std::string& reason) {
+    if (error == model::ToolError::Failed && !reason.empty()) {
+        return reason;
+    }
+    return error_name(error);
+}
+
+} // namespace
+
+ToolController::ToolController(viewmodel::BaseViewModel& view_model, std::unique_ptr<platform::ToolRunner> runner)
+    : view_model_(view_model), runner_(std::move(runner)) {}
+
+ToolController::~ToolController() {
+    stop();
+}
+
+void ToolController::start() {
+    if (poll_timer_ || stopped_ || !runner_) {
+        return;
+    }
+    requests_seen_ = lv_subject_get_int(view_model_.tool_request_subject());
+    request_observer_ = lv_subject_add_observer(view_model_.tool_request_subject(), request_cb, this);
+    poll_timer_ = lv_timer_create(poll_timer_cb, kPollPeriodMs, this);
+    if (!poll_timer_) {
+        LOG_WARN("tools: no timer to fetch the results; the tools stay off");
+    }
+}
+
+void ToolController::stop() {
+    if (poll_timer_) {
+        lv_timer_delete(poll_timer_);
+        poll_timer_ = nullptr;
+    }
+    if (request_observer_) {
+        lv_observer_remove(request_observer_);
+        request_observer_ = nullptr;
+    }
+    if (runner_ && !stopped_) {
+        stopped_ = true;
+        const bool was_running = model::tool_running(data_);
+        runner_->shutdown();
+        if (was_running) {
+            LOG_INFO("tools: runner stopped");
+        }
+    }
+}
+
+void ToolController::poll_timer_cb(lv_timer_t* timer) {
+    auto* controller = static_cast<ToolController*>(lv_timer_get_user_data(timer));
+    if (controller) {
+        controller->poll();
+    }
+}
+
+void ToolController::request_cb(lv_observer_t* observer, lv_subject_t* subject) {
+    auto* controller = static_cast<ToolController*>(lv_observer_get_user_data(observer));
+    if (!controller) {
+        return;
+    }
+    const int32_t count = lv_subject_get_int(subject);
+    if (count == controller->requests_seen_) {
+        return;
+    }
+    controller->requests_seen_ = count;
+    controller->handle_request();
+}
+
+void ToolController::handle_request() {
+    if (!poll_timer_) {
+        return;  // nothing would show the run
+    }
+    if (view_model_.requested_tool_stop()) {
+        if (model::tool_running(data_)) {
+            runner_->stop();
+            LOG_INFO("tools: {} stopped by the user",
+                     model::tool_name(data_.ping.state == model::ToolState::Running ? model::ToolKind::Ping
+                                                                                     : model::ToolKind::Dns));
+        }
+    } else {
+        const model::ToolKind kind = view_model_.requested_tool();
+        // The target is checked again here, whatever the page did.
+        if (!model::valid_tool_target(kind, view_model_.requested_tool_target())) {
+            LOG_WARN("tools: {} refused: not a valid target", model::tool_name(kind));
+            return;
+        }
+        if (!runner_->start({kind, view_model_.requested_tool_target()})) {
+            return;  // one runs already
+        }
+        LOG_INFO("tools: {} started", model::tool_name(kind));
+    }
+    // The page shows the change at once, not at the next tick.
+    poll();
+}
+
+void ToolController::poll() {
+    model::ToolsData next = data_;
+    runner_->take(next);
+    next.sent = platform::sent_packets();
+    if (next == data_) {
+        return;
+    }
+    log_change(next);
+    data_ = std::move(next);
+    view_model_.set_tools(data_);
+}
+
+void ToolController::log_change(const model::ToolsData& next) const {
+    const model::PingRun& ping = next.ping;
+    if (ping.state != data_.ping.state) {
+        if (ping.state == model::ToolState::Done) {
+            LOG_INFO("tools: ping done, {}/{} replies", ping.received, ping.sent);
+        } else if (ping.state == model::ToolState::Failed) {
+            LOG_INFO("tools: ping failed: {}", why(ping.error, ping.reason));
+        }
+    }
+    const model::DnsRun& dns = next.dns;
+    if (dns.state != data_.dns.state) {
+        if (dns.state == model::ToolState::Done && dns.error == model::ToolError::None) {
+            LOG_INFO("tools: dns done, {} addresses", dns.addresses.size());
+        } else if (dns.state == model::ToolState::Done || dns.state == model::ToolState::Failed) {
+            LOG_INFO("tools: dns failed: {}", why(dns.error, dns.reason));
+        }
+    }
+}
+
+} // namespace app

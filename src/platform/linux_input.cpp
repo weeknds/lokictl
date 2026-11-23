@@ -132,7 +132,8 @@ void key_event_cb(lv_event_t* event) {
 }
 
 #if !USE_DESKTOP
-// Letters come through in lowercase: shift and sym are not handled yet. The
+// Letters come through in lowercase: shift and sym are not handled yet, but
+// the keyboard reports the dot as a key of its own (KEY_DOT). The
 // keyboard driver resolves fn itself, so fn+F/X/Z/C arrive as the arrow keys,
 // fn+J as SysRq and fn+H as Help. Keys not listed here are ignored.
 uint32_t map_evdev_key(uint16_t code) {
@@ -154,6 +155,8 @@ uint32_t map_evdev_key(uint16_t code) {
             return LV_KEY_BACKSPACE;
         case KEY_SPACE:
             return ' ';
+        case KEY_DOT:
+            return '.';
         case KEY_SYSRQ:
             return kKeyPrintScreen;
         case KEY_HELP:

@@ -20,6 +20,8 @@
 #include "screenshot_service.h"
 #include "theme_controller.h"
 #include "theme_engine.h"
+#include "tool_controller.h"
+#include "tool_runner.h"
 
 #include "lvgl.h"
 
@@ -57,6 +59,7 @@ constexpr NamedKey kNamedKeys[] = {
     {"esc", LV_KEY_ESC},
     {"enter", LV_KEY_ENTER},
     {"space", ' '},
+    {"dot", '.'},
     {"backspace", LV_KEY_BACKSPACE},
     {"up", LV_KEY_UP},
     {"down", LV_KEY_DOWN},
@@ -275,6 +278,11 @@ int run_snapshot(const SnapshotRequest& request) {
     // gives the same picture; no saver is set, so nothing is written.
     data.set_password_generator([] { return std::string(model::kExampleNewHotspotPassword); });
     data.read_first();
+
+    // The tools always use the pretend runner here: no thread, no socket,
+    // its runs follow the LVGL time, so the same keys give the same picture.
+    ToolController tools(view_model, platform::make_tool_runner(false));
+    tools.start();
 
     ScreenManager screen_manager(view_model, assets, theme_engine);
     screen_manager.start();

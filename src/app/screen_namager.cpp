@@ -20,6 +20,8 @@
 #include "page_registry.h"
 #include "settings_screen.h"
 #include "status_screen.h"
+#include "tool_screen.h"
+#include "tools_screen.h"
 
 namespace app {
 namespace {
@@ -131,6 +133,22 @@ bool ScreenManager::show_devices_screen() {
     return true;
 }
 
+bool ScreenManager::show_tools_screen() {
+    if (!load_screen(std::make_unique<screen::ToolsScreen>(view_model_, assets_, theme_engine_))) {
+        return false;
+    }
+    page_loaded(model::AppPage::Tools);
+    return true;
+}
+
+bool ScreenManager::show_tool_screen(model::AppPage page) {
+    if (!load_screen(std::make_unique<screen::ToolScreen>(view_model_, assets_, theme_engine_, page))) {
+        return false;
+    }
+    page_loaded(page);
+    return true;
+}
+
 bool ScreenManager::show_dev_fonts_screen(model::AppPage page) {
     if (!load_screen(
             std::make_unique<screen::DevFontsScreen>(view_model_, assets_, theme_engine_, page))) {
@@ -239,6 +257,14 @@ bool ScreenManager::show_page(model::AppPage page) {
 
     if (screen::DevicesScreen::handles(page)) {
         return show_devices_screen();
+    }
+
+    if (screen::ToolsScreen::handles(page)) {
+        return show_tools_screen();
+    }
+
+    if (screen::ToolScreen::handles(page)) {
+        return show_tool_screen(page);
     }
 
     return show_home_screen();

@@ -678,6 +678,55 @@ message. Everywhere else (the made-up sources, test folders, the Mac,
 snapshots) every listed device counts as blocked at once and nothing runs,
 so `--keys 8` on the Devices page pictures a blocked device.
 
+## The tools
+
+The Ping and DNS pages run their tools away from the UI thread.
+`app::ToolController` hands the pages' requests to a
+`platform::ToolRunner` and, from an LVGL timer every 250 ms, gives the
+latest runs to the view model (`tools()`, `tools_subject()`) with the Sent
+count. One job runs at a time; leaving the page does not stop it.
+
+- **The live runner** (device builds, with `--data live`, the default
+  there) has one thread of its own, started with the first job, with
+  SIGTERM and SIGINT blocked. It never touches the view model, LVGL or the
+  log, and every wait is at most 100 ms, so Stop and quitting are seen at
+  once.
+  - **Ping** uses an ICMP datagram socket (`SOCK_DGRAM`, `IPPROTO_ICMP`):
+    no helper and no privileges, allowed by
+    `net.ipv4.ping_group_range`, which LokiCTL never touches. When the
+    system refuses the socket, the page says `Ping not allowed for this
+    user`. One echo a second, ten in all; an echo with no reply in 2 s is
+    lost. The kernel sets the identifier and hands back replies without the
+    IP header, so replies are matched by sequence number. A name is looked
+    up first (one A question).
+  - **DNS** writes its own messages (`platform/dns_message.*`, also for
+    later tools): one A and one AAAA question over UDP to the first IPv4
+    `nameserver` of `/etc/resolv.conf` (`No DNS server` without one). A
+    question with no answer in 2 s is sent once more, to the next IPv4
+    nameserver when there is one, as the system's resolver does when the
+    first one is down. Answers must match the question's ID, name and type;
+    the parser checks every length against the end of the message and
+    follows name compression only backwards. NXDOMAIN shows `No such
+    name`, silence `No answer`.
+- **The pretend runner** (the Mac, snapshots, and the made-up data sources)
+  has no thread and never opens a socket. Each run follows the LVGL time
+  since it started, with fixed made-up results in the documentation ranges
+  (192.0.2.0/24, 198.51.100.0/24, 2001:db8::/32): echo 6 takes 104 ms and
+  echo 8 is lost, names in `.invalid` do not exist. So `--keys 6` on `ping`
+  shows a run under way and `--keys 6 --settle-ms 11000` its end, and the
+  same command always gives the same picture.
+
+**Sent** (`platform::sent_packets()`) counts every packet LokiCTL sent in
+this run of the app: each echo and each DNS question, retries included.
+The pretend runner counts the packets it pretends to send. Later tools add
+to the same count with `platform::count_sent()`.
+
+Log lines: `tools: <ping|dns> started`, `tools: <ping|dns> stopped by the
+user`, `tools: ping done, 9/10 replies`, `tools: ping failed: <why>`,
+`tools: dns done, <n> addresses`, `tools: dns failed: <why>` (never a target
+or an address), and `tools: runner stopped` when a run was cut short by
+quitting.
+
 ## The Status page's details
 
 The Status page (home page, key 8) shows the extra values of
@@ -1174,7 +1223,8 @@ A snapshot logs only warnings, so these lines do not appear there, and
 
 On quit (holding ESC, closing the simulator window) and on SIGTERM or
 SIGINT, the main loop ends. Right after it, before anything else is torn
-down, `app::DataController::stop()` deletes its timer, wakes the reader and
+down, `app::ToolController::stop()` stops a tool's run and ends its
+thread, then `app::DataController::stop()` deletes its timer, wakes the reader and
 waits for it to end, and the log says `data: reader stopped`. Before the
 reader ends it switches back to Client if a mode is on (at most 3 s; see
 [Switching modes](#switching-modes)). The reader
