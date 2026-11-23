@@ -5,9 +5,13 @@
   "description": "Pocket network multitool for CardputerZero",
 
   "store": {
-    "summary": "Pocket network multitool: live status, router, hotspot and VPN modes, device discovery and tools.",
-    "description": "LokiCTL turns the CardputerZero into a pocket network multitool. It shows live network status, switches the device between router, hotspot-sharing and VPN-gateway modes, finds the devices on a network and offers everyday network tools. Three switchable visual themes are included: Instrument, Constellation and Terminal.",
-    "categories": ["TODO"],
+    "summary": "Network multitool: live status, hotspot, VPN, device finder and network checks",
+    "description": "LokiCTL shows what your network is doing and gives you the usual tools to look into it. It works with the CardputerZero's built-in Wi-Fi and Ethernet port.\n\nModes: turn the Cardputer into a small router, run a hotspot next to your Wi-Fi, or send its traffic through a WireGuard VPN. With a hotspot and the VPN together it becomes a VPN gateway with a kill switch, and a leak test checks that nothing goes around the tunnel. You can see which devices are on the hotspot, what names they look up, and block one.\n\nTools: ping, DNS lookup, traceroute, a Wi-Fi scan, a port scan, and speed tests to the internet and to other devices on your own network (iperf3). The port scan says what runs on each open port and points out known security holes and old versions. A sign-in helper deals with hotel and cafe Wi-Fi that wants you to log in on a web page.\n\nYour network: Discover finds the devices on it, and the map shows how it is built, down to the switch port you are plugged into and the route to the internet. The health check looks for common weak spots in one go. Watch listens quietly and tells you about new devices, a fake router, a second DHCP server or a port scan against the Cardputer. The trap (a honeypot) shows who pokes at fake services. Reports put what LokiCTL found into one page you can open on a PC.\n\nWith an optional USB Wi-Fi stick, a Wi-Fi survey listens for kick-off attacks, look-alike networks and busy channels.\n\nThree looks (Instrument, Constellation and Terminal), and a command bar if you would rather type. Only scan and probe networks you own or are allowed to test.",
+    "categories": [
+      "Network",
+      "Tools",
+      "Security"
+    ],
     "screenshots": [
       "screenshot/store/1-home.png",
       "screenshot/store/2-modes.png",
@@ -17,15 +21,18 @@
     "icon": "assets/images/lokictl.png",
     "license": "MIT",
     "source_repo": "TODO",
-    "author": { "github": "TODO", "display_name": "TODO" },
-    "share_code": "TODO",
+    "author": {
+      "github": "TODO",
+      "display_name": "TODO"
+    },
+    "share_code": "LOKI",
     "permissions": {
-      "camera": true,
+      "camera": false,
       "microphone": false,
       "imu": false,
       "network": true,
-      "additional_hardware": false,
-      "background_service": true,
+      "additional_hardware": true,
+      "background_service": false,
       "external_display": false
     }
   }

@@ -35,6 +35,16 @@ fail() {
   exit 1
 }
 
+# The package's Maintainer comes from LOKICTL_MAINTAINER ("Name <e-mail>"),
+# passed on to the build; without it the build uses a neutral default.
+if [ -n "${LOKICTL_MAINTAINER:-}" ]; then
+  maintainer_pattern='^[^<>"$;\\]+ <[^<>@"$; \\]+@[^<>@"$; \\]+>$'
+  if ! [[ "${LOKICTL_MAINTAINER}" =~ ${maintainer_pattern} ]] || [ "${LOKICTL_MAINTAINER}" != "${LOKICTL_MAINTAINER//$'\n'/}" ]; then
+    fail "LOKICTL_MAINTAINER must look like: Name <e-mail>"
+  fi
+  log "Maintainer: ${LOKICTL_MAINTAINER}"
+fi
+
 # 1. Docker must already be running. This script never starts a VM.
 if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
   fail "Docker is not reachable. Start it first (with colima: colima start), then run this script again."
@@ -84,7 +94,7 @@ fi
 #    every file it writes in the repository belongs to you.
 log "Building the package in the container (cmake --workflow --preset cp0-native-package)"
 docker run --rm --init --platform linux/arm64 \
-  --user "$(id -u):$(id -g)" --env HOME=/tmp \
+  --user "$(id -u):$(id -g)" --env HOME=/tmp --env LOKICTL_MAINTAINER \
   --volume "${repo_root}:${container_dir}" --workdir "${container_dir}" \
   "${image_tag}" bash -ec '
     if [ ! -f CMakePresets.json ]; then

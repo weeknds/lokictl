@@ -9,10 +9,21 @@ include(GNUInstallDirs)
 # APP_DISPLAY_NAME, APP_PACKAGE_NAME and APP_PACKAGE_DESCRIPTION come from the identity block in CMakeLists.txt.
 set(APP_DEBIAN_REVISION "1" CACHE STRING "Debian package revision (the N in <version>-N)")
 set(APP_DEBIAN_ARCHITECTURE "arm64" CACHE STRING "Debian package architecture")
-# Placeholder on purpose: set a real maintainer name and e-mail before
-# publishing; the store rejects placeholder values.
-set(APP_MAINTAINER "TODO Your Name <todo@example.invalid>" CACHE STRING "Debian package maintainer")
-set(APP_INSTALL_SYSTEMD_SERVICE ON CACHE BOOL "Install a systemd service file for embedded deployments")
+# The package's Maintainer comes from the LOKICTL_MAINTAINER environment
+# variable ("Name <e-mail>"), read again on every configure, so it never
+# has to be written into the repository; scripts/build-deb.sh passes it on.
+# Without it the neutral default below is used. The store wants the
+# publisher's GitHub e-mail or noreply address here, so set it for a store
+# build. (Older build folders cached a value; it is dropped.)
+unset(APP_MAINTAINER CACHE)
+set(APP_MAINTAINER "$ENV{LOKICTL_MAINTAINER}")
+if(APP_MAINTAINER STREQUAL "")
+    set(APP_MAINTAINER "${APP_DISPLAY_NAME} contributors <maintainer@${APP_PACKAGE_NAME}.invalid>")
+endif()
+# The launcher starts LokiCTL when you open it, so the package installs no
+# systemd unit: nothing of LokiCTL runs in the background or at boot. (This
+# drops the template's old switch for one from older build folders.)
+unset(APP_INSTALL_SYSTEMD_SERVICE CACHE)
 
 set(APP_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/package")
 configure_file(
@@ -20,14 +31,6 @@ configure_file(
     "${APP_GENERATED_DIR}/${PROJECT_NAME}.desktop"
     @ONLY
 )
-
-if(APP_INSTALL_SYSTEMD_SERVICE)
-    configure_file(
-        "${CMAKE_CURRENT_LIST_DIR}/templates/app.service.in"
-        "${APP_GENERATED_DIR}/${PROJECT_NAME}.service"
-        @ONLY
-    )
-endif()
 
 install(TARGETS ${PROJECT_NAME}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
@@ -89,12 +92,6 @@ endif()
 install(FILES "${APP_GENERATED_DIR}/${PROJECT_NAME}.desktop"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/APPLaunch/applications"
 )
-
-if(APP_INSTALL_SYSTEMD_SERVICE)
-    install(FILES "${APP_GENERATED_DIR}/${PROJECT_NAME}.service"
-        DESTINATION "${CMAKE_INSTALL_LIBDIR}/systemd/system"
-    )
-endif()
 
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/README.md"
     DESTINATION "${CMAKE_INSTALL_DOCDIR}"

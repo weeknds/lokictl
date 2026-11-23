@@ -341,6 +341,18 @@ What the script does:
   few seconds.
 - At the end it prints the full path of the package.
 
+The package's maintainer (the `Maintainer:` line of the `.deb`) is taken
+from the `LOKICTL_MAINTAINER` environment variable, in the form
+`Name <e-mail>`, so it never has to be written into the repository.
+Without it the package says `LokiCTL contributors
+<maintainer@lokictl.invalid>`, which is fine for your own device. The store
+only accepts a package whose maintainer e-mail is the publisher's GitHub
+e-mail or GitHub noreply address, so set it for a store build:
+
+```sh
+LOKICTL_MAINTAINER='Your Name <you@users.noreply.github.com>' ./scripts/build-deb.sh
+```
+
 The container needs an arm64 system. An Apple silicon Mac is one, so the build
 runs at full speed there. On other computers Docker would have to emulate
 arm64, which this project has not tested.
@@ -576,7 +588,8 @@ assets/
                       the simulator's device frame
 cmake/
   cm0-package.cmake   install layout and Debian packaging
-  templates/          inputs for the launcher entry, systemd unit and conffiles
+  templates/          inputs for the launcher entry, conffiles and the
+                      install and removal scripts
   toolchains/         cross-compiler setup for the device
 config/               default settings file and the polkit rule
 docs/                 notes on the themes, navigation, the home page, the

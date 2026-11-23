@@ -622,7 +622,7 @@ def cmd_install(args):
 
         enabled, active = system_unit_state(PACKAGED_UNIT)
         if enabled == "enabled" or active == "active":
-            raise Failure("The packaged %s is %s/%s; it must stay off (it would run the app "
+            raise Failure("An old %s is %s/%s; it must stay off (it would run the app "
                           "as root)." % (PACKAGED_UNIT, enabled, active))
     finally:
         remove_quietly(path)
@@ -909,7 +909,7 @@ def cmd_status(args):
                   if holders else "not open"))
 
     enabled, active = system_unit_state(PACKAGED_UNIT)
-    lines.append((PACKAGED_UNIT, "%s, %s (packaged system unit; should stay off)" % (enabled, active)))
+    lines.append((PACKAGED_UNIT, "%s, %s (old system unit, no longer packaged; should stay off)" % (enabled, active)))
     print_table(lines)
     return 0
 

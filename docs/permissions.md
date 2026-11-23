@@ -245,3 +245,19 @@ It is off at every start, listens on your local network's private address
 only and needs a one-time code from the Cardputer's screen. It uses plain
 HTTP, so use it on networks you trust. [remote.md](remote.md#security-model)
 explains how it is kept private.
+
+## Store permission flags
+
+The store asks every app to declare seven permissions in `app-builder.json`
+(`store.permissions`). Each one says what the shipped app really does, not
+what the hardware could do. LokiCTL's:
+
+| Flag | Value | Why |
+|---|---|---|
+| `network` | true | It is a network tool: it scans, probes, runs a hotspot and a VPN, and sends a few requests to the internet (see the [README](../README.md#data-use)). |
+| `additional_hardware` | true | The Wi-Fi survey works only with a USB Wi-Fi stick, and LokiCTL looks for such sticks among the network interfaces. The stick is optional: everything else uses only the built-in Wi-Fi and Ethernet port. The store counts USB accessories under this flag, so it is declared. |
+| `background_service` | false | The launcher starts LokiCTL when you open it. The package installs no systemd unit, and nothing of LokiCTL keeps running after it quits. "Keep mode after quitting" leaves NetworkManager's hotspot and VPN profiles running, which NetworkManager itself looks after; Debian's iperf3 server is never switched on. |
+| `camera` | false | The QR codes (hotspot, security holes, sign-in page) are only shown on the screen, for your phone to scan. LokiCTL never uses the camera. |
+| `microphone` | false | Not used. |
+| `imu` | false | Not used. |
+| `external_display` | false | LokiCTL draws only on the built-in screen. Remote view shows the screen in a web browser over the network, which is covered by `network`. |

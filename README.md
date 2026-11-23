@@ -13,8 +13,9 @@ LokiCTL shows what your network is doing at a glance. It can turn the
 CardputerZero into a small router or hotspot, send traffic through a
 WireGuard VPN, find the devices on your network and run the usual network
 tools: ping, DNS lookup, traceroute, a Wi-Fi scan, a port scan and speed
-tests to the internet and inside your own network. Everything runs on the
-built-in Wi-Fi and the Ethernet port, so you don't need extra hardware.
+tests to the internet and inside your own network. Apart from the Wi-Fi
+survey, which needs a USB Wi-Fi stick, everything runs on the built-in
+Wi-Fi and the Ethernet port, so you don't need extra hardware.
 
 It has three looks (Instrument, Constellation and Terminal) and a command
 bar if you'd rather type than press keys.
