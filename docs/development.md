@@ -582,10 +582,10 @@ eyes can judge.
 
 ```text
 assets/
-  audio/              sound effects
   fonts/              text and icon fonts and their licenses
   images/             app icon (lokictl.svg and the PNGs made from it) and
-                      the simulator's device frame
+                      the simulator's device frame (only the icon PNGs
+                      are packaged)
 cmake/
   cm0-package.cmake   install layout and Debian packaging
   templates/          inputs for the launcher entry, conffiles and the

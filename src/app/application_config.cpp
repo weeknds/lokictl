@@ -163,6 +163,16 @@ bool save_application_config(const std::string& path,
             error = "could not create parent directory: " + filesystem_error.message();
             return false;
         }
+        // LokiCTL's own settings folder (~/.config/lokictl) is the user's
+        // only (0700), also when an older version or the WireGuard folder
+        // made it with the default mode. Any other folder (a settings file
+        // given by LOKICTL_CONFIG_FILE, the source tree's config/ on the
+        // Mac) is left as it is. A failure here does not stop the save.
+        if (parent.filename() == APP_CONFIG_NAME) {
+            std::error_code folder_error;
+            std::filesystem::permissions(parent, std::filesystem::perms::owner_all,
+                                         std::filesystem::perm_options::replace, folder_error);
+        }
     }
 
     std::vector<std::string> lines;
@@ -285,10 +295,11 @@ bool save_application_config(const std::string& path,
         }
     }
 
-    if (config.hotspot_password) {
-        // Made private before the password goes in, and before the old
-        // content is dropped, so a failure here changes nothing but an
-        // empty new file.
+    {
+        // The file is the user's only (0600) at every save: it can hold the
+        // hotspot password and the device lists. Made private before the
+        // new content goes in, and before the old content is dropped, so a
+        // failure here changes nothing but an empty new file.
         if (!std::filesystem::exists(config_path)) {
             std::ofstream create(path, std::ios::app);
         }

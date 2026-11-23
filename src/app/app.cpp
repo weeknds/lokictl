@@ -805,6 +805,14 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override,
         lv_timer_handler();
         lv_delay_ms(5);
     }
+    // The survey and a LAN test are asked to end first, without waiting:
+    // their threads put the stick back and end iperf3 while the rest is
+    // torn down, and they are waited for only after the return to Client,
+    // so data.stop() does not wait for them to end. (A survey-off after a
+    // slow stick still goes one at a time with the reader's own helper
+    // runs.)
+    survey.begin_stop();
+    lan.begin_stop();
     // First on the way out: the backlight goes back to what it was, and no
     // new values arrive while the rest is torn down.
     power.stop();
@@ -813,11 +821,11 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override,
     reports.stop();
     reports.set_listener({});
     tools.stop();
+    // The trap's chain goes before the reader's teardown, which removes the
+    // firewall table the chain's end can leave empty.
     trap.stop();
     trap.set_hit_listener({});
     talk.stop();
-    lan.stop();
-    survey.stop();
     watch.stop();
     watch.set_alert_listener({});
     data.set_block_failure_listener({});
@@ -825,6 +833,8 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override,
     data.set_signin_listener({});
     tools.set_signin_listener({});
     data.stop();
+    lan.stop();
+    survey.stop();
 
     if (quit_observer) {
         lv_observer_remove(quit_observer);

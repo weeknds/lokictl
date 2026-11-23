@@ -59,6 +59,10 @@ public:
     // Starts following the requests and the timer. Does nothing when it
     // already runs.
     void start();
+    // Asks a run to end without waiting: its thread removes the listening
+    // interface meanwhile, so the app's other teardown runs alongside.
+    // stop() still has to follow.
+    void begin_stop();
     // Deletes the timer, stops following the requests, stops a run (its
     // listening interface goes) and ends the runner's thread. Safe to call
     // more than once, and without start().

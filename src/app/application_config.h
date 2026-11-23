@@ -101,9 +101,10 @@ bool load_application_config(const std::string& path,
 //   section. A key that is not set is left as it is in the file.
 // - Every `dark_mode` line of the section is always removed;
 //   config.dark_mode is never written.
-// Every other line, comment and section is kept as it is. When the
-// password is written, the file is made readable by its owner only (mode
-// 0600) before any line goes into it.
+// Every other line, comment and section is kept as it is. At every save
+// the file is made readable by its owner only (mode 0600) before any line
+// goes into it, and a folder named like LokiCTL's own settings folder
+// (APP_CONFIG_NAME) is made its owner's only (0700).
 bool save_application_config(const std::string& path,
                              const ApplicationConfig& config,
                              std::string& error);

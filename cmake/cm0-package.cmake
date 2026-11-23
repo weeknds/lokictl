@@ -56,17 +56,16 @@ install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/config/${APP_CONFIG_NAME}.conf"
     DESTINATION "/etc"
 )
 
-install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/assets/audio/"
-    DESTINATION "${CMAKE_INSTALL_DATADIR}/${APP_NAME}/audio"
-    PATTERN ".DS_Store" EXCLUDE
-)
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts/"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/${APP_NAME}/fonts"
     PATTERN ".DS_Store" EXCLUDE
 )
+# Only the app icons: the simulator's device frames (cp0-*.png) and the
+# icon drawing (lokictl.svg) stay out of the package.
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/assets/images/"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/${APP_NAME}/images"
-    PATTERN ".DS_Store" EXCLUDE
+    FILES_MATCHING
+    PATTERN "${APP_ICON_NAME}*.png"
 )
 # The list of known security holes and outdated versions the Ports page
 # checks against (made by scripts/vulndb/build.py).
@@ -110,6 +109,12 @@ install(FILES "${LVGL_SOURCE_DIR}/LICENCE.txt"
     RENAME "lvgl-license.txt"
 )
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/docs/third-party/qrcodegen-license.txt"
+    DESTINATION "${CMAKE_INSTALL_DOCDIR}"
+)
+# The parts LVGL brings with it that the build compiles in: the TLSF
+# allocator, printf, the Montserrat fonts with their Font Awesome symbols
+# and the JPEG decoder.
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/docs/third-party/lvgl-bundled.txt"
     DESTINATION "${CMAKE_INSTALL_DOCDIR}"
 )
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/docs/third-party/vulnerability-data.md"

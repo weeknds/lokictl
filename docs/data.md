@@ -556,9 +556,14 @@ change anything.
   above. Otherwise: hold-ESC, SIGTERM and SIGINT.
   Before the reader stops it calls `DataSource::leave_modes()`, which waits
   for an add still on its way, sends the Client requests and waits at most
-  3 s (`DataReader::kLeaveModesLimit`) for NetworkManager to answer, well
-  under the 5 s `scripts/device.sh stop` gives before SIGKILL. The Wi-Fi
-  join finishes after the app has gone. In Share, at least 1 s of the 3 s
+  3 s (`DataReader::kLeaveModesLimit`) for NetworkManager to answer, under
+  the 5 s `scripts/device.sh stop` gives before SIGKILL. The Client
+  requests go out once the tools, the trap, Talk and Watch have ended
+  (normally well under a second; a trap whose helper hangs adds up to
+  about 6 s: 3 s for it to end, then 3 s for `trap-off`); the survey and
+  a LAN test end alongside and are waited for only afterwards (see
+  [Stopping](#stopping)). The Wi-Fi join finishes after the app has
+  gone. In Share, at least 1 s of the 3 s
   is kept to remove `lokiap0` last, and it gets all the time left (right
   after the hotspot stops, the driver takes over a second). A quit in
   plain Client sends
@@ -2101,11 +2106,23 @@ A snapshot logs only warnings, so these lines do not appear there, and
 ## Stopping
 
 On quit (holding ESC, closing the simulator window) and on SIGTERM or
-SIGINT, the main loop ends. Right after it, before anything else is torn
-down, `app::ToolController::stop()` stops a tool's run and ends its
-thread, then `app::DataController::stop()` deletes its timer, wakes the reader and
-waits for it to end, and the log says `data: reader stopped`. Before the
-reader ends it switches back to Client if a mode is on (at most 3 s; see
-[Switching modes](#switching-modes)). The reader
+SIGINT, the main loop ends. Right after it the survey and a LAN test are
+asked to end without waiting (`begin_stop()`): their threads put the
+stick back and end iperf3 while the rest is torn down. Then the backlight
+goes back, Remote view and Reports close, `app::ToolController::stop()`
+stops a tool's run and ends its thread, and the trap (its chain goes
+first), Talk and Watch end. Then `app::DataController::stop()` deletes its
+timer, wakes the reader and waits for it to end, and the log says `data:
+reader stopped`. Before the reader ends it switches back to Client if a
+mode is on (at most 3 s; see [Switching modes](#switching-modes)). Only
+then are the LAN test and the survey waited for, so the return to Client
+does not wait for them to end. The slowest of them, a survey on a slow
+stick (2.5 s for its helper, then up to 3 s for `survey-off`), runs
+alongside the rest, so a quit normally takes well under the 5 s
+`scripts/device.sh stop` gives before SIGKILL. Only that rare
+`survey-off` can still hold the reader back: the short helper runs go one
+at a time, so the reader's own on the way out (in Router or Share) may
+wait for it. If a kill comes first, the survey's note makes the next
+start remove `lokimon0`. The reader
 wakes at once, also from a long sleep, so the app never hangs on the way
 out. Then the fonts are released and the log ends with `LokiCTL stopped`.

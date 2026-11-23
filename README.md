@@ -588,7 +588,11 @@ LokiCTL is released under the MIT license, see [LICENSE](LICENSE).
   (MIT). Files that came from it keep their original copyright headers.
 - [LVGL](https://lvgl.io) (MIT) draws the screens. Its copy of Project
   Nayuki's [QR Code generator](https://www.nayuki.io/page/qr-code-generator-library)
-  (MIT) makes the hotspot's join code.
+  (MIT) makes the hotspot's join code. Other parts it brings are compiled
+  in too: Matthew Conte's TLSF allocator (BSD-3-Clause), Marco Paland's
+  printf (MIT), the Montserrat fonts (SIL OFL 1.1) with Font Awesome Free
+  symbols and ChaN's TJpgDec; their notices are in
+  [docs/third-party/lvgl-bundled.txt](docs/third-party/lvgl-bundled.txt).
 - The list of known security holes is made from NIST's National
   Vulnerability Database and CISA's Known Exploited Vulnerabilities
   catalog (CC0 1.0). This product uses the NVD API but is not endorsed or

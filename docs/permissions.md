@@ -267,7 +267,8 @@ it runs. The file never leaves the device.
 
 ## Files LokiCTL writes
 
-- `~/.config/lokictl/lokictl.conf`, readable by you only: the theme,
+- `~/.config/lokictl/lokictl.conf`, readable by you only (0600, set at
+  every save, in a folder that is yours only, 0700): the theme,
   "Dim when idle", "Keep mode after quitting", the hotspot's name and
   password (the password is made once, at the first switch to Router or
   Share), the list of blocked devices (`blocked_devices=`) and Watch's

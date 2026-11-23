@@ -36,6 +36,12 @@ void SurveyController::start() {
     poll();
 }
 
+void SurveyController::begin_stop() {
+    if (runner_ && !stopped_) {
+        runner_->stop();
+    }
+}
+
 void SurveyController::stop() {
     if (poll_timer_) {
         lv_timer_delete(poll_timer_);

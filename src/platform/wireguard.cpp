@@ -402,6 +402,15 @@ bool prepare_wireguard_folder(const std::filesystem::path& folder) {
     if ((info.st_mode & 0077) != 0) {
         chmod(folder.c_str(), 0700);
     }
+    // The settings folder above it (~/.config/lokictl), which
+    // create_directories() above may just have made, is the user's only,
+    // too.
+    const std::filesystem::path parent = folder.parent_path();
+    struct stat parent_info {};
+    if (parent.filename() == APP_CONFIG_NAME && lstat(parent.c_str(), &parent_info) == 0 &&
+        S_ISDIR(parent_info.st_mode) && (parent_info.st_mode & 0077) != 0) {
+        chmod(parent.c_str(), 0700);
+    }
     for (std::filesystem::directory_iterator entry(folder, error), end; !error && entry != end;
          entry.increment(error)) {
         const std::string name = entry->path().filename().string();

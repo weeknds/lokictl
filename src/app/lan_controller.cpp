@@ -49,6 +49,12 @@ void LanController::start() {
     poll();
 }
 
+void LanController::begin_stop() {
+    if (runner_ && !stopped_) {
+        runner_->stop();
+    }
+}
+
 void LanController::stop() {
     if (poll_timer_) {
         lv_timer_delete(poll_timer_);

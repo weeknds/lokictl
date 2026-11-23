@@ -56,6 +56,10 @@ public:
     // Starts following the requests and the timer. Does nothing when it
     // already runs.
     void start();
+    // Asks a run to end without waiting (the iperf3 child is ended on the
+    // runner's thread), so the app's other teardown runs alongside.
+    // stop() still has to follow.
+    void begin_stop();
     // Deletes the timer, stops following the requests, stops a run (the
     // iperf3 child ends) and ends the runner's thread. Safe to call more
     // than once, and without start().
