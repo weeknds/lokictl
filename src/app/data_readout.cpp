@@ -178,6 +178,17 @@ int run_data_readout(platform::DataSourceKind kind, uint32_t steps, const std::s
                     model::managed_name(adapter.managed),
                     text_or_unknown(adapter.name).c_str());
     }
+    // The VPN: the file's name and the server's host only, never a key. The file names are
+    // last, by commas (a name may hold spaces).
+    std::printf("vpn=%s\n", model::vpn_state_name(data.vpn.state));
+    std::printf("vpn_file=%s\n", text_or_unknown(data.vpn.file).c_str());
+    std::printf("vpn_server=%s\n", text_or_unknown(data.vpn.server).c_str());
+    print_number("vpn_reply_s", data.vpn.reply_seconds, data.vpn.reply_seconds >= 0);
+    std::string files;
+    for (const std::string& file : data.vpn.files) {
+        files += (files.empty() ? "" : ",") + file;
+    }
+    std::printf("vpn_files=%s\n", files.c_str());
     // One line per client, last, since there may be none.
     for (const model::HomeClient& client : data.clients) {
         auto text = [](const std::string& value) { return value.empty() ? std::string("unknown") : value; };

@@ -48,6 +48,30 @@ bool is_hotspot_mode(NetMode mode) {
     return mode == NetMode::Router || mode == NetMode::Share;
 }
 
+const char* vpn_state_name(VpnState state) {
+    switch (state) {
+        case VpnState::Off:
+            return "off";
+        case VpnState::Connecting:
+            return "connecting";
+        case VpnState::On:
+            return "on";
+    }
+    return "off";
+}
+
+bool operator==(const VpnStatus& left, const VpnStatus& right) {
+    return left.files == right.files &&
+           left.state == right.state &&
+           left.file == right.file &&
+           left.server == right.server &&
+           left.reply_seconds == right.reply_seconds;
+}
+
+bool operator!=(const VpnStatus& left, const VpnStatus& right) {
+    return !(left == right);
+}
+
 const char* switch_state_name(SwitchState state) {
     switch (state) {
         case SwitchState::Idle:
@@ -316,7 +340,8 @@ bool operator==(const HomeData& left, const HomeData& right) {
            left.block_message == right.block_message &&
            left.details == right.details &&
            left.wifi_scan == right.wifi_scan &&
-           left.usb_wifi == right.usb_wifi;
+           left.usb_wifi == right.usb_wifi &&
+           left.vpn == right.vpn;
 }
 
 bool operator!=(const HomeData& left, const HomeData& right) {

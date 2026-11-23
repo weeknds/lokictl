@@ -28,6 +28,12 @@ struct ModeRequest {
     // starts again with `name` and `password` (after a rename or a new
     // password). A restart while that mode is not on does nothing.
     bool restart{false};
+    // VPN: the WireGuard file to make the tunnel from, by name without
+    // ".conf" (one of model::VpnStatus::files).
+    std::string vpn_file;
+    // VPN, for a pretend switch only: the server's host. The data source
+    // fills it in from the file (never a page); empty shows a made-up one.
+    std::string vpn_server;
 };
 
 // How a pretend switch ends. A test folder's stand-in for NetworkManager
@@ -77,8 +83,10 @@ std::string router_mode_detail(const std::string& uplink);
 // source's own: Router and Share show the made-up hotspot of the sample
 // (model::sample_home_data()) on top of the source's values, under the
 // name the request carried (when it carried one); Client shows no access
-// point and no clients. VPN is never switched to: a request for it is
-// ignored. The password is never kept.
+// point and no clients; VPN shows the tunnel on (see show_vpn()) with the
+// request's file and server. VPN while Router or Share is on, and
+// Router or Share while VPN is on, fail at once ("Back to Client first").
+// The password is never kept.
 class PretendModeSwitch {
 public:
     static constexpr std::chrono::milliseconds kPretendTime{1000};
@@ -109,6 +117,9 @@ private:
     bool has_mode_{false};           // a pretend switch finished: mode_ replaces the source's mode
     model::NetMode mode_{model::NetMode::Client};
     std::string name_;               // Router: the hotspot's name; empty keeps the shown one
+    model::VpnStatus requested_vpn_; // VPN: the file and server the request carried
+    model::VpnStatus switching_vpn_; // ... the running switch carries
+    model::VpnStatus vpn_;           // ... the finished one showed
     model::ModeSwitch status_;
 };
 
@@ -124,7 +135,17 @@ void show_share(model::HomeData& data, const std::string& name, const std::strin
                 int32_t channel, int32_t uptime_seconds);
 
 // Shows Client in `data`: no access point (no name, security or channel),
-// no clients, no uptime.
+// no clients, no uptime, no tunnel (the VPN's files stay).
 void show_client(model::HomeData& data);
+
+// The line that explains VPN on the home page, for a tunnel to `server`:
+// "wireguard -> <server>" (with an arrow).
+std::string vpn_mode_detail(const std::string& server);
+
+// Shows VPN in `data`: the tunnel's state, file, server and reply time
+// from `tunnel` (its file list is not used), and the mode VPN
+// unless a hotspot runs. The access point and the clients are left as
+// they are.
+void show_vpn(model::HomeData& data, const model::VpnStatus& tunnel);
 
 } // namespace platform

@@ -226,7 +226,8 @@ The commands, read without regard to case:
 Modes page (it stays when it is open already), puts the highlight on the
 mode and asks for the switch as key 6 does, without a question. The bar
 says no only to what key 6 can't do: the mode that is on already (`Already
-in Router mode`), a switch under way, VPN (`VPN comes later`). Everything
+in Router mode`), a switch under way, VPN without a WireGuard file (`No
+WireGuard files`). `mode vpn` uses the file the VPN row offers. Everything
 else the switch finds out (`Plug in a cable first`, `Back to Client first`,
 ...) shows on the Modes page's status line.
 
@@ -406,18 +407,24 @@ rows and a status line, and it is drawn the same way in every theme:
 - one row per mode, Client, Router, Share and VPN, each with a short hint
   and a tick on the mode that is on (it comes from NetworkManager: an
   active `LokiCTL hotspot` profile means Router, or Share when it runs on
-  `lokiap0`). VPN comes later and is drawn muted;
+  `lokiap0`; an active `LokiCTL VPN` profile means VPN). VPN's hint is
+  the WireGuard file it would use, with its place among the files
+  (`home  ‹ 1/2 ›`), the tunnel's file while one runs, or `no WireGuard
+  files`, and then the row is drawn muted;
 - the status line: `Switching…` while a switch runs; after one
   failed, `Plug in a cable first`, `Join a Wi-Fi network first` or `Back to
   Client first` (warning colour), `Not allowed: permission missing` or
   `Failed: <reason>` (error colour); while Router or Share runs, the
-  hotspot's name and, at the right, its password; in Client the current
-  link, muted.
+  hotspot's name and, at the right, its password; while the tunnel runs,
+  `VPN <server>` and, at the right, `reply 4 s ago` (or `none` before
+  data came back); with the VPN row highlighted and no files, the folder
+  `~/.config/lokictl/wireguard`, muted; in Client the current link, muted.
 
 | Key | What it does |
 |---|---|
 | `f`/`x` or up/down | moves the highlight; it stops at the first and the last row |
-| `Enter` or `6` USE | switches to the highlighted mode; USE is dimmed on the mode that is on, on VPN, and while a switch runs |
+| `z`/`c` or left/right | on the VPN row, picks another WireGuard file (not while a tunnel runs) |
+| `Enter` or `6` USE | switches to the highlighted mode; USE is dimmed on the mode that is on, on VPN without files, and while a switch runs; on the VPN row while the tunnel runs it reads OFF and goes back to Client |
 | `7` QR | opens the Hotspot page, in any mode |
 | `4` BACK or a short ESC | goes back |
 
@@ -427,7 +434,7 @@ waits, and it follows the values as they arrive. The highlight lives in the
 view model and starts on the mode that is on each time the page is opened
 from the home page. The command bar's `mode <name>` opens this page with
 the highlight on that mode and does what key 6 does there. The help panel
-shows the badge `MODES` and four rows.
+shows the badge `MODES` and five rows.
 
 ## The Hotspot page
 
@@ -754,8 +761,9 @@ on the Mac.
 
 `status` lists every detail the home page has no room for: each network
 port (Wi-Fi and cable) with its state, network name, security, signal,
-speed, IPv4 and IPv6 addresses, router and hardware address, then the USB
-Wi-Fi adapters (`none (optional)` without one), the DNS servers, the
+speed, IPv4 and IPv6 addresses, router and hardware address, then the VPN
+(the tunnel's state, file, server and last reply, or how many WireGuard
+files there are), the USB Wi-Fi adapters (`none (optional)` without one), the DNS servers, the
 battery's details and the device (processor temperature,
 free memory, time since start). [data.md](data.md#the-status-pages-details)
 says where the values come from. It has a title bar and shows six rows at a
@@ -764,7 +772,7 @@ time; a thin mark at the right edge shows where they lie in the whole list.
 | Key | What it does |
 |---|---|
 | `f`/`x` or up/down | scrolls one row; it stops at the first and the last row |
-| `z`/`c` or left/right, `5` UP, `6` DOWN | jumps to the previous or next heading (a port, `usb wi-fi`, `dns`, `battery`, `device`) |
+| `z`/`c` or left/right, `5` UP, `6` DOWN | jumps to the previous or next heading (a port, `vpn`, `usb wi-fi`, `dns`, `battery`, `device`) |
 | `4` BACK or a short ESC | goes back to the home page |
 
 The first row shown lives in the view model, so it is kept when the theme

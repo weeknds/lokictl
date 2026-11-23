@@ -63,10 +63,11 @@ std::string random_hotspot_password();
 //
 // Switching modes: it follows the view model's mode requests
 // (BaseViewModel::request_mode(), from the Modes page) and hands each to the
-// reader with the hotspot's password, so the UI thread never waits on the
+// reader with the hotspot's password (VPN: with the picked WireGuard file,
+// BaseViewModel::vpn_file()), so the UI thread never waits on the
 // network. Without the background reader (snapshots) it takes a reading
 // right after the request, so the page shows the switch's first state at
-// once. Log lines: "data: mode <client|router>" for the first reading and
+// once. Log lines: "data: mode <client|router|share|vpn>" for the first reading and
 // whenever the mode changes; "data: switching to <mode>", "data: switch to
 // <mode> failed: <why>" and "data: switch to <mode> done" as the switch
 // moves on (never a name or the password); "data: back to Client before

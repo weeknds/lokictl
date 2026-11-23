@@ -47,6 +47,9 @@ constexpr std::size_t kValueChars = 26;
 //   hardware; otherwise only hardware. Without any port: a heading
 //   "network" and one row "ports --". A port that is a USB Wi-Fi adapter's
 //   interface gets " · usb" after its name.
+// - "vpn" with the tunnel's state as the note (model::vpn_state_name()):
+//   while it runs file, server and (when on) reply; otherwise
+//   "files" with the number of WireGuard files, or "none";
 // - "usb wi-fi" with the number of adapters as the note
 //   (HomeData::usb_wifi): per adapter interface, name, driver, usb id and
 //   managed; without one the note "none" and the rows "adapter none

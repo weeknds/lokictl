@@ -56,7 +56,26 @@ void show_share(model::HomeData& data, const std::string& name, const std::strin
     show_hotspot(data, model::NetMode::Share, name, security, channel, uptime_seconds);
 }
 
+std::string vpn_mode_detail(const std::string& server) {
+    return "wireguard → " + (server.empty() ? std::string("server") : server);
+}
+
+void show_vpn(model::HomeData& data, const model::VpnStatus& tunnel) {
+    data.vpn.state = tunnel.state;
+    data.vpn.file = tunnel.file;
+    data.vpn.server = tunnel.server;
+    data.vpn.reply_seconds = tunnel.reply_seconds;
+    if (tunnel.state == model::VpnState::On && !data.ap_active) {
+        data.mode = model::NetMode::Vpn;
+        data.mode_detail = vpn_mode_detail(tunnel.server);
+    }
+}
+
 void show_client(model::HomeData& data) {
+    data.vpn.state = model::VpnState::Off;
+    data.vpn.file.clear();
+    data.vpn.server.clear();
+    data.vpn.reply_seconds = model::kVpnReplyNone;
     data.mode = model::NetMode::Client;
     data.mode_detail.clear();
     data.ap_active = false;
@@ -67,21 +86,44 @@ void show_client(model::HomeData& data) {
     data.clients.clear();
 }
 
+namespace {
+
+// The made-up server of a pretend VPN request that carries none (a
+// documentation name).
+constexpr const char* kPretendVpnServer = "vpn.example.net";
+// A pretend tunnel's reply time, fixed so pictures repeat.
+constexpr int32_t kPretendVpnReplySeconds = 4;
+
+} // namespace
+
 void PretendModeSwitch::request(const ModeRequest& request) {
-    if (switching_ || (request.mode != model::NetMode::Client && !model::is_hotspot_mode(request.mode))) {
+    if (switching_) {
         return;
     }
     requested_ = true;
     requested_mode_ = request.mode;
     requested_name_ = model::is_hotspot_mode(request.mode) ? request.name : std::string();
     requested_restart_ = request.restart && model::is_hotspot_mode(request.mode);
+    requested_vpn_ = model::VpnStatus{};
+    if (request.mode == model::NetMode::Vpn) {
+        requested_vpn_.state = model::VpnState::On;
+        requested_vpn_.file = request.vpn_file;
+        requested_vpn_.server = request.vpn_server.empty() ? kPretendVpnServer : request.vpn_server;
+        requested_vpn_.reply_seconds = kPretendVpnReplySeconds;
+    }
 }
 
 void PretendModeSwitch::show_mode(model::HomeData& data) const {
     if (!has_mode_) {
         return;
     }
-    if (model::is_hotspot_mode(mode_)) {
+    if (mode_ == model::NetMode::Vpn) {
+        // Only reached through Client: a source's own hotspot goes first.
+        if (model::is_hotspot_mode(data.mode)) {
+            show_client(data);
+        }
+        show_vpn(data, vpn_);
+    } else if (model::is_hotspot_mode(mode_)) {
         // A source that already shows the mode keeps its own values (the
         // sample's router, for one), apart from a name the switch carried.
         if (data.mode != mode_) {
@@ -109,6 +151,7 @@ void PretendModeSwitch::apply(model::HomeData& data, const PretendFailure& failu
             has_mode_ = true;
             mode_ = status_.target;
             name_ = switching_name_;
+            vpn_ = switching_vpn_;
         }
     }
 
@@ -125,8 +168,9 @@ void PretendModeSwitch::apply(model::HomeData& data, const PretendFailure& failu
             status_.target = requested_mode_;
             if (requested_mode_ == data.mode && !requested_restart_) {
                 // Already on: nothing to do.
-            } else if (!requested_restart_ && model::is_hotspot_mode(requested_mode_) &&
-                       model::is_hotspot_mode(data.mode)) {
+            } else if ((!requested_restart_ && model::is_hotspot_mode(requested_mode_) &&
+                        (model::is_hotspot_mode(data.mode) || data.mode == model::NetMode::Vpn)) ||
+                       (requested_mode_ == model::NetMode::Vpn && model::is_hotspot_mode(data.mode))) {
                 status_.state = model::SwitchState::Failed;
                 status_.error = model::SwitchError::ClientFirst;
             } else if (requested_mode_ == model::NetMode::Router && !requested_restart_ &&
@@ -141,6 +185,7 @@ void PretendModeSwitch::apply(model::HomeData& data, const PretendFailure& failu
                 status_.state = model::SwitchState::Switching;
                 switching_ = true;
                 switching_name_ = requested_name_;
+                switching_vpn_ = requested_vpn_;
             }
         }
     }

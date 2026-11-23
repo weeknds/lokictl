@@ -575,7 +575,7 @@ but sample network data for now (see [docs/home.md](docs/home.md)):
   last client;
 - `6` SETUP opens the Settings page;
 - `8` INFO opens the Status page, a list of every detail (every network
-  port, USB Wi-Fi adapters, DNS, battery, processor, memory) that scrolls with `f`/`x` and
+  port, VPN, USB Wi-Fi adapters, DNS, battery, processor, memory) that scrolls with `f`/`x` and
   jumps between its parts with `z`/`c` or `5`/`6`;
 - `4` MODES opens the Modes page (below);
 - `enter` opens the Devices page (below), on the selected client;
@@ -635,20 +635,40 @@ mode that is on:
   after a new name or password**, then comes back by itself with the same
   address. To go between Router and Share, go back to
   Client first; the page says `Back to Client first`.
-- **VPN** comes later and is dimmed.
+- **VPN** sends the device's traffic through a WireGuard tunnel made from
+  a file you put on the device (see below). To go between VPN and Router
+  or Share, go back to Client first.
 
 `f` or `up` and `x` or `down` move the highlight; `enter` or `6` USE
 switches to the highlighted mode, and a line under the list says
-`Switching…`, then shows the hotspot or what went wrong. USE is
-dimmed on the mode that is on and while a switch runs. `4` BACK or a short
+`Switching…`, then shows the hotspot, the tunnel or what went wrong. USE
+is dimmed on the mode that is on, on VPN without a file, and while a
+switch runs. `4` BACK or a short
 `esc` goes back. **Whenever LokiCTL quits, the device goes back to
-Client**: the hotspot is removed and the Wi-Fi network it was on before
-comes back (in Share it never left). The hotspot's profile is only ever
+Client**: the hotspot or the tunnel is removed and the Wi-Fi network it
+was on before comes back (in Share and VPN it never left). The hotspot's profile is only ever
 kept in memory, so a restart of the device always ends in Client too. If
 LokiCTL is killed instead of quitting, the hotspot stays on until LokiCTL
 starts again; the Modes page then shows Router or Share and can switch
 back. On the Mac the switch
 only pretends, so the pages can be tried.
+
+**VPN.** Copy a WireGuard client file (`.conf`, as VPN providers and
+routers hand them out) into `~/.config/lokictl/wireguard/` on the device,
+for example with `scp`. LokiCTL creates the folder at its first start and
+makes it and the files in it readable by you only. The VPN row shows the
+file it will use; `z` and `c` pick another when there are several, `6`
+USE turns the tunnel on and `6` OFF turns it off. While it runs, the line
+under the list shows the server and how long ago data last came back
+through the tunnel (`reply 4 s ago`; WireGuard counts as on even before
+the server answers, so `none` there means no answer yet). The Status page
+has a `vpn` section. Only the file's name and the server are ever shown,
+and neither is logged: the keys stay in the file and in
+NetworkManager's in-memory profile (`LokiCTL VPN`, interface `lokiwg0`),
+which is deleted when you turn the tunnel off or LokiCTL quits. Lines
+such as `PostUp` are ignored, so nothing in a file is ever run. When the
+file names DNS servers and sends all traffic through the tunnel, only
+those servers are used while it runs.
 
 `7` QR on the Modes page opens the Hotspot page. While Router or Share runs it shows
 a QR code at the left: point a phone's camera at it to join the hotspot

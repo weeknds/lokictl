@@ -57,8 +57,9 @@ constexpr model::NetMode kSwitchModes[] = {
     model::NetMode::Client,
     model::NetMode::Router,
     model::NetMode::Share,
+    model::NetMode::Vpn,
 };
-constexpr const char* kModeUsage = "Use: mode client|router|share";
+constexpr const char* kModeUsage = "Use: mode client|router|share|vpn";
 
 // The words that stand for an address as the target of Ping, Trace and Ports.
 constexpr std::string_view kRouterWord = "router";
@@ -290,10 +291,6 @@ CommandResult parse_command(std::string_view line, const model::HomeData& home) 
                     return result;
                 }
             }
-            // As the Modes page's VPN row says.
-            if (words[1] == lowercase_mode_name(model::NetMode::Vpn)) {
-                return error("VPN comes later");
-            }
             return error("Unknown mode: " + words[1]);
         }
         case CommandKind::Page:
@@ -372,6 +369,10 @@ std::string mode_command_refusal(model::NetMode mode, const model::HomeData& hom
     }
     if (mode == home.mode) {
         return std::string("Already in ") + model::net_mode_name(mode) + " mode";
+    }
+    // As the Modes page's VPN row: nothing to use without a file.
+    if (mode == model::NetMode::Vpn && home.vpn.files.empty()) {
+        return "No WireGuard files";
     }
     return {};
 }

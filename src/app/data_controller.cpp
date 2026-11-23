@@ -357,6 +357,9 @@ void DataController::request_mode(model::NetMode mode) {
             save_hotspot(std::nullopt, request.password);
         }
     }
+    if (mode == model::NetMode::Vpn) {
+        request.vpn_file = view_model_.vpn_file();
+    }
     send(request);
 }
 

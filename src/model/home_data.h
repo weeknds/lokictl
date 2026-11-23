@@ -312,6 +312,44 @@ struct UsbWifiAdapter {
 bool operator==(const UsbWifiAdapter& left, const UsbWifiAdapter& right);
 bool operator!=(const UsbWifiAdapter& left, const UsbWifiAdapter& right);
 
+// What LokiCTL's VPN tunnel is doing (see VpnStatus).
+enum class VpnState {
+    Off = 0,    // no tunnel
+    Connecting, // the system's network service is setting the tunnel up
+    On,         // the tunnel is up (WireGuard needs no answer for that: see VpnStatus::reply_seconds)
+};
+
+// The name of a VPN state in lowercase: "off", "connecting" or "on". Used
+// by the pages, the log and the --print-data readout.
+const char* vpn_state_name(VpnState state);
+
+// VpnStatus::reply_seconds while nothing has come back through the tunnel.
+constexpr int32_t kVpnReplyNone = -1;
+
+// The most WireGuard files the VPN row offers.
+constexpr std::size_t kVpnMaxFiles = 16;
+
+// The VPN: the WireGuard files LokiCTL can use and the tunnel made from one
+// of them. Only the files' names and the server's host are here: keys and
+// the rest of a file never leave the data layer. A text that is not known
+// is empty.
+struct VpnStatus {
+    // The files in LokiCTL's WireGuard folder, by name without ".conf",
+    // sorted; at most kVpnMaxFiles. Filled whatever the tunnel does.
+    std::vector<std::string> files;
+    VpnState state{VpnState::Off};
+    // The values below only mean something while the state is not Off.
+    std::string file;    // the file the tunnel was made from, without ".conf"
+    std::string server;  // the server's host (first peer's endpoint), without the port
+    // Seconds since data last came in through the tunnel (WireGuard's
+    // handshake time needs privileges the app does not have), or
+    // kVpnReplyNone before anything came back.
+    int32_t reply_seconds{kVpnReplyNone};
+};
+
+bool operator==(const VpnStatus& left, const VpnStatus& right);
+bool operator!=(const VpnStatus& left, const VpnStatus& right);
+
 // Everything the home page shows. Numbers are stored as numbers in the units
 // noted on each field; the page turns them into text. A value that is not
 // known has a value of its own (an empty text, or one of the constants
@@ -367,6 +405,7 @@ struct HomeData {
     StatusDetails details;             // the Status page's extra values (see StatusDetails)
     WifiScan wifi_scan;                // the Wi-Fi page's list (see WifiScan)
     std::vector<UsbWifiAdapter> usb_wifi; // USB Wi-Fi adapters plugged in, by interface name; read on every page
+    VpnStatus vpn;                     // the VPN's files and tunnel (see VpnStatus)
 };
 
 // Every field is compared. A new field must be added here too: the data

@@ -2,7 +2,8 @@
 //
 // SPDX-License-Identifier: MIT
 //
-// Lets LokiCTL switch the network between its modes (Client and Router).
+// Lets LokiCTL switch the network between its modes (Client, Router, Share
+// and VPN).
 // Apps started by the CardputerZero launcher do not run in an active login
 // session, so NetworkManager would otherwise refuse these actions. This rule
 // grants exactly three of them to members of the netdev group: control of

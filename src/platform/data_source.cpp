@@ -235,6 +235,8 @@ public:
 
     void read(model::HomeData& data) override {
         source_->read(data);
+        // Made-up WireGuard files, so the VPN row has something to offer.
+        data.vpn.files = {"home", "travel"};
         pretend_.apply(data, PretendFailure{});
         blocker_.apply(data, data.ap_active, false);
         scan_.apply(data, true);

@@ -52,6 +52,16 @@ namespace app {
 //   battery_full_mah=, battery_empty_min=, battery_full_min=,
 //   cpu_temp_tenths=, memory_free_mb=, memory_total_mb=, uptime_s=
 //     (one line each, in this order)
+// then the USB Wi-Fi adapters:
+//   usb_wifi=<number of adapters>
+//   usb_wifi_adapter=<interface> driver=<driver> usb_id=<id> managed=<yes|
+//     no|unknown> name=<name, may hold spaces> (one line per adapter)
+// then the VPN (the file's name and the server's host only, never a key):
+//   vpn=<off|connecting|on>
+//   vpn_file=<the tunnel's WireGuard file, without .conf|unknown>
+//   vpn_server=<the server's host|unknown>
+//   vpn_reply_s=<seconds since data last came back|unknown>
+//   vpn_files=<the WireGuard files to use, by commas; empty when none>
 // then the connected clients:
 //   client=<hardware address> address=<IPv4> signal_dbm=<n> rate_kbps=<n>
 //     joined_s=<seconds on the access point> new=<yes|no> name=<host name,

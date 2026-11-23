@@ -428,8 +428,8 @@ builds the page again instead of updating it in place.
 
 ## Switching modes
 
-The Modes page (key 4 on the home page) switches between Client, Router
-and Share. The page only asks: `BaseViewModel::request_mode()` counts a
+The Modes page (key 4 on the home page) switches between Client, Router,
+Share and VPN. The page only asks: `BaseViewModel::request_mode()` counts a
 request, `app::DataController` hands it with the hotspot's password to the
 reader (`DataReader::request_mode()`), and the reader hands it to the
 source on its own thread and takes a reading at once. The switch's state
@@ -498,6 +498,15 @@ change anything.
   Without one, NetworkManager's autoconnect picks. It is done when
   NetworkManager has answered both; the Wi-Fi join itself then follows as
   usual. In plain Client nothing is sent.
+- **VPN** (`NetworkManagerClient::start_vpn()`, see [The VPN](#the-vpn)):
+  reads the chosen WireGuard file and adds the profile `LokiCTL VPN` in
+  memory only, on the interface `lokiwg0`, then activates it. VPN while
+  Router or Share runs, and Router or Share while VPN runs, fail at once
+  with `Back to Client first`; a bad file fails at once with its reason
+  (`Failed: bad PrivateKey`). The same 20 s limit and undo apply, with
+  fixed reasons (`tunnel refused`, `tunnel stopped`, `no tunnel after 20
+  s`): NetworkManager's own text is not shown for the tunnel. Client (and
+  the VPN row's `Off`) deletes the profile like the hotspot's.
 - **Every quit returns to Client** for now: hold-ESC, SIGTERM and SIGINT.
   Before the reader stops it calls `DataSource::leave_modes()`, which waits
   for an add still on its way, sends the Client requests and waits at most
@@ -529,7 +538,8 @@ Share without a Wi-Fi uplink too, and Router or Share while the other runs),
 the source asks to be read again a second later. Once it has finished, the
 pretend mode replaces the source's own: Router and Share show the sample's
 made-up hotspot (`LokiCTL-7F`), Client shows no access point and no
-clients. For
+clients, VPN shows the tunnel on with the file's server (in a test
+folder) or the made-up `vpn.example.net`, and a reply 4 s ago. For
 example:
 
 ```sh
@@ -539,6 +549,53 @@ $B --snapshot build/shots/modes-router.png --page modes --data cable --keys down
 $B --snapshot build/shots/modes-no-cable.png --page modes --data wifi --keys down,6
 $B --snapshot build/shots/modes-share.png --page modes --data wifi --keys down,down,6,data
 $B --snapshot build/shots/modes-no-wifi.png --page modes --data cable --keys down,down,6
+```
+
+### The VPN
+
+`HomeData::vpn` (`model::VpnStatus`) holds the WireGuard files LokiCTL can
+use and the tunnel's state: `off`, `connecting` (NetworkManager activates
+it) or `on`, with the file it came from and the server's host. Only those
+two names: keys and the rest of a file never leave
+`src/platform/wireguard.*`.
+
+- **The folder** is `~/.config/lokictl/wireguard/` (in `$XDG_CONFIG_HOME`
+  when that is set; `<folder>/wireguard` in a test folder). A normal start
+  on the device creates it with mode 0700 and takes every right of group
+  and others from it and from its `.conf` files (0700 and 0600), at every
+  network reading. Snapshots, `--print-data` and the Mac never create it.
+  Regular files ending in `.conf` count (no links), at most 16, sorted by
+  name; the name without `.conf` is what pages show. They are listed with
+  the network (every 5 s).
+- **The reader** (`parse_wireguard_config()`) takes `[Interface]`
+  PrivateKey, Address, DNS, ListenPort, MTU and FwMark, and `[Peer]`
+  PublicKey, PresharedKey, AllowedIPs, Endpoint and PersistentKeepalive,
+  without regard to case; `#` starts a comment. Keys must be base64 of 32
+  bytes, addresses are checked with `inet_pton()`, files over 16 KiB are
+  refused. `PreUp`, `PostUp`, `PreDown`, `PostDown`, `Table`, `SaveConfig`
+  and other keys are skipped: nothing in a file is ever run. A bad file
+  gives a fixed reason that quotes nothing of it (`bad PrivateKey`, `no
+  [Peer]`, `bad line 7`). The file is read only at the request and its
+  keys are wiped once NetworkManager has them.
+- **The profile** is WireGuard on `lokiwg0` with the file's keys, port,
+  mark, MTU and peers; manual addresses (a family without one is
+  disabled); the file's DNS servers, used alone (priority -50) when a peer
+  routes everything (`0.0.0.0/0` or `::/0`); peer routes and the default
+  route are left to NetworkManager. The time it was made, the file's name
+  and the server's host go into its user data (`lokictl.started`,
+  `lokictl.file`, `lokictl.server`), so a restarted LokiCTL shows the
+  tunnel; its keys are never read back.
+- **Replies instead of a handshake time.** WireGuard counts as up without
+  any answer, and its handshake time needs CAP_NET_ADMIN (libnm does not
+  give it). While the tunnel is on, the live source reads `lokiwg0`'s
+  received bytes with the network; `reply_seconds` is the time since they
+  last grew (in 5 s steps), or `kVpnReplyNone` before anything came back.
+
+For example (with the made-up files `home` and `travel`):
+
+```sh
+$B --snapshot build/shots/modes-vpn.png --page modes --data wifi --keys down,down,down
+$B --snapshot build/shots/modes-vpn-on.png --page modes --data wifi --keys down,down,down,6,data
 ```
 
 **The hotspot's password** never goes into `HomeData`, the log or
@@ -1330,6 +1387,11 @@ memory_free_mb=212
 memory_total_mb=446
 uptime_s=191820
 usb_wifi=0
+vpn=off
+vpn_file=unknown
+vpn_server=unknown
+vpn_reply_s=unknown
+vpn_files=home,travel
 ```
 
 The lines always come in this order:
@@ -1364,6 +1426,9 @@ The lines always come in this order:
 | `cpu_temp_tenths=`, `memory_free_mb=`, `memory_total_mb=`, `uptime_s=` | the processor's temperature (tenths of a degree), free and total memory (MiB) and the seconds since the device started |
 | `usb_wifi=` | how many USB Wi-Fi adapters are plugged in (see [USB Wi-Fi adapters](#usb-wi-fi-adapters)) |
 | `usb_wifi_adapter=` | one line per adapter (none without one): its interface, then `driver=`, `usb_id=`, `managed=` (`yes`, `no` or `unknown`) and, last because it may hold spaces, `name=` |
+| `vpn=` | the tunnel: `off`, `connecting` or `on` (see [The VPN](#the-vpn)) |
+| `vpn_file=`, `vpn_server=`, `vpn_reply_s=` | the tunnel's file (without `.conf`), the server's host and the seconds since data last came back; `unknown` without a tunnel |
+| `vpn_files=` | the WireGuard files to use, separated by commas; empty when there are none |
 | `client=` | one line per connected client, in the page's order (none without clients): its hardware address, then `address=`, `signal_dbm=`, `rate_kbps=` (both ways together), `joined_s=` (seconds on the access point), `new=` (`yes` for the first five minutes) and, last because it may hold spaces, `name=` |
 
 A value that is not known prints `unknown`. `network=`, `security=` and
@@ -1391,6 +1456,9 @@ The system keeps its list of addresses in no file, so in a test folder the
 system is not asked at all: `<folder>/addresses` stands in for it, one line
 per address, `<interface> <IPv4 address>` or, for the Status page's prefix,
 `<interface> <IPv4 address>/<prefix>`.
+
+WireGuard files come from `<folder>/wireguard/` (see [The VPN](#the-vpn));
+a VPN request there reads the file for real and then pretends.
 
 NetworkManager is never asked in a test folder either: `<folder>/networkmanager`
 stands in for it (see `read_network_manager_file()` in

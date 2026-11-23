@@ -101,6 +101,15 @@ void apply_network_manager(const NetworkManagerReading& reading, model::HomeData
                     reading.hotspot.uptime_seconds);
     }
 
+    if (reading.vpn.state != model::VpnState::Off) {
+        model::VpnStatus tunnel;
+        tunnel.state = reading.vpn.state;
+        tunnel.file = reading.vpn.file;
+        tunnel.server = reading.vpn.server;
+        tunnel.reply_seconds = data.vpn.reply_seconds;
+        show_vpn(data, tunnel);
+    }
+
     if (data.uplink_kind != model::LinkKind::None) {
         data.internet = reading.internet;
         data.offline_state = model::OfflineState::Unknown;

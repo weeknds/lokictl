@@ -8,6 +8,7 @@
 
 #include "home_data.h"
 #include "mode_switch.h"
+#include "wireguard.h"
 
 #include <chrono>
 #include <cstdint>
@@ -56,6 +57,16 @@ struct NetworkManagerReading {
     };
     Hotspot hotspot;
 
+    // LokiCTL's VPN tunnel (the profile kVpnProfile), while it is being set
+    // up or is up. Only the file's name and the server's host, from the
+    // profile's own user data: its keys and settings are never read.
+    struct Vpn {
+        model::VpnState state{model::VpnState::Off};
+        std::string file;    // the file it was made from
+        std::string server;  // the server's host
+    };
+    Vpn vpn;
+
     // The connection's own switch between modes (see
     // NetworkManagerClient::start_router()); idle in a test folder.
     model::ModeSwitch mode_switch;
@@ -66,6 +77,10 @@ struct NetworkManagerReading {
 
 // The name of LokiCTL's hotspot profile. It is only ever kept in memory.
 constexpr const char* kHotspotProfile = "LokiCTL hotspot";
+
+// The name of LokiCTL's VPN profile (on kVpnInterface). It is only ever
+// kept in memory, like the hotspot's.
+constexpr const char* kVpnProfile = "LokiCTL VPN";
 
 // Adds `reading` to `data`, whose uplink the kernel's values have already
 // set. Does nothing when the service is not available, so every value keeps
@@ -79,6 +94,9 @@ constexpr const char* kHotspotProfile = "LokiCTL hotspot";
 // - While the hotspot is active: the mode is Router, with the hotspot's
 //   name, security, channel and uptime (see show_router()); Share instead
 //   when it runs on kShareInterface (see show_share()).
+// - While the tunnel is being set up or is up: HomeData::vpn's state, file
+//   and server, and the mode VPN while it is up and no hotspot
+//   runs (see show_vpn()); the reply time is left as it is.
 void apply_network_manager(const NetworkManagerReading& reading, model::HomeData& data);
 
 // Adds `reading` to the Status page's ports (see read_ports()): each
@@ -122,15 +140,23 @@ struct RouterRequest {
     int32_t channel{0};         // the 2.4 GHz channel to send on; 0 lets the service pick
 };
 
+// What start_vpn() needs: the file's contents (with its keys; see
+// wireguard.h) and its name.
+struct VpnRequest {
+    WireGuardConfig config;
+    std::string file; // without ".conf"
+};
+
 // A connection to the system's network service. Device builds use libnm
 // (APP_USE_LIBNM); other builds (the Mac simulator) get a stand-in that is
 // never available and changes nothing (can_change_network() is false).
 //
 // It reads, and only the action calls below change anything:
-// start_router(), start_share(), restart_router(), start_client() and
-// leave(). They add, update, activate and delete only the in-memory
-// profile kHotspotProfile, and activate only the Wi-Fi profile its
-// interface was on before, on that interface (Router only). They never wait:
+// start_router(), start_share(), restart_router(), start_vpn(),
+// start_client() and leave(). They add, update, activate and delete only
+// the in-memory profiles kHotspotProfile and kVpnProfile, and activate
+// only the Wi-Fi profile the hotspot's interface was on before, on that
+// interface (Router only). They never wait:
 // each sends its requests and returns, and the answers are handled by
 // later read() calls (leave() waits, on the way out only). The only other
 // request it sends is request_wifi_scan(), which asks for a Wi-Fi scan and
@@ -206,16 +232,29 @@ public:
     // when it fails, or takes longer than kSwitchLimit, it is undone as by
     // start_client(). Nothing is sent while the hotspot is not active.
     void restart_router(const RouterRequest& request);
-    // Client: deletes every profile of LokiCTL's hotspot, then activates
-    // the Wi-Fi profile recorded in it, if there is one (otherwise the
-    // service's own autoconnect picks). The switch ends when the service
-    // has answered both. Nothing is sent when there is no such profile.
+    // VPN: adds kVpnProfile in memory (autoconnect off), a WireGuard
+    // profile on kVpnInterface built from `request.config` (manual
+    // addresses; the file's DNS servers, used alone when a peer routes
+    // everything; routes left to the service), with the time it was made,
+    // the file's name and the server's host in its own user data, and
+    // activates it. A leftover VPN profile of LokiCTL's is deleted first.
+    // The switch ends when the tunnel is active; when it fails, or takes
+    // longer than kSwitchLimit, it is undone as by start_client(). Failures
+    // carry fixed reasons, never the service's own text. Nothing is sent
+    // while a hotspot or a tunnel of LokiCTL's is active. The keys are not
+    // kept.
+    void start_vpn(const VpnRequest& request);
+    // Client: deletes every profile of LokiCTL's (hotspot and VPN), then
+    // activates the Wi-Fi profile recorded in the hotspot's, if there is
+    // one (otherwise the service's own autoconnect picks). The switch ends
+    // when the service has answered both. Nothing is sent when there is no
+    // such profile.
     void start_client();
     // True while an action waits for an answer or a switch runs; the
     // reader then reads every 100 ms.
     bool busy() const;
-    // On the way out: if a profile of LokiCTL's hotspot exists or is being
-    // added, waits for the add to be answered, then switches back to Client
+    // On the way out: if a profile of LokiCTL's (hotspot or VPN) exists or
+    // is being added, waits for the add to be answered, then switches back to Client
     // as start_client() does and waits until the service has answered, at
     // most `limit` in all. Sends nothing in plain Client. It blocks.
     void leave(std::chrono::milliseconds limit);

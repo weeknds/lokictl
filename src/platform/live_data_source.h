@@ -15,6 +15,7 @@
 #include "network_manager.h"
 #include "rate_history.h"
 #include "wifi_scan.h"
+#include "wireguard.h"
 
 #include <chrono>
 #include <cstddef>
@@ -55,6 +56,16 @@ namespace platform {
 // Everywhere else (test folders, the Mac, snapshots, --print-data) the
 // switch only pretends (PretendModeSwitch), and a test folder's
 // "networkmanager" file can make it fail.
+//
+// VPN: the WireGuard files are listed from wireguard_folder() with the
+// network (in a test folder "<data_root>/wireguard", at every call); a
+// normal start on the device also creates and tightens the folder there
+// (prepare_wireguard_folder()). A VPN request reads the chosen file (a bad
+// one is refused at once with its reason) and goes to start_vpn() on the
+// device, or to the pretend switch everywhere else, with the file's server. VPN while the hotspot runs, and Router or Share while the
+// tunnel runs, are refused ("Back to Client first"). While the tunnel is
+// up, kVpnInterface's received bytes are read with the network: the time
+// since they last grew is VpnStatus::reply_seconds.
 //
 // Blocking devices (set_blocked()) works the same way: on the device, when
 // the source changes the network, a real DeviceBlocker makes LokiCTL's
@@ -192,9 +203,22 @@ private:
     model::ModeSwitch refusal_;
     // A switch refused here, before the network service is asked.
     void refuse(model::NetMode target, model::SwitchError error, std::string reason = {});
+    // request_mode() for VPN.
+    void request_vpn(const ModeRequest& request);
+    // Lists the WireGuard files (and, on the device, prepares the folder).
+    void read_vpn_files();
+    // Puts the time since the tunnel last received data into `data`.
+    void read_vpn_reply(model::HomeData& data, bool due, std::chrono::steady_clock::time_point now);
     // True while kShareInterface exists.
     bool share_interface_present() const;
     std::string hotspot_interface_;  // where LokiCTL's hotspot ran at the last reading; empty when off
+    bool vpn_active_{false};         // LokiCTL's tunnel was being set up or up at the last reading
+    std::filesystem::path vpn_folder_; // see wireguard_folder(); empty when not known
+    std::vector<std::string> vpn_files_; // read with the network
+    bool vpn_counted_{false};        // vpn_received_ holds a reading of the tunnel's received bytes
+    uint64_t vpn_received_{0};
+    bool vpn_replied_{false};        // data came in through the tunnel since it went up
+    std::chrono::steady_clock::time_point vpn_reply_at_{}; // when the received bytes last grew
     int share_removals_{0};          // tries to remove kShareInterface since it was last needed
     std::chrono::steady_clock::time_point share_removal_at_{};
     BatteryReading battery_;

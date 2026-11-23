@@ -45,6 +45,7 @@ BaseViewModel::BaseViewModel()
       block_request_subject_(0),
       modes_selection_subject_(kModesFollowsActive),
       mode_request_subject_(0),
+      vpn_file_subject_(0),
       hotspot_subject_(0),
       hotspot_request_subject_(0),
       hotspot_typing_subject_(false),
@@ -265,6 +266,31 @@ lv_subject_t* BaseViewModel::mode_request_subject() {
 
 model::NetMode BaseViewModel::requested_mode() const {
     return requested_mode_;
+}
+
+std::string BaseViewModel::vpn_file() const {
+    const std::vector<std::string>& files = home().vpn.files;
+    if (std::find(files.begin(), files.end(), vpn_file_) != files.end()) {
+        return vpn_file_;
+    }
+    return files.empty() ? std::string() : files.front();
+}
+
+void BaseViewModel::step_vpn_file(int32_t step) {
+    const std::vector<std::string>& files = home().vpn.files;
+    if (files.size() < 2 || step == 0) {
+        return;
+    }
+    const auto current = std::find(files.begin(), files.end(), vpn_file());
+    const auto count = static_cast<int32_t>(files.size());
+    const auto index = static_cast<int32_t>(current - files.begin());
+    const int32_t next = ((index + step) % count + count) % count;
+    vpn_file_ = files[static_cast<std::size_t>(next)];
+    bump(vpn_file_subject_);
+}
+
+lv_subject_t* BaseViewModel::vpn_file_subject() {
+    return vpn_file_subject_.native();
 }
 
 const std::string& BaseViewModel::hotspot_password() const {

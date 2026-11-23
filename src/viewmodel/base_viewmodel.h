@@ -169,6 +169,16 @@ public:
     void request_mode(model::NetMode mode);
     lv_subject_t* mode_request_subject();
     model::NetMode requested_mode() const;
+    // The WireGuard file the VPN row offers: the one picked by name when it
+    // is still among home().vpn.files, otherwise the first one; empty when
+    // there is none. A VPN request uses it. The pick is kept across a
+    // theme switch.
+    std::string vpn_file() const;
+    // Picks the file `step` places after (or before) vpn_file() in
+    // home().vpn.files, going round at either end. Notifies
+    // vpn_file_subject() when the pick changes.
+    void step_vpn_file(int32_t step);
+    lv_subject_t* vpn_file_subject();
     // The hotspot's password, for the Modes and Hotspot pages to show. The
     // app sets it (from the settings file on the device, a made-up one in
     // the simulator and in snapshots); empty when there is none yet. It
@@ -404,6 +414,8 @@ private:
     reactive::IntSubject modes_selection_subject_;
     reactive::IntSubject mode_request_subject_;
     model::NetMode requested_mode_{model::NetMode::Client};
+    std::string vpn_file_;                // the picked file, by name; empty for the first one
+    reactive::IntSubject vpn_file_subject_;
     std::string hotspot_password_;
     std::string hotspot_name_;
     std::string default_hotspot_name_;

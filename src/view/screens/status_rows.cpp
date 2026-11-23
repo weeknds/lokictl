@@ -167,6 +167,26 @@ void add_usb_wifi(std::vector<StatusRow>& rows, const std::vector<model::UsbWifi
     }
 }
 
+// The tunnel's file, server and last reply while it runs;
+// otherwise how many WireGuard files there are to use.
+void add_vpn(std::vector<StatusRow>& rows, const model::VpnStatus& vpn) {
+    const NoteTone tone = vpn.state == model::VpnState::On           ? NoteTone::Good
+                          : vpn.state == model::VpnState::Connecting ? NoteTone::Plain
+                                                                     : NoteTone::Quiet;
+    add_heading(rows, "vpn", model::vpn_state_name(vpn.state), tone);
+    if (vpn.state == model::VpnState::Off) {
+        const std::size_t count = vpn.files.size();
+        add_row(rows, "files", count == 0 ? std::string("none") : std::to_string(count));
+        return;
+    }
+    add_long_rows(rows, "file", vpn.file, ' ');
+    add_long_rows(rows, "server", vpn.server, '.');
+    if (vpn.state == model::VpnState::On) {
+        add_row(rows, "reply", vpn.reply_seconds < 0 ? std::string("none yet")
+                                                     : std::to_string(vpn.reply_seconds) + " s ago");
+    }
+}
+
 std::string battery_state_text(model::BatteryState state) {
     switch (state) {
         case model::BatteryState::Discharging:
@@ -275,6 +295,7 @@ std::vector<StatusRow> status_rows(const model::HomeData& data) {
     for (const model::StatusPort& port : details.ports) {
         add_port(rows, port, is_usb_wifi(data, port.name));
     }
+    add_vpn(rows, data.vpn);
     add_usb_wifi(rows, data.usb_wifi);
 
     add_heading(rows, "dns", "", NoteTone::Plain);

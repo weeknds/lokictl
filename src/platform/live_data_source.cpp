@@ -49,6 +49,7 @@ LiveDataSource::LiveDataSource(std::string data_root, bool may_change_network)
     tzset();
     // Relative on purpose: an absolute path on the right would drop the root.
     power_supply_dir_ = root_ / "sys/class/power_supply";
+    vpn_folder_ = wireguard_folder(root_, test_folder_);
     if (test_folder_) {
         network_manager_file_ = root_ / "networkmanager";
     } else {
@@ -106,12 +107,46 @@ bool LiveDataSource::share_interface_present() const {
     return std::filesystem::exists(root_ / "sys/class/net" / kShareInterface, error);
 }
 
+void LiveDataSource::request_vpn(const ModeRequest& request) {
+    VpnRequest vpn;
+    vpn.file = request.vpn_file;
+    const std::string reason = read_wireguard_file(vpn_folder_, request.vpn_file, vpn.config);
+    if (!reason.empty()) {
+        refuse(model::NetMode::Vpn, model::SwitchError::Failed, reason);
+        return;
+    }
+    if (!changes_network_) {
+        // The pretend tunnel shows the file's server.
+        ModeRequest pretend = request;
+        for (const WireGuardPeer& peer : vpn.config.peers) {
+            if (!peer.endpoint_host.empty()) {
+                pretend.vpn_server = peer.endpoint_host;
+                break;
+            }
+        }
+        clear_wireguard_config(vpn.config);
+        pretend_.request(pretend);
+        return;
+    }
+    if (!hotspot_interface_.empty()) {
+        // VPN and the hotspot go through Client.
+        refuse(model::NetMode::Vpn, model::SwitchError::ClientFirst);
+    } else {
+        network_manager_->start_vpn(vpn);
+    }
+    clear_wireguard_config(vpn.config);
+}
+
 void LiveDataSource::request_mode(const ModeRequest& request) {
+    refused_ = false;
+    if (request.mode == model::NetMode::Vpn) {
+        request_vpn(request);
+        return;
+    }
     if (!changes_network_) {
         pretend_.request(request);
         return;
     }
-    refused_ = false;
     share_removals_ = 0;  // a removal that failed is tried again
     const std::string name = request.name.empty() ? default_hotspot_name(root_) : request.name;
     const bool share = request.mode == model::NetMode::Share;
@@ -120,9 +155,10 @@ void LiveDataSource::request_mode(const ModeRequest& request) {
         // Share stays on the channel of the network the Wi-Fi is joined to.
         const int32_t channel = share ? network_manager_->wifi_channel(kHotspotInterface) : 0;
         network_manager_->restart_router(RouterRequest{interface_name, name, request.password, channel});
-    } else if (model::is_hotspot_mode(request.mode) && !hotspot_interface_.empty() &&
-               hotspot_interface_ != interface_name) {
-        // Router and Share go through Client.
+    } else if (model::is_hotspot_mode(request.mode) && ((!hotspot_interface_.empty() &&
+                                                         hotspot_interface_ != interface_name) ||
+                                                        vpn_active_)) {
+        // Router, Share and VPN go through Client.
         refuse(request.mode, model::SwitchError::ClientFirst);
     } else if (request.mode == model::NetMode::Router) {
         // Decided on a fresh look at the kernel's uplink: Router shares a
@@ -221,10 +257,13 @@ void LiveDataSource::read(model::HomeData& data) {
         network_read_ = true;
     }
     // USB Wi-Fi adapters, on every page, so plugging one in or out is
-    // noticed wherever the user is; in a test folder at every call.
+    // noticed wherever the user is; in a test folder at every call. The
+    // WireGuard files the same way.
     if (network_due || test_folder_) {
         usb_wifi_ = read_usb_wifi(root_);
+        read_vpn_files();
     }
+    data.vpn.files = vpn_files_;
     data.uplink_kind = network_.kind;
     data.uplink_name = network_.interface_name;
     data.uplink_address = network_.address;
@@ -242,6 +281,8 @@ void LiveDataSource::read(model::HomeData& data) {
     data.usb_wifi = usb_wifi_;
     apply_usb_wifi_managed(service, data.usb_wifi);
     hotspot_interface_ = service.available && service.hotspot.active ? service.hotspot.interface_name : std::string();
+    vpn_active_ = service.available && service.vpn.state != model::VpnState::Off;
+    read_vpn_reply(data, network_due || test_folder_, now);
 
     // The devices on the hotspot. Read before a pretend switch is applied,
     // so a pretend Client drops them with the access point.
@@ -260,6 +301,9 @@ void LiveDataSource::read(model::HomeData& data) {
         data.mode_switch = refused_ ? refusal_ : service.mode_switch;
     } else {
         pretend_.apply(data, service.switch_failure);
+        if (refused_) {
+            data.mode_switch = refusal_;
+        }
     }
 
     // Blocked devices: after the pretend switch, which may replace the
@@ -318,6 +362,36 @@ void LiveDataSource::read(model::HomeData& data) {
     data.up_kbps = up_kbps_;
     data.down_history = down_history_.shares();
     data.up_history = up_history_.shares();
+}
+
+void LiveDataSource::read_vpn_files() {
+    if (changes_network_) {
+        prepare_wireguard_folder(vpn_folder_);
+    }
+    vpn_files_ = list_wireguard_files(vpn_folder_);
+}
+
+void LiveDataSource::read_vpn_reply(model::HomeData& data, bool due, std::chrono::steady_clock::time_point now) {
+    if (data.vpn.state != model::VpnState::On) {
+        vpn_counted_ = false;
+        vpn_replied_ = false;
+        return;
+    }
+    TrafficCounters counters;
+    if (due && read_traffic_counters(root_, kVpnInterface, 0, counters)) {
+        // The first reading of a tunnel that already received something
+        // (LokiCTL started again while it ran) counts as a reply now.
+        if (counters.received > 0 && (!vpn_counted_ || counters.received > vpn_received_)) {
+            vpn_replied_ = true;
+            vpn_reply_at_ = now;
+        }
+        vpn_received_ = counters.received;
+        vpn_counted_ = true;
+    }
+    if (vpn_replied_) {
+        const auto seconds = std::chrono::duration_cast<std::chrono::seconds>(now - vpn_reply_at_).count();
+        data.vpn.reply_seconds = static_cast<int32_t>(std::clamp<int64_t>(seconds, 0, std::numeric_limits<int32_t>::max()));
+    }
 }
 
 void LiveDataSource::forget_traffic() {

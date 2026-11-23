@@ -19,16 +19,25 @@ namespace screen {
 // between the modes:
 // - one row per mode, in model::NetMode order: Client, Router, Share and
 //   VPN, each with its name, a short hint and a tick on the mode that is on
-//   (HomeData::mode). Share and VPN come later and are drawn switched off;
+//   (HomeData::mode). VPN's hint is the WireGuard file it would use, with
+//   its place among the files ("home  ‹ 1/2 ›"), the tunnel's file while
+//   one runs, or "no WireGuard files"; without files (and no tunnel) the
+//   row is drawn switched off;
 // - a status line under the rows: "Switching…" while a switch
 //   runs, a plain error after one failed ("Plug in a cable first", "Not
 //   allowed: permission missing", "Failed: <reason>"), the hotspot's name
-//   and password while Router runs, or the current link in Client.
+//   and password while Router or Share runs, "VPN <server>" with the time
+//   since the last reply while the tunnel runs, the folder to put files in
+//   while the VPN row is highlighted and there are none, or the current
+//   link in Client.
 //
 // Up and down (F/X) move the highlight and stop at the first and the last
-// row. Enter or key 6 (Use) asks for the highlighted mode
+// row. Left and right (Z/C) pick another WireGuard file while the VPN row
+// is highlighted and no tunnel runs (BaseViewModel::step_vpn_file()).
+// Enter or key 6 (Use) asks for the highlighted mode
 // (BaseViewModel::request_mode()); Use is switched off on the mode that is
-// on, on Share and VPN, and while a switch runs. Key 7 (QR) opens the
+// on, on VPN without files, and while a switch runs. On the VPN row while
+// the tunnel runs, key 6 reads Off and asks for Client. Key 7 (QR) opens the
 // Hotspot page, in any mode. Key 4 or a short ESC goes back. The page never waits for the switch: the data layer does it, and
 // the page follows HomeData::mode and HomeData::mode_switch as they arrive.
 //
@@ -69,6 +78,10 @@ private:
     int32_t selected_row() const;
     // True when Use may switch to `row` now.
     bool can_use(int32_t row) const;
+    // True when Use on `row` turns the tunnel off (the VPN row while it runs).
+    bool turns_vpn_off(int32_t row) const;
+    // The VPN row's hint (see the class comment).
+    std::string vpn_hint() const;
     void use_selected();
     // Shows the current values and highlight: rows, ticks, the status line
     // and key 6. Touches only what changed.
@@ -83,13 +96,16 @@ private:
     std::array<Row, model::kNetModeCount> rows_{};
     lv_obj_t* status_left_{nullptr};
     lv_obj_t* status_right_{nullptr};
-    lv_obj_t* status_caption_{nullptr}; // "password", left of status_right_ while it shows one
+    lv_obj_t* status_caption_{nullptr}; // "password" or "reply", left of status_right_ while it shows one
+    std::string status_caption_shown_{"password"};
+    std::string vpn_hint_shown_;
     std::string status_left_shown_;
     std::string status_right_shown_;
     int32_t status_tone_{-1};     // the left label's colour shown last; -1 before the first
     int32_t shown_selected_{-1};  // the highlighted row drawn last
     int32_t shown_active_{-1};    // the row with the tick drawn last
-    int32_t shown_use_{-1};       // key 6: 1 on, 0 off, -1 before the first
+    int32_t shown_use_{-1};       // key 6: 2 Off, 1 Use, 0 switched off, -1 before the first
+    int32_t shown_vpn_switchable_{-1}; // the VPN row drawn usable (1) or not (0) last
 };
 
 } // namespace screen
