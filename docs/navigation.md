@@ -211,7 +211,7 @@ The commands, read without regard to case:
 |---|---|
 | `help` | lists the commands in the help panel (badge `COMMANDS`) |
 | `theme <name>` | switches the theme: `instrument`, `constellation` or `terminal` |
-| `mode <name>` | switches the mode: `client`, `router` or `share` (see below) |
+| `mode <name>` | switches the mode: `client`, `router`, `share` or `vpn` (see below) |
 | `home`, `map`, `tools`, `discover`, `wifi`, `status`, `settings` | open that page, the same way its key does |
 | `ping`, `dns`, `trace` `[target]` | open the tool's page and run it, on the target when one is given |
 | `ports [address]` | opens the Ports page and asks first, as its key 6 does; nothing is sent until the second 6 |
@@ -671,7 +671,7 @@ frames`, `Stopped after 1:23`, `Join a network first` or what went wrong
 its right, which does not move while listening. Saving takes the status
 line over: `Saving, 4:12 left, 14 KB` while the run lasts, then `Saved
 20261123-075130.pcap` (`, full` when the run heard more than 4 MB) or
-`Save failed: disk full` (see the README's "Saved captures").
+`Save failed: disk full` (see [Saved captures](permissions.md#saved-captures)).
 
 | Key | What it does |
 |---|---|
@@ -891,7 +891,8 @@ Settings page's last row, a panel and a tag on LVGL's top layer.
    key: `view_model.open_page(model::AppPage::KeyTest)`. A page that starts
    fresh each time gets its own function that resets its values first, like
    `open_settings()`.
-8. Add the page to the page list in `README.md`. Then take snapshots of it
+8. Add the page to the page list in
+   [development.md](development.md#screenshots-without-a-window). Then take snapshots of it
    in all three themes, with `--keys` and with `--switch-to`, and look at
    each picture.
 
@@ -986,7 +987,8 @@ scripts/device.sh snapshot build/shots/device-keys.png --page demo-counter --key
 ```
 
 To press keys on the real keyboard while LokiCTL runs on the screen, use
-`scripts/device.sh key` (see the README). Its names differ a little: it
+`scripts/device.sh key` (see
+[development.md](development.md#pressing-keys)). Its names differ a little: it
 also knows `tab`, `screenshot` and the `fn+` combinations, it holds a key
 with `--long` instead of `:long`, and it does not know `data`, which is not
 a key.

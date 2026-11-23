@@ -14,7 +14,7 @@
 # file is read or written, and the made-up tools send nothing. The same
 # simulator build gives the same files byte for byte.
 #
-# Build the simulator first (see README, "Build and run the simulator (macOS)"):
+# Build the simulator first (see docs/development.md):
 #   cmake --preset darwin-arm64
 #   cmake --build --preset darwin-arm64-dbg
 # Another simulator binary can be named with LOKICTL_BIN=/path/to/lokictl.

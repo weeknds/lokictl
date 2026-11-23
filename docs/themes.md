@@ -542,7 +542,7 @@ LOKICTL_CONFIG_FILE=build/simulator.conf ./build/darwin-arm64/Debug/lokictl --th
 On a device, `scripts/device.sh snapshot <file.png> --page dev-theme --theme
 constellation` draws the same page with the device's own font rendering, and
 `scripts/device.sh run --theme constellation` shows the app on the real
-screen (see the README).
+screen (see [development.md](development.md#run-on-a-device)).
 
 A picture shows the exact pixels, but not how readable they are on the small
 panel. Faint lines such as Constellation's dark-blue borders, and Instrument's

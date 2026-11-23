@@ -660,4 +660,4 @@ next.
 `--page home` can be left out, because `home` is the default page. On a
 device, `scripts/device.sh snapshot build/shots/device-home.png --page home
 --theme terminal --data wifi` draws the same page with the device's own
-font rendering (see the README).
+font rendering (see [development.md](development.md#run-on-a-device)).

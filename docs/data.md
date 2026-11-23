@@ -671,7 +671,8 @@ $B --snapshot build/shots/hotspot-renamed.png --page hotspot --data sample --key
 $B --snapshot build/shots/hotspot-new-password.png --page hotspot --data sample --keys 6,6,data
 ```
 
-The rights come from the package's polkit rule (see the README): apps
+The rights come from the package's polkit rule (see
+[permissions.md](permissions.md#the-polkit-rule)): apps
 started by the launcher are not an active login session, so without it
 NetworkManager refuses with "not allowed".
 
@@ -764,7 +765,8 @@ wakes and takes a reading at once. Each source marks the listed clients
 
 Only the live source on the device, when it changes the network, blocks for
 real (`platform::DeviceBlocker`, in `src/platform/firewall.h`). It runs the
-helper `lokictl-helper` (see the README) on the reader thread and makes
+helper `lokictl-helper` (see
+[permissions.md](permissions.md#lokictl-helper-cap_net_admin)) on the reader thread and makes
 LokiCTL's own nftables table, `inet lokictl`, match the list: when the
 hotspot comes up (first clearing a table a killed run may have left), when
 the list changes (only the differences), and it removes the table when the
@@ -875,7 +877,8 @@ nothing.
   pipe (closed on exec, read without blocking). The helper alone holds
   `CAP_NET_RAW`; it hears only ARP, DHCP, mDNS (UDP to 5353) and SSDP
   (UDP to 1900), joins no multicast group, drops every capability and can
-  then only receive (see the README). The runner reads its PCAP stream
+  then only receive (see
+  [permissions.md](permissions.md#lokictl-capture-cap_net_raw)). The runner reads its PCAP stream
   without any rights (`platform::CaptureReader`: a wrong file header or a
   record longer than 2048 bytes ends the run with `bad capture data`) and
   hands each frame to `platform::HeardDevices`. Stop and quitting send the
@@ -1644,7 +1647,8 @@ scripts/device.sh snapshot build/shots/device-offline.png --data offline
 
 `scripts/device.sh data` runs `lokictl --print-data` on the device and
 prints its lines. It works while the launcher is on screen and leaves the
-screen alone. See the README for the other commands.
+screen alone. See [development.md](development.md#run-on-a-device) for
+the other commands.
 
 ## Log lines
 
