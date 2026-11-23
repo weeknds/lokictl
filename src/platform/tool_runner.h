@@ -14,13 +14,14 @@
 namespace platform {
 
 // One job for a ToolRunner: a ping run, a DNS lookup, a trace or a port
-// scan of `target`, or listening on or probing from the interface `target`.
+// scan of `target`, listening on or probing from the interface `target`,
+// or a speed test against the server `target`.
 struct ToolJob {
     model::ToolKind kind{model::ToolKind::Ping};
     std::string target;  // checked with model::valid_tool_target()
 };
 
-// Runs the tools (ping, DNS lookup, trace, listening, probing, port scan) away from the UI
+// Runs the tools (ping, DNS lookup, trace, listening, probing, port scan, speed test) away from the UI
 // thread, one job at a time, and keeps the latest run of each for the screen to take.
 //
 // The live runner (device builds only) has one thread of its own, started
@@ -43,8 +44,10 @@ struct ToolJob {
 // (port_scan.h) makes one unprivileged TCP connection attempt to each port
 // of model::common_ports() on one private address of the Cardputer's own
 // networks, 10 a second, at most 8 waiting, each counted with count_sent();
-// a connection made is closed at once and nothing is written. It never
-// changes a network setting. A listen run keeps what it heard (whole PCAP records, at most
+// a connection made is closed at once and nothing is written. A speed test
+// (speed_test.h) downloads, then uploads, for 10 s each over HTTPS through
+// libcurl (loaded at its first run), each request counted once with
+// count_sent(). It never changes a network setting. A listen run keeps what it heard (whole PCAP records, at most
 // model::kCaptureSaveMax) until the next listen starts, so it can be saved
 // as a file (save_capture()); the file is written on this thread too.
 //
@@ -53,7 +56,7 @@ struct ToolJob {
 // the run from the LVGL time since the job started, with fixed made-up
 // results (documentation addresses only; a listen reads a made-up capture,
 // pretend_capture()), so the same keys and settle time always give the same
-// picture. It still adds the packets it pretends to send to the Sent count
+// picture. A speed test reads pretend_speed_test() (speed_test.h). It still adds the packets it pretends to send to the Sent count
 // (none for a listen). A probe reads pretend_probe() (probe.h), a port
 // scan pretend_port_scan() (port_scan.h). It never writes a file: a save reads as saved under
 // the made-up name kPretendCaptureName (listen.h).
@@ -78,7 +81,7 @@ public:
     // no listen run, nothing was kept, or the run was already saved.
     virtual bool save_capture() = 0;
     // Copies the latest runs into data.ping, data.dns, data.trace,
-    // data.listen, data.probe and data.ports (data.sent is left alone) and returns true, but only when any changed
+    // data.listen, data.probe, data.ports and data.speed (data.sent is left alone) and returns true, but only when any changed
     // since the last take(); otherwise leaves `data` alone and returns
     // false.
     virtual bool take(model::ToolsData& data) = 0;

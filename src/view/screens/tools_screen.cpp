@@ -48,7 +48,7 @@ constexpr ToolInfo kTools[] = {
     {"Trace", "The route, hop by hop"},
     {"Wi-Fi", "Nearby Wi-Fi networks"},
     {"Ports", "Open ports of one device"},
-    {"Speed", ""},
+    {"Speed", "Download and upload speed"},
 };
 
 lv_obj_t* plain_object(lv_obj_t* parent) {
@@ -127,12 +127,13 @@ int32_t ToolsScreen::selected_row() const {
 
 // The rows before Wi-Fi follow model::ToolKind: Ping, DNS, Trace. Listening
 // and probing belong to the Discover page and have no row here; the Ports
-// row is mapped by name.
+// and Speed rows are mapped by name.
 static_assert(static_cast<int32_t>(model::ToolKind::Ping) == 0 && static_cast<int32_t>(model::ToolKind::Dns) == 1 &&
                   static_cast<int32_t>(model::ToolKind::Trace) == ToolsScreen::kWifiRow - 1 &&
                   ToolsScreen::kPortsRow == ToolsScreen::kWifiRow + 1 &&
-                  ToolsScreen::kPortsRow == ToolsScreen::kOpenableRows - 1,
-              "the openable rows are Ping, DNS and Trace in the order of model::ToolKind, then Wi-Fi and Ports");
+                  ToolsScreen::kSpeedRow == ToolsScreen::kPortsRow + 1 &&
+                  ToolsScreen::kSpeedRow == ToolsScreen::kOpenableRows - 1,
+              "the openable rows are Ping, DNS and Trace in the order of model::ToolKind, then Wi-Fi, Ports and Speed");
 
 void ToolsScreen::open_selected() {
     const int32_t row = selected_row();
@@ -142,6 +143,10 @@ void ToolsScreen::open_selected() {
     }
     if (row == kPortsRow) {
         view_model().open_tool(model::ToolKind::Ports);
+        return;
+    }
+    if (row == kSpeedRow) {
+        view_model().open_tool(model::ToolKind::Speed);
         return;
     }
     view_model().open_tool(static_cast<model::ToolKind>(row));
@@ -230,7 +235,7 @@ void ToolsScreen::refresh() {
     // Wi-Fi has no tag: its list is only read while its page is open.
     const tools::ToneText tags[kOpenableRows] = {tools::ping_tag(data.ping), tools::dns_tag(data.dns),
                                                  tools::trace_tag(data.trace), tools::ToneText{},
-                                                 tools::ports_tag(data.ports)};
+                                                 tools::ports_tag(data.ports), tools::speed_tag(data.speed)};
     for (int32_t index = 0; index < kOpenableRows; ++index) {
         Cell& cell = cells_[static_cast<std::size_t>(index)];
         const tools::ToneText& tag = tags[index];

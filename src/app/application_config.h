@@ -50,6 +50,13 @@ struct ApplicationConfig {
     // has no such key; when it appears more than once, the last line
     // counts. It is not checked here (see platform::parse_blocked_devices()).
     std::optional<std::string> blocked_devices;
+    // The `speed_test_server` key of [application]: the speed test's server
+    // ("https://speed.cloudflare.com"), as it stands after the '='
+    // (trimmed). Unset when the file has no such key; when it appears more
+    // than once, the last line counts. It is not checked here (see
+    // model::valid_speed_server()). Only read, never written: the user
+    // edits it in the file.
+    std::optional<std::string> speed_test_server;
 };
 
 // True for a password a WPA2 hotspot takes: 8 to 63 printable ASCII

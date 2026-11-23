@@ -212,7 +212,7 @@ public:
     const std::string& hotspot_draft() const;
     void set_hotspot_draft(const std::string& draft);
 
-    // The Tools page and its Ping, DNS, Trace and Ports pages.
+    // The Tools page and its Ping, DNS, Trace, Ports and Speed pages.
     // The highlighted row of the Tools page; starts at 0. The page shows it
     // clamped to the rows that can be opened.
     lv_subject_t* tools_selection_subject();
@@ -221,9 +221,14 @@ public:
     void select_tools_row(int32_t row);
     // Opens the Tools page (see open_page()). The home page's key 7 uses it.
     bool open_tools();
-    // Sets typing back to off, then opens the Ping, DNS or Trace page (see
-    // open_page()).
+    // Sets typing back to off, then opens the Ping, DNS, Trace, Ports or
+    // Speed page (see open_page()).
     bool open_tool(model::ToolKind kind);
+    // The speed test's server (model::valid_speed_server()); starts as
+    // model::kSpeedServerDefault. The app sets it from the settings file
+    // at start; nothing else changes it.
+    const std::string& speed_server() const;
+    void set_speed_server(const std::string& server);
     // The target each tool uses, as its place in the page's list of
     // targets (the presets, then the typed target); starts at 0. The page
     // shows it clamped to the list, which can change (the router comes and
@@ -422,6 +427,7 @@ private:
     reactive::IntSubject tool_start_subject_;
     bool tool_start_waiting_{false};
     model::ToolKind tool_start_kind_{model::ToolKind::Ping};
+    std::string speed_server_{model::kSpeedServerDefault};
     model::ToolsData tools_;
     reactive::IntSubject tools_subject_;
     reactive::IntSubject trace_scroll_subject_;

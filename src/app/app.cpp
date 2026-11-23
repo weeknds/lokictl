@@ -499,6 +499,14 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override,
     }
 #endif
 
+    // The speed test's server; the address itself is never logged.
+    if (config.speed_test_server && model::valid_speed_server(*config.speed_test_server)) {
+        view_model.set_speed_server(*config.speed_test_server);
+    } else if (config.speed_test_server) {
+        LOG_WARN("the speed_test_server in {} is not an http:// or https:// address; the default server is used",
+                 loaded_config_path);
+    }
+
     // The saved choice: the theme= key, or else the old dark_mode key that
     // came before it (yes: Terminal, no: Instrument). An unknown theme name
     // counts as no choice at all; dark_mode is then ignored too, and the

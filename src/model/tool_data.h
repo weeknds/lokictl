@@ -14,7 +14,7 @@
 
 namespace model {
 
-// The tools that can run (the Ping, DNS, Trace and Ports pages, and
+// The tools that can run (the Ping, DNS, Trace, Ports and Speed pages, and
 // listening and probing on the Discover page). Only one runs at a time.
 enum class ToolKind : int32_t {
     Ping   = 0,
@@ -23,12 +23,13 @@ enum class ToolKind : int32_t {
     Listen = 3,
     Probe  = 4,
     Ports  = 5,
+    Speed  = 6,
 };
 
 // How many kinds there are, for tables indexed by ToolKind.
-constexpr std::size_t kToolKindCount = 6;
+constexpr std::size_t kToolKindCount = 7;
 
-const char* tool_name(ToolKind kind); // "ping", "dns", "trace", "listen", "probe", "ports"
+const char* tool_name(ToolKind kind); // "ping", "dns", "trace", "listen", "probe", "ports", "speed"
 
 // Where a tool's latest run stands.
 enum class ToolState : int32_t {
@@ -272,6 +273,55 @@ struct PortRun {
 bool operator==(const PortRun& left, const PortRun& right);
 bool operator!=(const PortRun& left, const PortRun& right);
 
+// The speed test: a 10 s download, then a 10 s upload, against a speed
+// server (Cloudflare's by default, kSpeedServerDefault). Each phase shows
+// one sample every kSpeedSampleMs.
+constexpr int32_t kSpeedPhaseMs = 10000;
+constexpr int32_t kSpeedSampleMs = 500;
+constexpr std::size_t kSpeedSamples = static_cast<std::size_t>(kSpeedPhaseMs / kSpeedSampleMs);
+// The server used when the settings name none: Cloudflare's anycast speed
+// endpoints (GET <server>/__down?bytes=N and POST <server>/__up), answered
+// by the nearest of its sites anywhere.
+constexpr const char* kSpeedServerDefault = "https://speed.cloudflare.com";
+// A speed server's address is at most this long.
+constexpr std::size_t kSpeedServerMax = 200;
+// A speed that is not known (yet).
+constexpr int32_t kSpeedRateUnknown = -1;
+
+// What a speed test is doing.
+enum class SpeedPhase : int32_t {
+    Connect = 0,  // the first small request: name, connection and TLS
+    Download,
+    Upload,
+};
+
+// The latest speed test of the Speed page. Every request it makes counts
+// once in the Sent count.
+struct SpeedRun {
+    ToolState state{ToolState::Idle};
+    ToolError error{ToolError::None};
+    std::string reason;                   // with ToolError::Failed ("server said 403")
+    std::string server;                   // the server, as in the settings
+    SpeedPhase phase{SpeedPhase::Connect};
+    int32_t phase_ms{0};                  // time into the current phase (0 until its first byte)
+    uint64_t down_bytes{0};               // body bytes received while downloading
+    uint64_t up_bytes{0};                 // bytes the server acknowledged while uploading
+    int32_t down_kbps{kSpeedRateUnknown};     // down_bytes over the download's time so far
+    int32_t up_kbps{kSpeedRateUnknown};       // up_bytes over the upload's time so far
+    std::vector<int32_t> down_samples;    // kbit/s of each kSpeedSampleMs, oldest first; at most kSpeedSamples
+    std::vector<int32_t> up_samples;      // the same while uploading
+};
+
+bool operator==(const SpeedRun& left, const SpeedRun& right);
+bool operator!=(const SpeedRun& left, const SpeedRun& right);
+
+// Whether `text` may be used as the speed server: "https://" or "http://"
+// and a host (with an optional port and path), at most kSpeedServerMax
+// printable ASCII characters, with no space, '@', '?' or '#'.
+bool valid_speed_server(std::string_view text);
+// The host of a valid speed server, for the page: "speed.cloudflare.com".
+std::string speed_server_host(std::string_view text);
+
 // What the tools show: the latest run of each, which of the Discover
 // page's two kinds started last, and the app-wide count of packets LokiCTL
 // has sent in this run of the app.
@@ -282,6 +332,7 @@ struct ToolsData {
     ListenRun listen;
     ProbeRun probe;
     PortRun ports;
+    SpeedRun speed;
     ToolKind latest{ToolKind::Listen};  // Listen or Probe: the Discover run started last
     uint64_t sent{0};
 };
@@ -315,7 +366,8 @@ std::vector<DiscoverDevice> discover_devices(const ListenRun& listen, const Prob
 // address is refused there; Ping and Trace take both. The port scan takes
 // only an IPv4 address that port_scan_address() allows. The listen and
 // probe tools' target is an interface, checked with valid_interface_name()
-// instead.
+// instead, and the speed test's is its server, checked with
+// valid_speed_server().
 bool valid_tool_target(ToolKind kind, std::string_view text);
 
 // Whether `text` is an IPv4 address in dotted form ("192.0.2.1").

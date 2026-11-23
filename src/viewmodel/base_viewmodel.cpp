@@ -384,11 +384,21 @@ bool BaseViewModel::open_tool(model::ToolKind kind) {
             return open_page(model::AppPage::Trace);
         case model::ToolKind::Ports:
             return open_page(model::AppPage::Ports);
+        case model::ToolKind::Speed:
+            return open_page(model::AppPage::Speed);
         case model::ToolKind::Listen:
         case model::ToolKind::Probe:
             return open_discover();
     }
     return open_page(model::AppPage::Ping);
+}
+
+const std::string& BaseViewModel::speed_server() const {
+    return speed_server_;
+}
+
+void BaseViewModel::set_speed_server(const std::string& server) {
+    speed_server_ = server;
 }
 
 int32_t BaseViewModel::tool_target(model::ToolKind kind) const {

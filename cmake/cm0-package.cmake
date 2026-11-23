@@ -153,6 +153,16 @@ if(TARGET ${APP_HELPER_NAME})
         set(APP_DEBIAN_TOOL_DEPENDS "nftables, libcap2-bin, iw")
     endif()
 endif()
+# The speed test loads libcurl with dlopen() (dpkg-shlibdeps cannot see
+# that) and checks the server's certificate against the system's
+# certificates.
+if(APP_USE_CURL)
+    if(APP_DEBIAN_TOOL_DEPENDS)
+        string(APPEND APP_DEBIAN_TOOL_DEPENDS ", libcurl4t64, ca-certificates")
+    else()
+        set(APP_DEBIAN_TOOL_DEPENDS "libcurl4t64, ca-certificates")
+    endif()
+endif()
 if(NOT USE_DESKTOP AND NOT CMAKE_CROSSCOMPILING)
     set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
     # CPack adds the libraries dpkg-shlibdeps finds to this list.

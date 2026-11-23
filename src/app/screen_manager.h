@@ -47,6 +47,7 @@ public:
     bool show_wifi_screen();
     bool show_discover_screen();
     bool show_map_screen();
+    bool show_speed_screen();
     bool show_tool_screen(model::AppPage page);
     bool show_dev_fonts_screen(model::AppPage page);
     bool show_dev_theme_screen();

@@ -514,6 +514,37 @@ if(APP_USE_LIBNM)
     target_link_libraries(${PROJECT_NAME}_platform PRIVATE PkgConfig::LIBNM)
 endif()
 
+# libcurl for the speed test (src/platform/speed_test.cpp): device builds
+# compile against its headers only and load libcurl.so.4 with dlopen() at the
+# first test, so its many libraries (OpenSSL, Kerberos, LDAP...) are not
+# loaded at every start. Nothing links it. The Mac simulator's speed test is
+# made up and needs no libcurl.
+if(USE_DESKTOP)
+    set(APP_USE_CURL_DEFAULT OFF)
+else()
+    set(APP_USE_CURL_DEFAULT ON)
+endif()
+option(APP_USE_CURL "Run the speed test with libcurl, loaded at its first run" ${APP_USE_CURL_DEFAULT})
+if(APP_USE_CURL)
+    find_package(PkgConfig REQUIRED)
+    if(CMAKE_CROSSCOMPILING AND CMAKE_SYSROOT)
+        # Look for libcurl inside the sysroot only.
+        set(ENV{PKG_CONFIG_SYSROOT_DIR} "${CMAKE_SYSROOT}")
+        set(ENV{PKG_CONFIG_LIBDIR} "${CMAKE_SYSROOT}/usr/lib/${CM0_MULTIARCH}/pkgconfig:${CMAKE_SYSROOT}/usr/lib/pkgconfig:${CMAKE_SYSROOT}/usr/share/pkgconfig")
+    endif()
+    pkg_check_modules(LIBCURL libcurl)
+    if(NOT LIBCURL_FOUND)
+        message(FATAL_ERROR
+            "libcurl's headers were not found. Install libcurl4-openssl-dev (the container of "
+            "scripts/build-deb.sh has it), or configure with -DAPP_USE_CURL=OFF to build without the speed test."
+        )
+    endif()
+    message(STATUS "Speed test through libcurl ${LIBCURL_VERSION}, loaded at run time")
+    target_compile_definitions(${PROJECT_NAME}_platform PRIVATE APP_USE_CURL=1)
+    # Headers only: the include folders, never the library.
+    target_include_directories(${PROJECT_NAME}_platform PRIVATE ${LIBCURL_INCLUDE_DIRS})
+endif()
+
 # The firewall helper (src/helper): a small C program, the only part of the
 # app with the right to change the firewall (see the file). Device builds
 # only; the package installs it at APP_HELPER_PATH, where the app runs it to

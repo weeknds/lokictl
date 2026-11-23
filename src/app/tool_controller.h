@@ -20,8 +20,8 @@ class BaseViewModel;
 
 namespace app {
 
-// The screen's side of the tools (ping, DNS lookup, trace, port scan, and
-// listening and probing on the Discover page). It owns a
+// The screen's side of the tools (ping, DNS lookup, trace, port scan, speed
+// test, and listening and probing on the Discover page). It owns a
 // platform::ToolRunner, hands it the tool pages' requests
 // (BaseViewModel::request_tool_run(), request_tool_stop() and
 // request_capture_save()) and, from an
@@ -33,8 +33,8 @@ namespace app {
 // A run keeps going when its page is left. Only one tool runs at a time: a
 // request to run while one runs is ignored (the pages switch Run off then).
 //
-// Log lines: "tools: <ping|dns|trace|listen|probe|ports> started", "tools:
-// <ping|dns|trace|listen|probe|ports> stopped by the user", "tools: ping done, <r>/<s>
+// Log lines: "tools: <ping|dns|trace|listen|probe|ports|speed> started", "tools:
+// <ping|dns|trace|listen|probe|ports|speed> stopped by the user", "tools: ping done, <r>/<s>
 // replies", "tools: ping failed: <why>", "tools: dns done, <n> addresses",
 // "tools: dns failed: <why>", "tools: trace done, reached in <n> hops"
 // (or "unreachable at hop <n>", "not reached in <n> hops"), "tools: trace
@@ -46,7 +46,8 @@ namespace app {
 // devices found: <d>", "tools: probe ended, asked: <n> of <t>, devices
 // found: <d>" (after a stop), "tools: probe failed: <why>", "tools: ports
 // done, asked: <n>", "tools: ports ended, asked: <n> of <t>" (after a
-// stop), "tools: ports failed: <why>" (never a target, an address, a
+// stop), "tools: ports failed: <why>", "tools: speed done, down <d> kbit/s
+// (<n> bytes), up <u> kbit/s (<m> bytes)", "tools: speed failed: <why>" (never a target, a server, an address, a
 // hardware address, a name, a port result or a path), and "tools: runner
 // stopped" at the end.
 //

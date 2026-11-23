@@ -121,6 +121,8 @@ bool load_application_config(const std::string& path,
             config.hotspot_name = trim(line.substr(separator + 1));
         } else if (section == "application" && key == "blocked_devices") {
             config.blocked_devices = trim(line.substr(separator + 1));
+        } else if (section == "application" && key == "speed_test_server") {
+            config.speed_test_server = trim(line.substr(separator + 1));
         } else if (section == "application" && key == "dark_mode") {
             // A value that cannot be read is ignored instead of failing the
             // load, so the theme key of the same file still counts.

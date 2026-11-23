@@ -6,6 +6,8 @@
 
 #include "tool_format.h"
 
+#include "home_format.h"
+
 #include <cstdio>
 
 namespace screen::tools {
@@ -287,6 +289,78 @@ ToneText ports_status(const model::PortRun& run) {
                 return {text, kToneError};
             }
             return error_status(run.error, run.reason);
+    }
+    return {};
+}
+
+ToneText speed_status(const model::SpeedRun& run) {
+    const std::string seconds = std::to_string(run.phase_ms / 1000) + " of " +
+                                std::to_string(model::kSpeedPhaseMs / 1000) + " s";
+    switch (run.state) {
+        case model::ToolState::Idle:
+            return {"Download, then upload, 10 s each", kToneMuted};
+        case model::ToolState::Running:
+            switch (run.phase) {
+                case model::SpeedPhase::Connect:
+                    return {"Connecting", kToneAccent};
+                case model::SpeedPhase::Download:
+                    return {"Download " + seconds, kToneAccent};
+                case model::SpeedPhase::Upload:
+                    return {"Upload " + seconds, kToneAccent};
+            }
+            break;
+        case model::ToolState::Done:
+            return {"Done", kToneSuccess};
+        case model::ToolState::Stopped:
+            return {"Stopped", kToneMuted};
+        case model::ToolState::Failed:
+            if (run.error == model::ToolError::BadTarget) {
+                return {"Not a usable server address", kToneError};
+            }
+            if (!run.reason.empty()) {
+                std::string text = run.reason;
+                if (text[0] >= 'a' && text[0] <= 'z') {
+                    text[0] = static_cast<char>(text[0] - 'a' + 'A');
+                }
+                return {text, kToneError};
+            }
+            return error_status(run.error, run.reason);
+    }
+    return {};
+}
+
+std::string bytes_text(uint64_t bytes) {
+    constexpr uint64_t kKilo = 1000;
+    constexpr uint64_t kMega = 1000 * kKilo;
+    constexpr uint64_t kGiga = 1000 * kMega;
+    char text[24];
+    if (bytes < kMega) {
+        std::snprintf(text, sizeof(text), "%u kB", static_cast<unsigned>((bytes + kKilo / 2) / kKilo));
+    } else if (bytes < 100 * kMega) {
+        const uint64_t tenths = (bytes + kMega / 20) / (kMega / 10);
+        std::snprintf(text, sizeof(text), "%u.%u MB", static_cast<unsigned>(tenths / 10),
+                      static_cast<unsigned>(tenths % 10));
+    } else if (bytes < kGiga) {
+        std::snprintf(text, sizeof(text), "%u MB", static_cast<unsigned>((bytes + kMega / 2) / kMega));
+    } else {
+        const uint64_t tenths = (bytes + kGiga / 20) / (kGiga / 10);
+        std::snprintf(text, sizeof(text), "%llu.%u GB", static_cast<unsigned long long>(tenths / 10),
+                      static_cast<unsigned>(tenths % 10));
+    }
+    return text;
+}
+
+ToneText speed_tag(const model::SpeedRun& run) {
+    switch (run.state) {
+        case model::ToolState::Running:
+            return {"running", kToneAccent};
+        case model::ToolState::Done:
+            return {home::rate_text(run.down_kbps) + " / " + home::rate_text(run.up_kbps), kToneMuted};
+        case model::ToolState::Failed:
+            return {"failed", kToneWarning};
+        case model::ToolState::Idle:
+        case model::ToolState::Stopped:
+            break;
     }
     return {};
 }

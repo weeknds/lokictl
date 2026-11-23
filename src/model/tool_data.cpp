@@ -46,6 +46,8 @@ const char* tool_name(ToolKind kind) {
             return "probe";
         case ToolKind::Ports:
             return "ports";
+        case ToolKind::Speed:
+            return "speed";
     }
     return "ping";
 }
@@ -166,10 +168,51 @@ bool operator!=(const PortRun& left, const PortRun& right) {
     return !(left == right);
 }
 
+bool operator==(const SpeedRun& left, const SpeedRun& right) {
+    return left.state == right.state && left.error == right.error && left.reason == right.reason &&
+           left.server == right.server && left.phase == right.phase && left.phase_ms == right.phase_ms &&
+           left.down_bytes == right.down_bytes && left.up_bytes == right.up_bytes &&
+           left.down_kbps == right.down_kbps && left.up_kbps == right.up_kbps &&
+           left.down_samples == right.down_samples && left.up_samples == right.up_samples;
+}
+
+bool operator!=(const SpeedRun& left, const SpeedRun& right) {
+    return !(left == right);
+}
+
+bool valid_speed_server(std::string_view text) {
+    if (text.size() > kSpeedServerMax) {
+        return false;
+    }
+    std::string_view rest;
+    if (text.substr(0, 8) == "https://") {
+        rest = text.substr(8);
+    } else if (text.substr(0, 7) == "http://") {
+        rest = text.substr(7);
+    } else {
+        return false;
+    }
+    for (const char character : rest) {
+        if (character <= 0x20 || character > 0x7E || character == '@' || character == '?' || character == '#' ||
+            character == '\\') {
+            return false;
+        }
+    }
+    // A host is needed: something before the first '/' or ':'.
+    const std::size_t host_end = rest.find_first_of("/:");
+    return host_end != 0 && !rest.empty();
+}
+
+std::string speed_server_host(std::string_view text) {
+    const std::size_t scheme = text.find("://");
+    std::string_view rest = scheme == std::string_view::npos ? text : text.substr(scheme + 3);
+    return std::string(rest.substr(0, rest.find_first_of("/:")));
+}
+
 bool operator==(const ToolsData& left, const ToolsData& right) {
     return left.ping == right.ping && left.dns == right.dns && left.trace == right.trace &&
            left.listen == right.listen && left.probe == right.probe && left.ports == right.ports &&
-           left.latest == right.latest && left.sent == right.sent;
+           left.speed == right.speed && left.latest == right.latest && left.sent == right.sent;
 }
 
 bool operator!=(const ToolsData& left, const ToolsData& right) {
@@ -179,7 +222,8 @@ bool operator!=(const ToolsData& left, const ToolsData& right) {
 bool tool_running(const ToolsData& data) {
     return data.ping.state == ToolState::Running || data.dns.state == ToolState::Running ||
            data.trace.state == ToolState::Running || data.listen.state == ToolState::Running ||
-           data.probe.state == ToolState::Running || data.ports.state == ToolState::Running;
+           data.probe.state == ToolState::Running || data.ports.state == ToolState::Running ||
+           data.speed.state == ToolState::Running;
 }
 
 ToolState tool_state(const ToolsData& data, ToolKind kind) {
@@ -196,6 +240,8 @@ ToolState tool_state(const ToolsData& data, ToolKind kind) {
             return data.probe.state;
         case ToolKind::Ports:
             return data.ports.state;
+        case ToolKind::Speed:
+            return data.speed.state;
     }
     return ToolState::Idle;
 }
@@ -308,6 +354,9 @@ bool valid_tool_target(ToolKind kind, std::string_view text) {
     }
     if (kind == ToolKind::Ports) {
         return port_scan_address(text);
+    }
+    if (kind == ToolKind::Speed) {
+        return valid_speed_server(text);
     }
     if (text.empty() || text.size() > kToolTargetMax) {
         return false;

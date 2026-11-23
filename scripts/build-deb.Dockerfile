@@ -19,6 +19,7 @@ RUN apt-get update \
         pkg-config \
         libfmt-dev \
         libfreetype-dev \
+        libcurl4-openssl-dev \
         libjpeg-dev \
         libnm-dev \
         libpng-dev \

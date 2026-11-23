@@ -12,7 +12,7 @@
 #include <string>
 #include <vector>
 
-// Texts shared by the Tools, Ping, DNS, Trace and Ports pages.
+// Texts shared by the Tools, Ping, DNS, Trace, Ports and Speed pages.
 namespace screen::tools {
 
 // The colours a text of these pages can take.
@@ -60,6 +60,13 @@ ToneText ping_status(const model::PingRun& run);
 ToneText dns_status(const model::DnsRun& run);
 ToneText trace_status(const model::TraceRun& run);
 ToneText ports_status(const model::PortRun& run);
+// The Speed page: "Connecting", "Download 4 of 10 s", "Upload 7 of 10 s",
+// "Done", "Stopped", or why it failed.
+ToneText speed_status(const model::SpeedRun& run);
+
+// A byte count, short: "850 kB", "15.2 MB", "109 MB", "1.2 GB"; "0 kB"
+// for nothing.
+std::string bytes_text(uint64_t bytes);
 
 // The Ports page: each open port with its service ("22 ssh"), ascending,
 // and "3 open · 45 closed · 2 no answer" (empty before the first answer).
@@ -72,5 +79,7 @@ ToneText ping_tag(const model::PingRun& run);
 ToneText dns_tag(const model::DnsRun& run);
 ToneText trace_tag(const model::TraceRun& run);
 ToneText ports_tag(const model::PortRun& run);
+// "87.3 / 12.1": the download and upload speeds in Mbit/s.
+ToneText speed_tag(const model::SpeedRun& run);
 
 } // namespace screen::tools

@@ -118,7 +118,7 @@ void ToolController::handle_request() {
     } else if (view_model_.requested_tool_stop()) {
         for (const model::ToolKind kind : {model::ToolKind::Ping, model::ToolKind::Dns, model::ToolKind::Trace,
                                            model::ToolKind::Listen, model::ToolKind::Probe,
-                                           model::ToolKind::Ports}) {
+                                           model::ToolKind::Ports, model::ToolKind::Speed}) {
             if (model::tool_state(data_, kind) == model::ToolState::Running) {
                 runner_->stop();
                 LOG_INFO("tools: {} stopped by the user", model::tool_name(kind));
@@ -223,6 +223,16 @@ void ToolController::log_change(const model::ToolsData& next) const {
             LOG_INFO("tools: ports ended, asked: {} of {}", ports.asked, ports.total);
         } else if (ports.state == model::ToolState::Failed) {
             LOG_INFO("tools: ports failed: {}", why(ports.error, ports.reason));
+        }
+    }
+    // Speeds and sizes only: never the server.
+    const model::SpeedRun& speed = next.speed;
+    if (speed.state != data_.speed.state) {
+        if (speed.state == model::ToolState::Done) {
+            LOG_INFO("tools: speed done, down {} kbit/s ({} bytes), up {} kbit/s ({} bytes)", speed.down_kbps,
+                     speed.down_bytes, speed.up_kbps, speed.up_bytes);
+        } else if (speed.state == model::ToolState::Failed) {
+            LOG_INFO("tools: speed failed: {}", why(speed.error, speed.reason));
         }
     }
     // Sizes only: never the file's path.

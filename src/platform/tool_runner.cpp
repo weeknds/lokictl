@@ -10,6 +10,7 @@
 #include "port_scan.h"
 #include "probe.h"
 #include "sent_counter.h"
+#include "speed_test.h"
 
 #include "lvgl.h"
 
@@ -39,6 +40,7 @@
 #include <csignal>
 #include <cstring>
 #include <fstream>
+#include <functional>
 #include <mutex>
 #include <random>
 #include <sstream>
@@ -210,6 +212,9 @@ public:
             case model::ToolKind::Ports:
                 latest_.ports.state = model::ToolState::Stopped;
                 break;
+            case model::ToolKind::Speed:
+                latest_.speed.state = model::ToolState::Stopped;
+                break;
         }
         fresh_ = true;
     }
@@ -248,6 +253,7 @@ public:
         data.listen = latest_.listen;
         data.probe = latest_.probe;
         data.ports = latest_.ports;
+        data.speed = latest_.speed;
         data.latest = latest_.latest;
         fresh_ = false;
         return true;
@@ -286,6 +292,9 @@ private:
                 break;
             case model::ToolKind::Ports:
                 keep(pretend_port_scan(elapsed, job_.target, sent, done), latest_.ports);
+                break;
+            case model::ToolKind::Speed:
+                keep(pretend_speed_test(elapsed, job_.target, sent, done), latest_.speed);
                 break;
         }
         if (sent > counted_) {
@@ -943,6 +952,11 @@ public:
                     latest_.ports.target = job.target;
                     latest_.ports.total = static_cast<int32_t>(model::common_ports().size());
                     break;
+                case model::ToolKind::Speed:
+                    latest_.speed = model::SpeedRun{};
+                    latest_.speed.state = model::ToolState::Running;
+                    latest_.speed.server = job.target;
+                    break;
             }
             if (job.kind == model::ToolKind::Listen || job.kind == model::ToolKind::Probe) {
                 latest_.latest = job.kind;
@@ -984,6 +998,7 @@ public:
         data.listen = latest_.listen;
         data.probe = latest_.probe;
         data.ports = latest_.ports;
+        data.speed = latest_.speed;
         data.latest = latest_.latest;
         fresh_ = false;
         return true;
@@ -1073,6 +1088,9 @@ private:
                     case model::ToolKind::Ports:
                         run_ports(job.target);
                         break;
+                    case model::ToolKind::Speed:
+                        run_speed(job.target);
+                        break;
                 }
             } catch (...) {
                 // Nothing in a job should throw; if something does (no
@@ -1096,6 +1114,9 @@ private:
                         break;
                     case model::ToolKind::Ports:
                         fail_internal(latest_.ports);
+                        break;
+                    case model::ToolKind::Speed:
+                        fail_internal(latest_.speed);
                         break;
                 }
                 fresh_ = true;
@@ -1132,6 +1153,9 @@ private:
                 break;
             case model::ToolKind::Ports:
                 latest_.ports.state = model::ToolState::Stopped;
+                break;
+            case model::ToolKind::Speed:
+                latest_.speed.state = model::ToolState::Stopped;
                 break;
         }
         fresh_ = true;
@@ -1185,6 +1209,14 @@ private:
         std::lock_guard<std::mutex> lock(mutex_);
         if (run != latest_.ports) {
             latest_.ports = run;
+            fresh_ = true;
+        }
+    }
+
+    void publish(const model::SpeedRun& run) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (run != latest_.speed) {
+            latest_.speed = run;
             fresh_ = true;
         }
     }
@@ -2219,6 +2251,16 @@ private:
         }
         run.state = model::ToolState::Done;
         publish(run);
+    }
+
+    // Runs the speed test against `server` (speed_test.h): libcurl does
+    // the transfers on this thread, asking stopping() at least every 0.1 s.
+    void run_speed(const std::string& server) {
+        const std::function<bool()> stop = [this] { return stopping(); };
+        const std::function<void(const model::SpeedRun&)> show = [this](const model::SpeedRun& run) {
+            publish(run);
+        };
+        run_speed_test(server, stop, show);
     }
 
     // Listens on `interface_name` for model::kListenSeconds through the

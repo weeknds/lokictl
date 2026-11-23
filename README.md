@@ -206,7 +206,7 @@ Options:
   long; it finishes in a fraction of a second.
 - `--help`: shows a short summary of all options.
 
-The app has 26 pages. `--list-pages` prints them in this order:
+The app has 28 pages. `--list-pages` prints them in this order:
 
 - `home`, the home page, where the app starts (see
   [docs/home.md](docs/home.md));
@@ -218,10 +218,12 @@ The app has 26 pages. `--list-pages` prints them in this order:
 - `modes`, `hotspot` and `devices`: the Modes page (home key 4), the
   Hotspot page with the join code (key 7 there) and the Devices page (home
   `enter`);
-- `tools`, `ping`, `dns`, `trace`, `ports` and `wifi`: the Tools page
-  (home key 7) and its Ping, DNS lookup, Trace, Ports and Wi-Fi pages (see
+- `tools`, `ping`, `dns`, `trace`, `ports`, `speed` and `wifi`: the Tools
+  page (home key 7) and its Ping, DNS lookup, Trace, Ports, Speed and Wi-Fi
+  pages (see
   [docs/navigation.md](docs/navigation.md#the-ping-dns-and-trace-pages),
-  [the Ports page](docs/navigation.md#the-ports-page) and
+  [the Ports page](docs/navigation.md#the-ports-page),
+  [the Speed page](docs/navigation.md#the-speed-page) and
   [the Wi-Fi page](docs/navigation.md#the-wi-fi-page));
 - `discover`, the Discover page (home key 5), which lists the devices it
   hears on the network while sending nothing, and those a probe finds (see
@@ -571,8 +573,11 @@ but sample network data for now (see [docs/home.md](docs/home.md)):
 - `7` TOOLS opens the Tools page: Ping, DNS lookup, Trace (the route to
   a host, hop by hop), Wi-Fi (the networks nearby) and Ports (after a
   confirmation, one TCP connection attempt to each of 50 common ports of
-  one device on your own network, private addresses only, 10 a second),
-  with a count of every packet LokiCTL sent;
+  one device on your own network, private addresses only, 10 a second)
+  and Speed (10 s of download, then 10 s of upload, over HTTPS to
+  Cloudflare's nearest speed server, or the `speed_test_server=` of the
+  settings file; see [docs/data.md](docs/data.md#speed-test)), with a
+  count of every packet LokiCTL sent;
 - `5` SCAN opens the Discover page: `6` START listens on the network the
   Cardputer is on for 5 minutes and lists every device it hears (hardware
   address, IPv4 address, the name it gave over DHCP or mDNS, what kind of

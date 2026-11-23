@@ -675,6 +675,8 @@ void DiscoverScreen::refresh_status() {
             status = {"DNS lookup is running", tools::kToneMuted};
         } else if (data.ports.state == model::ToolState::Running) {
             status = {"Port scan is running", tools::kToneMuted};
+        } else if (data.speed.state == model::ToolState::Running) {
+            status = {"Speed test is running", tools::kToneMuted};
         } else {
             status = {"Trace is running", tools::kToneMuted};
         }

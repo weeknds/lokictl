@@ -21,6 +21,7 @@
 #include "modes_screen.h"
 #include "page_registry.h"
 #include "settings_screen.h"
+#include "speed_screen.h"
 #include "status_screen.h"
 #include "tool_screen.h"
 #include "tools_screen.h"
@@ -168,6 +169,14 @@ bool ScreenManager::show_map_screen() {
     return true;
 }
 
+bool ScreenManager::show_speed_screen() {
+    if (!load_screen(std::make_unique<screen::SpeedScreen>(view_model_, assets_, theme_engine_))) {
+        return false;
+    }
+    page_loaded(model::AppPage::Speed);
+    return true;
+}
+
 bool ScreenManager::show_tool_screen(model::AppPage page) {
     if (!load_screen(std::make_unique<screen::ToolScreen>(view_model_, assets_, theme_engine_, page))) {
         return false;
@@ -304,6 +313,10 @@ bool ScreenManager::show_page(model::AppPage page) {
 
     if (screen::MapScreen::handles(page)) {
         return show_map_screen();
+    }
+
+    if (screen::SpeedScreen::handles(page)) {
+        return show_speed_screen();
     }
 
     return show_home_screen();

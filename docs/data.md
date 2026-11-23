@@ -682,9 +682,9 @@ so `--keys 8` on the Devices page pictures a blocked device.
 
 ## The tools
 
-The Ping, DNS, Trace and Ports pages, and listening and probing on the
-Discover page (see [Listening](#listening)), run their tools away from the
-UI thread.
+The Ping, DNS, Trace, Ports and Speed pages, and listening and probing on
+the Discover page (see [Listening](#listening)), run their tools away from
+the UI thread.
 `app::ToolController` hands the pages' requests to a
 `platform::ToolRunner` and, from an LVGL timer every 250 ms, gives the
 latest runs to the view model (`tools()`, `tools_subject()`) with the Sent
@@ -745,18 +745,21 @@ count. One job runs at a time; leaving the page does not stop it.
 this run of the app: each echo (a trace's probes too) and each DNS
 question (a trace's PTR questions too), retries included.
 The pretend runner counts the packets it pretends to send. Later tools add
-to the same count with `platform::count_sent()`. Listening adds nothing.
+to the same count with `platform::count_sent()`. Listening adds nothing; a
+port scan adds one per connection attempt and a speed test one per request
+(see below).
 
-Log lines: `tools: <ping|dns|trace|listen|probe|ports> started`, `tools:
-<ping|dns|trace|listen|probe|ports> stopped by the user`, `tools: ping done, 9/10
+Log lines: `tools: <ping|dns|trace|listen|probe|ports|speed> started`, `tools:
+<ping|dns|trace|listen|probe|ports|speed> stopped by the user`, `tools: ping done, 9/10
 replies`, `tools: ping failed: <why>`, `tools: dns done, <n> addresses`,
 `tools: dns failed: <why>`, `tools: trace done, reached in <n> hops` (or
 `unreachable at hop <n>`, `not reached in <n> hops`), `tools: trace failed:
 <why>`, `tools: listen done, devices heard: <n>, frames: <f>`, `tools:
 listen ended, devices heard: <n>`, `tools: listen failed: <why>`, `tools: ports
 done, asked: <n>`, `tools: ports ended, asked: <n> of <t>`, `tools: ports
-failed: <why>` (never a target, an address, a hardware address, a name or a
-port result), and `tools: runner stopped` when a run was cut short by
+failed: <why>`, `tools: speed done, down <d> kbit/s (<n> bytes), up <u> kbit/s
+(<m> bytes)`, `tools: speed failed: <why>` (never a target, a server, an
+address, a hardware address, a name or a port result), and `tools: runner stopped` when a run was cut short by
 quitting.
 
 ### Listening
@@ -911,6 +914,57 @@ after the page's confirmation (key 6 twice), for that target only.
   three made-up sets; other addresses fail as not on the Cardputer's
   networks. So `--keys 6,6 --settle-ms 1500` on `ports` shows a scan under
   way and `--keys 6,6 --settle-ms 6000` its end.
+
+### Speed test
+
+The Speed page (`model::ToolKind::Speed`, its run in `tools().speed`,
+`model::SpeedRun`) measures the speed to the internet: a 10 s download,
+then a 10 s upload, over HTTPS (`platform/speed_test.*`).
+
+- **The server** is `https://speed.cloudflare.com` by default: Cloudflare's
+  speed endpoints, answered by its nearest site anywhere. Downloads are
+  `GET <server>/__down?bytes=25000000` (the server takes up to 99,999,999
+  bytes), uploads `POST <server>/__up` with 10 MB of zeros. Another server
+  with the same two endpoints can be set in the settings file:
+
+  ```ini
+  [application]
+  speed_test_server=https://speed.example.net
+  ```
+
+  The app reads the key and never writes it. It must be `https://` or
+  `http://` and a host (port and path allowed), at most 200 printable
+  characters, with no space, `@`, `?` or `#` (`model::valid_speed_server()`);
+  anything else is ignored with a warning and the default is used. The
+  page shows only the host, and the log never shows the address.
+- **libcurl** does the transfers. Device builds compile against its
+  headers only and load `libcurl.so.4` with `dlopen()` at the first test,
+  on the runner's thread, and keep it loaded. Linking it at build time
+  would load 18 more libraries (OpenSSL, Kerberos, LDAP and more) at every
+  start: a small test program grew from 1.0 to 7.3 MB RSS. So the package
+  names `libcurl4t64` and `ca-certificates` in `Depends:` itself.
+  Certificates are always checked, no redirect is followed, HTTP/1.1 only.
+- **The run:** one small request first (`bytes=0`: the name, the
+  connection and TLS), then downloads one after another until 10 s passed
+  since the first body byte, then uploads the same way. One curl multi
+  handle drives each request with waits of at most 100 ms, so Stop and
+  quitting are seen at once. A 10 s connect timeout; 10 s without data, or
+  an answer other than 200, ends the run with the reason (`Server name not
+  found`, `Server said 403`).
+- **Counting, honestly:** downloaded bytes are the body bytes received;
+  uploaded bytes are the bytes the server acknowledged (the kernel's
+  `tcpi_bytes_acked` from `TCP_INFO`), because bytes handed to the system
+  wait in its send buffer first and would read high. A speed is bytes × 8
+  ÷ the phase's time; each half second gives one bar of the graph.
+  **Sent** counts one per request (like a port scan's one per attempt):
+  the TCP segments, TLS and the system's name lookup are not counted. The
+  page shows the bytes each way instead. A full test moves about 2 × 10 s
+  at the line's full speed: about 110 MB down and 25 MB up at 90 and 20
+  Mbit/s.
+- **The pretend runner** (`platform::pretend_speed_test()`) gives a fixed
+  made-up run of about 21 s (about 86 Mbit/s down, 18 up) and opens no
+  socket. So `--keys 6 --settle-ms 5000` on `speed` shows the download,
+  `--settle-ms 16000` the upload and `--settle-ms 22000` the end.
 
 ## The Wi-Fi list
 

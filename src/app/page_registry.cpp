@@ -23,6 +23,7 @@ const std::vector<PageInfo>& page_registry() {
         {"dns", model::AppPage::Dns},
         {"trace", model::AppPage::Trace},
         {"ports", model::AppPage::Ports},
+        {"speed", model::AppPage::Speed},
         {"wifi", model::AppPage::Wifi},
         {"discover", model::AppPage::Discover},
         {"map", model::AppPage::Map},
