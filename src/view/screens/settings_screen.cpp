@@ -6,6 +6,7 @@
 
 #include "settings_screen.h"
 
+#include "remote/remote_switch.h"
 #include "style.h"
 #include "theme.h"
 
@@ -16,23 +17,22 @@
 namespace screen {
 namespace {
 
-// Layout of the 320x110 area between the title bar and the soft-key bar: a
-// heading line at the top and the list under it, both 304 px wide. The list
-// has one row per theme and then the "Dim when idle" row.
+// Layout of the 320x110 area between the title bar and the soft-key bar: the
+// list, 304 px wide, with one row per theme, then the "Dim when idle" row
+// and the "Remote view" row.
 constexpr int32_t kSideMargin    = 8;
 constexpr int32_t kWidth         = view::kScreenWidth - 2 * kSideMargin;
-constexpr int32_t kHeadingTop    = 2;
-constexpr int32_t kHeadingHeight = 20;
-constexpr int32_t kListTop       = 24;
+constexpr int32_t kListTop       = 3;
 constexpr int32_t kRowHeight     = 20;
 constexpr int32_t kRowGap        = 1;
 constexpr int32_t kDimRow        = view::kThemeCount;
-constexpr int32_t kRowCount      = view::kThemeCount + 1;
+constexpr int32_t kRemoteRow     = view::kThemeCount + 1;
+constexpr int32_t kRowCount      = view::kThemeCount + 2;
 constexpr int32_t kListHeight    = kRowCount * kRowHeight + (kRowCount - 1) * kRowGap;
 
 static_assert(view::kThemeCount <= 3,
-              "the Settings page has room for three theme rows and the dimming row; make the "
-              "list scroll before adding a fourth theme");
+              "the Settings page has room for three theme rows, the dimming row and the Remote "
+              "view row; make the list scroll before adding a fourth theme");
 static_assert(kListTop + kListHeight <=
                   view::kScreenHeight - view::kTitleBarHeight - view::kSoftKeyBarHeight,
               "the list must end above the soft-key bar");
@@ -59,6 +59,23 @@ const char* dimming_text(bool on) {
     return on ? "on" : "off";
 }
 
+// The Remote view row's name, and its value for each state: "on" while the
+// Cardputer shows the code, "viewed" while a browser is paired. It is never
+// saved, so every start reads "off".
+constexpr const char* kRemoteRowName = "Remote view";
+
+const char* remote_text(platform::remote::ViewState state) {
+    switch (state) {
+        case platform::remote::ViewState::Waiting:
+            return "on";
+        case platform::remote::ViewState::Viewed:
+            return "viewed";
+        case platform::remote::ViewState::Off:
+            break;
+    }
+    return "off";
+}
+
 // Index 2 of the soft-key set is key 6.
 constexpr std::size_t kUseKeyIndex = 2;
 
@@ -76,12 +93,6 @@ lv_obj_t* plain_label(lv_obj_t* parent, const char* text) {
     lv_obj_remove_style_all(label);
     lv_label_set_text(label, text);
     return label;
-}
-
-// How far the contents of a list row stand from its left and right edges:
-// the row's border and padding (view::style::list_row()) plus space_sm.
-int32_t row_text_inset(const view::Theme& theme) {
-    return theme.metrics.border_width + theme.metrics.space_xs + theme.metrics.space_sm;
 }
 
 view::widgets::SoftKey back_key(viewmodel::BaseViewModel& view_model) {
@@ -111,33 +122,20 @@ view::widgets::SoftKey switch_key(viewmodel::BaseViewModel& view_model) {
             [&view_model] { view_model.set_screen_dimming(!view_model.screen_dimming()); }};
 }
 
-// Key 6 for the highlighted row.
-view::widgets::SoftKey row_key(viewmodel::BaseViewModel& view_model, int32_t selected, int32_t active) {
-    return selected == kDimRow ? switch_key(view_model) : use_key(view_model, selected != active);
+// Key 6 while the highlight is on the Remote view row: "On" while it is
+// off, "Off" while it is on or viewed. It only asks; app::RemoteController
+// switches a moment later.
+view::widgets::SoftKey remote_key() {
+    return {platform::remote::view_state() == platform::remote::ViewState::Off ? "On" : "Off",
+            [] { platform::remote::request_switch(); }};
 }
 
-// "Settings" on the left and the caption "theme" on the right, on one
-// baseline, lined up with the theme names and the tick column below.
-void build_heading(lv_obj_t* content, const view::Theme& theme) {
-    const int32_t inset = row_text_inset(theme);
-
-    auto* heading = plain_object(content);
-    lv_obj_set_pos(heading, kSideMargin, kHeadingTop);
-    lv_obj_set_size(heading, kWidth, kHeadingHeight);
-
-    auto* title = plain_label(heading, "Settings");
-    view::style::text(title, theme, view::FontRole::Title);
-    lv_obj_align(title, LV_ALIGN_BOTTOM_LEFT, inset, 0);
-
-    auto* caption = plain_label(heading, "");
-    view::style::caption(caption, theme, "theme");
-    lv_obj_align(caption, LV_ALIGN_BOTTOM_RIGHT, -inset, 0);
-    // Both labels sit on the line's bottom edge; move the caption so the two
-    // share one baseline even though the fonts have different descents.
-    lv_obj_set_style_translate_y(caption,
-                                 theme.font(view::FontRole::Small)->base_line -
-                                     theme.font(view::FontRole::Title)->base_line,
-                                 0);
+// Key 6 for the highlighted row.
+view::widgets::SoftKey row_key(viewmodel::BaseViewModel& view_model, int32_t selected, int32_t active) {
+    if (selected == kRemoteRow) {
+        return remote_key();
+    }
+    return selected == kDimRow ? switch_key(view_model) : use_key(view_model, selected != active);
 }
 
 // The four squares of one theme: ground, text, accent and second accent.
@@ -211,8 +209,8 @@ view::widgets::SoftKeySet SettingsScreen::soft_keys() {
 
 // Up and down move the highlight and stop at the first and the last row; a
 // move that changes nothing writes nothing. Enter switches to the
-// highlighted theme, unless it is already the active one, or switches
-// dimming on the dimming row.
+// highlighted theme, unless it is already the active one, switches dimming
+// on the dimming row, and asks to switch Remote view on its row.
 bool SettingsScreen::on_key(uint32_t key) {
     switch (key) {
         case LV_KEY_UP:
@@ -227,7 +225,9 @@ bool SettingsScreen::on_key(uint32_t key) {
         }
         case LV_KEY_ENTER: {
             const int32_t row = selected_row();
-            if (row == kDimRow) {
+            if (row == kRemoteRow) {
+                platform::remote::request_switch();
+            } else if (row == kDimRow) {
                 view_model().set_screen_dimming(!view_model().screen_dimming());
             } else if (row != active_row()) {
                 view_model().request_theme(row);
@@ -245,13 +245,12 @@ view::widgets::HelpContent SettingsScreen::help() const {
                 {"ESC / 4", "Back"},
                 {"F / X", "Up / down"},
                 {"ENTER / 6", "Use or switch"},
+                {"REMOTE", "Screen in a web browser"},
             }};
 }
 
 void SettingsScreen::build_content(lv_obj_t* content) {
     const auto& theme = this->theme();
-
-    build_heading(content, theme);
 
     auto* list = plain_object(content);
     lv_obj_set_pos(list, kSideMargin, kListTop);
@@ -290,6 +289,32 @@ void SettingsScreen::build_content(lv_obj_t* content) {
     auto* dim_value = plain_label(dim_row, dimming_text(view_model().screen_dimming()));
     lv_obj_align(dim_value, LV_ALIGN_RIGHT_MID, -theme.metrics.space_sm, 0);
     lv_subject_add_observer_obj(view_model().screen_dimming_subject(), dimming_observer, dim_value, this);
+
+    // The Remote view row: its name and its state, which follows the
+    // module's state subject. The observer is bound to the value's label.
+    auto* remote_row = plain_object(list);
+    lv_obj_set_size(remote_row, LV_PCT(100), kRowHeight);
+    auto* remote_name = plain_label(remote_row, kRemoteRowName);
+    lv_obj_align(remote_name, LV_ALIGN_LEFT_MID, theme.metrics.space_sm, 0);
+    auto* remote_value = plain_label(remote_row, remote_text(platform::remote::view_state()));
+    lv_obj_align(remote_value, LV_ALIGN_RIGHT_MID, -theme.metrics.space_sm, 0);
+    lv_subject_add_observer_obj(
+        platform::remote::state_subject(),
+        [](lv_observer_t* observer, lv_subject_t* /*subject*/) {
+            auto* value = lv_observer_get_target_obj(observer);
+            auto* screen = static_cast<SettingsScreen*>(lv_observer_get_user_data(observer));
+            if (!value || !screen) {
+                return;
+            }
+            lv_label_set_text(value, remote_text(platform::remote::view_state()));
+            // Key 6 reads On or Off on the Remote view row.
+            auto* bar = screen->soft_key_bar();
+            if (bar && screen->selected_row() == kRemoteRow) {
+                bar->set_key(kUseKeyIndex, remote_key());
+            }
+        },
+        remote_value,
+        this);
 
     // Added last: LVGL calls the observer once right away, which styles the
     // rows and key 6 for the current state.

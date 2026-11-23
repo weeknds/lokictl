@@ -20,6 +20,7 @@
 #include "mode_switch.h"
 #include "page_registry.h"
 #include "power_controller.h"
+#include "remote_controller.h"
 #include "screen_manager.h"
 #include "snapshot.h"
 #include "base_viewmodel.h"
@@ -661,6 +662,10 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override,
         key_controller.show_theme_switched(view::theme_spec(result.current).display_name, saved);
     });
 
+    // Remote view: off at every start; the Settings row switches it on.
+    // Declared after the theme engine, so it is destroyed before it.
+    RemoteController remote(theme_engine);
+
     bool running = true;
     auto* quit_observer = lv_subject_add_observer(view_model.quit_requested_subject(),
                                                   quit_requested_observer,
@@ -682,6 +687,8 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override,
     // First on the way out: the backlight goes back to what it was, and no
     // new values arrive while the rest is torn down.
     power.stop();
+    // Then Remote view: the port closes and its thread ends.
+    remote.stop();
     tools.stop();
     data.set_block_failure_listener({});
     data.stop();

@@ -1,0 +1,379 @@
+/*
+ * SPDX-FileCopyrightText: 2026 LokiCTL contributors
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
+#include "remote_controller.h"
+
+#include "logger.h"
+#include "remote/remote_frames.h"
+#include "remote/remote_pairing.h"
+#include "remote/remote_server.h"
+#include "remote/remote_switch.h"
+#include "remote_panel.h"
+
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <utility>
+
+#ifndef APP_FRAMEBUFFER_DEVICE
+#define APP_FRAMEBUFFER_DEVICE "/dev/fb0"
+#endif
+
+namespace app {
+namespace {
+
+using platform::remote::Server;
+using platform::remote::ServerPhase;
+using platform::remote::ServerStatus;
+using platform::remote::StopReason;
+using platform::remote::ViewState;
+
+#if USE_DESKTOP
+// The desktop timer also hands pictures over, so it runs more often.
+constexpr uint32_t kTimerPeriodMs = 100;
+// Desktop builds only: "on" switches Remote view on at start.
+constexpr const char* kRemoteVariable = "LOKICTL_REMOTE";
+#else
+constexpr uint32_t kTimerPeriodMs = 250;
+#endif
+
+// How long the panel shows why Remote view could not start.
+constexpr uint32_t kMessageMs = 4000;
+
+// Why the server ended, for the log.
+const char* stop_text(StopReason reason) {
+    switch (reason) {
+        case StopReason::None:
+        case StopReason::Asked:
+            return "switched off";
+        case StopReason::NoNetwork:
+            return "no network";
+        case StopReason::NotPrivate:
+            return "not a private network";
+        case StopReason::PortBusy:
+            return "the port is busy";
+        case StopReason::StartFailed:
+            return "the port could not be opened";
+        case StopReason::CodeUnused:
+            return "the code was not used in time";
+        case StopReason::WrongCodes:
+            return "too many wrong codes";
+        case StopReason::ViewerIdle:
+            return "no request from the browser for 10 minutes";
+        case StopReason::AddressChanged:
+            return "the address went away or changed";
+    }
+    return "switched off";
+}
+
+// What the panel says when a start fails; nullptr for the reasons that end
+// a server that did start (the panel then just goes away).
+const char* start_failure_message(StopReason reason) {
+    switch (reason) {
+        case StopReason::NoNetwork:
+            return "Join a network first";
+        case StopReason::NotPrivate:
+            return "Only on a private network";
+        case StopReason::PortBusy:
+            return "Port 8780 is busy";
+        case StopReason::StartFailed:
+            return "Remote view could not start";
+        default:
+            return nullptr;
+    }
+}
+
+} // namespace
+
+RemoteController::RemoteController(view::ThemeEngine& theme_engine)
+    : panel_(std::make_unique<view::widgets::RemotePanel>(lv_layer_top(), theme_engine)) {
+    panel_->build();
+
+    lv_subject_t* requests = platform::remote::switch_request_subject();
+    // LVGL calls the observer once while it is added. Remembering the count
+    // first makes that call a no-op.
+    requests_seen_ = lv_subject_get_int(requests);
+    request_observer_ = lv_subject_add_observer(requests, request_cb, this);
+
+    timer_ = lv_timer_create(timer_cb, kTimerPeriodMs, this);
+    if (timer_) {
+        lv_timer_pause(timer_);
+    }
+    platform::remote::set_view_state(ViewState::Off);
+
+#if USE_DESKTOP
+    const char* value = std::getenv(kRemoteVariable);
+    if (value && std::strcmp(value, "on") == 0) {
+        LOG_INFO("remote view: switched on by {}; the code goes to standard error", kRemoteVariable);
+        print_code_ = true;
+        switch_on();
+    }
+#endif
+}
+
+RemoteController::~RemoteController() {
+    stop();
+}
+
+void RemoteController::stop() {
+    if (stopped_) {
+        return;
+    }
+    stopped_ = true;
+
+    lv_async_call_cancel(apply_requests_async, this);
+    if (request_observer_) {
+        lv_observer_remove(request_observer_);
+        request_observer_ = nullptr;
+    }
+    if (timer_) {
+        lv_timer_delete(timer_);
+        timer_ = nullptr;
+    }
+
+    // Both servers are told first, so they wind down together; destroying
+    // them then waits for their threads.
+    const bool was_on = server_ != nullptr;
+    if (server_) {
+        server_->request_stop();
+    }
+    if (retiring_) {
+        retiring_->request_stop();
+    }
+    hand_off_ = nullptr;
+    server_.reset();
+    retiring_.reset();
+    if (was_on) {
+        LOG_INFO("remote view: off (the app quits)");
+    }
+
+    panel_.reset();
+    platform::remote::set_view_state(ViewState::Off);
+}
+
+void RemoteController::request_cb(lv_observer_t* observer, lv_subject_t* subject) {
+    auto* controller = static_cast<RemoteController*>(lv_observer_get_user_data(observer));
+    if (!controller || controller->stopped_) {
+        return;
+    }
+    const int32_t count = lv_subject_get_int(subject);
+    if (count == controller->requests_seen_) {
+        return;
+    }
+    controller->requests_pending_ += count - controller->requests_seen_;
+    controller->requests_seen_ = count;
+
+    // The request arrives inside a key callback; the switch runs a moment
+    // later from lv_timer_handler(), like a theme switch.
+    if (!controller->apply_scheduled_) {
+        controller->apply_scheduled_ = lv_async_call(apply_requests_async, controller) == LV_RESULT_OK;
+        if (!controller->apply_scheduled_) {
+            LOG_ERROR("remote view: could not schedule the switch");
+            controller->requests_pending_ = 0;
+        }
+    }
+}
+
+void RemoteController::apply_requests_async(void* user_data) {
+    auto* controller = static_cast<RemoteController*>(user_data);
+    if (controller) {
+        controller->apply_requests();
+    }
+}
+
+void RemoteController::apply_requests() {
+    apply_scheduled_ = false;
+    // Two presses before the switch ran cancel each other out.
+    const bool toggle = requests_pending_ % 2 != 0;
+    requests_pending_ = 0;
+    if (!toggle || stopped_) {
+        return;
+    }
+    if (server_) {
+        switch_off();
+    } else {
+        switch_on();
+    }
+}
+
+void RemoteController::switch_on() {
+    if (server_ || stopped_) {
+        return;
+    }
+    // A server that is still winding down holds the port for a moment more.
+    if (retiring_) {
+        retiring_->join();
+        retiring_.reset();
+    }
+    if (panel_) {
+        panel_->hide();
+    }
+    message_shown_ = false;
+
+    platform::remote::ServerOptions options;
+    std::unique_ptr<platform::remote::FrameSource> frames;
+#if USE_DESKTOP
+    options.loopback_only = true;
+    auto hand_off = std::make_unique<platform::remote::HandOffSource>();
+    hand_off_ = hand_off.get();
+    frames = std::move(hand_off);
+#else
+    frames = platform::remote::make_framebuffer_source(APP_FRAMEBUFFER_DEVICE);
+#endif
+    server_ = std::make_unique<Server>(options, std::move(frames));
+    wrong_codes_seen_ = 0;
+    listening_seen_ = false;
+    paired_seen_ = false;
+    server_->start();
+    platform::remote::set_view_state(ViewState::Waiting);
+    resume_timer();
+}
+
+void RemoteController::switch_off() {
+    if (!server_) {
+        return;
+    }
+    server_->request_stop();
+    if (retiring_) {
+        retiring_->join();
+    }
+    retiring_ = std::move(server_);
+    hand_off_ = nullptr;
+    if (panel_) {
+        panel_->hide();
+    }
+    message_shown_ = false;
+    platform::remote::set_view_state(ViewState::Off);
+    LOG_INFO("remote view: off ({})", stop_text(StopReason::Asked));
+    // The timer ends the retiring server's thread once it is done.
+    resume_timer();
+}
+
+void RemoteController::resume_timer() {
+    if (timer_) {
+        lv_timer_resume(timer_);
+    }
+}
+
+void RemoteController::timer_cb(lv_timer_t* timer) {
+    auto* controller = static_cast<RemoteController*>(lv_timer_get_user_data(timer));
+    if (controller) {
+        controller->poll();
+    }
+}
+
+void RemoteController::poll() {
+    if (retiring_ && retiring_->finished()) {
+        retiring_->join();
+        retiring_.reset();
+    }
+
+    if (server_) {
+        const ServerStatus status = server_->status();
+        if (status.wrong_codes > wrong_codes_seen_) {
+            wrong_codes_seen_ = status.wrong_codes;
+            LOG_INFO("remote view: wrong code ({} of {})",
+                     wrong_codes_seen_,
+                     platform::remote::Pairing::kMaxWrongCodes);
+        }
+        switch (status.phase) {
+            case ServerPhase::Starting:
+                break;
+            case ServerPhase::Listening: {
+                if (!listening_seen_) {
+                    listening_seen_ = true;
+                    LOG_INFO("remote view: on, port {}", platform::remote::kPort);
+#if USE_DESKTOP
+                    if (print_code_) {
+                        print_code_ = false;
+                        std::fprintf(stderr, "remote view: code %s at %s\n", status.code.c_str(), status.url.c_str());
+                        std::fflush(stderr);
+                    }
+#endif
+                }
+                const int64_t left_ms = status.code_deadline_ms - Server::now_ms();
+                if (panel_) {
+                    panel_->show_code(status.url, status.code, static_cast<int32_t>((left_ms + 999) / 1000));
+                }
+                platform::remote::set_view_state(ViewState::Waiting);
+                break;
+            }
+            case ServerPhase::Paired:
+                if (!paired_seen_) {
+                    paired_seen_ = true;
+                    LOG_INFO("remote view: paired");
+                }
+                if (panel_) {
+                    panel_->hide();
+                }
+                platform::remote::set_view_state(ViewState::Viewed);
+                break;
+            case ServerPhase::Stopped: {
+                server_->join();
+                const char* message = listening_seen_ ? nullptr : start_failure_message(status.reason);
+                if (message && panel_) {
+                    LOG_WARN("remote view: could not start ({})", stop_text(status.reason));
+                    panel_->show_message(message);
+                    message_shown_ = true;
+                    message_started_ = lv_tick_get();
+                } else {
+                    LOG_INFO("remote view: off ({})", stop_text(status.reason));
+                    if (panel_) {
+                        panel_->hide();
+                    }
+                }
+                hand_off_ = nullptr;
+                server_.reset();
+                platform::remote::set_view_state(ViewState::Off);
+                break;
+            }
+        }
+        if (server_ && hand_off_) {
+            hand_off_frame();
+        }
+    }
+
+    if (message_shown_ && lv_tick_elaps(message_started_) >= kMessageMs) {
+        message_shown_ = false;
+        if (panel_) {
+            panel_->hide();
+        }
+    }
+
+    if (!server_ && !retiring_ && !message_shown_ && timer_) {
+        lv_timer_pause(timer_);
+    }
+}
+
+void RemoteController::hand_off_frame() {
+#if USE_DESKTOP
+    if (!hand_off_ || !hand_off_->wanted()) {
+        return;
+    }
+    lv_obj_t* screen = lv_screen_active();
+    if (!screen) {
+        return;
+    }
+    lv_draw_buf_t* snapshot = lv_snapshot_take(screen, LV_COLOR_FORMAT_ARGB8888);
+    if (!snapshot) {
+        return;
+    }
+    // ARGB8888 is stored as B, G, R, A: as a 32-bit word, red sits at bit
+    // 16, green at bit 8 and blue at bit 0.
+    platform::remote::PixelLayout layout;
+    layout.width = static_cast<int32_t>(snapshot->header.w);
+    layout.height = static_cast<int32_t>(snapshot->header.h);
+    layout.stride = static_cast<int32_t>(snapshot->header.stride);
+    layout.bits_per_pixel = 32;
+    layout.red = {16, 8};
+    layout.green = {8, 8};
+    layout.blue = {0, 8};
+    hand_off_->deliver(static_cast<const uint8_t*>(snapshot->data), layout);
+    lv_draw_buf_destroy(snapshot);
+#endif
+}
+
+} // namespace app
