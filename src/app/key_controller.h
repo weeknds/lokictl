@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include "base_model.h"
+
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -20,6 +22,7 @@ class ThemeEngine;
 }
 
 namespace view::widgets {
+class CommandBar;
 class HelpPopup;
 class Toast;
 } // namespace view::widgets
@@ -41,17 +44,24 @@ class ScreenManager;
 //     shown gives (screen::BaseScreen::help()).
 //  3. While the help panel is open, ESC closes it and every other key is
 //     swallowed.
-//  4. ESC: on the first page (nothing below it, and not typing) it shows
+//  4. While the command bar is open, it takes every key: printable
+//     characters type (keys 4-8 are digits, F/X/Z/C letters), Backspace
+//     deletes, Enter runs the line (see command_bar.h), ESC closes the bar
+//     at once, and a TAB let go before 700 ms completes the command.
+//  5. ESC: on the first page (nothing below it, and not typing) it shows
 //     "Hold ESC to exit" while held and quits after 700 ms. Otherwise a
 //     short ESC (let go before 700 ms) first goes to the page, which may use
 //     it to end typing, and then goes back one page. A long ESC on a deeper
 //     page does nothing: holding ESC belongs to the launcher.
-//  5. Keys 4-8 press the soft keys (not while typing).
-//  6. F/X/Z/C become up/down/left/right (not while typing).
-//  7. The page gets the key (screen::BaseScreen::on_key()).
+//  6. TAB does nothing outside the command bar (a long TAB is reserved).
+//  7. `:` opens the command bar (not while typing).
+//  8. Keys 4-8 press the soft keys (not while typing).
+//  9. F/X/Z/C become up/down/left/right (not while typing).
+// 10. The page gets the key (screen::BaseScreen::on_key()).
 //
 // The platform also reports every key once more when it is still held after
-// 700 ms. Only a held ESC that started step 4 acts on that call; for every
+// 700 ms. Only a held ESC that started step 5 acts on that call; a TAB in the
+// command bar only notes it, so it completes nothing when let go. For every
 // other key it does nothing, so a held soft key or arrow acts exactly once.
 //
 // Everything here runs inside LVGL input callbacks (or, in snapshot runs,
@@ -97,8 +107,15 @@ private:
 
     void take_screenshot();
     void toggle_help();
-    // Follows ESC from its press to its release. `armed`: holding it quits
-    // the app.
+    // The command bar (step 4).
+    void open_command_bar();
+    void close_command_bar();
+    void handle_command_key(uint32_t key);
+    void complete_command_line();
+    void run_command_line();
+    void open_command_page(model::AppPage page);
+    // Follows ESC (or TAB in the command bar) from its press to its release.
+    // `armed`: holding it quits the app.
     void track(uint32_t key, bool armed);
     // Forgets the followed key and hides the exit hint if it was showing.
     void stop_tracking();
@@ -110,11 +127,14 @@ private:
     static void key_release_listener(uint32_t key, const char* key_name, void* user_data);
 
     viewmodel::BaseViewModel& view_model_;
+    view::ThemeEngine& theme_engine_;
     ScreenManager& screen_manager_;
     std::unique_ptr<view::widgets::Toast> toast_;
     std::unique_ptr<view::widgets::HelpPopup> help_popup_;
+    std::unique_ptr<view::widgets::CommandBar> command_bar_;
+    std::string command_line_; // what is typed in the command bar
     std::function<bool()> wake_handler_;
-    uint32_t tracked_key_{0};      // ESC while held; 0 for none
+    uint32_t tracked_key_{0};      // ESC, or TAB in the command bar, while held; 0 for none
     bool exit_armed_{false};       // holding the tracked key quits the app
     bool tracked_held_long_{false};
 };

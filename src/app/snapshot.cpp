@@ -60,6 +60,9 @@ constexpr NamedKey kNamedKeys[] = {
     {"enter", LV_KEY_ENTER},
     {"space", ' '},
     {"dot", '.'},
+    // ":" can't be a name: it starts the :long suffix.
+    {"colon", ':'},
+    {"tab", LV_KEY_NEXT},
     {"backspace", LV_KEY_BACKSPACE},
     {"up", LV_KEY_UP},
     {"down", LV_KEY_DOWN},

@@ -43,6 +43,7 @@ enum class AppPage {
     DevHelp,
     DevToast,
     DevSoftKeys,
+    DevCommand,
 };
 
 // The longest path of pages the app keeps: the first page plus seven opened

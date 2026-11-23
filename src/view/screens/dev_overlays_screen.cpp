@@ -60,15 +60,23 @@ DevOverlaysScreen::~DevOverlaysScreen() {
     for (auto& toast : toasts_) {
         toast.reset();
     }
+    for (auto& bar : command_bars_) {
+        bar.reset();
+    }
 }
 
 bool DevOverlaysScreen::handles(model::AppPage page) {
-    return page == model::AppPage::DevHelp || page == model::AppPage::DevToast;
+    return page == model::AppPage::DevHelp || page == model::AppPage::DevToast ||
+           page == model::AppPage::DevCommand;
 }
 
 void DevOverlaysScreen::build_content(lv_obj_t* content) {
     if (page_ == model::AppPage::DevToast) {
         build_toasts(content);
+        return;
+    }
+    if (page_ == model::AppPage::DevCommand) {
+        build_command_bars(content);
         return;
     }
     build_help(content);
@@ -93,6 +101,28 @@ void DevOverlaysScreen::build_toasts(lv_obj_t* content) {
         toast->show_persistent_highlighted(sample.prefix, highlighted, sample.suffix, sample.tone);
         toasts_[index] = std::move(toast);
     }
+}
+
+void DevOverlaysScreen::build_command_bars(lv_obj_t* content) {
+    // The first bar sits at the bottom of the upper half, the second at the
+    // bottom of the screen, where the app shows it.
+    auto* upper = lv_obj_create(content);
+    lv_obj_remove_style_all(upper);
+    lv_obj_clear_flag(upper, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(upper, view::kScreenWidth, view::kScreenHeight / 2);
+
+    auto empty = std::make_unique<view::widgets::CommandBar>(upper, theme_engine());
+    empty->build();
+    empty->show();
+    empty->set_message("Unknown command: xyz", view::widgets::CommandBarTone::Error);
+    command_bars_[0] = std::move(empty);
+
+    auto choices = std::make_unique<view::widgets::CommandBar>(content, theme_engine());
+    choices->build();
+    choices->show();
+    choices->set_line("t");
+    choices->set_message("theme  tools", view::widgets::CommandBarTone::Choices);
+    command_bars_[1] = std::move(choices);
 }
 
 } // namespace screen

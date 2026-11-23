@@ -132,14 +132,23 @@ void key_event_cb(lv_event_t* event) {
 }
 
 #if !USE_DESKTOP
-// Letters come through in lowercase: shift and sym are not handled yet, but
-// the keyboard reports the dot as a key of its own (KEY_DOT). The
-// keyboard driver resolves fn itself, so fn+F/X/Z/C arrive as the arrow keys,
-// fn+J as SysRq and fn+H as Help. Keys not listed here are ignored.
+// Letters come through in lowercase: shift is not handled yet. The keyboard
+// driver resolves fn and sym itself: fn+F/X/Z/C arrive as the arrow keys,
+// fn+J as SysRq and fn+H as Help, and each sym symbol as a code of its own,
+// which M5's console keymap (tca8418_keypad_m5stack_keymap.map) names. Those
+// codes keep the kernel's names, which don't match the symbols: sym+S, the
+// colon, is code 80 (KEY_KP2), and KEY_DOT is what sym+8 (the asterisk)
+// sends, while the dot itself (sym+B) is code 91, not mapped yet. TAB arrives
+// as LV_KEY_NEXT, the same as in the simulator. Keys not listed here are
+// ignored.
 uint32_t map_evdev_key(uint16_t code) {
     switch (code) {
         case KEY_ESC:
             return LV_KEY_ESC;
+        case KEY_TAB:
+            return LV_KEY_NEXT;
+        case KEY_KP2: // sym+S
+            return ':';
         case KEY_UP:
             return LV_KEY_UP;
         case KEY_DOWN:
@@ -435,6 +444,8 @@ const char* describe_key(uint32_t key) {
             return "Left";
         case LV_KEY_RIGHT:
             return "Right";
+        case LV_KEY_NEXT:
+            return "Tab";
         case kKeyPrintScreen:
             return "PrintScreen";
         case kKeyHelp:

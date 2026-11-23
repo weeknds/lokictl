@@ -315,7 +315,8 @@ drawn this way and cannot be opened from the app itself:
 - `dev-fonts` and the `dev-fonts-<family>` pages show the raw fonts;
 - `dev-theme` shows a theme's colours, font roles, a card, a list and a pane;
 - `dev-help` and `dev-toast` show the help panel and the pop-up messages;
-- `dev-softkeys` shows the soft-key bar in every state.
+- `dev-softkeys` shows the soft-key bar in every state;
+- `dev-command` shows the command bar (`:`) with an error and with choices.
 
 ## Build the device package
 

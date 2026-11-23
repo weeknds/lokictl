@@ -517,6 +517,7 @@ pages exist for checking themes; they can only be drawn this way:
 | `dev-help` | the keyboard help panel of the home page |
 | `dev-toast` | three messages: success, warning and a normal one |
 | `dev-softkeys` | the soft-key bar: a page's own bar with a main key, a switched-off key and an empty one, a bar of five 5-letter words, and a bar changed with `set_key()` after it was built (see [Soft keys](#soft-keys)) |
+| `dev-command` | two command bars: an empty one under an error message, and one with `t` typed under the choices TAB found |
 
 From the repository root, after building the simulator:
 

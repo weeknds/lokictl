@@ -7,11 +7,16 @@
 #include "key_controller.h"
 
 #include "base_viewmodel.h"
+#include "command_bar.h"
+#include "command_bar_widget.h"
 #include "help_popup.h"
 #include "linux_input.h"
 #include "logger.h"
+#include "page_registry.h"
 #include "screen_manager.h"
 #include "screenshot_service.h"
+#include "theme.h"
+#include "theme_engine.h"
 #include "toast.h"
 
 #include "lvgl.h"
@@ -37,10 +42,13 @@ KeyController::KeyController(viewmodel::BaseViewModel& view_model,
                              view::ThemeEngine& theme_engine,
                              ScreenManager& screen_manager)
     : view_model_(view_model),
+      theme_engine_(theme_engine),
       screen_manager_(screen_manager),
       toast_(std::make_unique<view::widgets::Toast>(lv_layer_top(), theme_engine)),
-      help_popup_(std::make_unique<view::widgets::HelpPopup>(lv_layer_top(), theme_engine)) {
+      help_popup_(std::make_unique<view::widgets::HelpPopup>(lv_layer_top(), theme_engine)),
+      command_bar_(std::make_unique<view::widgets::CommandBar>(lv_layer_top(), theme_engine)) {
     toast_->build();
+    command_bar_->build();
     help_popup_->build();
     platform::set_global_key_listener(global_key_listener, this);
     platform::set_key_release_listener(key_release_listener, this);
@@ -112,11 +120,17 @@ void KeyController::handle_press(uint32_t key) {
         return;
     }
 
+    // 4. The command bar takes every key while it is open.
+    if (command_bar_->visible()) {
+        handle_command_key(key);
+        return;
+    }
+
     // Asked at every key rather than remembered, because a theme switch
     // builds the page again and the page knows best whether it is typing.
     const bool typing = screen_manager_.text_entry_active();
 
-    // 4. ESC acts when it is let go (or held long enough to quit), so a long
+    // 5. ESC acts when it is let go (or held long enough to quit), so a long
     // press can never also count as a short one. Whether it may quit is
     // decided now: the first page is the one with nothing below it, whatever
     // page that is.
@@ -125,14 +139,25 @@ void KeyController::handle_press(uint32_t key) {
         return;
     }
 
-    // 5. Keys 4-8 belong to the soft keys; an unused or switched-off key
+    // 6. TAB only means something in the command bar.
+    if (key == LV_KEY_NEXT) {
+        return;
+    }
+
+    // 7. The command bar opens on any page that isn't typing.
+    if (!typing && key == ':') {
+        open_command_bar();
+        return;
+    }
+
+    // 8. Keys 4-8 belong to the soft keys; an unused or switched-off key
     // does nothing, and the page never sees the digit.
     if (!typing && is_soft_key(key)) {
         platform::press_soft_key(static_cast<std::size_t>(key - '4'));
         return;
     }
 
-    // 6. and 7. F/X/Z/C as arrows, then the page.
+    // 9. and 10. F/X/Z/C as arrows, then the page.
     if (!typing) {
         key = platform::arrow_for_letter(key);
     }
@@ -153,6 +178,16 @@ void KeyController::handle_long_press(uint32_t key) {
 
 void KeyController::handle_release(uint32_t key) {
     if (tracked_key_ == 0 || key != tracked_key_) {
+        return;
+    }
+
+    // TAB in the command bar completes only when it was let go in time.
+    if (key == LV_KEY_NEXT) {
+        const bool complete = !tracked_held_long_ && command_bar_->visible();
+        stop_tracking();
+        if (complete) {
+            complete_command_line();
+        }
         return;
     }
 
@@ -189,6 +224,126 @@ void KeyController::toggle_help() {
     }
     else {
         help_popup_->show(screen_manager_.help());
+    }
+}
+
+void KeyController::open_command_bar() {
+    toast_->hide();
+    command_line_.clear();
+    command_bar_->show();
+}
+
+void KeyController::close_command_bar() {
+    command_line_.clear();
+    command_bar_->hide();
+}
+
+void KeyController::handle_command_key(uint32_t key) {
+    switch (key) {
+        case LV_KEY_ESC:
+            // Not followed, so holding it neither quits nor shows the hint.
+            close_command_bar();
+            return;
+        case LV_KEY_NEXT:
+            track(key, false);
+            return;
+        case LV_KEY_ENTER:
+            run_command_line();
+            return;
+        case LV_KEY_BACKSPACE:
+            if (!command_line_.empty()) {
+                command_line_.pop_back();
+            }
+            break;
+        default:
+            if (!is_command_character(key) || command_line_.size() >= kCommandMaxLength) {
+                return;
+            }
+            command_line_ += static_cast<char>(key);
+            break;
+    }
+    command_bar_->set_line(command_line_);
+    command_bar_->set_message("", view::widgets::CommandBarTone::Choices);
+}
+
+void KeyController::complete_command_line() {
+    const CommandCompletion completion = complete_command(command_line_);
+    command_line_ = completion.line.substr(0, kCommandMaxLength);
+    command_bar_->set_line(command_line_);
+
+    std::string choices;
+    for (const auto& choice : completion.choices) {
+        if (!choices.empty()) {
+            choices += "  ";
+        }
+        choices += choice;
+    }
+    command_bar_->set_message(choices, view::widgets::CommandBarTone::Choices);
+}
+
+void KeyController::run_command_line() {
+    const CommandResult result = parse_command(command_line_);
+    if (result.action == CommandAction::Error) {
+        command_bar_->set_message(result.message, view::widgets::CommandBarTone::Error);
+        return;
+    }
+
+    close_command_bar();
+    switch (result.action) {
+        case CommandAction::Help:
+            LOG_INFO("command: help");
+            help_popup_->show(command_help());
+            return;
+        case CommandAction::Theme: {
+            const auto& spec = view::theme_spec(static_cast<view::ThemeId>(result.theme_row));
+            LOG_INFO("command: theme {}", spec.name);
+            if (spec.id == theme_engine_.theme().id) {
+                // Nothing to switch; the usual message says which one it is.
+                toast_->show_highlighted("Theme: ",
+                                         spec.display_name,
+                                         "",
+                                         view::widgets::ToastTone::Default,
+                                         kThemeToastDurationMs);
+                return;
+            }
+            view_model_.request_theme(result.theme_row);
+            return;
+        }
+        case CommandAction::OpenPage:
+            open_command_page(result.page);
+            return;
+        case CommandAction::None:
+        case CommandAction::Error:
+            return;
+    }
+}
+
+void KeyController::open_command_page(model::AppPage page) {
+    LOG_INFO("command: {}", page_name(page));
+    // The same ways in as the pages' own keys, so each page starts the way
+    // it does from there.
+    switch (page) {
+        case model::AppPage::Map:
+            view_model_.open_map();
+            return;
+        case model::AppPage::Tools:
+            view_model_.open_tools();
+            return;
+        case model::AppPage::Discover:
+            view_model_.open_discover();
+            return;
+        case model::AppPage::Wifi:
+            view_model_.open_wifi();
+            return;
+        case model::AppPage::Status:
+            view_model_.open_status();
+            return;
+        case model::AppPage::Settings:
+            view_model_.open_settings();
+            return;
+        default:
+            view_model_.open_page(page);
+            return;
     }
 }
 

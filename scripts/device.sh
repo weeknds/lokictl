@@ -87,8 +87,9 @@ Commands:
                   Press keys, one after another. --long holds each for 1 s,
                   --hold-ms holds for 20 to 2500 ms (default 60). Keys are
                   only sent while LokiCTL runs, unless --launcher.
-                  Names: 0-9, a-z, esc, enter, tab, space, backspace, up,
-                  down, left, right, help, screenshot, and fn+h (help),
+                  Names: 0-9, a-z, esc, enter, tab, space, dot, colon
+                  (sym+s), backspace, up, down, left, right, help,
+                  screenshot, and fn+h (help),
                   fn+j (screenshot), fn+f (up), fn+x (down), fn+z (left),
                   fn+c (right).
   stats [--seconds N]
@@ -107,10 +108,11 @@ Commands:
                   before --switch-to). They are pressed inside that
                   snapshot run, not on the device's keyboard, so LokiCTL
                   need not be running.
-                  Names: 0-9, a-z, esc, enter, space, backspace, up, down,
-                  left, right, help; add :long to hold one for 1 s (for
-                  example esc:long). The name data is not a key: it takes
-                  one further reading at that point. --switch-to switches
+                  Names: 0-9, a-z, esc, enter, space, dot, colon, tab,
+                  backspace, up, down, left, right, help; add :long to
+                  hold one for 1 s (for example esc:long). The name data
+                  is not a key: it takes one further reading at that
+                  point. --switch-to switches
                   live through the listed themes, the way a pick on the
                   Settings page does, before the picture is taken. The
                   "fonts loaded" and "quit requested" lines appear on

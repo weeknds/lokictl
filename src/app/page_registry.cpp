@@ -44,6 +44,7 @@ const std::vector<PageInfo>& page_registry() {
         {"dev-help", model::AppPage::DevHelp},
         {"dev-toast", model::AppPage::DevToast},
         {"dev-softkeys", model::AppPage::DevSoftKeys},
+        {"dev-command", model::AppPage::DevCommand},
     };
     return pages;
 }
