@@ -410,7 +410,9 @@ Reading only reads: every libnm function a reading calls is a getter,
 apart from making and releasing the client. The only calls that change
 anything are the switch between modes (see
 [Switching modes](#switching-modes)), kept in one marked block of
-`src/platform/network_manager_client.cpp`. It has no thread of its own. The client
+`src/platform/network_manager_client.cpp`; the only other request is a
+Wi-Fi scan the user asks for (see [The Wi-Fi list](#the-wi-fi-list)), in
+a block of its own, which changes no setting. It has no thread of its own. The client
 starts without waiting (and without asking polkit which actions the app may
 take) on its own GLib main context; NetworkManager's change messages queue
 up there, and the live source applies them, without waiting, at each of its
@@ -750,6 +752,42 @@ stopped by the user`, `tools: ping done, 9/10 replies`, `tools: ping failed:
 reached in <n> hops`), `tools: trace failed: <why>` (never a target or an
 address), and `tools: runner stopped` when a run was cut short by
 quitting.
+
+## The Wi-Fi list
+
+The Wi-Fi page shows `model::WifiScan`, which the block carries as
+`HomeData::wifi_scan`; the home page ignores it.
+
+- **Only while it is seen.** `app::DataController` tells the reader whether
+  the Wi-Fi page is on top (`DataReader::set_wifi_shown()`). With `live`
+  the list is read at every reading while it is, and is empty otherwise.
+  The made-up sources always fill it (`platform::PretendWifiScan`, with the
+  invented networks of `model::example_wifi_networks()`).
+- **Where it comes from.** The reader's one libnm client
+  (`NetworkManagerClient::read_wifi_scan()`), for `wlan0` only (the USB
+  stick is not managed by NetworkManager): each access point's name (empty
+  for a hidden network), security (as the home page writes it), strength in
+  per cent (libnm gives no dBm) and channel; joined = the device's active
+  access point. Strongest first, at most 32 kept, plus the number found.
+  The last-scan time is the device's own, shown as a clock time, so nothing
+  ticks between scans. No list without NetworkManager, without a managed
+  `wlan0`, with the radio off, or while LokiCTL's hotspot runs.
+- **Scans.** Only the page's key 6 asks for one
+  (`BaseViewModel::request_wifi_scan()`, then `DataReader::
+  request_wifi_scan()` and `DataSource::request_wifi_scan()`), never
+  opening the page. `NetworkManagerClient::request_wifi_scan()` sends it
+  from its own marked block: a scan changes no setting, has its own
+  in-flight flag (it is not `busy()`, so it never holds up a switch, the
+  firewall helper or client names), is ignored while a switch runs and is
+  cancelled on quit. It ends when the device's last-scan time changes, or
+  after 15 s; the reader reads every 250 ms meanwhile. A permission refusal
+  shows `Scan not allowed: permission missing`, any other refusal `Scan
+  refused: <reason>` with the list kept. NetworkManager sends the scan, so
+  `Sent` does not count it. The permission (`wifi.scan`) comes from M5's
+  own rule for the `netdev` group.
+- **Log lines:** `data: wi-fi scan asked`, then `data: wi-fi scan done
+  (<n> networks)` or `data: wi-fi scan: <why not>`; never a network name.
+  `--print-data` has no Wi-Fi lines.
 
 ## The Status page's details
 

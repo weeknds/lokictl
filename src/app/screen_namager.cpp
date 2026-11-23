@@ -22,6 +22,7 @@
 #include "status_screen.h"
 #include "tool_screen.h"
 #include "tools_screen.h"
+#include "wifi_screen.h"
 
 namespace app {
 namespace {
@@ -138,6 +139,14 @@ bool ScreenManager::show_tools_screen() {
         return false;
     }
     page_loaded(model::AppPage::Tools);
+    return true;
+}
+
+bool ScreenManager::show_wifi_screen() {
+    if (!load_screen(std::make_unique<screen::WifiScreen>(view_model_, assets_, theme_engine_))) {
+        return false;
+    }
+    page_loaded(model::AppPage::Wifi);
     return true;
 }
 
@@ -265,6 +274,10 @@ bool ScreenManager::show_page(model::AppPage page) {
 
     if (screen::ToolScreen::handles(page)) {
         return show_tool_screen(page);
+    }
+
+    if (screen::WifiScreen::handles(page)) {
+        return show_wifi_screen();
     }
 
     return show_home_screen();

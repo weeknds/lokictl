@@ -44,6 +44,7 @@ public:
     bool show_hotspot_screen();
     bool show_devices_screen();
     bool show_tools_screen();
+    bool show_wifi_screen();
     bool show_tool_screen(model::AppPage page);
     bool show_dev_fonts_screen(model::AppPage page);
     bool show_dev_theme_screen();

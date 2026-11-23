@@ -71,6 +71,9 @@ DataController::DataController(viewmodel::BaseViewModel& view_model,
     hotspot_observer_ = lv_subject_add_observer(view_model_.hotspot_request_subject(), hotspot_request_cb, this);
     block_requests_seen_ = lv_subject_get_int(view_model_.block_request_subject());
     block_observer_ = lv_subject_add_observer(view_model_.block_request_subject(), block_request_cb, this);
+    wifi_scan_requests_seen_ = lv_subject_get_int(view_model_.wifi_scan_request_subject());
+    wifi_scan_observer_ =
+        lv_subject_add_observer(view_model_.wifi_scan_request_subject(), wifi_scan_request_cb, this);
 }
 
 DataController::~DataController() {
@@ -90,6 +93,10 @@ DataController::~DataController() {
     if (block_observer_) {
         lv_observer_remove(block_observer_);
         block_observer_ = nullptr;
+    }
+    if (wifi_scan_observer_) {
+        lv_observer_remove(wifi_scan_observer_);
+        wifi_scan_observer_ = nullptr;
     }
 }
 
@@ -210,6 +217,65 @@ void DataController::block_request_cb(lv_observer_t* observer, lv_subject_t* sub
     }
     controller->block_requests_seen_ = count;
     controller->change_blocked();
+}
+
+void DataController::wifi_scan_request_cb(lv_observer_t* observer, lv_subject_t* subject) {
+    auto* controller = static_cast<DataController*>(lv_observer_get_user_data(observer));
+    if (!controller) {
+        return;
+    }
+    const int32_t count = lv_subject_get_int(subject);
+    if (count == controller->wifi_scan_requests_seen_) {
+        return;
+    }
+    controller->wifi_scan_requests_seen_ = count;
+    // A scan already under way takes no second one.
+    if (controller->view_model_.home().wifi_scan.scanning) {
+        return;
+    }
+    LOG_INFO("data: wi-fi scan asked");
+    controller->scan_logged_ = true;
+    controller->scan_seen_running_ = false;
+    controller->reader_.request_wifi_scan();
+    if (!controller->reader_.running()) {
+        // Snapshots: the request is taken with a reading right away.
+        controller->reader_.read_now();
+        controller->poll();
+    }
+}
+
+void DataController::log_wifi_scan(const model::WifiScan& scan) {
+    if (!scan_logged_ || view_model_.current_page() != model::AppPage::Wifi) {
+        return;
+    }
+    if (scan.scanning) {
+        scan_seen_running_ = true;
+        return;
+    }
+    const bool no_wifi = scan.error == model::WifiScanError::NoService ||
+                         scan.error == model::WifiScanError::NoDevice ||
+                         scan.error == model::WifiScanError::WifiOff || scan.error == model::WifiScanError::Hotspot;
+    if (!scan_seen_running_ && !no_wifi) {
+        return;  // a block from before the request was taken says nothing yet
+    }
+    switch (scan.error) {
+        case model::WifiScanError::None:
+            LOG_INFO("data: wi-fi scan done ({} networks)", scan.found);
+            break;
+        case model::WifiScanError::NotAllowed:
+            LOG_INFO("data: wi-fi scan: not allowed");
+            break;
+        case model::WifiScanError::TimedOut:
+            LOG_INFO("data: wi-fi scan: no result in time");
+            break;
+        case model::WifiScanError::Refused:
+            LOG_INFO("data: wi-fi scan: refused ({})", scan.reason);
+            break;
+        default:
+            LOG_INFO("data: wi-fi scan: no Wi-Fi to scan");
+            break;
+    }
+    scan_logged_ = false;
 }
 
 void DataController::set_blocked_devices(const std::vector<std::string>& addresses) {
@@ -360,6 +426,7 @@ void DataController::update_shown() {
     const model::AppPage page = view_model_.current_page();
     reader_.set_traffic_shown(!screen_dark_ && page == model::AppPage::Home);
     reader_.set_details_shown(!screen_dark_ && page == model::AppPage::Status);
+    reader_.set_wifi_shown(!screen_dark_ && page == model::AppPage::Wifi);
 }
 
 bool DataController::poll() {
@@ -372,6 +439,7 @@ bool DataController::poll() {
 
 void DataController::deliver(const model::HomeData& data) {
     view_model_.set_home_data(data);
+    log_wifi_scan(data.wifi_scan);
 
     if (data.block_failures != block_failures_seen_) {
         block_failures_seen_ = data.block_failures;

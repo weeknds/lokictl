@@ -87,6 +87,18 @@ public:
     // the same way as the traffic flag.
     void set_details_shown(bool shown);
 
+    // Tells the source whether the Wi-Fi page is on screen (see
+    // DataSource::set_wifi_shown()); it starts as not shown. Handed over
+    // the same way as the traffic flag.
+    void set_wifi_shown(bool shown);
+
+    // Hands a Wi-Fi scan the user asked for to the source (DataSource::
+    // request_wifi_scan()). It never waits: while the background thread
+    // runs, it wakes up, hands the request over and takes a reading at
+    // once. Without the background thread the request reaches the source
+    // with the next read_now().
+    void request_wifi_scan();
+
     // Hands a switch between modes to the source (DataSource::
     // request_mode()). It never waits: while the background thread runs,
     // it wakes up, hands the request over and takes a reading at once, so
@@ -128,18 +140,19 @@ private:
     bool read_source(model::HomeData& data);
     // Stores the block as the newest one, unless it equals the newest one.
     void publish(model::HomeData data);
-    // Gives the source the newest traffic and details flags, and a waiting
-    // switch request or list of devices to block. Called on the thread that
-    // asks the source. Returns true when it handed over a request or a
-    // list.
+    // Gives the source the newest traffic, details and Wi-Fi flags, and a
+    // waiting switch request, list of devices to block or scan request.
+    // Called on the thread that asks the source. Returns true when it
+    // handed over a request or a list.
     bool hand_over_shown();
 
     std::unique_ptr<DataSource> source_;
     const DataSourceKind kind_;
     std::thread thread_;
 
-    // The hand-over slot, the stop flag, the two page flags, the switch
-    // request and the devices to block; the mutex guards all of them.
+    // The hand-over slot, the stop flag, the three page flags, the switch
+    // request, the devices to block and the scan request; the mutex guards
+    // all of them.
     mutable std::mutex mutex_;
     std::condition_variable wake_;
     bool stop_requested_{false};
@@ -148,7 +161,9 @@ private:
     bool fresh_{false};            // latest_ changed since the last take()
     bool traffic_shown_{true};     // see set_traffic_shown()
     bool details_shown_{false};    // see set_details_shown()
+    bool wifi_shown_{false};       // see set_wifi_shown()
     bool shown_changed_{false};    // a flag changed since the source got them
+    bool scan_requested_{false};   // a Wi-Fi scan waits for the source
     bool mode_requested_{false};   // mode_request_ waits for the source
     ModeRequest mode_request_;
     bool blocked_changed_{false};  // blocked_ waits for the source

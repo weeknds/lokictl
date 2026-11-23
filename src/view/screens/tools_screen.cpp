@@ -46,7 +46,7 @@ constexpr ToolInfo kTools[] = {
     {"Ping", "Is a host there? 10 echoes"},
     {"DNS", "The addresses of a name"},
     {"Trace", "The route, hop by hop"},
-    {"Wi-Fi", ""},
+    {"Wi-Fi", "Nearby Wi-Fi networks"},
     {"Ports", ""},
     {"Speed", ""},
 };
@@ -125,13 +125,19 @@ int32_t ToolsScreen::selected_row() const {
     return std::clamp<int32_t>(view_model().tools_selection(), 0, kOpenableRows - 1);
 }
 
-static_assert(static_cast<int32_t>(model::ToolKind::Trace) == ToolsScreen::kOpenableRows - 1 &&
-                  model::kToolKindCount == static_cast<std::size_t>(ToolsScreen::kOpenableRows),
-              "the openable rows are the tools, in the order of model::ToolKind");
+static_assert(static_cast<int32_t>(model::ToolKind::Trace) == ToolsScreen::kWifiRow - 1 &&
+                  model::kToolKindCount == static_cast<std::size_t>(ToolsScreen::kWifiRow) &&
+                  ToolsScreen::kWifiRow == ToolsScreen::kOpenableRows - 1,
+              "the openable rows are the tools, in the order of model::ToolKind, then Wi-Fi");
 
 void ToolsScreen::open_selected() {
-    // The openable rows follow model::ToolKind: Ping, DNS, Trace.
-    view_model().open_tool(static_cast<model::ToolKind>(selected_row()));
+    // The rows before Wi-Fi follow model::ToolKind: Ping, DNS, Trace.
+    const int32_t row = selected_row();
+    if (row == kWifiRow) {
+        view_model().open_wifi();
+        return;
+    }
+    view_model().open_tool(static_cast<model::ToolKind>(row));
 }
 
 bool ToolsScreen::on_key(uint32_t key) {
@@ -214,8 +220,9 @@ void ToolsScreen::refresh() {
         shown_selected_ = selected;
     }
 
+    // Wi-Fi has no tag: its list is only read while its page is open.
     const tools::ToneText tags[kOpenableRows] = {tools::ping_tag(data.ping), tools::dns_tag(data.dns),
-                                                 tools::trace_tag(data.trace)};
+                                                 tools::trace_tag(data.trace), tools::ToneText{}};
     for (int32_t index = 0; index < kOpenableRows; ++index) {
         Cell& cell = cells_[static_cast<std::size_t>(index)];
         const tools::ToneText& tag = tags[index];

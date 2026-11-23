@@ -73,6 +73,20 @@ public:
     // first call it counts as not shown.
     virtual void set_details_shown(bool /*shown*/) {}
 
+    // Whether the Wi-Fi page, the only page that shows HomeData::wifi_scan,
+    // is on screen. Handed over like set_traffic_shown(). A source that
+    // reads the list only while it is shown (the live one) uses it; the
+    // made-up sources always fill it (see PretendWifiScan) and keep this
+    // default. Until the first call it counts as not shown.
+    virtual void set_wifi_shown(bool /*shown*/) {}
+
+    // A fresh Wi-Fi scan the user asked for (the Wi-Fi page's key 6).
+    // Called on the thread that calls read(), right before a reading, which
+    // then shows the scan under way. It never waits. The live source on the
+    // device asks the network service to scan (a scan changes no setting);
+    // the made-up sources pretend; this default ignores it.
+    virtual void request_wifi_scan() {}
+
     // Waits until values that a source collects in the background after it
     // was made (the live source's connection to the network service) are
     // there, at most `limit`. It blocks, so it is only called before the

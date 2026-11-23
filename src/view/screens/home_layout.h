@@ -93,9 +93,10 @@ inline bool same_clients(const std::vector<model::HomeClient>& left,
 // network's name, security and signal, the router view's uptime, the two
 // rates with their histories, the clients' signal, rate and time while the
 // same devices are listed (same_clients()), the Status page's details
-// (HomeData::details), the switch between modes (HomeData::mode_switch)
+// (HomeData::details), the Wi-Fi page's list (HomeData::wifi_scan), the
+// switch between modes (HomeData::mode_switch)
 // and the firewall's failures (HomeData::block_failures and
-// block_message); the home page shows none of the last three, nor which
+// block_message); the home page shows none of the last four, nor which
 // device is blocked (HomeClient::blocked, which same_clients() ignores). Every other difference (the kind of link, the access point,
 // the mode, another list of clients, the sample mark, the internet state, the offline
 // state and any field added later) means the page is built again. The
@@ -126,6 +127,7 @@ inline bool home_values_only(const model::HomeData& shown, const model::HomeData
     // The Status page's values: the home page shows none of them, so they
     // never build it again (update() then finds nothing to retext).
     copy.details = next.details;
+    copy.wifi_scan = next.wifi_scan;
     copy.mode_switch = next.mode_switch;
     copy.block_failures = next.block_failures;
     copy.block_message = next.block_message;

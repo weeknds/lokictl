@@ -9,9 +9,11 @@
 // file, which is never available and changes nothing.
 //
 // Reading uses only getters, apart from creating and releasing the client
-// and the GLib calls that run its main context: read() never activates,
-// changes or deletes a connection, switches a radio, asks for a scan or
-// asks for an internet check.
+// and the GLib calls that run its main context: read() and
+// read_wifi_scan() never activate, change or delete a connection, switch a
+// radio, ask for a scan or ask for an internet check. Only
+// request_wifi_scan(), in the block marked "Wi-Fi scan", asks for a scan,
+// which changes no setting.
 //
 // Every call that changes the network is in the block marked "Actions"
 // below: adding, updating (in memory) and activating the in-memory hotspot
@@ -33,6 +35,7 @@
 #include <cstring>
 #include <ctime>
 #include <string>
+#include <time.h>
 #include <utility>
 #include <vector>
 
@@ -304,6 +307,17 @@ struct NetworkManagerClient::Impl {
     std::string restore_interface;
     bool closing{false};                 // no new requests: the client is going away
 
+    // The Wi-Fi scan the user asked for (see the Wi-Fi scan block).
+    bool scan_pending{false};            // the request is not answered yet
+    bool scan_waiting{false};            // accepted: waits for the device's last-scan time to change
+    gint64 scan_last_before{0};          // the device's last-scan time when it was asked
+    Clock::time_point scan_started{};
+    std::string scan_interface;
+    model::WifiScanError scan_error{model::WifiScanError::None};
+    std::string scan_reason;
+    void check_scan();
+    static void on_scan_requested(GObject* source, GAsyncResult* result, gpointer user_data);
+
     // Actions; see the block below.
     void fail(model::SwitchError error, std::string reason);
     void release_activation();
@@ -384,9 +398,9 @@ NetworkManagerClient::~NetworkManagerClient() {
     // Requests still waiting for an answer are given up; their callbacks
     // run with "cancelled" and only count down.
     self.closing = true;
-    if (self.pending > 0) {
+    if (self.pending > 0 || self.scan_pending) {
         g_cancellable_cancel(self.action_cancellable);
-        self.handle_until([&self] { return self.pending == 0; }, kReleaseLimit);
+        self.handle_until([&self] { return self.pending == 0 && !self.scan_pending; }, kReleaseLimit);
     }
     self.release_activation();
     if (self.starting) {
@@ -407,7 +421,7 @@ NetworkManagerClient::~NetworkManagerClient() {
             g_object_remove_weak_pointer(G_OBJECT(watcher), &watcher);
         }
     }
-    if (self.starting || self.pending > 0) {
+    if (self.starting || self.pending > 0 || self.scan_pending) {
         // The start or a request did not end in time, so its callback still
         // points at `self`. Nothing runs the context again, but `self` and
         // the context are kept all the same: a small, one-time leak on the
@@ -425,6 +439,7 @@ void NetworkManagerClient::read(NetworkManagerReading& reading) {
     Impl& self = *impl_;
     self.handle_queued(kMaxEventsPerRead);
     self.check_progress();
+    self.check_scan();
     reading.mode_switch = self.status;
     NMClient* client = self.client;
     if (client == nullptr || !nm_client_get_nm_running(client)) {
@@ -1018,6 +1033,157 @@ void NetworkManagerClient::leave(std::chrono::milliseconds limit) {
     self.handle_until([&self] { return self.pending == 0; }, left());
 }
 
+// ---------------------------------------------------------------------------
+// Wi-Fi scan: asks the service to scan, which changes no setting, and reads
+// the access points it lists. The request runs with the client's context as
+// the thread's default, like the actions, so its answer is handled by a
+// later read() or read_wifi_scan().
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// The managed Wi-Fi device `interface_name`, or nullptr.
+NMDeviceWifi* managed_wifi(NMClient* client, const std::string& interface_name) {
+    NMDevice* device = client != nullptr ? nm_client_get_device_by_iface(client, interface_name.c_str()) : nullptr;
+    if (device == nullptr || !NM_IS_DEVICE_WIFI(device) || !nm_device_get_managed(device)) {
+        return nullptr;
+    }
+    return NM_DEVICE_WIFI(device);
+}
+
+// The local time of day, in minutes since midnight, of `boottime_ms`, a
+// time on the clock the service gives scan times in (CLOCK_BOOTTIME);
+// kClockUnknown when it cannot be told.
+int32_t clock_minutes_of(gint64 boottime_ms) {
+    const gint64 now_ms = nm_utils_get_timestamp_msec();
+    if (boottime_ms < 0 || now_ms < boottime_ms) {
+        return model::kClockUnknown;
+    }
+    const std::time_t when = std::time(nullptr) - static_cast<std::time_t>((now_ms - boottime_ms) / 1000);
+    std::tm local_time{};
+    if (when < 0 || localtime_r(&when, &local_time) == nullptr) {
+        return model::kClockUnknown;
+    }
+    return local_time.tm_hour * 60 + local_time.tm_min;
+}
+
+} // namespace
+
+void NetworkManagerClient::request_wifi_scan(const std::string& interface_name) {
+    Impl& self = *impl_;
+    if (self.closing || self.scan_pending || self.scan_waiting || busy()) {
+        return;
+    }
+    NMClient* client = self.client;
+    if (client == nullptr || !nm_client_get_nm_running(client) || self.hotspot_active()) {
+        return;
+    }
+    NMDeviceWifi* wifi = managed_wifi(client, interface_name);
+    if (wifi == nullptr) {
+        return;
+    }
+    self.scan_error = model::WifiScanError::None;
+    self.scan_reason.clear();
+    self.scan_last_before = nm_device_wifi_get_last_scan(wifi);
+    self.scan_started = Clock::now();
+    self.scan_interface = interface_name;
+    self.scan_pending = true;
+    g_main_context_push_thread_default(self.context);
+    nm_device_wifi_request_scan_async(wifi, self.action_cancellable, &Impl::on_scan_requested, &self);
+    g_main_context_pop_thread_default(self.context);
+}
+
+void NetworkManagerClient::Impl::on_scan_requested(GObject* source, GAsyncResult* result, gpointer user_data) {
+    auto* self = static_cast<Impl*>(user_data);
+    GError* error = nullptr;
+    const gboolean accepted = nm_device_wifi_request_scan_finish(NM_DEVICE_WIFI(source), result, &error);
+    self->scan_pending = false;
+    if (error != nullptr && g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
+        g_clear_error(&error);
+        return;
+    }
+    if (accepted) {
+        // The scan runs now; check_scan() sees it end.
+        self->scan_waiting = true;
+    } else if (permission_denied(error)) {
+        self->scan_error = model::WifiScanError::NotAllowed;
+    } else {
+        // For example a scan right after another one: the list stays.
+        self->scan_error = model::WifiScanError::Refused;
+        self->scan_reason = reason_of(error);
+    }
+    g_clear_error(&error);
+}
+
+// Ends a scan once the device's last-scan time has changed, or once it has
+// run longer than kScanLimit.
+void NetworkManagerClient::Impl::check_scan() {
+    if (!scan_waiting) {
+        return;
+    }
+    NMDeviceWifi* wifi = managed_wifi(client, scan_interface);
+    if (wifi != nullptr && nm_device_wifi_get_last_scan(wifi) != scan_last_before) {
+        scan_waiting = false;
+    } else if (Clock::now() - scan_started >= NetworkManagerClient::kScanLimit) {
+        scan_waiting = false;
+        scan_error = model::WifiScanError::TimedOut;
+    }
+}
+
+bool NetworkManagerClient::scanning() const {
+    return impl_->scan_pending || impl_->scan_waiting;
+}
+
+void NetworkManagerClient::read_wifi_scan(const std::string& interface_name, model::WifiScan& scan) {
+    scan = model::WifiScan{};
+    Impl& self = *impl_;
+    self.handle_queued(kMaxEventsPerRead);
+    self.check_scan();
+    NMClient* client = self.client;
+    if (client == nullptr || !nm_client_get_nm_running(client)) {
+        scan.error = model::WifiScanError::NoService;
+        return;
+    }
+    if (self.hotspot_active()) {
+        scan.error = model::WifiScanError::Hotspot;
+        return;
+    }
+    NMDeviceWifi* wifi = managed_wifi(client, interface_name);
+    if (wifi == nullptr) {
+        scan.error = model::WifiScanError::NoDevice;
+        return;
+    }
+    if (!nm_client_wireless_get_enabled(client) || !nm_client_wireless_hardware_get_enabled(client)) {
+        scan.error = model::WifiScanError::WifiOff;
+        return;
+    }
+    scan.scanning = scanning();
+    scan.error = self.scan_error;
+    scan.reason = self.scan_reason;
+    scan.last_scan_minutes = clock_minutes_of(nm_device_wifi_get_last_scan(wifi));
+
+    // The access point it is joined to, as a client.
+    NMAccessPoint* joined = nullptr;
+    if (nm_device_get_state(NM_DEVICE(wifi)) == NM_DEVICE_STATE_ACTIVATED &&
+        nm_device_wifi_get_mode(wifi) == NM_802_11_MODE_INFRA) {
+        joined = nm_device_wifi_get_active_access_point(wifi);
+    }
+    const GPtrArray* access_points = nm_device_wifi_get_access_points(wifi);
+    for (guint index = 0; access_points != nullptr && index < access_points->len; ++index) {
+        auto* access_point = static_cast<NMAccessPoint*>(g_ptr_array_index(access_points, index));
+        model::WifiNetwork network;
+        network.name = network_name(access_point);
+        network.security = security_text(access_point);
+        network.strength = std::min<int32_t>(nm_access_point_get_strength(access_point), 100);
+        const guint32 channel = nm_utils_wifi_freq_to_channel(nm_access_point_get_frequency(access_point));
+        network.channel = channel > 0 && channel < 200 ? static_cast<int32_t>(channel) : 0;
+        network.joined = joined != nullptr && access_point == joined;
+        scan.networks.push_back(std::move(network));
+    }
+    scan.found = static_cast<int32_t>(scan.networks.size());
+    model::sort_wifi_networks(scan.networks);
+}
+
 #else // !APP_USE_LIBNM
 
 // The stand-in for builds without libnm: never available, never starting.
@@ -1058,6 +1224,17 @@ bool NetworkManagerClient::busy() const {
 }
 
 void NetworkManagerClient::leave(std::chrono::milliseconds /*limit*/) {}
+
+void NetworkManagerClient::request_wifi_scan(const std::string& /*interface_name*/) {}
+
+bool NetworkManagerClient::scanning() const {
+    return false;
+}
+
+void NetworkManagerClient::read_wifi_scan(const std::string& /*interface_name*/, model::WifiScan& scan) {
+    scan = model::WifiScan{};
+    scan.error = model::WifiScanError::NoService;
+}
 
 #endif // APP_USE_LIBNM
 

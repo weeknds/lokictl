@@ -255,6 +255,23 @@ public:
     // Stores `row`; nothing is written when it stays the same.
     void set_trace_scroll(int32_t row);
 
+    // The Wi-Fi page.
+    // Sets the first row shown back to 0, then opens the page (see
+    // open_page()). The Tools page's Wi-Fi row uses it.
+    bool open_wifi();
+    // The first network row it shows; starts at 0. The page clamps it to
+    // the networks there are.
+    lv_subject_t* wifi_scroll_subject();
+    int32_t wifi_scroll() const;
+    // Stores `row` (0 or more); nothing is written when it stays the same.
+    void set_wifi_scroll(int32_t row);
+    // Asks for a fresh Wi-Fi scan. The view model only passes the request
+    // on: app::DataController hands it to the data layer, and the list
+    // comes back in home().wifi_scan. Counts every request, like
+    // request_mode().
+    void request_wifi_scan();
+    lv_subject_t* wifi_scan_request_subject();
+
     // The home page.
     // The values it shows (see model::HomeData). The page reads them while
     // it is built, and they change while it is open: the data layer hands
@@ -345,6 +362,8 @@ private:
     model::ToolsData tools_;
     reactive::IntSubject tools_subject_;
     reactive::IntSubject trace_scroll_subject_;
+    reactive::IntSubject wifi_scroll_subject_;
+    reactive::IntSubject wifi_scan_request_subject_;
     reactive::IntSubject home_selection_subject_;
     reactive::IntSubject home_data_subject_;
     reactive::IntSubject key_test_selection_subject_;

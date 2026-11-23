@@ -191,7 +191,7 @@ Options:
   long; it finishes in a fraction of a second.
 - `--help`: shows a short summary of all options.
 
-The app has 18 pages. `--list-pages` prints them in this order:
+The app has 23 pages. `--list-pages` prints them in this order:
 
 - `home`, the home page, where the app starts (see
   [docs/home.md](docs/home.md));
@@ -203,9 +203,10 @@ The app has 18 pages. `--list-pages` prints them in this order:
 - `modes`, `hotspot` and `devices`: the Modes page (home key 4), the
   Hotspot page with the join code (key 7 there) and the Devices page (home
   `enter`);
-- `tools`, `ping`, `dns` and `trace`: the Tools page (home key 7) and its
-  Ping, DNS lookup and Trace pages (see
-  [docs/navigation.md](docs/navigation.md#the-ping-dns-and-trace-pages));
+- `tools`, `ping`, `dns`, `trace` and `wifi`: the Tools page (home key 7)
+  and its Ping, DNS lookup, Trace and Wi-Fi pages (see
+  [docs/navigation.md](docs/navigation.md#the-ping-dns-and-trace-pages)
+  and [the Wi-Fi page](docs/navigation.md#the-wi-fi-page));
 - `demo-counter` and `demo-keys`, two demo pages kept for navigation and
   key tests: a counter and a key test page. Nothing in the app opens them
   any more, so they are drawn by name only, with `--page`; the counter
@@ -543,8 +544,9 @@ but sample network data for now (see [docs/home.md](docs/home.md)):
   jumps between its parts with `z`/`c` or `5`/`6`;
 - `4` MODES opens the Modes page (below);
 - `enter` opens the Devices page (below), on the selected client;
-- `7` TOOLS opens the Tools page: Ping, DNS lookup and Trace (the route to
-  a host, hop by hop), with a count of every packet LokiCTL sent;
+- `7` TOOLS opens the Tools page: Ping, DNS lookup, Trace (the route to
+  a host, hop by hop) and Wi-Fi (the networks nearby), with a count of
+  every packet LokiCTL sent;
 - `5` SCAN is dimmed and does nothing yet;
 - a short `esc` shows the hint `Hold ESC to exit`, and holding `esc` quits.
 

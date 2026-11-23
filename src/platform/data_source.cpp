@@ -9,6 +9,7 @@
 #include "firewall.h"
 #include "home_examples.h"
 #include "live_data_source.h"
+#include "wifi_scan.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -218,8 +219,11 @@ private:
 
 // A made-up source with the pretend switch between modes on top (see
 // PretendModeSwitch): it reads the source it wraps, then puts the pretend
-// mode and the switch's state into the block, and marks the clients that
-// are to be blocked (a pretend DeviceBlocker).
+// mode and the switch's state into the block, marks the clients that are
+// to be blocked (a pretend DeviceBlocker) and adds the pretend scan list
+// (PretendWifiScan). Like the Status page's details, the list is in every
+// block, whichever page is shown, so a source whose values never change
+// still has it when the Wi-Fi page opens.
 class PretendSwitchSource final : public DataSource {
 public:
     explicit PretendSwitchSource(std::unique_ptr<DataSource> source)
@@ -233,10 +237,11 @@ public:
         source_->read(data);
         pretend_.apply(data, PretendFailure{});
         blocker_.apply(data, data.ap_active, false);
+        scan_.apply(data, true);
     }
 
     milliseconds next_read_delay() override {
-        return std::min(source_->next_read_delay(), pretend_.next_delay());
+        return std::min({source_->next_read_delay(), pretend_.next_delay(), scan_.next_delay()});
     }
 
     void set_traffic_shown(bool shown) override {
@@ -245,6 +250,10 @@ public:
 
     void set_details_shown(bool shown) override {
         source_->set_details_shown(shown);
+    }
+
+    void request_wifi_scan() override {
+        scan_.request();
     }
 
     void wait_until_ready(milliseconds limit) override {
@@ -263,6 +272,7 @@ private:
     std::unique_ptr<DataSource> source_;
     PretendModeSwitch pretend_;
     DeviceBlocker blocker_{false};
+    PretendWifiScan scan_;
 };
 
 // The made-up source of `kind` (every kind but Live).

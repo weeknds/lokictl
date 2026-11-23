@@ -127,7 +127,9 @@ struct RouterRequest {
 // profile kHotspotProfile, and activate only the Wi-Fi profile its
 // interface was on before, on that interface (Router only). They never wait:
 // each sends its requests and returns, and the answers are handled by
-// later read() calls (leave() waits, on the way out only).
+// later read() calls (leave() waits, on the way out only). The only other
+// request it sends is request_wifi_scan(), which asks for a Wi-Fi scan and
+// changes no setting.
 //
 // It has no thread of its own. It starts without waiting and keeps its own
 // GLib main context; the service's change messages queue up there and are
@@ -212,6 +214,31 @@ public:
     // as start_client() does and waits until the service has answered, at
     // most `limit` in all. Sends nothing in plain Client. It blocks.
     void leave(std::chrono::milliseconds limit);
+
+    // Wi-Fi scan. A scan changes no setting, so it is not one of the
+    // actions above: it never counts as busy() and never holds up a
+    // switch.
+    //
+    // How long a scan may take before it counts as having no result.
+    static constexpr std::chrono::milliseconds kScanLimit{15000};
+    // Asks the service to scan on `interface_name` (a managed Wi-Fi
+    // device), without waiting. Ignored while a scan or a switch runs,
+    // while LokiCTL's hotspot is active and when there is no such device.
+    // The scan ends when the device's last-scan time changes, or after
+    // kScanLimit (WifiScanError::TimedOut); a refusal ends it at once
+    // (NotAllowed, or Refused with the service's reason).
+    void request_wifi_scan(const std::string& interface_name);
+    // True from request_wifi_scan() until that scan has ended.
+    bool scanning() const;
+    // Fills in `scan` from the client's copy of the service's state, after
+    // applying the change messages that have arrived (without waiting): the
+    // access points `interface_name` hears (copied, sorted and capped with
+    // model::sort_wifi_networks()), the time of its last finished scan and
+    // how the scan the user asked for stands. No list without the service
+    // (NoService), without that managed Wi-Fi device (NoDevice), with the
+    // Wi-Fi radio off (WifiOff) or while LokiCTL's hotspot is active
+    // (Hotspot).
+    void read_wifi_scan(const std::string& interface_name, model::WifiScan& scan);
 
 private:
     struct Impl;

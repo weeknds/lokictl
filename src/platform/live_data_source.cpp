@@ -67,6 +67,20 @@ void LiveDataSource::set_details_shown(bool shown) {
     details_shown_ = shown;
 }
 
+void LiveDataSource::set_wifi_shown(bool shown) {
+    wifi_shown_ = shown;
+}
+
+void LiveDataSource::request_wifi_scan() {
+    if (!network_manager_) {
+        pretend_scan_.request();
+        return;
+    }
+    if (hotspot_interface_.empty()) {
+        network_manager_->request_wifi_scan(kHotspotInterface);
+    }
+}
+
 void LiveDataSource::wait_until_ready(milliseconds limit) {
     if (network_manager_) {
         network_manager_->wait_started(limit);
@@ -268,6 +282,19 @@ void LiveDataSource::read(model::HomeData& data) {
         apply_network_manager(service, data.details.ports);
     }
 
+    // The Wi-Fi page's list, after the mode (a pretend Router has no list
+    // either).
+    wifi_shown_read_ = wifi_shown_;
+    if (!network_manager_) {
+        pretend_scan_.apply(data, wifi_shown_);
+    } else if (wifi_shown_) {
+        if (data.ap_active) {
+            data.wifi_scan.error = model::WifiScanError::Hotspot;
+        } else {
+            network_manager_->read_wifi_scan(kHotspotInterface, data.wifi_scan);
+        }
+    }
+
     traffic_shown_read_ = traffic_shown_;
     if (network_.kind == model::LinkKind::None || !traffic_shown_) {
         forget_traffic();
@@ -353,7 +380,7 @@ milliseconds LiveDataSource::next_read_delay() {
     milliseconds delay = minutes(1) - into_minute + kMinuteMargin;
 
     if (!battery_read_ || !network_read_ || traffic_shown_ != traffic_shown_read_ ||
-        details_shown_ != details_shown_read_) {
+        details_shown_ != details_shown_read_ || wifi_shown_ != wifi_shown_read_) {
         delay = milliseconds(0);
     } else {
         const auto now = std::chrono::steady_clock::now();
@@ -368,7 +395,11 @@ milliseconds LiveDataSource::next_read_delay() {
         if (network_manager_ && (network_manager_->starting() || network_manager_->busy())) {
             delay = std::min(delay, kServiceStartInterval);
         }
+        if (network_manager_ && network_manager_->scanning()) {
+            delay = std::min(delay, kScanInterval);
+        }
         delay = std::min(delay, pretend_.next_delay());
+        delay = std::min(delay, pretend_scan_.next_delay());
     }
     return std::max(delay, kMinimumDelay);
 }

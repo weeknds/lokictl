@@ -93,6 +93,13 @@ std::string random_hotspot_password();
 // listener. Log lines: "data: block a device (<n> blocked)", "data: unblock
 // a device (<n> blocked)" (never an address) and "data: <message>".
 //
+// Wi-Fi scans: it hands the Wi-Fi page's requests
+// (BaseViewModel::request_wifi_scan()) to the reader, and tells the reader
+// whether that page is on top (DataReader::set_wifi_shown()), so the live
+// source reads the list only then. Log lines: "data: wi-fi scan asked",
+// then "data: wi-fi scan done (<n> networks)" or "data: wi-fi scan:
+// <why not>" when it ends while the page is shown (never a network name).
+//
 // Create it after the view model and destroy it before; like
 // app::ThemeController, it is not copied.
 class DataController {
@@ -182,6 +189,10 @@ private:
     // Handles a block or unblock the Devices page asked for. The user data
     // is the controller.
     static void block_request_cb(lv_observer_t* observer, lv_subject_t* subject);
+    // Hands a Wi-Fi scan request of the view model to the reader. The user
+    // data is the controller.
+    static void wifi_scan_request_cb(lv_observer_t* observer, lv_subject_t* subject);
+    void log_wifi_scan(const model::WifiScan& scan);
     void request_mode(model::NetMode mode);
     void change_blocked();
     void change_hotspot();
@@ -219,6 +230,10 @@ private:
     HotspotSaver hotspot_saver_;
     lv_observer_t* block_observer_{nullptr};
     int32_t block_requests_seen_{0};
+    lv_observer_t* wifi_scan_observer_{nullptr};
+    int32_t wifi_scan_requests_seen_{0};
+    bool scan_logged_{false};           // a scan was asked for and its end is not logged yet
+    bool scan_seen_running_{false};     // a block showed that scan under way
     std::vector<std::string> blocked_;  // the devices to block, oldest first
     BlockedSaver blocked_saver_;
     BlockFailureListener block_failure_listener_;

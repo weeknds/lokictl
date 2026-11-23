@@ -14,6 +14,7 @@
 #include "network.h"
 #include "network_manager.h"
 #include "rate_history.h"
+#include "wifi_scan.h"
 
 #include <chrono>
 #include <cstddef>
@@ -102,6 +103,13 @@ public:
     // battery; when the page has just opened, both are read at once. While
     // the details are not shown, HomeData::details is left unknown (empty).
     //
+    // The Wi-Fi page's list (HomeData::wifi_scan): only while it is shown
+    // (set_wifi_shown()), at every call, from the connection to the network
+    // service (NetworkManagerClient::read_wifi_scan(), kHotspotInterface
+    // only); in a test folder from a pretend scan (PretendWifiScan). While
+    // LokiCTL's hotspot runs (also a pretend one) there is no list
+    // (WifiScanError::Hotspot).
+    //
     // The devices on the hotspot (HomeData::clients): only while LokiCTL's
     // hotspot is active, read with the network and at once when the hotspot
     // has just come up (in a test folder at every call); in between the
@@ -112,15 +120,22 @@ public:
     // The earliest of "just after the next minute starts", "the battery is
     // due", "the network is due" and, while the traffic is shown and there
     // is an uplink, "the traffic is due"; never less than kMinimumDelay. Right
-    // away (kMinimumDelay) when the traffic or the details flag changed since
-    // the last read(), so the page gets the new state at once. At most
-    // kServiceStartInterval while the connection to the network service
-    // starts or a switch between modes is busy, so its values follow soon;
-    // at most PretendModeSwitch::next_delay() while a pretend switch runs.
+    // away (kMinimumDelay) when the traffic, the details or the Wi-Fi flag
+    // changed since the last read(), so the page gets the new state at
+    // once. At most kServiceStartInterval while the connection to the
+    // network service starts or a switch between modes is busy, so its
+    // values follow soon; at most kScanInterval while a Wi-Fi scan runs;
+    // at most PretendModeSwitch::next_delay() while a pretend switch runs
+    // and PretendWifiScan::next_delay() while a pretend scan runs.
     std::chrono::milliseconds next_read_delay() override;
 
     void set_traffic_shown(bool shown) override;
     void set_details_shown(bool shown) override;
+    void set_wifi_shown(bool shown) override;
+    // On the real root: NetworkManagerClient::request_wifi_scan() for
+    // kHotspotInterface, unless LokiCTL's hotspot runs. In a test folder:
+    // the pretend scan.
+    void request_wifi_scan() override;
 
     // Waits until the connection to the network service has started, at
     // most `limit`.
@@ -143,6 +158,7 @@ public:
     static constexpr std::chrono::milliseconds kMinuteMargin{20};
     static constexpr std::chrono::milliseconds kMinimumDelay{20};
     static constexpr std::chrono::milliseconds kServiceStartInterval{100};
+    static constexpr std::chrono::milliseconds kScanInterval{250};
     static constexpr int kShareRemovalTries = 3;
 
 private:
@@ -189,6 +205,11 @@ private:
     bool details_shown_{false};      // the flag set_details_shown() gave last
     bool details_shown_read_{false}; // the flag the last read() used
     model::StatusDetails details_;   // the details read last, without the network service's names
+
+    // The Wi-Fi page's list.
+    bool wifi_shown_{false};         // the flag set_wifi_shown() gave last
+    bool wifi_shown_read_{false};    // the flag the last read() used
+    PretendWifiScan pretend_scan_;   // test folder only
 
     // The traffic.
     bool traffic_shown_{true};       // the flag set_traffic_shown() gave last

@@ -16,22 +16,23 @@ namespace screen {
 
 // The Tools page, opened from the home page (key 7). It lists the tools in
 // two columns: Ping, DNS and Trace on the left, Wi-Fi, Ports and Speed on
-// the right. Ping, DNS and Trace work so far; the others are drawn muted
-// with "coming". Next to each working tool a short tag tells how its
-// latest run stands ("running", the average time, how many addresses or
-// hops). Under the list, the status line says what the highlighted tool
+// the right. Ping, DNS, Trace and Wi-Fi work so far; the others are drawn
+// muted with "coming". Next to Ping, DNS and Trace a short tag tells how
+// the latest run stands ("running", the average time, how many addresses
+// or hops). Under the list, the status line says what the highlighted tool
 // does, with the app-wide Sent count at its right.
 //
-// Up and down (F/X) move between Ping, DNS and Trace. Enter or key 6 (Open)
-// opens the highlighted tool's page. Key 4 or a short ESC goes back.
+// Up and down (F/X) move through Ping, DNS, Trace and Wi-Fi. Enter or key 6
+// (Open) opens the highlighted tool's page. Key 4 or a short ESC goes back.
 //
 // The highlight lives in the view model (tools_selection_*), so it is kept
 // across a theme switch.
 class ToolsScreen : public BaseScreen {
 public:
     // The tools that can be opened: Ping, DNS and Trace, in the order of
-    // model::ToolKind.
-    static constexpr int32_t kOpenableRows = 3;
+    // model::ToolKind, then Wi-Fi.
+    static constexpr int32_t kOpenableRows = 4;
+    static constexpr int32_t kWifiRow = 3;
 
     ToolsScreen(viewmodel::BaseViewModel& view_model,
                 app::AssetManager& assets,

@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace model {
 namespace {
@@ -301,6 +302,41 @@ HomeData home_tour_stop(int index) {
             break;
     }
     return data;
+}
+
+std::vector<WifiNetwork> example_wifi_networks(const HomeData& data, bool scanned) {
+    struct Entry {
+        const char* name;
+        const char* security;
+        int32_t strength;
+        int32_t channel;
+    };
+    // The first one is wifi_home_data()'s network. The names are invented.
+    constexpr Entry kEntries[] = {
+        {"Harbour-Cafe", "WPA2", 72, 6},
+        {"Lighthouse-5", "WPA2/3", 64, 11},
+        {"DIRECT-7F-Printer", "WPA2", 51, 6},
+        {"", "WPA2", 38, 1},
+        {"Pier 4 Library", "open", 29, 1},
+        {"Old Boathouse Guest Network 2G", "WPA", 17, 11},
+        {"Fishmarket-IoT", "WEP", 6, 13},
+    };
+    constexpr std::size_t kShortList = 3;
+    const bool joined_here = data.uplink_kind == LinkKind::Wifi;
+    std::vector<WifiNetwork> networks;
+    for (const Entry& entry : kEntries) {
+        if (!scanned && networks.size() >= kShortList) {
+            break;
+        }
+        WifiNetwork network;
+        network.name = entry.name;
+        network.security = entry.security;
+        network.strength = entry.strength;
+        network.channel = entry.channel;
+        network.joined = joined_here && !network.name.empty() && network.name == data.wifi_name;
+        networks.push_back(network);
+    }
+    return networks;
 }
 
 } // namespace model

@@ -54,6 +54,8 @@ BaseViewModel::BaseViewModel()
       tool_request_subject_(0),
       tools_subject_(0),
       trace_scroll_subject_(kTraceFollow),
+      wifi_scroll_subject_(0),
+      wifi_scan_request_subject_(0),
       home_selection_subject_(0),
       home_data_subject_(0),
       key_test_selection_subject_(0),
@@ -487,6 +489,34 @@ void BaseViewModel::set_trace_scroll(int32_t row) {
     if (row != trace_scroll_subject_.value()) {
         trace_scroll_subject_.set(row);
     }
+}
+
+bool BaseViewModel::open_wifi() {
+    set_wifi_scroll(0);
+    return open_page(model::AppPage::Wifi);
+}
+
+lv_subject_t* BaseViewModel::wifi_scroll_subject() {
+    return wifi_scroll_subject_.native();
+}
+
+int32_t BaseViewModel::wifi_scroll() const {
+    return wifi_scroll_subject_.value();
+}
+
+void BaseViewModel::set_wifi_scroll(int32_t row) {
+    const int32_t next = std::max<int32_t>(row, 0);
+    if (next != wifi_scroll_subject_.value()) {
+        wifi_scroll_subject_.set(next);
+    }
+}
+
+void BaseViewModel::request_wifi_scan() {
+    bump(wifi_scan_request_subject_);
+}
+
+lv_subject_t* BaseViewModel::wifi_scan_request_subject() {
+    return wifi_scan_request_subject_.native();
 }
 
 const model::HomeData& BaseViewModel::home() const {

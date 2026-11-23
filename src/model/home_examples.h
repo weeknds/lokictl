@@ -59,4 +59,11 @@ constexpr const char* kExampleHotspotPassword = "fx7kq2mv9tpa";
 // new one, so the same command always gives the same picture.
 constexpr const char* kExampleNewHotspotPassword = "w4nbe8rhq2js";
 
+// Made-up networks for the Wi-Fi page, with invented names, strongest
+// first: the `wifi` example's network (marked joined when `data` is joined
+// to it), a printer, a hidden network, an open one, one with a long name
+// and the weakest. With `scanned` false only the strongest three, the
+// short list a network service holds before a scan.
+std::vector<WifiNetwork> example_wifi_networks(const HomeData& data, bool scanned);
+
 } // namespace model

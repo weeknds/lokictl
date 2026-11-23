@@ -6,6 +6,8 @@
 
 #include "home_data.h"
 
+#include <algorithm>
+
 namespace model {
 namespace {
 
@@ -212,6 +214,48 @@ bool operator!=(const StatusDetails& left, const StatusDetails& right) {
     return !(left == right);
 }
 
+// Every field, in the order they are declared.
+bool operator==(const WifiNetwork& left, const WifiNetwork& right) {
+    return left.name == right.name &&
+           left.security == right.security &&
+           left.strength == right.strength &&
+           left.channel == right.channel &&
+           left.joined == right.joined;
+}
+
+bool operator!=(const WifiNetwork& left, const WifiNetwork& right) {
+    return !(left == right);
+}
+
+// Every field, in the order they are declared.
+bool operator==(const WifiScan& left, const WifiScan& right) {
+    return left.scanning == right.scanning &&
+           left.error == right.error &&
+           left.reason == right.reason &&
+           left.last_scan_minutes == right.last_scan_minutes &&
+           left.found == right.found &&
+           left.networks == right.networks;
+}
+
+bool operator!=(const WifiScan& left, const WifiScan& right) {
+    return !(left == right);
+}
+
+void sort_wifi_networks(std::vector<WifiNetwork>& networks) {
+    std::stable_sort(networks.begin(), networks.end(), [](const WifiNetwork& left, const WifiNetwork& right) {
+        if (left.strength != right.strength) {
+            return left.strength > right.strength;
+        }
+        if (left.joined != right.joined) {
+            return left.joined;
+        }
+        return left.name < right.name;
+    });
+    if (networks.size() > kWifiMaxNetworks) {
+        networks.resize(kWifiMaxNetworks);
+    }
+}
+
 // Every field of HomeData, in the order they are declared. A new field must
 // be added here too (see home_data.h).
 bool operator==(const HomeData& left, const HomeData& right) {
@@ -244,7 +288,8 @@ bool operator==(const HomeData& left, const HomeData& right) {
            left.clients == right.clients &&
            left.block_failures == right.block_failures &&
            left.block_message == right.block_message &&
-           left.details == right.details;
+           left.details == right.details &&
+           left.wifi_scan == right.wifi_scan;
 }
 
 bool operator!=(const HomeData& left, const HomeData& right) {

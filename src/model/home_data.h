@@ -231,6 +231,60 @@ struct StatusDetails {
 bool operator==(const StatusDetails& left, const StatusDetails& right);
 bool operator!=(const StatusDetails& left, const StatusDetails& right);
 
+// The Wi-Fi page: the networks near the built-in Wi-Fi.
+
+// A scan list keeps at most this many networks, the strongest;
+// WifiScan::found counts them all.
+constexpr std::size_t kWifiMaxNetworks = 32;
+
+// WifiScan::last_scan_minutes when the time is not known.
+constexpr int32_t kClockUnknown = -1;
+
+// One network the built-in Wi-Fi can hear, as the system's network service
+// lists it. It is one access point, so a network with two of them is
+// listed twice.
+struct WifiNetwork {
+    std::string name;     // network name (SSID); empty for a hidden network
+    std::string security; // as the home page writes it: "WPA2", "WPA2/3", "open"
+    int32_t strength{0};  // signal, 0-100 per cent, as the service gives it
+    int32_t channel{0};   // Wi-Fi channel; 0 when not known
+    bool joined{false};   // the built-in Wi-Fi is joined to this access point
+};
+
+bool operator==(const WifiNetwork& left, const WifiNetwork& right);
+bool operator!=(const WifiNetwork& left, const WifiNetwork& right);
+
+// Why the Wi-Fi page has no list, or what went wrong with the last scan.
+enum class WifiScanError {
+    None = 0,
+    NoService,  // no network service (NetworkManager) to ask
+    NoDevice,   // the built-in Wi-Fi is missing or not managed by the service
+    WifiOff,    // the Wi-Fi radio is switched off
+    Hotspot,    // LokiCTL's hotspot runs on the Wi-Fi (Router or Share)
+    // The last three are about the last scan; the list is still shown.
+    NotAllowed, // the scan was refused for lack of permission
+    TimedOut,   // no scan result within the time limit
+    Refused,    // the service refused the scan; WifiScan::reason says why
+};
+
+// What the Wi-Fi page shows. The live source fills it only while that page
+// is on top; otherwise it is empty (every value unknown).
+struct WifiScan {
+    bool scanning{false};                     // a scan the user asked for is under way
+    WifiScanError error{WifiScanError::None};
+    std::string reason;                       // with WifiScanError::Refused
+    int32_t last_scan_minutes{kClockUnknown}; // local time of day of the last finished scan, minutes since midnight
+    int32_t found{0};                         // networks listed, also those not kept
+    std::vector<WifiNetwork> networks;        // strongest first, at most kWifiMaxNetworks
+};
+
+bool operator==(const WifiScan& left, const WifiScan& right);
+bool operator!=(const WifiScan& left, const WifiScan& right);
+
+// Sorts `networks` strongest first (on equal strength the joined one, then
+// by name) and keeps the first kWifiMaxNetworks.
+void sort_wifi_networks(std::vector<WifiNetwork>& networks);
+
 // Everything the home page shows. Numbers are stored as numbers in the units
 // noted on each field; the page turns them into text. A value that is not
 // known has a value of its own (an empty text, or one of the constants
@@ -284,6 +338,7 @@ struct HomeData {
     int32_t block_failures{0};
     std::string block_message;
     StatusDetails details;             // the Status page's extra values (see StatusDetails)
+    WifiScan wifi_scan;                // the Wi-Fi page's list (see WifiScan)
 };
 
 // Every field is compared. A new field must be added here too: the data

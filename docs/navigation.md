@@ -412,17 +412,17 @@ The help panel shows the badge `DEVICES` and four rows.
 ## The Tools page
 
 `tools` (home key 7) lists the tools in two columns: Ping, DNS and Trace on
-the left, Wi-Fi, Ports and Speed on the right. Ping, DNS and Trace open a
-page so far; the others are muted with `coming`. Next to each of the three
-a tag tells how the latest run stands (`running`, the average time,
-`3 found`, `7 hops`, `not reached`).
+the left, Wi-Fi, Ports and Speed on the right. Ping, DNS, Trace and Wi-Fi
+open a page so far; the others are muted with `coming`. Next to Ping, DNS
+and Trace a tag tells how the latest run stands (`running`, the average
+time, `3 found`, `7 hops`, `not reached`).
 The status line says what the highlighted tool does, with `SENT N` at its
 right: every packet LokiCTL has sent in this run of the app (see
 [data.md](data.md#the-tools)).
 
 | Key | What it does |
 |---|---|
-| `f`/`x` or the arrows up and down | move between Ping, DNS and Trace |
+| `f`/`x` or the arrows up and down | move through Ping, DNS, Trace and Wi-Fi |
 | `6` OPEN or Enter | opens the highlighted tool |
 | `4` BACK or a short ESC | goes back |
 
@@ -469,6 +469,37 @@ The target choice, the typed target, the draft, the runs and the Trace
 page's scroll (`trace_scroll_*`) live in the view model, so they survive
 leaving the page and a theme switch. The help panel shows the badge
 `PING`, `DNS` or `TRACE` and five rows.
+
+## The Wi-Fi page
+
+`wifi` (the Tools page's Wi-Fi row) lists the networks the built-in Wi-Fi
+(`wlan0`) hears, strongest first (see [data.md](data.md#the-wi-fi-list)).
+Under the title bar: `WLAN0` with how many networks were found, then one
+row per network: four signal bars (drawn as shapes, lit at nmcli's steps:
+above 80, 55, 30 and 5 per cent), the name (`hidden` in the muted colour
+for a hidden network), `ch N`, the security and the signal in per cent.
+The network the Wi-Fi is joined to is in the accent colour. Four rows fit
+in every theme, with the thin scroll mark of the Trace page when there are
+more. The status line says `Last scan 14:32`, `Scanning…` or what went
+wrong (`Scan not allowed: permission missing`, `No scan result in 15 s`,
+`Scan refused: …`), with `SENT N` at its right; a scan is sent by the
+network service, so it is not counted. In Router and Share there is no
+list: a note and `Not while the hotspot runs`; likewise `Wi-Fi is off` and
+`No network service`.
+
+| Key | What it does |
+|---|---|
+| `6` SCAN or Enter | asks for a fresh scan; off while one runs or while there is no list |
+| `f`/`x` or the arrows up and down | scroll the networks |
+| `4` BACK or a short ESC | goes back |
+
+Opening the page asks for nothing: it shows the list the network service
+already has. The first row shown lives in the view model
+(`wifi_scroll_*`, back to the top each time the page opens). The help panel
+shows the badge `WI-FI` and five rows. Snapshots: the default `sample`
+source runs Router, so `--page wifi` shows the refusal; `--data wifi`
+shows the made-up list, `--keys 6` a scan under way and `--keys 6,data`
+its end.
 
 ## The Status page
 

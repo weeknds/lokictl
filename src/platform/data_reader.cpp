@@ -125,6 +125,26 @@ void DataReader::set_details_shown(bool shown) {
     wake_.notify_all();
 }
 
+void DataReader::set_wifi_shown(bool shown) {
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (wifi_shown_ == shown) {
+            return;
+        }
+        wifi_shown_ = shown;
+        shown_changed_ = true;
+    }
+    wake_.notify_all();
+}
+
+void DataReader::request_wifi_scan() {
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        scan_requested_ = true;
+    }
+    wake_.notify_all();
+}
+
 void DataReader::request_mode(const ModeRequest& request) {
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -150,6 +170,8 @@ bool DataReader::changes_network() const {
 bool DataReader::hand_over_shown() {
     bool traffic = true;
     bool details = false;
+    bool wifi = false;
+    bool scan = false;
     bool requested = false;
     ModeRequest request;
     bool blocked_changed = false;
@@ -158,7 +180,10 @@ bool DataReader::hand_over_shown() {
         std::lock_guard<std::mutex> lock(mutex_);
         traffic = traffic_shown_;
         details = details_shown_;
+        wifi = wifi_shown_;
         shown_changed_ = false;
+        scan = scan_requested_;
+        scan_requested_ = false;
         if (mode_requested_) {
             requested = true;
             request = std::move(mode_request_);
@@ -174,6 +199,14 @@ bool DataReader::hand_over_shown() {
     if (source_) {
         source_->set_traffic_shown(traffic);
         source_->set_details_shown(details);
+        source_->set_wifi_shown(wifi);
+        if (scan) {
+            try {
+                source_->request_wifi_scan();
+            } catch (...) {
+                // A request that fails with an exception is dropped.
+            }
+        }
         if (requested) {
             try {
                 source_->request_mode(request);
@@ -189,7 +222,7 @@ bool DataReader::hand_over_shown() {
             }
         }
     }
-    return requested || blocked_changed;
+    return requested || blocked_changed || scan;
 }
 
 bool DataReader::take(model::HomeData& data) {
@@ -211,10 +244,12 @@ model::HomeData DataReader::latest() const {
 // take() never waits for a reading. A new traffic or details flag ends the
 // wait early: the loop then starts again, hands the flags over and asks the
 // source how long to sleep now (the live source asks for a reading at once).
-// A switch request or a new list of devices to block ends the wait too, and
-// is followed by a reading at once.
+// A switch request, a new list of devices to block or a Wi-Fi scan request
+// ends the wait too, and is followed by a reading at once.
 void DataReader::run() {
-    const auto woken = [this] { return stop_requested_ || shown_changed_ || mode_requested_ || blocked_changed_; };
+    const auto woken = [this] {
+        return stop_requested_ || shown_changed_ || mode_requested_ || blocked_changed_ || scan_requested_;
+    };
     while (true) {
         {
             std::lock_guard<std::mutex> lock(mutex_);
@@ -222,8 +257,8 @@ void DataReader::run() {
                 break;
             }
         }
-        // A switch request or a new list of devices to block is followed by
-        // a reading right away, so the page shows the result.
+        // A switch request, a new list of devices to block or a scan request
+        // is followed by a reading right away, so the page shows the result.
         if (hand_over_shown()) {
             model::HomeData data;
             if (read_source(data)) {
@@ -257,7 +292,7 @@ void DataReader::run() {
             if (stop_requested_) {
                 break;
             }
-            if (shown_changed_ || mode_requested_ || blocked_changed_) {
+            if (shown_changed_ || mode_requested_ || blocked_changed_ || scan_requested_) {
                 continue;
             }
         }
