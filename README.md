@@ -92,6 +92,14 @@ internet and no answer from the Cardputer. Press `8` again to allow it.
 Blocking goes by hardware address, so a phone that picks a new random one
 for each network shows up as a new device.
 
+`5` on Devices (or the command `talk`) shows what the highlighted device is
+talking to: the names it looked up through the hotspot, newest first, with
+how often (`example.com  x3`). `5`/`6` or Z/C go to the previous or next
+device. It only works on LokiCTL's own hotspot, and only for lookups sent
+to the hotspot itself; a device that uses encrypted or its own DNS shows
+nothing. The names stay in memory and are gone when the hotspot stops. A
+report you save (`8` or `R`) includes them.
+
 ### Status
 
 `8` on Home. It starts with two short lines: how the cable link is doing
@@ -351,7 +359,7 @@ and names, up and down (fn+F and fn+X) bring back the last 8 commands, and
 |---|---|
 | `help` | Lists the commands. |
 | `report` | Saves a report of what LokiCTL has found (see [Reports](#reports)). |
-| `home`, `map`, `tools`, `discover`, `watch`, `trap`, `health`, `leak`, `signin`, `wifi`, `status`, `settings` | Opens that page. |
+| `home`, `map`, `tools`, `discover`, `watch`, `trap`, `health`, `leak`, `signin`, `talk`, `wifi`, `status`, `settings` | Opens that page. |
 | `theme <name>` | Switches to `instrument`, `constellation` or `terminal`. |
 | `mode <name>` | Switches to `client`, `router`, `share` or `vpn`. |
 | `ping [target]` | Pings a host, or the target that's selected on the Ping page. |
@@ -427,6 +435,7 @@ the details and lists every file LokiCTL writes.
 | Drops | How many times the cable link went off since LokiCTL started. More than 3 means a loose cable or a bad port. |
 | Sign-in page | The web page a hotel or cafe Wi-Fi shows before it lets you on the internet (a captive portal). |
 | Auto check | The system's own internet check (NetworkManager's). When it's on, LokiCTL tells you about a sign-in page by itself. |
+| Looked up (DNS) | Before a device talks to a website or service, it asks for the address of its name (a DNS lookup). The Talk page lists those names. |
 
 ## Data use
 
@@ -439,6 +448,8 @@ the details and lists every file LokiCTL writes.
   release.
 - Settings, the hotspot password, Watch's known devices, saved captures
   and reports stay on the device, and only your user can read them.
+- The names your hotspot's devices look up are kept in memory only and
+  are gone when the hotspot stops or LokiCTL quits.
 
 ## Limits
 

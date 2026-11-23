@@ -10,6 +10,7 @@
 #include "base_model.h"
 #include "tool_data.h"
 #include "trap_data.h"
+#include "talk_data.h"
 #include "watch_data.h"
 
 #include "lvgl.h"
@@ -398,6 +399,28 @@ public:
     bool watch_detail() const;
     void set_watch_detail(bool open);
 
+    // The Talk page ("What is it talking to?", Devices key 5, or `talk`):
+    // the names one device on the hotspot looked up. app::TalkController
+    // listens while the hotspot runs and hands its run over in talk().
+    // open_talk() shows the device `hardware` (empty: the device the
+    // Devices page highlights) from the top of its list, then opens the
+    // page.
+    bool open_talk(const std::string& hardware = {});
+    // Only ever set on the UI thread, by app::TalkController; set_talk()
+    // returns false and tells nobody when `run` equals what is held.
+    const model::TalkRun& talk() const;
+    bool set_talk(const model::TalkRun& run);
+    lv_subject_t* talk_subject();
+    // The device the page shows, by hardware address (empty: none); the
+    // subject counts each change.
+    const std::string& talk_device() const;
+    void set_talk_device(const std::string& hardware);
+    lv_subject_t* talk_device_subject();
+    // The first name shown (0 is the newest).
+    lv_subject_t* talk_scroll_subject();
+    int32_t talk_scroll() const;
+    void set_talk_scroll(int32_t row);
+
     // The Trap page (Watch key 8, or `trap`): fake services that catch
     // whoever connects. The trap runs on its own (app::TrapController), and
     // its run comes back in trap(). Puts the selection on the newest
@@ -603,6 +626,11 @@ private:
     std::string requested_watch_hardware_;
     reactive::IntSubject watch_selection_subject_;
     reactive::BoolSubject watch_detail_subject_;
+    model::TalkRun talk_;
+    reactive::IntSubject talk_subject_;
+    std::string talk_device_;
+    reactive::IntSubject talk_device_subject_;
+    reactive::IntSubject talk_scroll_subject_;
     model::TrapRun trap_;
     reactive::IntSubject trap_subject_;
     reactive::IntSubject trap_request_subject_;

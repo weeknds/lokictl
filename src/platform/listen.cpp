@@ -1273,6 +1273,7 @@ bool CaptureProcess::start(const std::string& interface_name,
 
     const char* command_word = command == CaptureCommand::Watch      ? "watch"
                                : command == CaptureCommand::Topology ? "topology"
+                               : command == CaptureCommand::Names    ? "names"
                                                                      : "discover";
     std::string words[] = {"lokictl-capture", command_word,
                            interface_name, std::to_string(seconds)};

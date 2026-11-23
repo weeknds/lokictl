@@ -66,6 +66,9 @@ BaseViewModel::BaseViewModel()
       watch_request_subject_(0),
       watch_selection_subject_(0),
       watch_detail_subject_(false),
+      talk_subject_(0),
+      talk_device_subject_(0),
+      talk_scroll_subject_(0),
       trap_subject_(0),
       trap_request_subject_(0),
       trap_selection_subject_(0),
@@ -744,6 +747,68 @@ bool BaseViewModel::watch_detail() const {
 void BaseViewModel::set_watch_detail(bool open) {
     if (open != watch_detail_subject_.value()) {
         watch_detail_subject_.set(open);
+    }
+}
+
+bool BaseViewModel::open_talk(const std::string& hardware) {
+    std::string device = hardware;
+    if (device.empty()) {
+        const auto& clients = home().clients;
+        if (!clients.empty()) {
+            const auto index = static_cast<std::size_t>(
+                std::clamp<int32_t>(devices_selection(), 0, static_cast<int32_t>(clients.size()) - 1));
+            device = clients[index].hardware_address;
+        }
+    }
+    set_talk_device(device);
+    set_talk_scroll(0);
+    return open_page(model::AppPage::Talk);
+}
+
+const model::TalkRun& BaseViewModel::talk() const {
+    return talk_;
+}
+
+bool BaseViewModel::set_talk(const model::TalkRun& run) {
+    if (run == talk_) {
+        return false;
+    }
+    talk_ = run;
+    bump(talk_subject_);
+    return true;
+}
+
+lv_subject_t* BaseViewModel::talk_subject() {
+    return talk_subject_.native();
+}
+
+const std::string& BaseViewModel::talk_device() const {
+    return talk_device_;
+}
+
+void BaseViewModel::set_talk_device(const std::string& hardware) {
+    if (hardware != talk_device_) {
+        talk_device_ = hardware;
+        bump(talk_device_subject_);
+    }
+}
+
+lv_subject_t* BaseViewModel::talk_device_subject() {
+    return talk_device_subject_.native();
+}
+
+lv_subject_t* BaseViewModel::talk_scroll_subject() {
+    return talk_scroll_subject_.native();
+}
+
+int32_t BaseViewModel::talk_scroll() const {
+    return talk_scroll_subject_.value();
+}
+
+void BaseViewModel::set_talk_scroll(int32_t row) {
+    const int32_t next = std::max<int32_t>(row, 0);
+    if (next != talk_scroll_subject_.value()) {
+        talk_scroll_subject_.set(next);
     }
 }
 

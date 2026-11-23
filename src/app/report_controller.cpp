@@ -84,6 +84,7 @@ void ReportController::save() {
                                      view_model_.tools(),
                                      view_model_.watch(),
                                      view_model_.trap(),
+                                     view_model_.talk(),
                                      saved_at,
                                      APP_VERSION};
     const std::string html = model::report_html(source);

@@ -25,6 +25,8 @@
 #include "watch.h"
 #include "trap.h"
 #include "trap_controller.h"
+#include "talk.h"
+#include "talk_controller.h"
 #include "report_controller.h"
 #include "report_files.h"
 #include "watch_controller.h"
@@ -302,6 +304,9 @@ int run_snapshot(const SnapshotRequest& request) {
         add_trap_alerts(watch, fresh);
     });
     trap.start();
+    // The names the sample's hotspot devices look up, made-up.
+    TalkController talk(view_model, platform::make_talk_runner(false));
+    talk.start();
     // Reports only go to a folder named by LOKICTL_REPORT_DIR here, so a
     // snapshot never writes into the user's own folders.
     ReportController reports(view_model, platform::report_folder());

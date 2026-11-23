@@ -29,9 +29,11 @@ namespace screen {
 // says that devices show while Router or Share runs; with the hotspot and nobody on
 // it, the box says so and names the hotspot.
 //
-// Up and down (F/X), left and right (Z/C) and keys 5 and 6 (Up, Down) move
-// the highlight and stop at the first and the last device. Key 7 (QR)
-// opens the Hotspot page with the join code. Key 8 blocks the highlighted
+// Up and down (F/X) and left and right (Z/C) move the highlight and stop at
+// the first and the last device; key 6 (Next) moves it on, from the last
+// device back to the first. Key 5 (Talk) opens the Talk page with the names
+// the highlighted device looked up (also without devices: it then says why
+// it is empty). Key 7 (QR) opens the Hotspot page with the join code. Key 8 blocks the highlighted
 // device (Block) or lets it through again (Allow; see
 // BaseViewModel::request_block()); a blocked device says "blocked" at the
 // right of its name, in the warning colour, in place of "new" and the
@@ -94,6 +96,10 @@ private:
     int32_t selected() const;
     // Moves the highlight by `delta` devices; it stops at both ends.
     void move(int32_t delta);
+    // Moves the highlight to the next device, from the last to the first.
+    void next();
+    // Opens the Talk page for the highlighted device.
+    void open_talk();
     // Key 8 for the highlighted device, and what it does.
     BlockKey block_key() const;
     view::widgets::SoftKey block_soft_key(BlockKey key);

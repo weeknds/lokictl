@@ -98,17 +98,22 @@ hearing the network's raw traffic.
 A second, separate helper does that,
 `/usr/libexec/lokictl/lokictl-capture` (source: `src/helper/lokictl_capture.c`),
 with the single capability `CAP_NET_RAW`, again not setuid and only for
-root and the `netdev` group. It does one of three fixed commands,
-`discover`, `watch` or `topology`, each with an interface and a number of
-seconds (at most 30 minutes), which differ only in their fixed filter. It
+root and the `netdev` group. It does one of four fixed commands,
+`discover`, `watch`, `topology` or `names`, each with an interface and a
+number of seconds (at most 30 minutes), which differ only in their fixed
+filter. It
 opens a packet socket with that filter: for `discover` only ARP, DHCP, mDNS
 (UDP to port 5353) and SSDP (UDP to port 1900); for `watch` only ARP, DHCP,
 TCP connection requests (SYN without ACK) sent to the Cardputer itself, and
 IPv6 router announcements (ICMPv6 type 134); for `topology` only LLDP
 (EtherType 0x88cc to `01:80:c2:00:00:0e`) and CDP (to `01:00:0c:cc:cc:cc`,
 Cisco's SNAP protocol 0x2000), the frames in which switches and routers say
-their name and port. It is never in promiscuous mode. `discover` and `watch`
-join no multicast group; `topology` asks the network card to pass those two
+their name and port; for `names` only IPv4 UDP and TCP to port 53 (DNS
+questions) sent to the interface's own IPv4 address, which the helper
+reads from the kernel before it sets the filter (the Talk page: the names
+the devices on LokiCTL's hotspot look up; answers and lookups sent on to
+other servers are not passed). It is never in promiscuous mode. `discover`,
+`watch` and `names` join no multicast group; `topology` asks the network card to pass those two
 link-layer groups to its socket (`PACKET_ADD_MEMBERSHIP`), because many
 cards drop them otherwise. That sends nothing, changes no setting, and the
 kernel removes it again when the helper ends. Then it drops every capability and
@@ -116,11 +121,11 @@ locks itself (seccomp) so that it can only receive, never send. It writes
 what it hears to the app as a PCAP stream on a pipe (no file) and stops at
 its time limit, after 16 MiB, or when the app goes away; the app reads the
 stream without any rights; for Watch the app runs it again every 30
-minutes while Watch is on. **Every program of a `netdev` member may run it
+minutes while Watch is on, and for the Talk page while the hotspot runs. **Every program of a `netdev` member may run it
 too**, so it could listen to the ARP, DHCP, mDNS and SSDP traffic that
 reaches the Cardputer, to connection requests made to the Cardputer, to
-IPv6 router announcements and to switches' LLDP and CDP frames, and
-nothing else.
+IPv6 router announcements, to switches' LLDP and CDP frames and to the
+DNS questions sent to the Cardputer's own addresses, and nothing else.
 
 Both helpers are only needed for the features above. Without them the rest
 of the app works, and the pages say what is missing (`Block failed: helper

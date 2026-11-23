@@ -30,6 +30,7 @@
 #include "theme_controller.h"
 #include "theme_engine.h"
 #include "tool_controller.h"
+#include "talk_controller.h"
 #include "trap_controller.h"
 #include "report_controller.h"
 #include "report_files.h"
@@ -685,6 +686,10 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override,
     // made-up on the Mac. Stopped right after the main loop, before Watch
     // and the data controller, so its redirect goes first.
     TrapController trap(view_model, platform::make_trap_runner(live_watch));
+    // What the hotspot's devices look up: follows the hotspot on its own,
+    // live on the device, made-up on the Mac. Memory only; stopped right
+    // after the main loop, next to Watch.
+    TalkController talk(view_model, platform::make_talk_runner(live_watch));
     // Reports: saved into ~/Documents/LokiCTL/reports on the device; the
     // simulator saves only into a folder named by LOKICTL_REPORT_DIR.
     ReportController reports(view_model, platform::report_folder());
@@ -774,6 +779,7 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override,
     tools.start();
     watch.start();
     trap.start();
+    talk.start();
     reports.start();
     while (running && stop_signal == 0
 #if USE_DESKTOP
@@ -793,6 +799,7 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override,
     tools.stop();
     trap.stop();
     trap.set_hit_listener({});
+    talk.stop();
     watch.stop();
     watch.set_alert_listener({});
     data.set_block_failure_listener({});

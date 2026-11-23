@@ -571,7 +571,7 @@ endif()
 # of the app that may listen to raw network traffic, and only receive (see
 # the file). Device builds only; the package installs it at
 # APP_CAPTURE_PATH, where the app runs it for the Discover page
-# (src/platform/listen.cpp).
+# (src/platform/listen.cpp), Watch, the Map and the Talk page.
 set(APP_CAPTURE_NAME "${APP_NAME}-capture")
 set(APP_CAPTURE_PATH "/usr/${APP_HELPER_INSTALL_DIR}/${APP_CAPTURE_NAME}")
 target_compile_definitions(${PROJECT_NAME}_platform PRIVATE APP_CAPTURE_PATH="${APP_CAPTURE_PATH}")
@@ -800,7 +800,8 @@ target_link_libraries(${PROJECT_NAME}
 # Checks of the service and version reading and of the list of known
 # security holes (tests/vuln_checks.cpp), of Watch's alerts, of the
 # health check's rules, of the leak test's rules, of the sign-in check, of
-# the trap, of the topology frames and of reports,
+# the trap, of the topology frames, of the names hotspot devices look up and
+# of reports,
 # on the Mac only:
 # build/darwin-arm64/Debug/lokictl_tests, or ctest.
 if(USE_DESKTOP)
@@ -873,6 +874,21 @@ if(USE_DESKTOP)
     target_compile_options(${PROJECT_NAME}_topology_tests PRIVATE -fsanitize=address,undefined -fno-sanitize-recover=all)
     target_link_options(${PROJECT_NAME}_topology_tests PRIVATE -fsanitize=address,undefined)
     add_test(NAME topology_frames COMMAND ${PROJECT_NAME}_topology_tests)
+
+    # The names hotspot devices look up: DNS questions from made-up, broken
+    # and hostile frames, and the counting per device (tests/talk_checks.cpp),
+    # with the address and undefined-behaviour checkers:
+    # build/darwin-arm64/Debug/lokictl_talk_tests, or ctest.
+    add_executable(${PROJECT_NAME}_talk_tests
+        tests/talk_checks.cpp
+        src/platform/talk.cpp
+        src/platform/dns_message.cpp
+    )
+    target_include_directories(${PROJECT_NAME}_talk_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/platform)
+    target_link_libraries(${PROJECT_NAME}_talk_tests PRIVATE ${PROJECT_NAME}_model)
+    target_compile_options(${PROJECT_NAME}_talk_tests PRIVATE -fsanitize=address,undefined -fno-sanitize-recover=all)
+    target_link_options(${PROJECT_NAME}_talk_tests PRIVATE -fsanitize=address,undefined)
+    add_test(NAME talk_checks COMMAND ${PROJECT_NAME}_talk_tests)
 
     # Reports: escaping of every text from the network, and saving, listing
     # and reading the files (tests/report_checks.cpp), with the address and

@@ -213,7 +213,7 @@ The commands, read without regard to case:
 | `report` | saves a report of what LokiCTL has found (`Report saved: 07:51:30`, or `Report not saved: <why>`; see [permissions.md](permissions.md#reports)) |
 | `theme <name>` | switches the theme: `instrument`, `constellation` or `terminal` |
 | `mode <name>` | switches the mode: `client`, `router`, `share` or `vpn` (see below) |
-| `home`, `map`, `tools`, `discover`, `watch`, `trap`, `health`, `wifi`, `status`, `settings` | open that page, the same way its key does |
+| `home`, `map`, `tools`, `discover`, `watch`, `trap`, `health`, `leak`, `signin`, `talk`, `wifi`, `status`, `settings` | open that page, the same way its key does |
 | `ping`, `dns`, `trace` `[target]` | open the tool's page and run it, on the target when one is given |
 | `ports [address]` | opens the Ports page and asks first, as its key 6 does; nothing is sent until the second 6 |
 | `scan` | starts Discover's passive Listen run |
@@ -488,7 +488,9 @@ than two.
 
 | Key | What it does |
 |---|---|
-| `f`/`x`, `z`/`c`, the arrows, `5` UP, `6` DOWN | move the highlight; it stops at the first and the last device |
+| `f`/`x`, `z`/`c`, the arrows | move the highlight; it stops at the first and the last device |
+| `6` NEXT | moves the highlight on; after the last device comes the first |
+| `5` TALK | opens the Talk page for the highlighted device (also without devices: it then says why it is empty) |
 | `7` QR | opens the Hotspot page with the join code |
 | `8` BLOCK / ALLOW | blocks the highlighted device, or lets a blocked one through again; off without devices |
 | `4` BACK or a short ESC | goes back |
@@ -501,7 +503,46 @@ The highlight lives in the view model (`devices_selection_*`); the home
 page's Enter puts it on the selected client. The highlighted card is the top
 one unless the list ends. Only the two cards exist as LVGL objects: new
 values and the highlight retext and restyle them, nothing is built again.
-The help panel shows the badge `DEVICES` and four rows.
+The help panel shows the badge `DEVICES` and five rows.
+
+## The Talk page
+
+`talk` (Devices key 5, or the command `talk`) shows what one hotspot
+device is talking to: the names it looked up through the hotspot's DNS
+server (see [data.md](data.md#what-hotspot-devices-look-up)). Under the
+title bar:
+
+- the heading `Looked up by phone` (the device's name, else its address)
+  and, with more than one device, `2 of 3` at the right;
+- one line per name, newest first, as many as fit (three in every theme):
+  the name, cut from the left with `..` when it is too wide (the end says
+  whose site it is), and `x3` at the right when it was looked up more than
+  once. A thin mark at the right edge shows where the lines lie when there
+  are more. In place of the list: `Hotspot is off`, `No devices on the
+  hotspot` or `No names looked up yet`;
+- the status line: `Hotspot only, sends nothing`, `Turn on Router or Share
+  first` (warning colour) or what went wrong (`Capture not allowed`,
+  `Capture helper not installed`).
+
+| Key | What it does |
+|---|---|
+| `5` PREV, `6` NEXT, `z`/`c` or left and right | the previous or next device: the hotspot's devices in the Devices page's order, then any other device heard; both ends wrap round. Off with one device or none |
+| `f`/`x` or up and down | scroll the names |
+| `8` SAVE or `r` | saves a report, which then holds the names too |
+| `4` BACK or a short ESC | goes back |
+
+The device (by hardware address) and the first line shown live in the
+view model (`talk_device()`, `talk_scroll_*`), so a theme switch keeps
+them. The help panel shows the badge `TALK` and five rows, two of them the
+privacy note (`Only` your own hotspot; `Memory`: gone when the hotspot
+stops).
+
+```sh
+B=build/darwin-arm64/Debug/lokictl
+$B --snapshot build/shots/talk.png --page talk --settle-ms 9000           # phone: example.com x3
+$B --snapshot build/shots/talk-tv.png --page talk --keys 6,6 --settle-ms 13000
+$B --snapshot build/shots/talk-off.png --page talk --data cable           # Hotspot is off
+```
 
 ## The Tools page
 

@@ -790,6 +790,49 @@ message. Everywhere else (the made-up sources, test folders, the Mac,
 snapshots) every listed device counts as blocked at once and nothing runs,
 so `--keys 8` on the Devices page pictures a blocked device.
 
+## What hotspot devices look up
+
+The Talk page (`model::TalkRun`, in `BaseViewModel::talk()`) lists, per
+device on LokiCTL's hotspot, the names it looked up. `app::TalkController`
+follows the hotspot four times a second: while it runs (Router: `wlan0`,
+Share: `lokiap0`) its `platform::TalkRunner` (`platform/talk_runner.cpp`)
+listens; when it stops or moves to the other interface, the run is stopped
+and everything heard is forgotten. Nothing is written to disk; a report
+holds the names only when the user saves one.
+
+- **The live runner** (device builds) has its own thread and runs
+  `/usr/libexec/lokictl/lokictl-capture names <interface> 1800`: IPv4 UDP
+  and TCP to port 53 of the interface's own IPv4 address, sent to this
+  machine, no fragments (see
+  [permissions.md](permissions.md#lokictl-capture-cap_net_raw)). So it
+  hears only the questions the devices ask the hotspot's DNS server
+  (dnsmasq), never the answers, never lookups sent on to another server,
+  and nothing from a device that uses encrypted DNS. It runs again a
+  second after a normal end; while the interface has no address yet, or
+  is gone (exit 2 or 4), every 3 s; a missing helper or a refused
+  capability fails the run (`Capture helper not installed`, `Capture not
+  allowed`). It sends nothing.
+- **The pretend runner** (the Mac and snapshots) feeds made-up lookups of
+  the sample's three devices under example.com, .org and .net
+  (`platform::pretend_talk_frames()`), from the start up to 12 s.
+- **Reading** (`platform/talk.cpp`, without privileges): the sender's
+  hardware address is the device; over UDP the payload, over TCP only a
+  segment that starts with the two-byte length and holds the whole
+  message (no reassembly). It must be a standard query (not an answer,
+  opcode 0) with a question; F5.1's `dns::parse_message()` reads it
+  (every length checked, compression pointers only backwards). Names are
+  lowercase, every byte that is not printable ASCII becomes `?`, and a
+  name over 100 characters keeps its end with `..` in front.
+- **Counting:** a question for the same name from the same device within
+  2 s of the last one counted is the same lookup (A and AAAA, a repeat);
+  each lookup moves its name to the top. At most 50 names per device (the
+  oldest go) and 32 devices (the one heard from longest ago goes).
+- Log lines: `talk: started on <interface>`, `talk: stopped, lookups:
+  <n>`, `talk: failed: <why>`, `talk: runner stopped` (never a name, an
+  address or a hardware address).
+- `tests/talk_checks.cpp` (`lokictl_talk_tests`) reads made-up, cut,
+  broken and hostile frames and checks the counting and its limits.
+
 ## The tools
 
 The Ping, DNS, Trace, Ports and Speed pages, and listening and probing on

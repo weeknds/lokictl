@@ -651,6 +651,42 @@ void add_ports(std::string& out, const PortRun& run) {
     out += "</section>\n";
 }
 
+// The names each hotspot device looked up (TalkRun), newest first, with
+// how often. Only while the hotspot runs: the names are kept in memory
+// only and go when it stops.
+void add_talk(std::string& out, const ReportSource& source) {
+    const HomeData& home = source.home;
+    const TalkRun& talk = source.talk;
+    if (!home.ap_active || talk.devices.empty()) {
+        return;
+    }
+    out += "<h3>Names the hotspot's devices looked up</h3>\n";
+    out += para("Newest first, with how often. LokiCTL keeps them in memory only and forgets them when the "
+                "hotspot stops; this report has them because you saved it.",
+                "note") +
+           "\n";
+    std::vector<std::vector<std::string>> rows;
+    for (const TalkDevice& device : talk.devices) {
+        std::string who;
+        for (const HomeClient& client : home.clients) {
+            if (client.hardware_address == device.hardware && !client.name.empty()) {
+                who = esc(client.name) + "<br>";
+                break;
+            }
+        }
+        who += mono(device.address) + "<br>" + mono(device.hardware);
+        std::string names;
+        for (const TalkName& name : device.names) {
+            if (!names.empty()) {
+                names += ", ";
+            }
+            names += mono(name.name) + (name.count > 1 ? " &times;" + std::to_string(name.count) : std::string());
+        }
+        rows.push_back({who, names.empty() ? std::string("-") : names});
+    }
+    add_table(out, {"Device", "Names looked up"}, rows);
+}
+
 void add_devices(std::string& out, const ReportSource& source, const std::vector<DiscoverDevice>& devices) {
     const ToolsData& tools = source.tools;
     out += "<section>\n<h2>Devices</h2>\n";
@@ -715,6 +751,7 @@ void add_devices(std::string& out, const ReportSource& source, const std::vector
         }
         add_table(out, {"Name", "Address", "Hardware address", "Signal", "Blocked"}, rows);
     }
+    add_talk(out, source);
     out += "</section>\n";
 }
 

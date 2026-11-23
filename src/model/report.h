@@ -7,6 +7,7 @@
 #pragma once
 
 #include "home_data.h"
+#include "talk_data.h"
 #include "tool_data.h"
 #include "trap_data.h"
 #include "watch_data.h"
@@ -29,6 +30,7 @@ struct ReportSource {
     const ToolsData& tools;
     const WatchData& watch;
     const TrapRun& trap;
+    const TalkRun& talk;   // the names the hotspot's devices looked up
     std::string saved_at;  // local time, "2026-11-23 07:51"
     std::string version;   // the app's version, "1.0.0"
 };

@@ -96,7 +96,8 @@ view::widgets::HelpContent DevicesScreen::help_content() {
     return {"DEVICES",
             {
                 {"ESC / 4", "Back"},
-                {"F X / 5 6", "Previous / next device"},
+                {"F X / 6", "Previous / next device"},
+                {"5", "Names it looked up"},
                 {"7", "Hotspot: join code"},
                 {"8", "Block / allow the device"},
             }};
@@ -111,8 +112,8 @@ view::widgets::SoftKeySet DevicesScreen::soft_keys() {
     auto& view_model = this->view_model();
     return {{
         {"Back", [&view_model] { view_model.go_back(); }},
-        {"Up", [this] { move(-1); }},
-        {"Down", [this] { move(1); }},
+        {"Talk", [this] { open_talk(); }},
+        {"Next", [this] { next(); }},
         {"QR", [&view_model] { view_model.open_hotspot(); }},
         block_soft_key(block_key_shown_ = block_key()),
     }};
@@ -178,6 +179,22 @@ void DevicesScreen::move(int32_t delta) {
     if (next != current || view_model().devices_selection() != current) {
         view_model().set_devices_selection(next);
     }
+}
+
+void DevicesScreen::next() {
+    const auto count = static_cast<int32_t>(view_model().home().clients.size());
+    if (count == 0) {
+        return;
+    }
+    // After the last device comes the first again.
+    view_model().set_devices_selection(selected() + 1 < count ? selected() + 1 : 0);
+}
+
+void DevicesScreen::open_talk() {
+    const auto& clients = view_model().home().clients;
+    // Without devices the page opens too, and says why it is empty.
+    view_model().open_talk(clients.empty() ? std::string()
+                                           : clients[static_cast<std::size_t>(selected())].hardware_address);
 }
 
 void DevicesScreen::build_content(lv_obj_t* content) {

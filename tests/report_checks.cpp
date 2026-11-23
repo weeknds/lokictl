@@ -72,6 +72,7 @@ struct Values {
     model::ToolsData tools;
     model::WatchData watch;
     model::TrapRun trap;
+    model::TalkRun talk;
 };
 
 Values hostile_values() {
@@ -191,17 +192,26 @@ Values hostile_values() {
     hit.port = 80;
     hit.first_bytes = "GET /" + kScript + kQuote;
     values.trap.hits.push_back(hit);
+    model::TalkDevice talker;
+    talker.hardware = "02:00:00:00:00:20";
+    talker.address = "198.51.100.20";
+    talker.names = {{model::talk_clean_name(kScript), 2}, {model::talk_clean_name(kQuote), 1}};
+    talker.lookups = 3;
+    values.talk.state = model::ToolState::Running;
+    values.talk.devices.push_back(talker);
     return values;
 }
 
 void check_escaping(const std::string& out_folder) {
     const Values values = hostile_values();
-    const model::ReportSource source{values.home, values.tools, values.watch, values.trap, "2026-11-23 07:51",
-                                     "1.0.0" + kScript};
+    const model::ReportSource source{values.home,  values.tools, values.watch,       values.trap,
+                                     values.talk,  "2026-11-23 07:51", "1.0.0" + kScript};
     const std::string html = model::report_html(source);
     const std::string low = lower(html);
 
     expect(!contains(low, "<script"), "no script tag in the page");
+    expect(contains(html, "Names the hotspot's devices looked up") && contains(html, "&times;2"),
+           "the hotspot's looked-up names are in the page");
     expect(!contains(low, "<img"), "no img tag in the page");
     expect(!contains(low, "onerror=alert(2)>"), "no live attribute from a quote");
     expect(contains(html, "&lt;script&gt;alert(1)&lt;/script&gt;"), "a hostile name shows as text");
@@ -261,7 +271,8 @@ void check_escaping(const std::string& out_folder) {
     const model::ToolsData tools;
     const model::WatchData watch;
     const model::TrapRun trap;
-    const std::string empty = model::report_html({home, tools, watch, trap, "2026-11-23 07:51", "1.0.0"});
+    const model::TalkRun talk;
+    const std::string empty = model::report_html({home, tools, watch, trap, talk, "2026-11-23 07:51", "1.0.0"});
     expect(contains(empty, "made-up sample values"), "sample values are marked");
     expect(contains(empty, "Discover has not run"), "an empty Discover says so");
     expect(contains(empty, "Watch has not run"), "an empty Watch says so");

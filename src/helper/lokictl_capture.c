@@ -9,20 +9,22 @@
  * traffic. It only ever receives; it never sends a packet.
  *
  * LokiCTL runs as the normal user. Hearing the ARP, DHCP, mDNS and SSDP
- * traffic of the network (the Discover page), what Watch looks for, and
- * what switches say about themselves (the Map's topology), needs a packet
+ * traffic of the network (the Discover page), what Watch looks for, what
+ * switches say about themselves (the Map's topology), and the names the
+ * devices on the Cardputer's own hotspot look up, needs a packet
  * socket, which takes one Linux capability, CAP_NET_RAW. This small
  * program holds it as a
  * file capability (set by the package's postinst; it is not setuid), and
  * only root and members of the netdev group may run it (root:netdev, mode
  * 0750).
  *
- * It does one of three fixed commands, which differ only in their frame
+ * It does one of four fixed commands, which differ only in their frame
  * filter (and, for topology, the two link-layer groups it listens to):
  *
  *   lokictl-capture discover INTERFACE SECONDS
  *   lokictl-capture watch INTERFACE SECONDS
  *   lokictl-capture topology INTERFACE SECONDS
+ *   lokictl-capture names INTERFACE SECONDS
  *
  * INTERFACE is the name of an existing network interface of Ethernet type
  * (a cable port, or Wi-Fi in its normal mode): 1 to 15 characters of a-z,
@@ -47,13 +49,21 @@
  *    (an IEEE 802.3 frame sent to 01:00:0c:cc:cc:cc with LLC SNAP, the
  *    organisation code 00:00:0c and protocol 0x2000), the frames in which
  *    switches, access points and routers say their name and port.
+ *    names: IPv4 UDP or TCP that is not a fragment, came to this machine
+ *    (packet type "host") and goes to port 53 (DNS) of the interface's own
+ *    IPv4 address: the name lookups the devices on the Cardputer's hotspot
+ *    send to the hotspot's DNS server. The address is read from the kernel
+ *    (SIOCGIFADDR) once, before the filter is attached; no argument sets
+ *    it. Lookups sent anywhere else (forwarded through the Cardputer to
+ *    another server) and the answers are dropped.
  * 3. The socket is bound to the interface. It is never put into
  *    promiscuous mode, so it hears only what reaches the Cardputer anyway.
  *    For topology only, the socket also listens to those two link-layer
  *    groups (PACKET_ADD_MEMBERSHIP), since a network card passes such
  *    frames on only when asked to. This sends nothing and changes no
  *    setting: the kernel drops both again when the socket closes, at the
- *    latest when this program ends. discover and watch join no group.
+ *    latest when this program ends. discover, watch and names join no
+ *    group.
  * 4. Every capability is dropped, no_new_privs is set, and a seccomp filter
  *    allows only what the rest needs: receiving, polling, the clock, write
  *    to standard output and standard error, close and exit. Every other
@@ -66,7 +76,8 @@
  * whoever reads its output has gone away.
  *
  * Exit status: 0 done (time up, size limit, or the reader went away);
- * 2 not the command, a bad interface or a bad number; 3 the capability is
+ * 2 not the command, a bad interface (for names also one without an IPv4
+ * address) or a bad number; 3 the capability is
  * missing; 4 the socket could not be set up, or failed.
  */
 
@@ -83,6 +94,7 @@
 #include <net/if_arp.h>
 #include <netpacket/packet.h>
 #include <arpa/inet.h>
+#include <netinet/in.h>
 #include <poll.h>
 #include <signal.h>
 #include <stddef.h>
@@ -222,6 +234,37 @@ static struct sock_filter kTopologyFilter[] = {
     /* 16 */ BPF_STMT(BPF_RET | BPF_K, 0),                      /* drop */
 };
 
+/* names: IPv4 that came to this machine (packet type PACKET_HOST), is not
+ * a fragment, goes to the interface's own IPv4 address (instruction
+ * kNamesAddressIndex, set by main() from the kernel before the filter is
+ * attached), is UDP or TCP with a whole IPv4 header (at least 20 bytes)
+ * and goes to port 53. UDP and TCP both keep the destination port two
+ * bytes into their header. Accepted frames are cut to
+ * CAPTURE_SNAP_LENGTH. A load past the end of a frame drops it. */
+#define NAMES_ADDRESS_UNSET 0xffffffffU
+static struct sock_filter kNamesFilter[] = {
+    /* 0 */ BPF_STMT(BPF_LD | BPF_H | BPF_ABS, 12),           /* EtherType */
+    /* 1 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, ETH_P_IP, 0, 15),  /* not IPv4: 17 */
+    /* 2 */ BPF_STMT(BPF_LD | BPF_B | BPF_ABS, (uint32_t)(SKF_AD_OFF + SKF_AD_PKTTYPE)), /* packet type */
+    /* 3 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, PACKET_HOST, 0, 13), /* not to this machine: 17 */
+    /* 4 */ BPF_STMT(BPF_LD | BPF_H | BPF_ABS, 20),           /* flags, fragment offset */
+    /* 5 */ BPF_JUMP(BPF_JMP | BPF_JSET | BPF_K, 0x3fff, 11, 0), /* a fragment: 17 */
+    /* 6 */ BPF_STMT(BPF_LD | BPF_W | BPF_ABS, 30),           /* IPv4 destination address */
+    /* 7 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, NAMES_ADDRESS_UNSET, 0, 9), /* not the own address: 17 */
+    /* 8 */ BPF_STMT(BPF_LD | BPF_B | BPF_ABS, 23),           /* IPv4 protocol */
+    /* 9 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 17, 1, 0),    /* UDP: 11 */
+    /* 10 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 6, 0, 6),    /* not TCP: 17 */
+    /* 11 */ BPF_STMT(BPF_LDX | BPF_B | BPF_MSH, 14),         /* X = IPv4 header length */
+    /* 12 */ BPF_STMT(BPF_MISC | BPF_TXA, 0),                 /* A = X */
+    /* 13 */ BPF_JUMP(BPF_JMP | BPF_JGE | BPF_K, 20, 0, 3),   /* shorter than 20: 17 */
+    /* 14 */ BPF_STMT(BPF_LD | BPF_H | BPF_IND, 16),          /* destination port (14 + X + 2) */
+    /* 15 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 53, 0, 1),   /* DNS: 16, else 17 */
+    /* 16 */ BPF_STMT(BPF_RET | BPF_K, CAPTURE_SNAP_LENGTH),  /* accept */
+    /* 17 */ BPF_STMT(BPF_RET | BPF_K, 0),                    /* drop */
+};
+/* The instruction of kNamesFilter that holds the own address. */
+#define NAMES_ADDRESS_INDEX 7
+
 /* The two link-layer groups topology listens to: LLDP's nearest-bridge
  * group and CDP's group. */
 static const unsigned char kTopologyGroups[2][ETH_ALEN] = {
@@ -276,7 +319,7 @@ static void fail(const char* message) {
 
 static void usage(void) {
     fprintf(stderr,
-            "usage: %s discover|watch|topology INTERFACE SECONDS\n"
+            "usage: %s discover|watch|topology|names INTERFACE SECONDS\n"
             "  INTERFACE: an Ethernet-type interface, for example eth0 or wlan0\n"
             "  SECONDS: 1 to %d\n",
             kProgram,
@@ -386,10 +429,11 @@ static int lock_calls(void) {
 }
 
 /* Opens the packet socket on `name`, with `filter` locked on it, bound and
- * receiving; with `join_groups`, also listening to kTopologyGroups. Exits
- * with EXIT_USAGE, EXIT_NO_PERMISSION or EXIT_SOCKET_FAILED when it
- * cannot. */
-static int open_socket(const char* name, const struct sock_fprog* filter, int join_groups) {
+ * receiving; with `join_groups`, also listening to kTopologyGroups. With
+ * `own_address`, the interface's own IPv4 address is first written into
+ * kNamesFilter (which `filter` is then). Exits with EXIT_USAGE,
+ * EXIT_NO_PERMISSION or EXIT_SOCKET_FAILED when it cannot. */
+static int open_socket(const char* name, const struct sock_fprog* filter, int join_groups, int own_address) {
     const unsigned int index = if_nametoindex(name);
     if (index == 0) {
         fail("no such interface");
@@ -417,6 +461,25 @@ static int open_socket(const char* name, const struct sock_fprog* filter, int jo
     if (request.ifr_hwaddr.sa_family != ARPHRD_ETHER) {
         fail("not an Ethernet-type interface");
         _exit(EXIT_USAGE);
+    }
+    if (own_address) {
+        /* The interface's own IPv4 address, as the kernel has it; the only
+         * value of a filter that is not fixed in this file. */
+        memset(&request, 0, sizeof(request));
+        memcpy(request.ifr_name, name, strlen(name));
+        request.ifr_addr.sa_family = AF_INET;
+        if (ioctl(fd, SIOCGIFADDR, &request) != 0 || request.ifr_addr.sa_family != AF_INET) {
+            fail("the interface has no IPv4 address");
+            _exit(EXIT_USAGE);
+        }
+        struct sockaddr_in address;
+        memcpy(&address, &request.ifr_addr, sizeof(address));
+        const uint32_t own = ntohl(address.sin_addr.s_addr);
+        if (own == 0 || own == NAMES_ADDRESS_UNSET) {
+            fail("the interface has no IPv4 address");
+            _exit(EXIT_USAGE);
+        }
+        kNamesFilter[NAMES_ADDRESS_INDEX].k = own;
     }
 
     const int lock = 1;
@@ -489,17 +552,19 @@ int main(int argc, char* argv[]) {
 
     /* Every argument is checked before anything is opened. */
     if (argc != 4 || (strcmp(argv[1], "discover") != 0 && strcmp(argv[1], "watch") != 0 &&
-                      strcmp(argv[1], "topology") != 0)) {
+                      strcmp(argv[1], "topology") != 0 && strcmp(argv[1], "names") != 0)) {
         usage();
         return EXIT_USAGE;
     }
-    /* The command picks one of the three fixed filters (and, for topology,
-     * the two fixed groups), nothing else. */
+    /* The command picks one of the four fixed filters (and, for topology,
+     * the two fixed groups; for names, the interface's own address from the
+     * kernel), nothing else. */
     struct sock_fprog filter = {
         .len = (unsigned short)(sizeof(kFrameFilter) / sizeof(kFrameFilter[0])),
         .filter = kFrameFilter,
     };
     int join_groups = 0;
+    int own_address = 0;
     if (strcmp(argv[1], "watch") == 0) {
         filter.len = (unsigned short)(sizeof(kWatchFilter) / sizeof(kWatchFilter[0]));
         filter.filter = kWatchFilter;
@@ -507,6 +572,10 @@ int main(int argc, char* argv[]) {
         filter.len = (unsigned short)(sizeof(kTopologyFilter) / sizeof(kTopologyFilter[0]));
         filter.filter = kTopologyFilter;
         join_groups = 1;
+    } else if (strcmp(argv[1], "names") == 0) {
+        filter.len = (unsigned short)(sizeof(kNamesFilter) / sizeof(kNamesFilter[0]));
+        filter.filter = kNamesFilter;
+        own_address = 1;
     }
     const char* name = argv[2];
     if (!valid_interface_name(name)) {
@@ -523,7 +592,7 @@ int main(int argc, char* argv[]) {
         return EXIT_NO_PERMISSION;
     }
 
-    const int fd = open_socket(name, &filter, join_groups);
+    const int fd = open_socket(name, &filter, join_groups, own_address);
     /* A last stop, should the loop below ever be stuck in a write (set
      * before the seccomp filter, which does not allow it). */
     alarm((unsigned int)seconds + 5U);

@@ -92,6 +92,12 @@ including hostile ones, and fetches from a small test server on
 ends its head, closes or stays silent (`tests/signin_checks.cpp`). With a
 port as its argument it only fetches from `127.0.0.1:<port>` and prints
 what it read, for any local test server.
+`build/darwin-arm64/Debug/lokictl_talk_tests` (also run by `ctest`, with
+the address and undefined-behaviour checkers) reads DNS questions from
+made-up frames over UDP and TCP, whole and cut at every byte, and refuses
+broken and hostile ones (answers, other opcodes, compression loops, names
+over 255 bytes, lengths past the end, random bytes); it also checks the
+counting per device for the Talk page (`tests/talk_checks.cpp`).
 `build/darwin-arm64/Debug/lokictl_trap_tests` (also run by `ctest`)
 checks the trap's limits, how what a visitor sent is shown, the reading of
 the listening ports and the fixed port map (`tests/trap_checks.cpp`).

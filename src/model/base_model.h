@@ -36,6 +36,7 @@ enum class AppPage {
     Trap     = 19,
     Leak     = 20,
     Signin   = 21,
+    Talk     = 22,
 
     // Developer pages. They are opened by name only (snapshot --page) and
     // are never linked from the normal UI.
