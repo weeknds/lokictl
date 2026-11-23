@@ -436,17 +436,24 @@ struct NetworkManagerClient::Impl {
     model::ModeSwitch status;            // what read() reports
     Clock::time_point switch_started{};
     bool router_waiting{false};          // a Router, Share or VPN switch waits for its profile to be active
-    bool add_pending{false};             // the hotspot's (or the tunnel's) add-and-activate is not answered yet
+    bool add_pending{false};             // the hotspot's add-and-activate (or the tunnel's steps) is not answered yet
     bool undo_when_added{false};         // undo the Router switch once the add is answered
     NMActiveConnection* activation{nullptr}; // the hotspot's activation (a reference)
     bool device_waiting{false};          // a Share switch waits for its interface to be ready
     RouterRequest share_request;         // what that Share switch adds then
-    bool client_waiting{false};          // a Client switch waits for its answers
+    bool client_waiting{false};          // a Client switch (or VPN off) waits for its answers
+    // Which of LokiCTL's profiles a Client switch deletes, and a failed
+    // switch undoes: a VPN switch only touches the tunnel and a hotspot
+    // switch only the hotspot, so the other half of the VPN gateway stays.
+    enum class Scope { All, Hotspot, Vpn };
+    Scope scope{Scope::All};
     int pending{0};                      // requests sent and not answered yet
     int deletes_pending{0};              // deletes of hotspot profiles not answered yet
     std::string restore_uuid;            // activated once those deletes are answered
     std::string restore_interface;
     bool closing{false};                 // no new requests: the client is going away
+    NMConnection* vpn_waiting{nullptr};  // the tunnel's profile, held until the leftovers' deletes are answered
+    int vpn_deletes_pending{0};          // deletes of leftover VPN profiles not answered yet
 
     // The Wi-Fi scan the user asked for (see the Wi-Fi scan block).
     bool scan_pending{false};            // the request is not answered yet
@@ -465,14 +472,22 @@ struct NetworkManagerClient::Impl {
     void release_activation();
     bool hotspot_active() const;
     bool vpn_active() const;
+    model::NetMode hotspot_mode() const;
     void add_hotspot(const RouterRequest& request, NMDevice* device, const std::string& restore);
     void add_vpn(const VpnRequest& request);
+    void add_vpn_waiting();
+    void drop_vpn_waiting();
+    bool vpn_given_up();
+    void vpn_refused(const GError* error);
     void add_when_ready();
     void delete_profiles_and_restore();
     void check_progress();
     static void on_router_added(GObject* source, GAsyncResult* result, gpointer user_data);
     static void on_profile_deleted(GObject* source, GAsyncResult* result, gpointer user_data);
     static void on_leftover_deleted(GObject* source, GAsyncResult* result, gpointer user_data);
+    static void on_vpn_leftover_deleted(GObject* source, GAsyncResult* result, gpointer user_data);
+    static void on_vpn_added(GObject* source, GAsyncResult* result, gpointer user_data);
+    static void on_vpn_activated(GObject* source, GAsyncResult* result, gpointer user_data);
     static void on_restored(GObject* source, GAsyncResult* result, gpointer user_data);
     static void on_hotspot_updated(GObject* source, GAsyncResult* result, gpointer user_data);
     static void on_hotspot_reactivated(GObject* source, GAsyncResult* result, gpointer user_data);
@@ -547,6 +562,7 @@ NetworkManagerClient::~NetworkManagerClient() {
         self.handle_until([&self] { return self.pending == 0 && !self.scan_pending; }, kReleaseLimit);
     }
     self.release_activation();
+    self.drop_vpn_waiting();
     if (self.starting) {
         g_cancellable_cancel(self.cancellable);
         self.handle_until([&self] { return !self.starting; }, kReleaseLimit);
@@ -795,36 +811,107 @@ bool NetworkManagerClient::Impl::vpn_active() const {
     return any_active(client, is_vpn_profile);
 }
 
-// Adds LokiCTL's VPN profile for `request` in memory and activates it; the
-// service makes kVpnInterface for it. on_router_added() takes the answer.
-// Leftover VPN profiles of LokiCTL's (none is active: the caller checked)
-// are deleted first, and those answers only count down.
-void NetworkManagerClient::Impl::add_vpn(const VpnRequest& request) {
-    g_main_context_push_thread_default(context);
-    for (NMRemoteConnection* profile : profiles_where(client, is_vpn_profile)) {
-        ++pending;
-        nm_remote_connection_delete_async(profile, action_cancellable, &Impl::on_leftover_deleted, this);
+// Router or Share while one of LokiCTL's hotspot profiles is active (by its
+// interface), otherwise Client.
+model::NetMode NetworkManagerClient::Impl::hotspot_mode() const {
+    const GPtrArray* actives = client != nullptr ? nm_client_get_active_connections(client) : nullptr;
+    for (guint index = 0; actives != nullptr && index < actives->len; ++index) {
+        auto* active = static_cast<NMActiveConnection*>(g_ptr_array_index(actives, index));
+        NMRemoteConnection* profile = nm_active_connection_get_connection(active);
+        if (profile == nullptr || !is_hotspot_profile(NM_CONNECTION(profile))) {
+            continue;
+        }
+        const GPtrArray* devices = nm_active_connection_get_devices(active);
+        const char* name = devices != nullptr && devices->len > 0
+                               ? nm_device_get_iface(static_cast<NMDevice*>(g_ptr_array_index(devices, 0)))
+                               : nullptr;
+        return name != nullptr && std::strcmp(name, kShareInterface) == 0 ? model::NetMode::Share
+                                                                          : model::NetMode::Router;
     }
+    return model::NetMode::Client;
+}
 
+// Adds LokiCTL's VPN profile for `request` in memory and then activates it;
+// the service makes kVpnInterface for it. Leftover VPN profiles of
+// LokiCTL's (none is active: the caller checked), such as one the service
+// took down by itself, are deleted first, and the add waits for those
+// answers. Adding and activating are two steps, as for a stored profile:
+// the service refuses add-and-activate while it still holds the leftover's
+// WireGuard device. add_pending stays set until the last step is answered.
+void NetworkManagerClient::Impl::add_vpn(const VpnRequest& request) {
+    drop_vpn_waiting();
     char* uuid = nm_utils_uuid_generate();
-    NMConnection* connection = vpn_profile(request, uuid);
+    vpn_waiting = vpn_profile(request, uuid);
     g_free(uuid);
-
-    // In memory only, like the hotspot: never written to disk, gone at the
-    // latest when the device starts again.
-    GVariantBuilder options;
-    g_variant_builder_init(&options, G_VARIANT_TYPE_VARDICT);
-    g_variant_builder_add(&options, "{sv}", "persist", g_variant_new_string("memory"));
 
     add_pending = true;
     undo_when_added = false;
-    ++pending;
-    // No device: the service makes the WireGuard interface itself.
-    nm_client_add_and_activate_connection2(client, connection, nullptr, nullptr, g_variant_builder_end(&options),
-                                           action_cancellable, &Impl::on_router_added, this);
+    g_main_context_push_thread_default(context);
+    for (NMRemoteConnection* profile : profiles_where(client, is_vpn_profile)) {
+        ++pending;
+        ++vpn_deletes_pending;
+        nm_remote_connection_delete_async(profile, action_cancellable, &Impl::on_vpn_leftover_deleted, this);
+    }
     g_main_context_pop_thread_default(context);
-    // libnm wipes the keys it holds when the profile is freed.
-    g_object_unref(connection);
+    if (vpn_deletes_pending == 0) {
+        add_vpn_waiting();
+    }
+}
+
+// Adds the tunnel's held profile in memory only, like the hotspot: never
+// written to disk, gone at the latest when the device starts again.
+// on_vpn_added() then activates it.
+void NetworkManagerClient::Impl::add_vpn_waiting() {
+    if (vpn_waiting == nullptr) {
+        vpn_refused(nullptr);
+        return;
+    }
+    g_main_context_push_thread_default(context);
+    ++pending;
+    nm_client_add_connection2(client, nm_connection_to_dbus(vpn_waiting, NM_CONNECTION_SERIALIZE_ALL),
+                              NM_SETTINGS_ADD_CONNECTION2_FLAG_IN_MEMORY, nullptr, TRUE, action_cancellable,
+                              &Impl::on_vpn_added, this);
+    g_main_context_pop_thread_default(context);
+    drop_vpn_waiting();
+}
+
+// libnm wipes the keys it holds when the profile is freed.
+void NetworkManagerClient::Impl::drop_vpn_waiting() {
+    if (vpn_waiting != nullptr) {
+        g_object_unref(vpn_waiting);
+        vpn_waiting = nullptr;
+    }
+}
+
+// True when the tunnel's switch was given up while a step was on its way
+// (too long, or on the way out): the next step is not sent, and what was
+// added goes.
+bool NetworkManagerClient::Impl::vpn_given_up() {
+    if (router_waiting && !undo_when_added && !closing) {
+        return false;
+    }
+    add_pending = false;
+    undo_when_added = false;
+    router_waiting = false;
+    drop_vpn_waiting();
+    release_activation();
+    delete_profiles_and_restore();
+    return true;
+}
+
+// The tunnel's add or activation was refused: the switch fails and what
+// was added goes. The service's own text is not shown: it could quote the
+// profile.
+void NetworkManagerClient::Impl::vpn_refused(const GError* error) {
+    add_pending = false;
+    undo_when_added = false;
+    router_waiting = false;
+    drop_vpn_waiting();
+    if (status.state == model::SwitchState::Switching) {
+        fail(permission_denied(error) ? model::SwitchError::NotAllowed : model::SwitchError::Failed,
+             "tunnel refused");
+    }
+    delete_profiles_and_restore();
 }
 
 // Adds LokiCTL's hotspot profile for `request` in memory and activates it on
@@ -881,10 +968,6 @@ void NetworkManagerClient::start_router(const RouterRequest& request) {
     if (self.hotspot_active()) {
         return;  // already on: nothing to do
     }
-    if (self.vpn_active()) {
-        self.fail(model::SwitchError::ClientFirst, {});
-        return;
-    }
 
     // The Wi-Fi profile the interface is on now, to bring back later.
     std::string restore;
@@ -901,6 +984,7 @@ void NetworkManagerClient::start_router(const RouterRequest& request) {
     self.switch_started = Clock::now();
     self.status.state = model::SwitchState::Switching;
     self.router_waiting = true;
+    self.scope = Impl::Scope::Hotspot;
     self.add_hotspot(request, device, restore);
 }
 
@@ -920,13 +1004,10 @@ void NetworkManagerClient::start_share(const RouterRequest& request) {
     if (self.hotspot_active()) {
         return;  // a hotspot of LokiCTL's runs: nothing to do
     }
-    if (self.vpn_active()) {
-        self.fail(model::SwitchError::ClientFirst, {});
-        return;
-    }
     self.switch_started = Clock::now();
     self.status.state = model::SwitchState::Switching;
     self.router_waiting = true;
+    self.scope = Impl::Scope::Hotspot;
     self.share_request = request;
     self.device_waiting = true;
     self.add_when_ready();
@@ -996,6 +1077,7 @@ void NetworkManagerClient::restart_router(const RouterRequest& request) {
     self.switch_started = Clock::now();
     self.status.state = model::SwitchState::Switching;
     self.router_waiting = true;
+    self.scope = Impl::Scope::Hotspot;
     self.undo_when_added = false;
     self.restore_interface = request.interface_name;
     ++self.pending;
@@ -1022,16 +1104,13 @@ void NetworkManagerClient::start_vpn(const VpnRequest& request) {
         self.fail(model::SwitchError::Failed, "network service not running");
         return;
     }
-    if (self.hotspot_active()) {
-        self.fail(model::SwitchError::ClientFirst, {});
-        return;
-    }
     if (self.vpn_active()) {
         return;  // a tunnel of LokiCTL's runs: nothing to do
     }
     self.switch_started = Clock::now();
     self.status.state = model::SwitchState::Switching;
     self.router_waiting = true;
+    self.scope = Impl::Scope::Vpn;
     self.add_vpn(request);
 }
 
@@ -1048,18 +1127,39 @@ void NetworkManagerClient::start_client() {
     self.switch_started = Clock::now();
     self.status.state = model::SwitchState::Switching;
     self.client_waiting = true;
+    self.scope = Impl::Scope::All;
     self.restore_interface = kHotspotInterface;
     self.delete_profiles_and_restore();
 }
 
-// Deletes every profile of LokiCTL's (hotspot and VPN); once all deletes
-// are answered, on_profile_deleted() activates the Wi-Fi profile a hotspot
-// profile recorded.
+void NetworkManagerClient::stop_vpn() {
+    Impl& self = *impl_;
+    if (busy() || self.closing) {
+        return;
+    }
+    self.status = model::ModeSwitch{};
+    self.status.target = self.hotspot_mode();
+    if (self.client == nullptr || profiles_where(self.client, is_vpn_profile).empty()) {
+        return;  // no tunnel: nothing is sent
+    }
+    self.switch_started = Clock::now();
+    self.status.state = model::SwitchState::Switching;
+    self.client_waiting = true;
+    self.scope = Impl::Scope::Vpn;
+    self.delete_profiles_and_restore();
+}
+
+// Deletes the profiles of LokiCTL's that `scope` names (all, or only the
+// hotspot's or the tunnel's); once all deletes are answered,
+// on_profile_deleted() activates the Wi-Fi profile a hotspot profile
+// recorded.
 void NetworkManagerClient::Impl::delete_profiles_and_restore() {
     if (client == nullptr || closing) {
         return;
     }
-    const std::vector<NMRemoteConnection*> profiles = lokictl_profiles(client);
+    const std::vector<NMRemoteConnection*> profiles = scope == Scope::Hotspot ? hotspot_profiles(client)
+                                                      : scope == Scope::Vpn   ? profiles_where(client, is_vpn_profile)
+                                                                              : lokictl_profiles(client);
     restore_uuid.clear();
     for (NMRemoteConnection* profile : profiles) {
         const char* uuid = user_data(NM_CONNECTION(profile), kRestoreKey);
@@ -1093,10 +1193,8 @@ void NetworkManagerClient::Impl::on_router_added(GObject* source, GAsyncResult* 
     if (active == nullptr) {
         self->router_waiting = false;
         if (self->status.state == model::SwitchState::Switching) {
-            // The service's own text is not shown for the tunnel: it could
-            // quote the profile.
             self->fail(permission_denied(error) ? model::SwitchError::NotAllowed : model::SwitchError::Failed,
-                       self->status.target == model::NetMode::Vpn ? std::string("tunnel refused") : reason_of(error));
+                       reason_of(error));
         }
         g_clear_error(&error);
         // The profile may have been added all the same.
@@ -1150,6 +1248,91 @@ void NetworkManagerClient::Impl::on_leftover_deleted(GObject* source, GAsyncResu
     auto* self = static_cast<Impl*>(user_data);
     nm_remote_connection_delete_finish(NM_REMOTE_CONNECTION(source), result, nullptr);
     --self->pending;
+}
+
+// A leftover VPN profile deleted before the tunnel's is added: once the
+// last of these deletes is answered, the new profile is added. A failed
+// delete shows up when the new profile is added or activated.
+void NetworkManagerClient::Impl::on_vpn_leftover_deleted(GObject* source, GAsyncResult* result,
+                                                         gpointer user_data) {
+    auto* self = static_cast<Impl*>(user_data);
+    GError* error = nullptr;
+    nm_remote_connection_delete_finish(NM_REMOTE_CONNECTION(source), result, &error);
+    --self->pending;
+    const bool cancelled = error != nullptr && g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED);
+    g_clear_error(&error);
+    if (--self->vpn_deletes_pending > 0) {
+        return;
+    }
+    if (cancelled) {
+        self->add_pending = false;
+        self->drop_vpn_waiting();
+        return;
+    }
+    if (!self->vpn_given_up()) {
+        self->add_vpn_waiting();
+    }
+}
+
+// The tunnel's profile has been added: it is activated with no device
+// named, so the service makes kVpnInterface (or takes the one it still
+// holds) itself.
+void NetworkManagerClient::Impl::on_vpn_added(GObject* source, GAsyncResult* result, gpointer user_data) {
+    auto* self = static_cast<Impl*>(user_data);
+    GError* error = nullptr;
+    NMRemoteConnection* profile = nm_client_add_connection2_finish(NM_CLIENT(source), result, nullptr, &error);
+    --self->pending;
+    if (error != nullptr && g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
+        self->add_pending = false;
+        g_clear_error(&error);
+        if (profile != nullptr) {
+            g_object_unref(profile);
+        }
+        return;
+    }
+    if (profile == nullptr) {
+        self->vpn_refused(error);
+        g_clear_error(&error);
+        return;
+    }
+    g_clear_error(&error);
+    if (!self->vpn_given_up()) {
+        g_main_context_push_thread_default(self->context);
+        ++self->pending;
+        nm_client_activate_connection_async(self->client, NM_CONNECTION(profile), nullptr, nullptr,
+                                            self->action_cancellable, &Impl::on_vpn_activated, self);
+        g_main_context_pop_thread_default(self->context);
+    }
+    g_object_unref(profile);
+}
+
+// The tunnel's activation has been answered: check_progress() ends the
+// switch once it is active.
+void NetworkManagerClient::Impl::on_vpn_activated(GObject* source, GAsyncResult* result, gpointer user_data) {
+    auto* self = static_cast<Impl*>(user_data);
+    GError* error = nullptr;
+    NMActiveConnection* active = nm_client_activate_connection_finish(NM_CLIENT(source), result, &error);
+    --self->pending;
+    self->add_pending = false;
+    if (error != nullptr && g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
+        if (active != nullptr) {
+            g_object_unref(active);
+        }
+        g_clear_error(&error);
+        return;
+    }
+    if (active == nullptr) {
+        self->vpn_refused(error);
+        g_clear_error(&error);
+        return;
+    }
+    g_clear_error(&error);
+    if (self->vpn_given_up()) {
+        g_object_unref(active);
+        return;
+    }
+    self->release_activation();
+    self->activation = active;
 }
 
 void NetworkManagerClient::Impl::on_restored(GObject* source, GAsyncResult* result, gpointer user_data) {
@@ -1290,6 +1473,7 @@ void NetworkManagerClient::leave(std::chrono::milliseconds limit) {
     self.router_waiting = false;
     self.release_activation();
     self.handle_until([&self] { return self.deletes_pending == 0; }, left());
+    self.scope = Impl::Scope::All;
     self.delete_profiles_and_restore();
     self.handle_until([&self] { return self.pending == 0; }, left());
 }
@@ -1499,6 +1683,8 @@ void NetworkManagerClient::restart_router(const RouterRequest& /*request*/) {}
 void NetworkManagerClient::start_vpn(const VpnRequest& /*request*/) {}
 
 void NetworkManagerClient::start_client() {}
+
+void NetworkManagerClient::stop_vpn() {}
 
 bool NetworkManagerClient::busy() const {
     return false;

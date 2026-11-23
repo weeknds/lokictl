@@ -326,7 +326,9 @@ void InstrumentHomeLayout::build_mode(const HomeContext& context) {
     // "OFFLINE" without any network, in the muted colour: a calm state, not
     // an alarm.
     const lv_font_t* display = theme.font(view::FontRole::Display);
-    const std::string word = home::upper_text(home::mode_word(context.data));
+    // The big word stays one mode: the chips below light VPN as well in
+    // the gateway.
+    const std::string word = home::upper_text(home::mode_word(context.data, false));
     auto* mode = plain_label(context.content, word.c_str());
     view::style::text(mode, theme, view::FontRole::Display,
                       home::is_offline(context.data) ? theme.colors.muted : theme.colors.text);
@@ -415,7 +417,11 @@ void InstrumentHomeLayout::build_chips(const HomeContext& context) {
 
     for (int32_t index = 0; index < model::kNetModeCount; ++index) {
         const auto mode = static_cast<model::NetMode>(index);
-        const bool active = mode == context.data.mode;
+        // In the VPN gateway the VPN chip is lit too, while its tunnel is
+        // set up or up.
+        const bool active = mode == context.data.mode ||
+                            (mode == model::NetMode::Vpn && home::is_vpn_gateway(context.data) &&
+                             context.data.vpn.state != model::VpnState::Off);
 
         auto* chip = plain_object(context.content);
         lv_obj_set_pos(chip, kLeftX + index * kChipStep, kChipY);

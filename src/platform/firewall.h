@@ -55,6 +55,14 @@ std::string blocked_devices_text(const std::vector<std::string>& addresses);
 // everything it sends in: no address, no internet, no answer from the
 // Cardputer.
 //
+// It also holds the VPN kill switch (F4.7): while the user runs a hotspot
+// mode and the VPN together (the gateway), the table's own kill chains let
+// hotspot devices out only through the tunnel, and the hotspot's DNS server
+// ask names only through it (see src/helper/lokictl_helper.c). The switch
+// follows the user's intent (set_kill_wanted(), arm_kill_switch()), not
+// what is seen: it stays while the tunnel is down and while the hotspot
+// restarts, and comes off only when the intent goes.
+//
 // It works in one of two ways:
 // - Real (the live source on the device, when it may change the network):
 //   it runs the helper program (lokictl-helper, the only part of LokiCTL
@@ -69,6 +77,13 @@ std::string blocked_devices_text(const std::vector<std::string>& addresses);
 //   never made one. Each step runs once; after a failure the next try
 //   comes with the next set_wanted() (a key press asks again) or change of
 //   the hotspot.
+//   While the kill switch is wanted the table is never removed: with the
+//   hotspot down its kill chains stay and the blocked set is left as it
+//   is. The first time the hotspot is up the table is read (the helper's
+//   `list`) instead of removed: its blocked set is taken as applied, and a
+//   kill chain found there makes the kill switch wanted again (a run that
+//   kept its mode on quitting, or was killed, while the gateway ran). Only
+//   when that cannot be read is the table removed, as before.
 // - Pretend (the made-up sources, test folders, the Mac, snapshots,
 //   --print-data): every wanted device counts as blocked at once and
 //   nothing runs.
@@ -92,9 +107,22 @@ public:
     // `hotspot_up`: LokiCTL's hotspot is active.
     void apply(model::HomeData& data, bool hotspot_up, bool may_run_helper);
 
-    // On the way out (real only): removes the table unless it is surely
-    // gone. Waits for the helper, at most kHelperLeaveTimeLimit.
+    // On the way out (real only): removes the table, kill switch included,
+    // unless it is surely gone. Waits for the helper, at most
+    // kHelperLeaveTimeLimit.
     void leave();
+
+    // The kill switch's intent. Real: the table is made to match at the
+    // next reading that may run the helper (kill-on or kill-off; with the
+    // hotspot down and no intent the whole table goes).
+    void set_kill_wanted(bool wanted);
+    bool kill_wanted() const;
+    // Real: arms the kill switch at once (the helper's kill-on, waiting for
+    // it, so on the data reader's thread only) and, when that worked, makes
+    // it wanted. Returns an empty text when it worked, else a short reason
+    // ("helper not installed"); the intent then stays as it was. Pretend:
+    // only makes it wanted.
+    std::string arm_kill_switch();
 
 private:
     enum class Table {
@@ -103,11 +131,18 @@ private:
         Present,
     };
 
-    // Brings the table in line with the wanted list and the hotspot (real).
+    // Brings the table in line with the wanted list, the kill switch and
+    // the hotspot (real).
     void settle(bool hotspot_up);
+    // Reads the table (the helper's `list`) and takes what it holds as
+    // applied; falls back to clear() when it cannot be read.
+    void adopt();
     // Runs the helper's `clear`, waiting at most `limit`; true when it
     // worked.
     bool clear(std::chrono::milliseconds limit = kHelperTimeLimit);
+    // Runs kill-on or kill-off; true when it worked, otherwise counts a
+    // failure.
+    bool switch_kill(bool on);
     // Runs `command` (block or unblock) for `addresses`; true when it
     // worked, otherwise counts a failure with `what` ("Block", "Unblock").
     bool change(const char* command, const char* what, const std::vector<std::string>& addresses);
@@ -116,7 +151,9 @@ private:
     std::vector<std::string> wanted_;
     std::vector<std::string> applied_; // what the table holds, as far as known
     Table table_{Table::Unknown};
-    bool settled_{false};   // nothing to do until the list or the hotspot changes
+    Table kill_{Table::Unknown}; // the kill chains, as far as known
+    bool kill_wanted_{false};
+    bool settled_{false};   // nothing to do until the list, the kill switch or the hotspot changes
     bool hotspot_up_{false};
     int32_t failures_{0};
     std::string message_;

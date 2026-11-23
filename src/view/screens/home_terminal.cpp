@@ -429,9 +429,12 @@ void TerminalHomeLayout::build_mode(const HomeContext& context) {
     }
 
     // The mode in bold with a round dot after it.
-    const std::string word = home::lower_text(model::net_mode_name(data.mode));
+    const std::string word = home::lower_text(home::mode_word(data));
     auto* mode = plain_label(pane.content, word.c_str());
-    view::style::text(mode, theme, view::FontRole::Strong, theme.colors.accent);
+    // The VPN gateway with its tunnel down in the error colour: hotspot
+    // devices are cut off.
+    view::style::text(mode, theme, view::FontRole::Strong,
+                      home::vpn_gateway_down(data) ? theme.colors.error : theme.colors.accent);
     lv_obj_set_pos(mode, 0, 0);
     mode_dot(pane.content, mode, theme);
 

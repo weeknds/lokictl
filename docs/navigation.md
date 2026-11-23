@@ -407,7 +407,8 @@ rows and a status line, and it is drawn the same way in every theme:
 - one row per mode, Client, Router, Share and VPN, each with a short hint
   and a tick on the mode that is on (it comes from NetworkManager: an
   active `LokiCTL hotspot` profile means Router, or Share when it runs on
-  `lokiap0`; an active `LokiCTL VPN` profile means VPN). VPN's hint is
+  `lokiap0`; an active `LokiCTL VPN` profile means VPN; both together are
+  the VPN gateway, and both rows carry a tick). VPN's hint is
   the WireGuard file it would use, with its place among the files
   (`home  ‹ 1/2 ›`), the tunnel's file while one runs, or `no WireGuard
   files`, and then the row is drawn muted;
@@ -415,20 +416,25 @@ rows and a status line, and it is drawn the same way in every theme:
   failed, `Plug in a cable first`, `Join a Wi-Fi network first` or `Back to
   Client first` (warning colour), `Not allowed: permission missing` or
   `Failed: <reason>` (error colour); while Router or Share runs, the
-  hotspot's name and, at the right, its password; while the tunnel runs,
-  `VPN <server>` and, at the right, `reply 4 s ago` (or `none` before
-  data came back); with the VPN row highlighted and no files, the folder
-  `~/.config/lokictl/wireguard`, muted; in Client the current link, muted.
+  hotspot's name and, at the right, its password; while the tunnel runs
+  (in the gateway: with the VPN row highlighted), `VPN <server>` and, at
+  the right, `reply 4 s ago` (or `none` before data came back); while the
+  gateway's kill switch is on without a tunnel, `VPN down: hotspot devices
+  blocked` (warning colour); with the VPN row highlighted and no files,
+  the folder `~/.config/lokictl/wireguard`, muted; in Client the current
+  link, muted.
 
 | Key | What it does |
 |---|---|
 | `f`/`x` or up/down | moves the highlight; it stops at the first and the last row |
 | `z`/`c` or left/right | on the VPN row, picks another WireGuard file (not while a tunnel runs) |
-| `Enter` or `6` USE | switches to the highlighted mode; USE is dimmed on the mode that is on, on VPN without files, and while a switch runs; on the VPN row while the tunnel runs it reads OFF and goes back to Client |
+| `Enter` or `6` USE | switches to the highlighted mode; USE is dimmed on the mode that is on, on VPN without files, and while a switch runs; on the VPN row while the tunnel runs it reads OFF and turns the VPN off (a hotspot stays; without one that is Client) |
 | `7` QR | opens the Hotspot page, in any mode |
+| `8` OFF | only on the VPN row while the gateway's kill switch is on without a tunnel: turns the VPN off, which frees the hotspot devices (`6` USE there turns the tunnel on again) |
 | `4` BACK or a short ESC | goes back |
 
-The page only asks (`BaseViewModel::request_mode()`); the data layer does
+The page only asks (`BaseViewModel::request_mode()`, or
+`request_vpn_off()` for VPN off); the data layer does
 the switch (see [data.md](data.md#switching-modes)), so the page never
 waits, and it follows the values as they arrive. The highlight lives in the
 view model and starts on the mode that is on each time the page is opened
@@ -799,8 +805,12 @@ opens the key test page.
 opens. It holds the theme picker (one row per theme, with the theme's
 name, four small squares in its colours and a tick on the theme that is
 active), below it the row "Dim when idle" with `on` or `off` (see
-[Battery care](data.md#battery-care)) and last the row "Remote view" (see
-[Remote view](#remote-view) below).
+[Battery care](data.md#battery-care)), the row "Remote view" (see
+[Remote view](#remote-view) below) and last the row "Keep mode after
+quitting" with `on` or `off` (off at first): while it is on, quitting
+leaves the network mode as it is (see
+[Switching modes](data.md#switching-modes)). The six rows are 17 px high
+so they fit above the soft keys.
 
 | Key | What it does |
 |---|---|
@@ -808,6 +818,7 @@ active), below it the row "Dim when idle" with `on` or `off` (see
 | `Enter` or `6` USE | switches to the highlighted theme and saves it; `USE` is switched off while the highlight is on the active theme, and picking that theme does nothing |
 | `Enter` or `6` OFF / ON | on the "Dim when idle" row: switches dimming off or on and saves it |
 | `Enter` or `6` ON / OFF | on the "Remote view" row: switches Remote view on or off (never saved) |
+| `Enter` or `6` ON / OFF | on the "Keep mode after quitting" row: switches it on or off and saves it (`keep_mode=yes` or `no`) |
 | `7` +AP / -AP | on the "Remote view" row, while it is on: lets devices on LokiCTL's own hotspot in too, or stops that; dimmed while Remote view is off |
 | `4` BACK or a short ESC | goes back to the home page |
 

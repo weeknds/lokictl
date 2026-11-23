@@ -216,11 +216,24 @@ bool is_offline(const model::HomeData& data) {
     return !data.ap_active && data.uplink_kind == model::LinkKind::None;
 }
 
-std::string mode_word(const model::HomeData& data) {
+std::string mode_word(const model::HomeData& data, bool with_vpn) {
     if (is_offline(data)) {
         return "Offline";
     }
-    return model::net_mode_name(data.mode);
+    std::string word = model::net_mode_name(data.mode);
+    if (with_vpn && is_vpn_gateway(data)) {
+        word += "+VPN";
+    }
+    return word;
+}
+
+bool is_vpn_gateway(const model::HomeData& data) {
+    return model::is_hotspot_mode(data.mode) && data.ap_active &&
+           (data.vpn.state != model::VpnState::Off || data.vpn.kill_switch);
+}
+
+bool vpn_gateway_down(const model::HomeData& data) {
+    return is_vpn_gateway(data) && model::vpn_gateway_down(data.vpn);
 }
 
 std::string join_parts(std::initializer_list<std::string> parts) {

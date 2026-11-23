@@ -32,6 +32,12 @@ struct ApplicationConfig {
     // key or its value is not yes/no, true/false or 1/0. When the key
     // appears more than once, the last line counts.
     std::optional<bool> dim_when_idle;
+    // The `keep_mode` key of [application]: whether the network mode
+    // (hotspot, tunnel, kill switch, blocked devices) stays when LokiCTL
+    // quits. Unset when the file has no such key or its value is not
+    // yes/no, true/false or 1/0. When the key appears more than once, the
+    // last line counts.
+    std::optional<bool> keep_mode;
     // The `hotspot_password` key of [application]: the password of the
     // hotspot that Router starts, as it stands after the '=' (trimmed).
     // Unset when the file has no such key; when it appears more than once,
@@ -79,6 +85,7 @@ bool load_application_config(const std::string& path,
 // folder and the section when needed:
 // - `theme=<name>` is written when config.theme is set,
 //   `dim_when_idle=yes|no` when config.dim_when_idle is set,
+//   `keep_mode=yes|no` when config.keep_mode is set,
 //   `hotspot_password=<password>` when config.hotspot_password is set,
 //   `hotspot_name=<name>` when config.hotspot_name is set and
 //   `blocked_devices=<list>` when config.blocked_devices is set. Each replaces

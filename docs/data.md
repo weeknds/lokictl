@@ -500,14 +500,43 @@ change anything.
   usual. In plain Client nothing is sent.
 - **VPN** (`NetworkManagerClient::start_vpn()`, see [The VPN](#the-vpn)):
   reads the chosen WireGuard file and adds the profile `LokiCTL VPN` in
-  memory only, on the interface `lokiwg0`, then activates it. VPN while
-  Router or Share runs, and Router or Share while VPN runs, fail at once
-  with `Back to Client first`; a bad file fails at once with its reason
-  (`Failed: bad PrivateKey`). The same 20 s limit and undo apply, with
-  fixed reasons (`tunnel refused`, `tunnel stopped`, `no tunnel after 20
-  s`): NetworkManager's own text is not shown for the tunnel. Client (and
-  the VPN row's `Off`) deletes the profile like the hotspot's.
-- **Every quit returns to Client** for now: hold-ESC, SIGTERM and SIGINT.
+  memory only, on the interface `lokiwg0`, then activates it. A bad file
+  fails at once with its reason (`Failed: bad PrivateKey`). The same 20 s
+  limit applies, with fixed reasons (`tunnel refused`, `tunnel stopped`,
+  `no tunnel after 20 s`): NetworkManager's own text is not shown for the
+  tunnel. A failed switch deletes only the profile it was adding (a VPN
+  switch the tunnel's, a hotspot switch the hotspot's), so the other half
+  of a gateway stays. Client deletes every profile of LokiCTL's; VPN off
+  (`ModeRequest::vpn_off`, the VPN row's `Off`) deletes only `LokiCTL VPN`
+  (`stop_vpn()`) while a hotspot runs, and is Client otherwise.
+- **The VPN gateway** (F4.7): VPN while Router or Share runs, and Router
+  or Share while VPN runs, are allowed (Router and Share together still
+  fail with `Back to Client first`). Before the second half starts, the
+  live source arms the **kill switch** on the reader thread
+  (`DeviceBlocker::arm_kill_switch()`, `lokictl-helper kill-on`); if that
+  fails the switch is refused with `Failed: kill switch: <reason>`. The
+  kill switch lives in LokiCTL's table `inet lokictl`, in two chains of
+  its own that block and unblock never touch: `kill_forward` drops
+  whatever comes in on `wlan0` or `lokiap0` and would leave by any
+  interface but `lokiwg0` (by name, so it holds while the tunnel is gone),
+  and `kill_output` drops DNS (port 53) that the hotspot's `dnsmasq` (user
+  `nobody`) sends by anything but `lokiwg0` or `lo`. It follows the user's
+  intent, not the tunnel: it stays when the tunnel drops or NetworkManager
+  takes it down, through a hotspot restart and through Block and Allow,
+  and comes off (`kill-off`, or the whole table once no hotspot runs) only
+  with VPN off or Client. `HomeData::vpn.kill_switch` shows it; with it on
+  and no tunnel the pages say `VPN down: hotspot devices blocked`. The
+  first time a start sees a hotspot (and only once NetworkManager has
+  answered), the table is read (`lokictl-helper list`) instead of
+  removed: its blocked devices count as applied, and a kill chain there
+  adopts the gateway. In a test folder the stand-in file's `vpn on <file>
+  <server>` and `kill-switch on` lines show the tunnel and the kill
+  switch.
+- **Every quit returns to Client** unless the Settings row "Keep mode
+  after quitting" is on (`keep_mode=yes`; `DataReader::set_keep_modes()`):
+  then the reader leaves the hotspot, `lokiap0`, the tunnel and the whole
+  firewall table as they are, and the next start takes them over as
+  above. Otherwise: hold-ESC, SIGTERM and SIGINT.
   Before the reader stops it calls `DataSource::leave_modes()`, which waits
   for an add still on its way, sends the Client requests and waits at most
   3 s (`DataReader::kLeaveModesLimit`) for NetworkManager to answer, well
@@ -516,7 +545,7 @@ change anything.
   is kept to remove `lokiap0` last, and it gets all the time left (right
   after the hotspot stops, the driver takes over a second). A quit in
   plain Client sends
-  nothing. Keeping a mode after quitting comes later.
+  nothing.
 - **A new name or password while Router or Share runs**
   (`restart_router()`, `ModeRequest::restart`): the profile is built
   afresh with the same UUID, the same `lokictl.restore` and a new
@@ -525,8 +554,8 @@ change anything.
   activated again on its interface (`wlan0`, or `lokiap0` in Share). So `wlan0`
   goes straight from the old hotspot to the new one and never falls back
   to the home Wi-Fi in between; devices on it must join again. A failure,
-  or 20 s without the hotspot, undoes it to Client as above. Nothing is
-  sent while the hotspot is not active.
+  or 20 s without the hotspot, deletes the hotspot's profile (a tunnel
+  stays). Nothing is sent while the hotspot is not active.
 - While a switch is busy the live source reads every 100 ms, so the
   answers are handled soon.
 
@@ -588,8 +617,21 @@ two names: keys and the rest of a file never leave
 - **Replies instead of a handshake time.** WireGuard counts as up without
   any answer, and its handshake time needs CAP_NET_ADMIN (libnm does not
   give it). While the tunnel is on, the live source reads `lokiwg0`'s
-  received bytes with the network; `reply_seconds` is the time since they
-  last grew (in 5 s steps), or `kVpnReplyNone` before anything came back.
+  received bytes at every reading, and every second until the first
+  answer; `reply_seconds` is the time since they last grew, or
+  `kVpnReplyNone` before anything came back. A new tunnel sends nothing
+  (not even its handshake) until something goes through it, so `none`
+  right after it comes up is true. In a test folder each reading takes the
+  next line of `sys/class/net/lokiwg0/statistics/rx_bytes` and counts as
+  one second, so `--data-steps` shows the age growing:
+
+  ```sh
+  printf 'running yes\nvpn on home 192.0.2.1\n' > build/vpn/networkmanager
+  mkdir -p build/vpn/sys/class/net/lokiwg0/statistics
+  printf '0\n0\n1200\n1200\n' > build/vpn/sys/class/net/lokiwg0/statistics/rx_bytes
+  printf '0\n0\n100\n100\n' > build/vpn/sys/class/net/lokiwg0/statistics/tx_bytes
+  LOKICTL_DATA_ROOT=build/vpn $B --print-data --data live --data-steps 3   # vpn_reply_s=1
+  ```
 
 For example (with the made-up files `home` and `travel`):
 
@@ -1391,6 +1433,7 @@ vpn=off
 vpn_file=unknown
 vpn_server=unknown
 vpn_reply_s=unknown
+vpn_kill_switch=off
 vpn_files=home,travel
 ```
 
@@ -1428,6 +1471,7 @@ The lines always come in this order:
 | `usb_wifi_adapter=` | one line per adapter (none without one): its interface, then `driver=`, `usb_id=`, `managed=` (`yes`, `no` or `unknown`) and, last because it may hold spaces, `name=` |
 | `vpn=` | the tunnel: `off`, `connecting` or `on` (see [The VPN](#the-vpn)) |
 | `vpn_file=`, `vpn_server=`, `vpn_reply_s=` | the tunnel's file (without `.conf`), the server's host and the seconds since data last came back; `unknown` without a tunnel |
+| `vpn_kill_switch=` | `on` while the VPN gateway's kill switch is on (also with the tunnel down), else `off`. A separate `--print-data` run on the device does not read the firewall, so it says `off` there; `nft list table inet lokictl` shows the kill chains |
 | `vpn_files=` | the WireGuard files to use, separated by commas; empty when there are none |
 | `client=` | one line per connected client, in the page's order (none without clients): its hardware address, then `address=`, `signal_dbm=`, `rate_kbps=` (both ways together), `joined_s=` (seconds on the access point), `new=` (`yes` for the first five minutes) and, last because it may hold spaces, `name=` |
 
@@ -1477,7 +1521,11 @@ gives `network=Harbour-Cafe`, `security=WPA2`, `speed_mbps=72` and
 device NetworkManager manages; see [USB Wi-Fi adapters](#usb-wi-fi-adapters));
 in a `link` line `-` means not known.
 `ap wlan0 WPA2 LokiCTL-1A2B` says LokiCTL's hotspot runs on `wlan0`
-(Router, with that name and security; `ap lokiap0 …` means Share). In a test folder a switch on the
+(Router, with that name and security; `ap lokiap0 …` means Share).
+`vpn on <file> <server>` (or `vpn connecting …`) says LokiCTL's tunnel
+runs, and `kill-switch on` that the VPN gateway's kill switch is on (it
+stands in for the firewall table), so `ap …` with `kill-switch on` and no
+`vpn` line shows the gateway with its tunnel down. In a test folder a switch on the
 Modes page only pretends (see [Switching modes](#switching-modes)), and
 `fail permission` or `fail <reason>` makes it fail as not allowed or with
 that reason.

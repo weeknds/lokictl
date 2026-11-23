@@ -94,7 +94,8 @@ inline bool same_clients(const std::vector<model::HomeClient>& left,
 // rates with their histories, the clients' signal, rate and time while the
 // same devices are listed (same_clients()), the Status page's details
 // (HomeData::details), the Wi-Fi page's list (HomeData::wifi_scan), the
-// switch between modes (HomeData::mode_switch)
+// tunnel's reply age (VpnStatus::reply_seconds), the switch between modes
+// (HomeData::mode_switch)
 // and the firewall's failures (HomeData::block_failures and
 // block_message); the home page shows none of the last four, nor which
 // device is blocked (HomeClient::blocked, which same_clients() ignores). Every other difference (the kind of link, the access point,
@@ -131,6 +132,9 @@ inline bool home_values_only(const model::HomeData& shown, const model::HomeData
     copy.mode_switch = next.mode_switch;
     copy.block_failures = next.block_failures;
     copy.block_message = next.block_message;
+    // The tunnel's reply age changes at every reading; the home page does
+    // not show it.
+    copy.vpn.reply_seconds = next.vpn.reply_seconds;
     return copy == next;
 }
 

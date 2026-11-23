@@ -112,8 +112,19 @@ bool is_offline(const model::HomeData& data);
 
 // The word where the page names the mode: the mode's name ("Client",
 // "Router", ...; see model::net_mode_name()), or "Offline" when is_offline().
+// In the VPN gateway (is_vpn_gateway()) "+VPN" follows ("Router+VPN"),
+// unless `with_vpn` is false (a page that shows the VPN apart).
 // Pages write it in capitals or lowercase as their theme asks.
-std::string mode_word(const model::HomeData& data);
+std::string mode_word(const model::HomeData& data, bool with_vpn = true);
+
+// True in the VPN gateway: a hotspot mode with the tunnel set up or up, or
+// with its kill switch on.
+bool is_vpn_gateway(const model::HomeData& data);
+
+// True in the VPN gateway while its tunnel is down and the kill switch
+// holds the hotspot devices back. Pages draw the mode word in the error
+// colour then.
+bool vpn_gateway_down(const model::HomeData& data);
 
 // The parts that are not empty, joined by " · " (a middle dot, U+00B7, with
 // a space on each side): {"wlan0", "wi-fi"} -> "wlan0 · wi-fi", {"", "wi-fi"}

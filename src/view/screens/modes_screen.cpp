@@ -56,8 +56,9 @@ constexpr int32_t kVpnRow = static_cast<int32_t>(model::NetMode::Vpn);
 // Where the user puts WireGuard files, as the pages name it.
 constexpr const char* kVpnFolderText = "~/.config/lokictl/wireguard";
 
-// Index 2 of the soft-key set is key 6.
+// Index 2 of the soft-key set is key 6, index 4 key 8.
 constexpr std::size_t kUseKeyIndex = 2;
+constexpr std::size_t kOffKeyIndex = 4;
 
 // The colours of the status line's left part.
 enum StatusTone : int32_t {
@@ -70,6 +71,12 @@ enum StatusTone : int32_t {
 // True while LokiCTL's tunnel is being set up or is up.
 bool vpn_active(const model::HomeData& data) {
     return data.vpn.state != model::VpnState::Off || data.mode == model::NetMode::Vpn;
+}
+
+// True while the VPN gateway's kill switch holds the hotspot devices back
+// with no tunnel at all (not even one being set up).
+bool gateway_down(const model::HomeData& data) {
+    return data.vpn.kill_switch && data.vpn.state == model::VpnState::Off && data.ap_active;
 }
 
 // True when the row can ever be used now: Client, Router and Share always;
@@ -165,7 +172,16 @@ void ModesScreen::use_selected() {
     if (!can_use(row)) {
         return;
     }
-    view_model().request_mode(turns_vpn_off(row) ? model::NetMode::Client : static_cast<model::NetMode>(row));
+    if (turns_vpn_off(row)) {
+        view_model().request_vpn_off();
+    } else {
+        view_model().request_mode(static_cast<model::NetMode>(row));
+    }
+}
+
+bool ModesScreen::offers_vpn_off() const {
+    const model::HomeData& data = view_model().home();
+    return selected_row() == kVpnRow && gateway_down(data) && data.mode_switch.state != model::SwitchState::Switching;
 }
 
 std::string ModesScreen::vpn_hint() const {
@@ -194,7 +210,7 @@ view::widgets::SoftKeySet ModesScreen::soft_keys() {
         {},
         {"Use", [this] { use_selected(); }, true, false},
         {"QR", [&view_model] { view_model.open_hotspot(); }},
-        {},
+        {},  // key 8: Off while the gateway is down (see refresh())
     }};
 }
 
@@ -313,16 +329,20 @@ void ModesScreen::refresh() {
         shown_vpn_switchable_ = vpn_switchable;
     }
 
-    if (active != shown_active_) {
+    // The tick on the mode that is on, and in the VPN gateway on the VPN
+    // row as well.
+    const int32_t vpn_mark = active != kVpnRow && vpn_active(data) ? 1 : 0;
+    if (active != shown_active_ || vpn_mark != shown_vpn_mark_) {
         for (int32_t index = 0; index < kRowCount; ++index) {
             lv_obj_t* mark = rows_[static_cast<std::size_t>(index)].mark;
-            if (index == active) {
+            if (index == active || (index == kVpnRow && vpn_mark == 1)) {
                 lv_obj_clear_flag(mark, LV_OBJ_FLAG_HIDDEN);
             } else {
                 lv_obj_add_flag(mark, LV_OBJ_FLAG_HIDDEN);
             }
         }
         shown_active_ = active;
+        shown_vpn_mark_ = vpn_mark;
     }
 
     // Key 6: 0 off, 1 Use, 2 Off (the VPN row while the tunnel runs).
@@ -332,6 +352,23 @@ void ModesScreen::refresh() {
             bar->set_key(kUseKeyIndex, {use == 2 ? "Off" : "Use", [this] { use_selected(); }, true, use != 0});
         }
         shown_use_ = use;
+    }
+
+    // Key 8: Off while the gateway is down and the VPN row is highlighted.
+    const int32_t off = offers_vpn_off() ? 1 : 0;
+    if (off != shown_off_) {
+        if (auto* bar = soft_key_bar()) {
+            if (off == 1) {
+                bar->set_key(kOffKeyIndex, {"Off", [this] {
+                                                if (offers_vpn_off()) {
+                                                    view_model().request_vpn_off();
+                                                }
+                                            }});
+            } else {
+                bar->set_key(kOffKeyIndex, {});
+            }
+        }
+        shown_off_ = off;
     }
 
     refresh_status();
@@ -374,7 +411,13 @@ void ModesScreen::refresh_status() {
                 tone = kToneError;
                 break;
         }
-    } else if (model::is_hotspot_mode(data.mode) && data.ap_active) {
+    } else if (gateway_down(data)) {
+        // The kill switch holds the hotspot devices back until the VPN is
+        // on again (Use) or off (key 8).
+        left = "VPN down: hotspot devices blocked";
+        tone = kToneWarning;
+    } else if (model::is_hotspot_mode(data.mode) && data.ap_active &&
+               !(selected_row() == kVpnRow && vpn_active(data))) {
         left = data.ap_name.empty() ? std::string("Hotspot on") : data.ap_name;
         right = view_model().hotspot_password();
     } else if (vpn_active(data)) {

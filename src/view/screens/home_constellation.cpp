@@ -614,8 +614,12 @@ void ConstellationHomeLayout::build_panel(const HomeContext& context) {
     const lv_font_t* title = theme.font(view::FontRole::Title);
     const std::string word = home::upper_text(home::mode_word(data));
     auto* mode = plain_label(panel, word.c_str());
+    // The VPN gateway with its tunnel down in the error colour: hotspot
+    // devices are cut off.
     view::style::text(mode, theme, view::FontRole::Title,
-                      home::is_offline(data) ? colors.muted : colors.accent);
+                      home::is_offline(data)          ? colors.muted
+                      : home::vpn_gateway_down(data) ? colors.error
+                                                      : colors.accent);
     fix_width(mode, kTextWidth, title);
     lv_obj_set_pos(mode, left, kModeY);
 

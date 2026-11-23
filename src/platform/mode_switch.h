@@ -34,6 +34,10 @@ struct ModeRequest {
     // VPN, for a pretend switch only: the server's host. The data source
     // fills it in from the file (never a page); empty shows a made-up one.
     std::string vpn_server;
+    // VPN only: turn the tunnel off (the user's VPN Off) instead of on. A
+    // hotspot that runs stays on, and the kill switch comes off with the
+    // tunnel; without a hotspot it is the same as Client.
+    bool vpn_off{false};
 };
 
 // How a pretend switch ends. A test folder's stand-in for NetworkManager
@@ -63,30 +67,33 @@ std::string default_hotspot_name(const std::filesystem::path& root);
 // named `uplink`: "eth0 -> wi-fi ap · nat · dhcp" (with an arrow).
 std::string router_mode_detail(const std::string& uplink);
 
-// Pretends to switch between Client, Router and Share, so pages can be pictured
-// and tried where nothing may or can change the network: the made-up
-// sources, test folders, the Mac, snapshots and --print-data. It changes
-// nothing outside this object.
+// Pretends to switch between Client, Router, Share and VPN, so pages can
+// be pictured and tried where nothing may or can change the network: the
+// made-up sources, test folders, the Mac, snapshots and --print-data. It
+// changes nothing outside this object.
 //
 // It counts readings, not time, so the same snapshot always gives the same
 // picture. A request is taken at the next reading (apply()): a mode that is
-// already on finishes at once, Router without a cable uplink fails at once
-// ("Plug in a cable first"), Share without a Wi-Fi uplink too ("Join a
+// already on finishes at once (VPN: the tunnel is on; VPN off: neither the
+// tunnel nor the kill switch is on), Router without a cable uplink fails at
+// once ("Plug in a cable first"), Share without a Wi-Fi uplink too ("Join a
 // Wi-Fi network first"), Router while Share is on and Share while Router
 // is on too ("Back to Client first"), a restart while its mode is not on
-// is ignored, and every other switch (a restart too) shows Switching until the reading
-// after, which ends it as `failure` says (or with the new mode on). The
-// source asks to be read again kPretendTime after a switch starts
+// is ignored, and every other switch (a restart too) shows Switching until
+// the reading after, which ends it as `failure` says (or with the new mode
+// on). The source asks to be read again kPretendTime after a switch starts
 // (next_delay()), so in a window it takes about a second.
 //
-// Once a pretend switch has finished, the pretend mode replaces the
-// source's own: Router and Share show the made-up hotspot of the sample
-// (model::sample_home_data()) on top of the source's values, under the
-// name the request carried (when it carried one); Client shows no access
-// point and no clients; VPN shows the tunnel on (see show_vpn()) with the
-// request's file and server. VPN while Router or Share is on, and
-// Router or Share while VPN is on, fail at once ("Back to Client first").
-// The password is never kept.
+// The hotspot and the tunnel are pretended apart, as on the device: VPN
+// while Router or Share is on, and Router or Share while VPN is on, make
+// the VPN gateway, with the kill switch on. Once a pretend switch has
+// finished, what it set replaces the source's own: Router and Share show
+// the made-up hotspot of the sample (model::sample_home_data()) on top of
+// the source's values, under the name the request carried (when it carried
+// one); VPN shows the tunnel on (see show_vpn()) with the request's file
+// and server; VPN off takes the tunnel and the kill switch away and keeps
+// the hotspot; Client shows no access point, no clients, no tunnel and no
+// kill switch. The password is never kept.
 class PretendModeSwitch {
 public:
     static constexpr std::chrono::milliseconds kPretendTime{1000};
@@ -105,21 +112,30 @@ public:
     std::chrono::milliseconds next_delay() const;
 
 private:
-    // Puts the pretend mode, once a switch has finished, on top of `data`.
+    // Puts what finished switches set on top of `data`.
     void show_mode(model::HomeData& data) const;
+    // Decides how the waiting request starts, from `data` as shown now.
+    void start_request(const model::HomeData& data);
 
     bool requested_{false};
     model::NetMode requested_mode_{model::NetMode::Client};
     std::string requested_name_;
     bool requested_restart_{false};
-    bool switching_{false};
-    std::string switching_name_;     // the name the running switch carries
-    bool has_mode_{false};           // a pretend switch finished: mode_ replaces the source's mode
-    model::NetMode mode_{model::NetMode::Client};
-    std::string name_;               // Router: the hotspot's name; empty keeps the shown one
+    bool requested_vpn_off_{false};
     model::VpnStatus requested_vpn_; // VPN: the file and server the request carried
-    model::VpnStatus switching_vpn_; // ... the running switch carries
-    model::VpnStatus vpn_;           // ... the finished one showed
+    bool switching_{false};
+    bool switching_vpn_off_{false};
+    bool switching_kill_{false};     // the running switch ends with the kill switch on
+    std::string switching_name_;     // the name the running switch carries
+    model::VpnStatus switching_vpn_; // ... the file and server
+    // What finished switches set; each replaces the source's own once set.
+    bool has_hotspot_{false};
+    model::NetMode hotspot_mode_{model::NetMode::Client}; // Client: no hotspot
+    std::string name_;               // the hotspot's name; empty keeps the shown one
+    bool has_vpn_{false};
+    model::VpnStatus vpn_;           // state Off: no tunnel
+    bool has_kill_{false};
+    bool kill_{false};
     model::ModeSwitch status_;
 };
 
@@ -143,9 +159,19 @@ void show_client(model::HomeData& data);
 std::string vpn_mode_detail(const std::string& server);
 
 // Shows VPN in `data`: the tunnel's state, file, server and reply time
-// from `tunnel` (its file list is not used), and the mode VPN
-// unless a hotspot runs. The access point and the clients are left as
+// from `tunnel` (its file list and kill switch are not used), and the mode
+// VPN unless a hotspot runs. The access point and the clients are left as
 // they are.
 void show_vpn(model::HomeData& data, const model::VpnStatus& tunnel);
+
+// The line that explains the VPN gateway (a hotspot mode with the tunnel
+// up) on the home page: "ap -> wireguard -> <server>" (with arrows).
+std::string gateway_mode_detail(const std::string& server);
+
+// While a hotspot runs: the gateway's line on the home page (see
+// gateway_mode_detail()) when the tunnel is up, or "vpn down · devices
+// blocked" when the kill switch is on without it. Anything else is left as
+// it is.
+void show_gateway(model::HomeData& data);
 
 } // namespace platform

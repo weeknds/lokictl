@@ -74,6 +74,8 @@ DataController::DataController(viewmodel::BaseViewModel& view_model,
     wifi_scan_requests_seen_ = lv_subject_get_int(view_model_.wifi_scan_request_subject());
     wifi_scan_observer_ =
         lv_subject_add_observer(view_model_.wifi_scan_request_subject(), wifi_scan_request_cb, this);
+    // Called once right away too: the reader gets the setting at start.
+    keep_mode_observer_ = lv_subject_add_observer(view_model_.keep_mode_subject(), keep_mode_cb, this);
 }
 
 DataController::~DataController() {
@@ -85,6 +87,10 @@ DataController::~DataController() {
     if (mode_observer_) {
         lv_observer_remove(mode_observer_);
         mode_observer_ = nullptr;
+    }
+    if (keep_mode_observer_) {
+        lv_observer_remove(keep_mode_observer_);
+        keep_mode_observer_ = nullptr;
     }
     if (hotspot_observer_) {
         lv_observer_remove(hotspot_observer_);
@@ -156,9 +162,11 @@ void DataController::stop() {
     }
 
     const bool was_running = reader_.running();
-    if (was_running && reader_.changes_network() &&
-        (block_.mode != model::NetMode::Client || block_.mode_switch.state == model::SwitchState::Switching)) {
-        LOG_INFO("data: back to Client before quitting");
+    const bool other_mode = block_.mode != model::NetMode::Client || block_.vpn.state != model::VpnState::Off ||
+                            block_.vpn.kill_switch ||
+                            block_.mode_switch.state == model::SwitchState::Switching;
+    if (was_running && reader_.changes_network() && other_mode) {
+        LOG_INFO("data: {}", view_model_.keep_mode() ? "mode kept after quitting" : "back to Client before quitting");
     }
     reader_.stop();
     if (was_running) {
@@ -191,6 +199,27 @@ void DataController::mode_request_cb(lv_observer_t* observer, lv_subject_t* subj
     }
     controller->mode_requests_seen_ = count;
     controller->request_mode(controller->view_model_.requested_mode());
+}
+
+void DataController::keep_mode_cb(lv_observer_t* observer, lv_subject_t* /*subject*/) {
+    auto* controller = static_cast<DataController*>(lv_observer_get_user_data(observer));
+    if (!controller) {
+        return;
+    }
+    const bool keep = controller->view_model_.keep_mode();
+    controller->reader_.set_keep_modes(keep);
+    if (!controller->keep_mode_seen_) {
+        controller->keep_mode_seen_ = true;
+        return;
+    }
+    LOG_INFO("data: keep mode after quitting switched {}", keep ? "on" : "off");
+    if (controller->keep_mode_saver_) {
+        controller->keep_mode_saver_(keep);
+    }
+}
+
+void DataController::set_keep_mode_saver(KeepModeSaver saver) {
+    keep_mode_saver_ = std::move(saver);
 }
 
 void DataController::hotspot_request_cb(lv_observer_t* observer, lv_subject_t* subject) {
@@ -358,7 +387,10 @@ void DataController::request_mode(model::NetMode mode) {
         }
     }
     if (mode == model::NetMode::Vpn) {
-        request.vpn_file = view_model_.vpn_file();
+        request.vpn_off = view_model_.requested_vpn_off();
+        if (!request.vpn_off) {
+            request.vpn_file = view_model_.vpn_file();
+        }
     }
     send(request);
 }

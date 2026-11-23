@@ -168,12 +168,20 @@ void add_usb_wifi(std::vector<StatusRow>& rows, const std::vector<model::UsbWifi
 }
 
 // The tunnel's file, server and last reply while it runs;
-// otherwise how many WireGuard files there are to use.
+// otherwise how many WireGuard files there are to use. The kill switch of
+// the VPN gateway while it is on; with the tunnel down that is a warning
+// (hotspot devices get nothing).
 void add_vpn(std::vector<StatusRow>& rows, const model::VpnStatus& vpn) {
-    const NoteTone tone = vpn.state == model::VpnState::On           ? NoteTone::Good
+    const bool down = model::vpn_gateway_down(vpn);
+    const NoteTone tone = down                                       ? NoteTone::Warning
+                          : vpn.state == model::VpnState::On         ? NoteTone::Good
                           : vpn.state == model::VpnState::Connecting ? NoteTone::Plain
                                                                      : NoteTone::Quiet;
-    add_heading(rows, "vpn", model::vpn_state_name(vpn.state), tone);
+    add_heading(rows, "vpn", down && vpn.state == model::VpnState::Off ? "down" : model::vpn_state_name(vpn.state),
+                tone);
+    if (vpn.kill_switch) {
+        add_row(rows, "kill switch", down ? "devices blocked" : "on");
+    }
     if (vpn.state == model::VpnState::Off) {
         const std::size_t count = vpn.files.size();
         add_row(rows, "files", count == 0 ? std::string("none") : std::to_string(count));

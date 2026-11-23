@@ -115,6 +115,15 @@ public:
     bool screen_dimming() const;
     void set_screen_dimming(bool on);
 
+    // Whether the network mode is kept when LokiCTL quits (the Settings
+    // page's "Keep mode after quitting" row); starts as false. The app sets
+    // the saved choice at start; app::DataController follows the subject,
+    // tells the data reader and saves every later change. Nothing is
+    // written when it stays the same.
+    lv_subject_t* keep_mode_subject();
+    bool keep_mode() const;
+    void set_keep_mode(bool on);
+
     // The Status page.
     // The first row it shows, counted from the top of its list; starts at
     // 0. The page shows it clamped to the rows there are (the view model
@@ -167,8 +176,13 @@ public:
     // state comes back in home().mode_switch. Counts every request, like
     // theme_request_subject(); requested_mode() says which one.
     void request_mode(model::NetMode mode);
+    // Asks to turn the VPN off (a request for model::NetMode::Vpn with
+    // requested_vpn_off() true): the tunnel and the kill switch go, a
+    // hotspot stays. Counted like request_mode().
+    void request_vpn_off();
     lv_subject_t* mode_request_subject();
     model::NetMode requested_mode() const;
+    bool requested_vpn_off() const;
     // The WireGuard file the VPN row offers: the one picked by name when it
     // is still among home().vpn.files, otherwise the first one; empty when
     // there is none. A VPN request uses it. The pick is kept across a
@@ -406,6 +420,7 @@ private:
     int32_t requested_theme_{-1};
     reactive::IntSubject settings_theme_selection_subject_;
     reactive::BoolSubject screen_dimming_subject_;
+    reactive::BoolSubject keep_mode_subject_;
     reactive::IntSubject status_scroll_subject_;
     reactive::IntSubject devices_selection_subject_;
     reactive::IntSubject block_request_subject_;
@@ -414,6 +429,7 @@ private:
     reactive::IntSubject modes_selection_subject_;
     reactive::IntSubject mode_request_subject_;
     model::NetMode requested_mode_{model::NetMode::Client};
+    bool requested_vpn_off_{false};
     std::string vpn_file_;                // the picked file, by name; empty for the first one
     reactive::IntSubject vpn_file_subject_;
     std::string hotspot_password_;

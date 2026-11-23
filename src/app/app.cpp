@@ -194,6 +194,20 @@ bool save_dimming_choice(const std::string& path, bool on) {
     return true;
 }
 
+// Saves the "Keep mode after quitting" setting as the keep_mode= key of
+// the settings file at `path`, keeping every other line. A failure is
+// logged.
+void save_keep_mode_choice(const std::string& path, bool keep) {
+    ApplicationConfig config;
+    config.keep_mode = keep;
+    std::string error;
+    if (!save_application_config(path, config, error)) {
+        LOG_WARN("could not save keep_mode to {}: {}", path, error);
+        return;
+    }
+    LOG_INFO("saved keep_mode={} to {}", keep ? "yes" : "no", path);
+}
+
 // Saves a changed hotspot name or password as the hotspot_name= and
 // hotspot_password= keys of the settings file at `path` (which keeps every
 // other line, and becomes readable by its owner only when the password is
@@ -468,6 +482,8 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override,
     }
     // Dimming is on unless the user switched it off on the Settings page.
     view_model.set_screen_dimming(config.dim_when_idle.value_or(true));
+    // Every quit goes back to Client unless the user keeps the mode.
+    view_model.set_keep_mode(config.keep_mode.value_or(false));
 
     // The hotspot's name and password. The simulator shows made-up ones
     // and never writes them; the device uses the saved ones, the default
@@ -609,6 +625,7 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override,
     data.set_blocked_saver([&user_config_path](const std::vector<std::string>& addresses) {
         save_blocked_devices(user_config_path, addresses);
     });
+    data.set_keep_mode_saver([&user_config_path](bool keep) { save_keep_mode_choice(user_config_path, keep); });
     data.read_first();
 
     // The tools (ping, DNS lookup) run on their own thread; the live runner

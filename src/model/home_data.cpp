@@ -65,7 +65,12 @@ bool operator==(const VpnStatus& left, const VpnStatus& right) {
            left.state == right.state &&
            left.file == right.file &&
            left.server == right.server &&
-           left.reply_seconds == right.reply_seconds;
+           left.reply_seconds == right.reply_seconds &&
+           left.kill_switch == right.kill_switch;
+}
+
+bool vpn_gateway_down(const VpnStatus& vpn) {
+    return vpn.kill_switch && vpn.state != VpnState::On;
 }
 
 bool operator!=(const VpnStatus& left, const VpnStatus& right) {

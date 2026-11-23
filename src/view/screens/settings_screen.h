@@ -21,13 +21,17 @@ namespace screen {
 //   theme's own colours (ground, text, accent, second accent) and a tick on
 //   the theme that is active;
 // - the row "Dim when idle" with "on" or "off" (BaseViewModel::
-//   screen_dimming()).
+//   screen_dimming());
+// - the row "Remote view" with its state;
+// - the row "Keep mode after quitting" with "on" or "off" (BaseViewModel::
+//   keep_mode()).
 // Up and down (F/X or the arrow keys) move the highlight and stop at the
 // first and the last row. Enter or key 6 (Use) switches to the highlighted
 // theme; Use is switched off while the highlight is on the active theme,
 // because there is nothing to switch to. On the dimming row key 6 reads
 // Off (or On while dimming is off), and it or Enter switches dimming
-// (app::PowerController saves it). Key 4 or a short ESC goes back.
+// (app::PowerController saves it); the keep-mode row works the same way
+// (app::DataController saves it). Key 4 or a short ESC goes back.
 //
 // The highlight lives in the view model (settings_theme_selection_*), so it
 // is kept across the theme switch, which builds the page again. There

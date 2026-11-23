@@ -636,8 +636,8 @@ mode that is on:
   address. To go between Router and Share, go back to
   Client first; the page says `Back to Client first`.
 - **VPN** sends the device's traffic through a WireGuard tunnel made from
-  a file you put on the device (see below). To go between VPN and Router
-  or Share, go back to Client first.
+  a file you put on the device (see below). VPN together with Router or
+  Share makes a **VPN gateway** (see below).
 
 `f` or `up` and `x` or `down` move the highlight; `enter` or `6` USE
 switches to the highlighted mode, and a line under the list says
@@ -646,12 +646,32 @@ is dimmed on the mode that is on, on VPN without a file, and while a
 switch runs. `4` BACK or a short
 `esc` goes back. **Whenever LokiCTL quits, the device goes back to
 Client**: the hotspot or the tunnel is removed and the Wi-Fi network it
-was on before comes back (in Share and VPN it never left). The hotspot's profile is only ever
+was on before comes back (in Share and VPN it never left). To keep the
+mode running after LokiCTL quits instead, switch "Keep mode after
+quitting" on in Settings (saved as `keep_mode=yes`); the next start then
+shows the mode, with blocked devices and the gateway's kill switch, and
+can switch back to Client. The hotspot's profile is only ever
 kept in memory, so a restart of the device always ends in Client too. If
 LokiCTL is killed instead of quitting, the hotspot stays on until LokiCTL
 starts again; the Modes page then shows Router or Share and can switch
 back. On the Mac the switch
 only pretends, so the pages can be tried.
+
+**VPN gateway.** Turn the VPN on while Router or Share runs, or start
+Router or Share while the VPN runs (either order): devices on the hotspot
+then go out only through the tunnel, and the names they look up go
+through it too. The home page shows `Router+VPN` (or `Share+VPN`;
+Instrument lights both the ROUTER and the VPN chip) and the Modes page
+ticks both rows. A **kill switch** in LokiCTL's own firewall
+table guards it: if the tunnel drops, hotspot devices get nothing at all
+instead of going out around it, and the Modes page says `VPN down: hotspot
+devices blocked`. Then `6` USE on the VPN row turns the tunnel on again,
+and `8` OFF turns the VPN off, which lets the devices out directly again.
+The home page draws the mode in red meanwhile.
+The kill switch stays through a new hotspot name or password and through
+Block and Allow; only VPN off (`6` OFF on the VPN row) or Client removes
+it. Router and Share still cannot run together: go back to Client first
+(`Back to Client first`).
 
 **VPN.** Copy a WireGuard client file (`.conf`, as VPN providers and
 routers hand them out) into `~/.config/lokictl/wireguard/` on the device,
@@ -660,8 +680,10 @@ makes it and the files in it readable by you only. The VPN row shows the
 file it will use; `z` and `c` pick another when there are several, `6`
 USE turns the tunnel on and `6` OFF turns it off. While it runs, the line
 under the list shows the server and how long ago data last came back
-through the tunnel (`reply 4 s ago`; WireGuard counts as on even before
-the server answers, so `none` there means no answer yet). The Status page
+through the tunnel (`reply 4 s ago`). WireGuard counts as on before the
+server has answered, and a new tunnel sends nothing until something goes
+through it, so `none` there means nothing has come back yet; it changes
+within a second of the first answer. The Status page
 has a `vpn` section. Only the file's name and the server are ever shown,
 and neither is logged: the keys stay in the file and in
 NetworkManager's in-memory profile (`LokiCTL VPN`, interface `lokiwg0`),

@@ -18,21 +18,22 @@ namespace screen {
 namespace {
 
 // Layout of the 320x110 area between the title bar and the soft-key bar: the
-// list, 304 px wide, with one row per theme, then the "Dim when idle" row
-// and the "Remote view" row.
+// list, 304 px wide, with one row per theme, then the "Dim when idle" row,
+// the "Remote view" row and the "Keep mode after quitting" row.
 constexpr int32_t kSideMargin    = 8;
 constexpr int32_t kWidth         = view::kScreenWidth - 2 * kSideMargin;
-constexpr int32_t kListTop       = 3;
-constexpr int32_t kRowHeight     = 20;
+constexpr int32_t kListTop       = 1;
+constexpr int32_t kRowHeight     = 17;
 constexpr int32_t kRowGap        = 1;
 constexpr int32_t kDimRow        = view::kThemeCount;
 constexpr int32_t kRemoteRow     = view::kThemeCount + 1;
-constexpr int32_t kRowCount      = view::kThemeCount + 2;
+constexpr int32_t kKeepRow       = view::kThemeCount + 2;
+constexpr int32_t kRowCount      = view::kThemeCount + 3;
 constexpr int32_t kListHeight    = kRowCount * kRowHeight + (kRowCount - 1) * kRowGap;
 
 static_assert(view::kThemeCount <= 3,
-              "the Settings page has room for three theme rows, the dimming row and the Remote "
-              "view row; make the list scroll before adding a fourth theme");
+              "the Settings page has room for three theme rows, the dimming row, the Remote "
+              "view row and the keep-mode row; make the list scroll before adding a fourth theme");
 static_assert(kListTop + kListHeight <=
                   view::kScreenHeight - view::kTitleBarHeight - view::kSoftKeyBarHeight,
               "the list must end above the soft-key bar");
@@ -80,6 +81,11 @@ const char* remote_text(platform::remote::ViewState state, bool hotspot) {
 const char* remote_text() {
     return remote_text(platform::remote::view_state(), platform::remote::hotspot_allowed());
 }
+
+// The keep-mode row's name. Its value is "on" or "off" (dimming_text()).
+// While it is on, quitting leaves the network mode as it is (hotspot,
+// tunnel, kill switch, blocked devices) and the next start takes it over.
+constexpr const char* kKeepRowName = "Keep mode after quitting";
 
 // Index 2 of the soft-key set is key 6, index 3 key 7.
 constexpr std::size_t kUseKeyIndex = 2;
@@ -150,10 +156,20 @@ view::widgets::SoftKey hotspot_key(int32_t selected) {
             platform::remote::view_state() != platform::remote::ViewState::Off};
 }
 
+// Key 6 while the highlight is on the keep-mode row: "Off" while it is
+// on, "On" while it is off.
+view::widgets::SoftKey keep_key(viewmodel::BaseViewModel& view_model) {
+    return {view_model.keep_mode() ? "Off" : "On",
+            [&view_model] { view_model.set_keep_mode(!view_model.keep_mode()); }};
+}
+
 // Key 6 for the highlighted row.
 view::widgets::SoftKey row_key(viewmodel::BaseViewModel& view_model, int32_t selected, int32_t active) {
     if (selected == kRemoteRow) {
         return remote_key();
+    }
+    if (selected == kKeepRow) {
+        return keep_key(view_model);
     }
     return selected == kDimRow ? switch_key(view_model) : use_key(view_model, selected != active);
 }
@@ -247,6 +263,8 @@ bool SettingsScreen::on_key(uint32_t key) {
             const int32_t row = selected_row();
             if (row == kRemoteRow) {
                 platform::remote::request_switch();
+            } else if (row == kKeepRow) {
+                view_model().set_keep_mode(!view_model().keep_mode());
             } else if (row == kDimRow) {
                 view_model().set_screen_dimming(!view_model().screen_dimming());
             } else if (row != active_row()) {
@@ -337,6 +355,28 @@ void SettingsScreen::build_content(lv_obj_t* content) {
     };
     lv_subject_add_observer_obj(platform::remote::state_subject(), remote_observer, remote_value, this);
     lv_subject_add_observer_obj(platform::remote::hotspot_subject(), remote_observer, remote_value, this);
+
+    // The keep-mode row: its name, and on or off. The value and key 6
+    // follow the setting; the observer is bound to the value's label.
+    auto* keep_row = plain_object(list);
+    lv_obj_set_size(keep_row, LV_PCT(100), kRowHeight);
+    auto* keep_name = plain_label(keep_row, kKeepRowName);
+    lv_obj_align(keep_name, LV_ALIGN_LEFT_MID, theme.metrics.space_sm, 0);
+    auto* keep_value = plain_label(keep_row, dimming_text(view_model().keep_mode()));
+    lv_obj_align(keep_value, LV_ALIGN_RIGHT_MID, -theme.metrics.space_sm, 0);
+    const lv_observer_cb_t keep_observer = [](lv_observer_t* observer, lv_subject_t* /*subject*/) {
+        auto* value = lv_observer_get_target_obj(observer);
+        auto* screen = static_cast<SettingsScreen*>(lv_observer_get_user_data(observer));
+        if (!value || !screen) {
+            return;
+        }
+        lv_label_set_text(value, dimming_text(screen->view_model().keep_mode()));
+        auto* bar = screen->soft_key_bar();
+        if (bar && screen->selected_row() == kKeepRow) {
+            bar->set_key(kUseKeyIndex, keep_key(screen->view_model()));
+        }
+    };
+    lv_subject_add_observer_obj(view_model().keep_mode_subject(), keep_observer, keep_value, this);
 
     // Added last: LVGL calls the observer once right away, which styles the
     // rows and key 6 for the current state.

@@ -184,6 +184,7 @@ int run_data_readout(platform::DataSourceKind kind, uint32_t steps, const std::s
     std::printf("vpn_file=%s\n", text_or_unknown(data.vpn.file).c_str());
     std::printf("vpn_server=%s\n", text_or_unknown(data.vpn.server).c_str());
     print_number("vpn_reply_s", data.vpn.reply_seconds, data.vpn.reply_seconds >= 0);
+    std::printf("vpn_kill_switch=%s\n", data.vpn.kill_switch ? "on" : "off");
     std::string files;
     for (const std::string& file : data.vpn.files) {
         files += (files.empty() ? "" : ",") + file;

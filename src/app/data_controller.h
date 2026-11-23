@@ -170,6 +170,12 @@ public:
     using BlockedSaver = std::function<void(const std::vector<std::string>& addresses)>;
     void set_blocked_saver(BlockedSaver saver);
 
+    // Saves the "Keep mode after quitting" setting after each change the
+    // user makes (not the value set at start). Called on the UI thread.
+    // Empty: nothing is saved.
+    using KeepModeSaver = std::function<void(bool keep)>;
+    void set_keep_mode_saver(KeepModeSaver saver);
+
     // Told the message of each new failure to block or unblock a device
     // ("Block failed: helper not installed"), on the UI thread. Empty:
     // only the log says it.
@@ -197,6 +203,9 @@ private:
     // Hands a mode request of the view model to the reader. The user data
     // is the controller.
     static void mode_request_cb(lv_observer_t* observer, lv_subject_t* subject);
+    // Hands the "Keep mode after quitting" setting to the reader and saves
+    // a change. The user data is the controller.
+    static void keep_mode_cb(lv_observer_t* observer, lv_subject_t* subject);
     // Handles a change the Hotspot page asked for. The user data is the
     // controller.
     static void hotspot_request_cb(lv_observer_t* observer, lv_subject_t* subject);
@@ -254,6 +263,9 @@ private:
     bool scan_seen_running_{false};     // a block showed that scan under way
     std::vector<std::string> blocked_;  // the devices to block, oldest first
     BlockedSaver blocked_saver_;
+    lv_observer_t* keep_mode_observer_{nullptr};
+    bool keep_mode_seen_{false};        // the setting's first value was handed on
+    KeepModeSaver keep_mode_saver_;
     BlockFailureListener block_failure_listener_;
     int32_t block_failures_seen_{0};    // the data layer's failure count handled last
     bool mode_logged_{false};

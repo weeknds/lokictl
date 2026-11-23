@@ -2,11 +2,19 @@
 # SPDX-FileCopyrightText: 2026 LokiCTL contributors
 # SPDX-License-Identifier: MIT
 #
-# On removal, takes @APP_DISPLAY_NAME@'s own firewall table away (blocked devices
-# on the hotspot) and Share's interface (lokiap0), so nothing it made stays
-# behind. No other table or interface is touched.
+# On removal, takes @APP_DISPLAY_NAME@'s own NetworkManager profiles away (by their
+# exact names, which a quit with "Keep mode after quitting" on leaves
+# running), its own firewall table (blocked devices on the hotspot and the
+# VPN kill switch) and Share's interface (lokiap0), so nothing it made stays
+# behind. No other profile, table or interface is touched.
 
 set -e
+
+if [ "$1" = "remove" ] && [ -x /usr/bin/nmcli ]; then
+    for profile in "LokiCTL hotspot" "LokiCTL VPN"; do
+        /usr/bin/nmcli connection delete id "$profile" >/dev/null 2>&1 || true
+    done
+fi
 
 if [ "$1" = "remove" ] && [ -x /usr/sbin/nft ]; then
     printf 'add table inet lokictl\ndelete table inet lokictl\n' | /usr/sbin/nft -f - || true

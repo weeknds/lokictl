@@ -115,6 +115,13 @@ bool load_application_config(const std::string& path,
             } else {
                 config.dim_when_idle.reset();
             }
+        } else if (section == "application" && key == "keep_mode") {
+            bool keep_mode = false;
+            if (parse_bool(line.substr(separator + 1), keep_mode)) {
+                config.keep_mode = keep_mode;
+            } else {
+                config.keep_mode.reset();
+            }
         } else if (section == "application" && key == "hotspot_password") {
             config.hotspot_password = trim(line.substr(separator + 1));
         } else if (section == "application" && key == "hotspot_name") {
@@ -177,6 +184,9 @@ bool save_application_config(const std::string& path,
         keys.push_back({"dim_when_idle",
                         std::string("dim_when_idle=") + (*config.dim_when_idle ? "yes" : "no"),
                         false});
+    }
+    if (config.keep_mode) {
+        keys.push_back({"keep_mode", std::string("keep_mode=") + (*config.keep_mode ? "yes" : "no"), false});
     }
     if (config.hotspot_password) {
         keys.push_back({"hotspot_password", "hotspot_password=" + *config.hotspot_password, false});

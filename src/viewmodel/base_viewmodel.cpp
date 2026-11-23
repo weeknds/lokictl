@@ -40,6 +40,7 @@ BaseViewModel::BaseViewModel()
       theme_request_subject_(0),
       settings_theme_selection_subject_(kSettingsThemeFollowsActive),
       screen_dimming_subject_(true),
+      keep_mode_subject_(false),
       status_scroll_subject_(0),
       devices_selection_subject_(0),
       block_request_subject_(0),
@@ -175,6 +176,20 @@ void BaseViewModel::set_screen_dimming(bool on) {
     }
 }
 
+lv_subject_t* BaseViewModel::keep_mode_subject() {
+    return keep_mode_subject_.native();
+}
+
+bool BaseViewModel::keep_mode() const {
+    return keep_mode_subject_.value();
+}
+
+void BaseViewModel::set_keep_mode(bool on) {
+    if (on != keep_mode_subject_.value()) {
+        keep_mode_subject_.set(on);
+    }
+}
+
 lv_subject_t* BaseViewModel::status_scroll_subject() {
     return status_scroll_subject_.native();
 }
@@ -256,8 +271,20 @@ bool BaseViewModel::requested_block() const {
 void BaseViewModel::request_mode(model::NetMode mode) {
     // Stored first: the observers run inside set() and read it from there.
     requested_mode_ = mode;
+    requested_vpn_off_ = false;
     const int32_t count = mode_request_subject_.value();
     mode_request_subject_.set(count == std::numeric_limits<int32_t>::max() ? 1 : count + 1);
+}
+
+void BaseViewModel::request_vpn_off() {
+    requested_mode_ = model::NetMode::Vpn;
+    requested_vpn_off_ = true;
+    const int32_t count = mode_request_subject_.value();
+    mode_request_subject_.set(count == std::numeric_limits<int32_t>::max() ? 1 : count + 1);
+}
+
+bool BaseViewModel::requested_vpn_off() const {
+    return requested_vpn_off_;
 }
 
 lv_subject_t* BaseViewModel::mode_request_subject() {

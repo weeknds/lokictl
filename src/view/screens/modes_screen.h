@@ -27,9 +27,12 @@ namespace screen {
 //   runs, a plain error after one failed ("Plug in a cable first", "Not
 //   allowed: permission missing", "Failed: <reason>"), the hotspot's name
 //   and password while Router or Share runs, "VPN <server>" with the time
-//   since the last reply while the tunnel runs, the folder to put files in
-//   while the VPN row is highlighted and there are none, or the current
-//   link in Client.
+//   since the last reply while the tunnel runs (with a hotspot too: the VPN
+//   gateway, while the VPN row is highlighted), "VPN down: hotspot devices
+//   blocked" while the gateway's kill switch is on without the tunnel, the
+//   folder to put files in while the VPN row is highlighted and there are
+//   none, or the current link in Client.
+// In the gateway both the hotspot's row and the VPN row carry the tick.
 //
 // Up and down (F/X) move the highlight and stop at the first and the last
 // row. Left and right (Z/C) pick another WireGuard file while the VPN row
@@ -37,7 +40,11 @@ namespace screen {
 // Enter or key 6 (Use) asks for the highlighted mode
 // (BaseViewModel::request_mode()); Use is switched off on the mode that is
 // on, on VPN without files, and while a switch runs. On the VPN row while
-// the tunnel runs, key 6 reads Off and asks for Client. Key 7 (QR) opens the
+// the tunnel runs, key 6 reads Off and turns the VPN off
+// (BaseViewModel::request_vpn_off(): a hotspot stays). While the gateway's
+// kill switch is on without the tunnel, key 6 on the VPN row turns the
+// tunnel on again (Use) and key 8 (Off) turns the VPN off, which frees the
+// hotspot devices. Key 7 (QR) opens the
 // Hotspot page, in any mode. Key 4 or a short ESC goes back. The page never waits for the switch: the data layer does it, and
 // the page follows HomeData::mode and HomeData::mode_switch as they arrive.
 //
@@ -80,6 +87,9 @@ private:
     bool can_use(int32_t row) const;
     // True when Use on `row` turns the tunnel off (the VPN row while it runs).
     bool turns_vpn_off(int32_t row) const;
+    // True when key 8 offers VPN off: the gateway is down and the VPN row
+    // is highlighted.
+    bool offers_vpn_off() const;
     // The VPN row's hint (see the class comment).
     std::string vpn_hint() const;
     void use_selected();
@@ -105,6 +115,8 @@ private:
     int32_t shown_selected_{-1};  // the highlighted row drawn last
     int32_t shown_active_{-1};    // the row with the tick drawn last
     int32_t shown_use_{-1};       // key 6: 2 Off, 1 Use, 0 switched off, -1 before the first
+    int32_t shown_off_{-1};       // key 8: 1 Off (gateway down), 0 unused, -1 before the first
+    int32_t shown_vpn_mark_{-1};  // the VPN row's tick in the gateway drawn (1) or not (0) last
     int32_t shown_vpn_switchable_{-1}; // the VPN row drawn usable (1) or not (0) last
 };
 

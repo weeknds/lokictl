@@ -62,10 +62,21 @@ namespace platform {
 // normal start on the device also creates and tightens the folder there
 // (prepare_wireguard_folder()). A VPN request reads the chosen file (a bad
 // one is refused at once with its reason) and goes to start_vpn() on the
-// device, or to the pretend switch everywhere else, with the file's server. VPN while the hotspot runs, and Router or Share while the
-// tunnel runs, are refused ("Back to Client first"). While the tunnel is
-// up, kVpnInterface's received bytes are read with the network: the time
-// since they last grew is VpnStatus::reply_seconds.
+// device, or to the pretend switch everywhere else, with the file's
+// server. While the tunnel is up, kVpnInterface's received bytes are read
+// at every reading (every kVpnReplyInterval until the first reply, for at
+// most kVpnReplyWait): the time since they last grew is
+// VpnStatus::reply_seconds.
+//
+// The VPN gateway (F4.7): VPN while Router or Share runs, and Router or
+// Share while the tunnel runs, first arm the kill switch through the helper
+// (DeviceBlocker::arm_kill_switch(), on this thread; a failure refuses the
+// switch with "kill switch: <reason>"), then start the second half. The
+// kill switch then follows the user's intent: it stays while the tunnel is
+// down or the hotspot restarts, and comes off only with the user's VPN Off
+// (ModeRequest::vpn_off: stop_vpn() while a hotspot runs, which keeps it,
+// otherwise start_client()) or Client. A start that finds a hotspot and
+// the kill chain adopts the gateway (see DeviceBlocker).
 //
 // Blocking devices (set_blocked()) works the same way: on the device, when
 // the source changes the network, a real DeviceBlocker makes LokiCTL's
@@ -165,6 +176,10 @@ public:
     // the network service to go back to Client with the time that is left,
     // and last removes kShareInterface when it is there (keeping at least
     // kHelperLeaveTimeLimit for that, and giving it all the time left).
+    // With the kill switch on, the table goes right after the network
+    // service's answer instead (with kHelperLeaveTimeLimit kept for it), so
+    // hotspot devices never go out around the tunnel. Not called when the
+    // user keeps the mode (DataReader::set_keep_modes()).
     void leave_modes(std::chrono::milliseconds limit) override;
 
     static constexpr std::chrono::milliseconds kBatteryInterval{10000};
@@ -176,6 +191,10 @@ public:
     static constexpr std::chrono::milliseconds kMinimumDelay{20};
     static constexpr std::chrono::milliseconds kServiceStartInterval{100};
     static constexpr std::chrono::milliseconds kScanInterval{250};
+    // How often the tunnel's counters are read while it is up and nothing
+    // came back yet, and for how long after it came up at most.
+    static constexpr std::chrono::milliseconds kVpnReplyInterval{1000};
+    static constexpr std::chrono::milliseconds kVpnReplyWait{60000};
     static constexpr int kShareRemovalTries = 3;
 
 private:
@@ -208,7 +227,10 @@ private:
     // Lists the WireGuard files (and, on the device, prepares the folder).
     void read_vpn_files();
     // Puts the time since the tunnel last received data into `data`.
-    void read_vpn_reply(model::HomeData& data, bool due, std::chrono::steady_clock::time_point now);
+    void read_vpn_reply(model::HomeData& data, std::chrono::steady_clock::time_point now);
+    // Arms the kill switch for a switch to `target`; on failure the switch
+    // is refused with the reason and false comes back.
+    bool arm_kill_switch(model::NetMode target);
     // True while kShareInterface exists.
     bool share_interface_present() const;
     std::string hotspot_interface_;  // where LokiCTL's hotspot ran at the last reading; empty when off
@@ -218,7 +240,12 @@ private:
     bool vpn_counted_{false};        // vpn_received_ holds a reading of the tunnel's received bytes
     uint64_t vpn_received_{0};
     bool vpn_replied_{false};        // data came in through the tunnel since it went up
+    bool vpn_waiting_{false};        // the tunnel is up and nothing came back yet (see kVpnReplyWait)
+    bool vpn_up_{false};             // the tunnel was up at the last reading
+    std::chrono::steady_clock::time_point vpn_up_at_{}; // when it was first seen up
     std::chrono::steady_clock::time_point vpn_reply_at_{}; // when the received bytes last grew
+    std::size_t vpn_line_{0};        // test folder: the counter line the next reading takes
+    std::chrono::steady_clock::duration vpn_test_clock_{}; // test folder: kTrafficInterval per reading
     int share_removals_{0};          // tries to remove kShareInterface since it was last needed
     std::chrono::steady_clock::time_point share_removal_at_{};
     BatteryReading battery_;

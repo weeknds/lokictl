@@ -367,7 +367,7 @@ std::string mode_command_refusal(model::NetMode mode, const model::HomeData& hom
     if (home.mode_switch.state == model::SwitchState::Switching) {
         return "A mode switch is under way";
     }
-    if (mode == home.mode) {
+    if (mode == home.mode || (mode == model::NetMode::Vpn && home.vpn.state != model::VpnState::Off)) {
         return std::string("Already in ") + model::net_mode_name(mode) + " mode";
     }
     // As the Modes page's VPN row: nothing to use without a file.

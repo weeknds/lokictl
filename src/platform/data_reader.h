@@ -9,6 +9,7 @@
 #include "data_source.h"
 #include "home_data.h"
 
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <memory>
@@ -124,6 +125,12 @@ public:
     // switch back to Client (DataSource::leave_modes()).
     static constexpr std::chrono::milliseconds kLeaveModesLimit{3000};
 
+    // The "Keep mode after quitting" setting (off at first). While it is
+    // on, the background thread on its way out leaves every mode as it is
+    // (no DataSource::leave_modes()), and the next start takes it over.
+    // Safe to call from any thread.
+    void set_keep_modes(bool keep);
+
     // Copies the newest block into `data` and returns true, but only if it
     // changed since the last take(); otherwise leaves `data` alone and
     // returns false.
@@ -168,6 +175,7 @@ private:
     ModeRequest mode_request_;
     bool blocked_changed_{false};  // blocked_ waits for the source
     std::vector<std::string> blocked_;
+    std::atomic<bool> keep_modes_{false}; // see set_keep_modes()
 };
 
 } // namespace platform

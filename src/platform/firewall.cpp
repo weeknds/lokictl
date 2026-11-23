@@ -10,6 +10,7 @@
 #include <cerrno>
 #include <csignal>
 #include <fcntl.h>
+#include <sstream>
 #include <spawn.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -27,6 +28,11 @@ using std::chrono::milliseconds;
 
 constexpr std::size_t kAddressLength = 17; // "02:00:00:00:00:01"
 constexpr milliseconds kWaitStep{10};
+// The most of the helper's output that is read (its `list` prints a line
+// and at most the set's 64 addresses).
+constexpr std::size_t kOutputMax = 4096;
+// The line `list` prints while the kill switch is armed.
+constexpr const char* kKillSwitchLine = "kill-switch";
 
 bool is_lower_hex(char character) {
     return (character >= '0' && character <= '9') || (character >= 'a' && character <= 'f');
@@ -56,12 +62,30 @@ const char* helper_exit_reason(int code) {
     }
 }
 
+// Reads what is waiting in `fd` (non-blocking) into `output`, up to
+// kOutputMax bytes in all.
+void drain(int fd, std::string& output) {
+    char chunk[512];
+    for (;;) {
+        const ssize_t got = read(fd, chunk, sizeof(chunk));
+        if (got < 0 && errno == EINTR) {
+            continue;
+        }
+        if (got <= 0) {
+            return;
+        }
+        output.append(chunk, std::min(static_cast<std::size_t>(got), kOutputMax - std::min(kOutputMax, output.size())));
+    }
+}
+
 // Runs the helper with `arguments` and waits for it, at most `limit` (then
 // it is killed). It gets an empty environment,
-// /dev/null for its standard streams, no blocked signals and the default
+// /dev/null for its standard streams (its standard output goes to
+// `output` instead, when given), no blocked signals and the default
 // action for SIGTERM, SIGINT and SIGPIPE (the reader thread blocks the
 // first two). Returns an empty text when it worked, else a short reason.
-std::string run_helper(const std::vector<std::string>& arguments, milliseconds limit) {
+std::string run_helper(const std::vector<std::string>& arguments, milliseconds limit,
+                       std::string* output = nullptr) {
     std::vector<std::string> words;
     words.emplace_back("lokictl-helper");
     words.insert(words.end(), arguments.begin(), arguments.end());
@@ -72,12 +96,38 @@ std::string run_helper(const std::vector<std::string>& arguments, milliseconds l
     argv.push_back(nullptr);
     char* environment[] = {nullptr};
 
+    // The output pipe: both ends close on exec (the helper gets its own
+    // copy on 1), and ours never blocks, so a stray copy of the write end
+    // in another child can never hold up a reading.
+    int pipe_ends[2] = {-1, -1};
+    if (output) {
+        output->clear();
+        if (pipe(pipe_ends) != 0) {
+            return "helper could not start";
+        }
+        for (const int end : pipe_ends) {
+            fcntl(end, F_SETFD, FD_CLOEXEC);
+        }
+        fcntl(pipe_ends[0], F_SETFL, O_NONBLOCK);
+    }
     posix_spawn_file_actions_t actions;
     posix_spawnattr_t attributes;
     posix_spawn_file_actions_init(&actions);
     posix_spawnattr_init(&attributes);
+    const auto close_pipe = [&pipe_ends] {
+        for (int& end : pipe_ends) {
+            if (end >= 0) {
+                close(end);
+                end = -1;
+            }
+        }
+    };
     posix_spawn_file_actions_addopen(&actions, 0, "/dev/null", O_RDONLY, 0);
-    posix_spawn_file_actions_addopen(&actions, 1, "/dev/null", O_WRONLY, 0);
+    if (output) {
+        posix_spawn_file_actions_adddup2(&actions, pipe_ends[1], 1);
+    } else {
+        posix_spawn_file_actions_addopen(&actions, 1, "/dev/null", O_WRONLY, 0);
+    }
     posix_spawn_file_actions_addopen(&actions, 2, "/dev/null", O_WRONLY, 0);
     sigset_t no_signals;
     sigset_t default_signals;
@@ -94,6 +144,13 @@ std::string run_helper(const std::vector<std::string>& arguments, milliseconds l
     const int error = posix_spawn(&child, APP_HELPER_PATH, &actions, &attributes, argv.data(), environment);
     posix_spawn_file_actions_destroy(&actions);
     posix_spawnattr_destroy(&attributes);
+    if (pipe_ends[1] >= 0) {
+        close(pipe_ends[1]);
+        pipe_ends[1] = -1;
+    }
+    if (error != 0) {
+        close_pipe();
+    }
     if (error == ENOENT) {
         return "helper not installed";
     }
@@ -107,21 +164,30 @@ std::string run_helper(const std::vector<std::string>& arguments, milliseconds l
     const auto deadline = std::chrono::steady_clock::now() + limit;
     int status = 0;
     for (;;) {
+        if (output) {
+            drain(pipe_ends[0], *output);
+        }
         const pid_t done = waitpid(child, &status, WNOHANG);
         if (done == child) {
             break;
         }
         if (done < 0 && errno != EINTR) {
+            close_pipe();
             return "helper failed";
         }
         if (std::chrono::steady_clock::now() >= deadline) {
             kill(child, SIGKILL);
             while (waitpid(child, &status, 0) < 0 && errno == EINTR) {
             }
+            close_pipe();
             return "helper timed out";
         }
         std::this_thread::sleep_for(kWaitStep);
     }
+    if (output) {
+        drain(pipe_ends[0], *output);
+    }
+    close_pipe();
     if (!WIFEXITED(status)) {
         return "helper failed";
     }
@@ -230,21 +296,62 @@ void DeviceBlocker::apply(model::HomeData& data, bool hotspot_up, bool may_run_h
 }
 
 void DeviceBlocker::leave() {
-    if (real_ && table_ != Table::Absent) {
+    if (real_ && (table_ != Table::Absent || kill_ != Table::Absent)) {
         clear(kHelperLeaveTimeLimit);
     }
 }
 
+void DeviceBlocker::set_kill_wanted(bool wanted) {
+    if (wanted != kill_wanted_) {
+        kill_wanted_ = wanted;
+        settled_ = false;
+    }
+}
+
+bool DeviceBlocker::kill_wanted() const {
+    return kill_wanted_;
+}
+
+std::string DeviceBlocker::arm_kill_switch() {
+    if (!real_) {
+        kill_wanted_ = true;
+        return {};
+    }
+    const std::string reason = run_helper({"kill-on"}, kHelperTimeLimit);
+    if (!reason.empty()) {
+        return reason;
+    }
+    kill_wanted_ = true;
+    kill_ = Table::Present;
+    // A table not read yet stays Unknown, so its blocked set is still read
+    // when the hotspot is up.
+    if (table_ == Table::Absent) {
+        table_ = Table::Present;
+    }
+    return {};
+}
+
 void DeviceBlocker::settle(bool hotspot_up) {
-    if (!hotspot_up) {
-        if (table_ != Table::Absent) {
+    // What a run before this one left (one that kept its mode on quitting,
+    // or was killed) is read rather than removed.
+    if (hotspot_up && table_ == Table::Unknown) {
+        adopt();
+    }
+    if (!hotspot_up && !kill_wanted_) {
+        if (table_ != Table::Absent || kill_ != Table::Absent) {
             clear();
         }
         return;
     }
-    // A table a killed run left behind may hold old addresses.
-    if (table_ == Table::Unknown) {
-        clear();
+    // The kill switch: on while wanted, also with the hotspot down (a
+    // restart); off only when the intent went.
+    if (kill_wanted_ && kill_ != Table::Present) {
+        switch_kill(true);
+    } else if (!kill_wanted_ && kill_ != Table::Absent) {
+        switch_kill(false);
+    }
+    if (!hotspot_up) {
+        return;  // the blocked set waits for the hotspot
     }
     if (table_ != Table::Present) {
         if (!wanted_.empty() && change("block", "Block", wanted_)) {
@@ -277,12 +384,53 @@ void DeviceBlocker::settle(bool hotspot_up) {
     }
 }
 
+void DeviceBlocker::adopt() {
+    std::string output;
+    if (!run_helper({"list"}, kHelperTimeLimit, &output).empty()) {
+        clear();
+        return;
+    }
+    applied_.clear();
+    bool kill = false;
+    std::istringstream lines(output);
+    std::string line;
+    while (std::getline(lines, line)) {
+        if (line == kKillSwitchLine) {
+            kill = true;
+        } else if (valid_device_address(line) && !contains(applied_, line)) {
+            applied_.push_back(line);
+        }
+    }
+    // `list` prints nothing for a table that holds neither, so the table
+    // counts as there: removing one that is not costs one spare run.
+    table_ = Table::Present;
+    kill_ = kill ? Table::Present : Table::Absent;
+    if (kill) {
+        kill_wanted_ = true;
+    }
+}
+
 bool DeviceBlocker::clear(milliseconds limit) {
     if (!run_helper({"clear"}, limit).empty()) {
         return false;
     }
     table_ = Table::Absent;
+    kill_ = Table::Absent;
     applied_.clear();
+    return true;
+}
+
+bool DeviceBlocker::switch_kill(bool on) {
+    const std::string reason = run_helper({on ? "kill-on" : "kill-off"}, kHelperTimeLimit);
+    if (!reason.empty()) {
+        ++failures_;
+        message_ = "Kill switch failed: " + reason;
+        return false;
+    }
+    kill_ = on ? Table::Present : Table::Absent;
+    if (on && table_ == Table::Absent) {
+        table_ = Table::Present;
+    }
     return true;
 }
 

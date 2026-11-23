@@ -107,7 +107,31 @@ bool LiveDataSource::share_interface_present() const {
     return std::filesystem::exists(root_ / "sys/class/net" / kShareInterface, error);
 }
 
+bool LiveDataSource::arm_kill_switch(model::NetMode target) {
+    const std::string reason = blocker_.arm_kill_switch();
+    if (reason.empty()) {
+        return true;
+    }
+    refuse(target, model::SwitchError::Failed, "kill switch: " + reason);
+    return false;
+}
+
 void LiveDataSource::request_vpn(const ModeRequest& request) {
+    if (request.vpn_off) {
+        // The user's VPN Off: the tunnel goes and the kill switch with it
+        // (hotspot devices go out directly again); a hotspot stays.
+        if (!changes_network_) {
+            pretend_.request(request);
+        } else if (!network_manager_->busy()) {
+            blocker_.set_kill_wanted(false);
+            if (hotspot_interface_.empty()) {
+                network_manager_->start_client();
+            } else {
+                network_manager_->stop_vpn();
+            }
+        }
+        return;
+    }
     VpnRequest vpn;
     vpn.file = request.vpn_file;
     const std::string reason = read_wireguard_file(vpn_folder_, request.vpn_file, vpn.config);
@@ -128,10 +152,10 @@ void LiveDataSource::request_vpn(const ModeRequest& request) {
         pretend_.request(pretend);
         return;
     }
-    if (!hotspot_interface_.empty()) {
-        // VPN and the hotspot go through Client.
-        refuse(model::NetMode::Vpn, model::SwitchError::ClientFirst);
-    } else {
+    // With a hotspot on this makes the VPN gateway: the kill switch is
+    // armed before the tunnel starts, so hotspot devices never go out
+    // around it.
+    if (!network_manager_->busy() && (hotspot_interface_.empty() || arm_kill_switch(model::NetMode::Vpn))) {
         network_manager_->start_vpn(vpn);
     }
     clear_wireguard_config(vpn.config);
@@ -151,20 +175,26 @@ void LiveDataSource::request_mode(const ModeRequest& request) {
     const std::string name = request.name.empty() ? default_hotspot_name(root_) : request.name;
     const bool share = request.mode == model::NetMode::Share;
     const char* interface_name = share ? kShareInterface : kHotspotInterface;
+    // A hotspot while the tunnel runs (or the kill switch waits for it)
+    // makes the VPN gateway: the kill switch is armed before the hotspot
+    // starts.
+    const bool gateway = vpn_active_ || blocker_.kill_wanted();
     if (model::is_hotspot_mode(request.mode) && request.restart) {
         // Share stays on the channel of the network the Wi-Fi is joined to.
         const int32_t channel = share ? network_manager_->wifi_channel(kHotspotInterface) : 0;
         network_manager_->restart_router(RouterRequest{interface_name, name, request.password, channel});
-    } else if (model::is_hotspot_mode(request.mode) && ((!hotspot_interface_.empty() &&
-                                                         hotspot_interface_ != interface_name) ||
-                                                        vpn_active_)) {
-        // Router, Share and VPN go through Client.
+    } else if (model::is_hotspot_mode(request.mode) && !hotspot_interface_.empty() &&
+               hotspot_interface_ != interface_name) {
+        // Router and Share go through Client.
         refuse(request.mode, model::SwitchError::ClientFirst);
     } else if (request.mode == model::NetMode::Router) {
         // Decided on a fresh look at the kernel's uplink: Router shares a
         // cable, never the Wi-Fi it is about to take over.
         if (read_network(root_, addresses_file_).kind != model::LinkKind::Cable) {
             refuse(request.mode, model::SwitchError::NoCable);
+            return;
+        }
+        if (network_manager_->busy() || (gateway && !arm_kill_switch(request.mode))) {
             return;
         }
         network_manager_->start_router(RouterRequest{kHotspotInterface, name, request.password});
@@ -179,6 +209,9 @@ void LiveDataSource::request_mode(const ModeRequest& request) {
         if (network_manager_->busy()) {
             return;  // a switch runs: ignored, as start_share() would
         }
+        if (gateway && !arm_kill_switch(request.mode)) {
+            return;
+        }
         const std::string reason = add_share_interface();
         if (!reason.empty()) {
             refuse(request.mode, model::SwitchError::Failed, reason);
@@ -186,7 +219,11 @@ void LiveDataSource::request_mode(const ModeRequest& request) {
         }
         network_manager_->start_share(RouterRequest{kShareInterface, name, request.password, channel});
     } else if (request.mode == model::NetMode::Client) {
-        network_manager_->start_client();
+        // Everything off: hotspot, tunnel and kill switch.
+        if (!network_manager_->busy()) {
+            blocker_.set_kill_wanted(false);
+            network_manager_->start_client();
+        }
     }
 }
 
@@ -197,11 +234,21 @@ void LiveDataSource::set_blocked(const std::vector<std::string>& addresses) {
 void LiveDataSource::leave_modes(milliseconds limit) {
     if (changes_network_) {
         const auto started = std::chrono::steady_clock::now();
-        blocker_.leave();
+        // With the kill switch on the table goes last: NetworkManager may
+        // remove the tunnel before the hotspot, and the hotspot devices must
+        // never go out around it meanwhile.
+        const bool table_last = blocker_.kill_wanted();
+        if (!table_last) {
+            blocker_.leave();
+        }
         const bool share_interface = share_interface_present();
-        const milliseconds reserve = share_interface ? kHelperLeaveTimeLimit : milliseconds(0);
+        const milliseconds reserve = (share_interface ? kHelperLeaveTimeLimit : milliseconds(0)) +
+                                     (table_last ? kHelperLeaveTimeLimit : milliseconds(0));
         const auto spent = std::chrono::duration_cast<milliseconds>(std::chrono::steady_clock::now() - started);
         network_manager_->leave(std::max(limit - spent - reserve, milliseconds(0)));
+        if (table_last) {
+            blocker_.leave();
+        }
         if (share_interface) {
             // Right after the hotspot stops, removing the interface takes
             // the driver over a second, so it gets all the time that is left.
@@ -282,7 +329,7 @@ void LiveDataSource::read(model::HomeData& data) {
     apply_usb_wifi_managed(service, data.usb_wifi);
     hotspot_interface_ = service.available && service.hotspot.active ? service.hotspot.interface_name : std::string();
     vpn_active_ = service.available && service.vpn.state != model::VpnState::Off;
-    read_vpn_reply(data, network_due || test_folder_, now);
+    read_vpn_reply(data, now);
 
     // The devices on the hotspot. Read before a pretend switch is applied,
     // so a pretend Client drops them with the access point.
@@ -306,14 +353,20 @@ void LiveDataSource::read(model::HomeData& data) {
         }
     }
 
-    // Blocked devices: after the pretend switch, which may replace the
-    // clients. The helper never runs in the first reading (the UI thread's)
-    // nor while a switch runs.
+    // Blocked devices and the kill switch: after the pretend switch, which
+    // may replace the clients. The helper never runs in the first reading
+    // (the UI thread's), nor while a switch runs, nor before the network
+    // service has answered (a hotspot a run before this one left, with its
+    // table, is not known until then).
     const bool hotspot_up = service.available && service.hotspot.active && !hotspot_interface.empty();
     const bool switching = network_manager_ && network_manager_->busy();
     const bool may_run_helper = first_read_done_ && !switching;
-    blocker_.apply(data, hotspot_up, may_run_helper);
+    blocker_.apply(data, hotspot_up, may_run_helper && service.available);
     first_read_done_ = true;
+    if (changes_network_) {
+        data.vpn.kill_switch = blocker_.kill_wanted();
+    }
+    show_gateway(data);
 
     // Share's interface without an active hotspot on it goes, once no
     // switch runs; a try that fails is repeated a few times. Only once the
@@ -371,25 +424,45 @@ void LiveDataSource::read_vpn_files() {
     vpn_files_ = list_wireguard_files(vpn_folder_);
 }
 
-void LiveDataSource::read_vpn_reply(model::HomeData& data, bool due, std::chrono::steady_clock::time_point now) {
+void LiveDataSource::read_vpn_reply(model::HomeData& data, std::chrono::steady_clock::time_point now) {
     if (data.vpn.state != model::VpnState::On) {
+        vpn_up_ = false;
         vpn_counted_ = false;
         vpn_replied_ = false;
+        vpn_waiting_ = false;
+        vpn_line_ = 0;
         return;
     }
+    if (!vpn_up_) {
+        vpn_up_ = true;
+        vpn_up_at_ = now;
+    }
+    // At every reading while the tunnel is up: a fresh tunnel receives
+    // nothing until something is sent through it, so the first reply can
+    // come at any time. In a test folder each reading takes the next line
+    // of the counter file and counts as kTrafficInterval after the one
+    // before, so a run with the same files always gives the same ages.
+    const std::size_t line = test_folder_ ? vpn_line_ : 0;
+    if (test_folder_) {
+        ++vpn_line_;
+        vpn_test_clock_ += kTrafficInterval;
+    }
+    const auto at = test_folder_ ? std::chrono::steady_clock::time_point(vpn_test_clock_) : now;
     TrafficCounters counters;
-    if (due && read_traffic_counters(root_, kVpnInterface, 0, counters)) {
+    if (read_traffic_counters(root_, kVpnInterface, line, counters)) {
         // The first reading of a tunnel that already received something
         // (LokiCTL started again while it ran) counts as a reply now.
         if (counters.received > 0 && (!vpn_counted_ || counters.received > vpn_received_)) {
             vpn_replied_ = true;
-            vpn_reply_at_ = now;
+            vpn_reply_at_ = at;
         }
         vpn_received_ = counters.received;
         vpn_counted_ = true;
     }
+    // Every second until the first reply, for at most kVpnReplyWait.
+    vpn_waiting_ = !vpn_replied_ && now - vpn_up_at_ < kVpnReplyWait;
     if (vpn_replied_) {
-        const auto seconds = std::chrono::duration_cast<std::chrono::seconds>(now - vpn_reply_at_).count();
+        const auto seconds = std::chrono::duration_cast<std::chrono::seconds>(at - vpn_reply_at_).count();
         data.vpn.reply_seconds = static_cast<int32_t>(std::clamp<int64_t>(seconds, 0, std::numeric_limits<int32_t>::max()));
     }
 }
@@ -483,6 +556,11 @@ milliseconds LiveDataSource::next_read_delay() {
         }
         if (network_manager_ && network_manager_->scanning()) {
             delay = std::min(delay, kScanInterval);
+        }
+        if (vpn_waiting_) {
+            // The tunnel is up and nothing came back yet: the first reply
+            // shows within a second.
+            delay = std::min(delay, kVpnReplyInterval);
         }
         delay = std::min(delay, pretend_.next_delay());
         delay = std::min(delay, pretend_scan_.next_delay());

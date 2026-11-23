@@ -101,6 +101,7 @@ void apply_network_manager(const NetworkManagerReading& reading, model::HomeData
                     reading.hotspot.uptime_seconds);
     }
 
+    data.vpn.kill_switch = reading.kill_switch;
     if (reading.vpn.state != model::VpnState::Off) {
         model::VpnStatus tunnel;
         tunnel.state = reading.vpn.state;
@@ -217,6 +218,17 @@ NetworkManagerReading read_network_manager_file(const std::filesystem::path& pat
             reading.hotspot = hotspot;
             continue;
         }
+        if (key == "vpn") {
+            std::string state, file, server;
+            if (!(fields >> state >> file) || (state != "on" && state != "connecting")) {
+                continue;
+            }
+            fields >> server;
+            reading.vpn.state = state == "on" ? model::VpnState::On : model::VpnState::Connecting;
+            reading.vpn.file = clean_network_name(file);
+            reading.vpn.server = clean_network_name(server);
+            continue;
+        }
         if (key == "fail") {
             const std::string reason = rest_of_line(fields);
             if (reason == "permission") {
@@ -242,6 +254,8 @@ NetworkManagerReading read_network_manager_file(const std::filesystem::path& pat
             parse_internet(value, reading.internet);
         } else if (key == "managed") {
             reading.managed_wifi.push_back(value);
+        } else if (key == "kill-switch") {
+            parse_switch(value, "on", "off", reading.kill_switch);
         }
     }
     return reading;

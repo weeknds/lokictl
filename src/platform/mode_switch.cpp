@@ -71,6 +71,38 @@ void show_vpn(model::HomeData& data, const model::VpnStatus& tunnel) {
     }
 }
 
+std::string gateway_mode_detail(const std::string& server) {
+    return "ap → wireguard → " + (server.empty() ? std::string("server") : server);
+}
+
+void show_gateway(model::HomeData& data) {
+    if (!data.ap_active || !model::is_hotspot_mode(data.mode)) {
+        return;
+    }
+    if (data.vpn.state == model::VpnState::On) {
+        data.mode_detail = gateway_mode_detail(data.vpn.server);
+    } else if (model::vpn_gateway_down(data.vpn)) {
+        data.mode_detail = "vpn down · devices blocked";
+    }
+}
+
+namespace {
+
+// Takes the tunnel away from `data` (not its file list or kill switch); a
+// mode VPN becomes Client.
+void drop_vpn(model::HomeData& data) {
+    data.vpn.state = model::VpnState::Off;
+    data.vpn.file.clear();
+    data.vpn.server.clear();
+    data.vpn.reply_seconds = model::kVpnReplyNone;
+    if (data.mode == model::NetMode::Vpn) {
+        data.mode = model::NetMode::Client;
+        data.mode_detail.clear();
+    }
+}
+
+} // namespace
+
 void show_client(model::HomeData& data) {
     data.vpn.state = model::VpnState::Off;
     data.vpn.file.clear();
@@ -104,8 +136,9 @@ void PretendModeSwitch::request(const ModeRequest& request) {
     requested_mode_ = request.mode;
     requested_name_ = model::is_hotspot_mode(request.mode) ? request.name : std::string();
     requested_restart_ = request.restart && model::is_hotspot_mode(request.mode);
+    requested_vpn_off_ = request.vpn_off && request.mode == model::NetMode::Vpn;
     requested_vpn_ = model::VpnStatus{};
-    if (request.mode == model::NetMode::Vpn) {
+    if (request.mode == model::NetMode::Vpn && !requested_vpn_off_) {
         requested_vpn_.state = model::VpnState::On;
         requested_vpn_.file = request.vpn_file;
         requested_vpn_.server = request.vpn_server.empty() ? kPretendVpnServer : request.vpn_server;
@@ -114,27 +147,76 @@ void PretendModeSwitch::request(const ModeRequest& request) {
 }
 
 void PretendModeSwitch::show_mode(model::HomeData& data) const {
-    if (!has_mode_) {
-        return;
-    }
-    if (mode_ == model::NetMode::Vpn) {
-        // Only reached through Client: a source's own hotspot goes first.
-        if (model::is_hotspot_mode(data.mode)) {
+    if (has_hotspot_) {
+        if (model::is_hotspot_mode(hotspot_mode_)) {
+            // A source that already shows the mode keeps its own values (the
+            // sample's router, for one), apart from a name the switch carried.
+            if (data.mode != hotspot_mode_) {
+                const model::HomeData sample = model::sample_home_data();
+                show_hotspot(data, hotspot_mode_, sample.ap_name, sample.ap_security, sample.ap_channel, 0);
+            }
+            if (!name_.empty()) {
+                data.ap_name = name_;
+            }
+        } else if (data.mode != model::NetMode::Client || data.ap_active) {
+            // Client: the source's own hotspot and tunnel go.
             show_client(data);
         }
-        show_vpn(data, vpn_);
-    } else if (model::is_hotspot_mode(mode_)) {
-        // A source that already shows the mode keeps its own values (the
-        // sample's router, for one), apart from a name the switch carried.
-        if (data.mode != mode_) {
-            const model::HomeData sample = model::sample_home_data();
-            show_hotspot(data, mode_, sample.ap_name, sample.ap_security, sample.ap_channel, 0);
+    }
+    if (has_vpn_) {
+        if (vpn_.state == model::VpnState::Off) {
+            drop_vpn(data);
+        } else {
+            show_vpn(data, vpn_);
         }
-        if (!name_.empty()) {
-            data.ap_name = name_;
-        }
-    } else if (data.mode != model::NetMode::Client) {
-        show_client(data);
+    }
+    if (has_kill_) {
+        data.vpn.kill_switch = kill_;
+    }
+    show_gateway(data);
+}
+
+void PretendModeSwitch::start_request(const model::HomeData& data) {
+    const bool hotspot_on = data.ap_active && model::is_hotspot_mode(data.mode);
+    const bool tunnel_on = data.vpn.state != model::VpnState::Off;
+    status_ = model::ModeSwitch{};
+    // VPN off ends in the hotspot's mode, or in Client.
+    status_.target = !requested_vpn_off_ ? requested_mode_ : hotspot_on ? data.mode : model::NetMode::Client;
+    bool already = false;
+    if (requested_vpn_off_) {
+        already = !tunnel_on && !data.vpn.kill_switch;
+    } else if (requested_mode_ == model::NetMode::Vpn) {
+        already = tunnel_on;
+    } else if (model::is_hotspot_mode(requested_mode_)) {
+        already = !requested_restart_ && hotspot_on && data.mode == requested_mode_;
+    } else {
+        already = !hotspot_on && !tunnel_on && !data.vpn.kill_switch;
+    }
+    if (already) {
+        return;  // nothing to do
+    }
+    if (model::is_hotspot_mode(requested_mode_) && !requested_restart_ && hotspot_on) {
+        // Router and Share go through Client.
+        status_.state = model::SwitchState::Failed;
+        status_.error = model::SwitchError::ClientFirst;
+    } else if (requested_mode_ == model::NetMode::Router && !requested_restart_ &&
+               data.uplink_kind != model::LinkKind::Cable) {
+        status_.state = model::SwitchState::Failed;
+        status_.error = model::SwitchError::NoCable;
+    } else if (requested_mode_ == model::NetMode::Share && !requested_restart_ &&
+               data.uplink_kind != model::LinkKind::Wifi) {
+        status_.state = model::SwitchState::Failed;
+        status_.error = model::SwitchError::NoWifi;
+    } else {
+        status_.state = model::SwitchState::Switching;
+        switching_ = true;
+        switching_name_ = requested_name_;
+        switching_vpn_ = requested_vpn_;
+        switching_vpn_off_ = requested_vpn_off_;
+        // The second half of the gateway arms its kill switch.
+        switching_kill_ = !requested_vpn_off_ && ((requested_mode_ == model::NetMode::Vpn && hotspot_on) ||
+                                                  (model::is_hotspot_mode(requested_mode_) &&
+                                                   (tunnel_on || data.vpn.kill_switch)));
     }
 }
 
@@ -148,14 +230,35 @@ void PretendModeSwitch::apply(model::HomeData& data, const PretendFailure& failu
             status_.reason = failure.error == model::SwitchError::Failed ? failure.reason : std::string();
         } else {
             status_.state = model::SwitchState::Idle;
-            has_mode_ = true;
-            mode_ = status_.target;
-            name_ = switching_name_;
-            vpn_ = switching_vpn_;
+            const model::NetMode target = status_.target;
+            if (switching_vpn_off_ || target == model::NetMode::Client) {
+                has_vpn_ = true;
+                vpn_ = model::VpnStatus{};
+                has_kill_ = true;
+                kill_ = false;
+            }
+            if (switching_vpn_off_) {
+                // The hotspot stays as it is.
+            } else if (target == model::NetMode::Client) {
+                has_hotspot_ = true;
+                hotspot_mode_ = model::NetMode::Client;
+                name_.clear();
+            } else if (target == model::NetMode::Vpn && !switching_vpn_off_) {
+                has_vpn_ = true;
+                vpn_ = switching_vpn_;
+            } else if (model::is_hotspot_mode(target)) {
+                has_hotspot_ = true;
+                hotspot_mode_ = target;
+                name_ = switching_name_;
+            }
+            if (switching_kill_) {
+                has_kill_ = true;
+                kill_ = true;
+            }
         }
     }
 
-    // The pretend mode, once a switch has finished.
+    // What finished switches set.
     show_mode(data);
 
     // A new request starts at this reading, so its Switching is shown once.
@@ -164,29 +267,7 @@ void PretendModeSwitch::apply(model::HomeData& data, const PretendFailure& failu
         if (requested_restart_ && data.mode != requested_mode_) {
             // Nothing runs that could start again; the last status stays.
         } else {
-            status_ = model::ModeSwitch{};
-            status_.target = requested_mode_;
-            if (requested_mode_ == data.mode && !requested_restart_) {
-                // Already on: nothing to do.
-            } else if ((!requested_restart_ && model::is_hotspot_mode(requested_mode_) &&
-                        (model::is_hotspot_mode(data.mode) || data.mode == model::NetMode::Vpn)) ||
-                       (requested_mode_ == model::NetMode::Vpn && model::is_hotspot_mode(data.mode))) {
-                status_.state = model::SwitchState::Failed;
-                status_.error = model::SwitchError::ClientFirst;
-            } else if (requested_mode_ == model::NetMode::Router && !requested_restart_ &&
-                       data.uplink_kind != model::LinkKind::Cable) {
-                status_.state = model::SwitchState::Failed;
-                status_.error = model::SwitchError::NoCable;
-            } else if (requested_mode_ == model::NetMode::Share && !requested_restart_ &&
-                       data.uplink_kind != model::LinkKind::Wifi) {
-                status_.state = model::SwitchState::Failed;
-                status_.error = model::SwitchError::NoWifi;
-            } else {
-                status_.state = model::SwitchState::Switching;
-                switching_ = true;
-                switching_name_ = requested_name_;
-                switching_vpn_ = requested_vpn_;
-            }
+            start_request(data);
         }
     }
 

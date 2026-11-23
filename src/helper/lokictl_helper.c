@@ -14,14 +14,16 @@
  * capability (set by the package's postinst; it is not setuid). Only root
  * and members of the netdev group may run it (root:netdev, mode 0750).
  *
- * It does exactly one of six fixed commands and exits:
+ * It does exactly one of eight fixed commands and exits:
  *
  *   lokictl-helper block MAC [MAC...]    block these devices on the hotspot
  *   lokictl-helper unblock MAC [MAC...]  let them through again
- *   lokictl-helper list                  print the blocked devices, one per line
+ *   lokictl-helper list                  print the kill switch and the blocked devices
  *   lokictl-helper clear                 remove LokiCTL's firewall table
  *   lokictl-helper ap-add                add Share's interface (lokiap0)
  *   lokictl-helper ap-del                remove Share's interface
+ *   lokictl-helper kill-on               arm the VPN kill switch
+ *   lokictl-helper kill-off              disarm it
  *
  * A MAC is six pairs of hex digits joined by ':' (for example
  * 02:00:00:00:00:01), not a group address; at most HELPER_MAX_ADDRESSES per
@@ -36,6 +38,22 @@
  * the rule set is never flushed. Each command runs as one nft transaction,
  * so it is done whole or not at all, and running it twice gives the same
  * result.
+ *
+ * The kill switch (VPN gateway: hotspot devices may only go out through
+ * LokiCTL's WireGuard tunnel, lokiwg0) has two base chains of its own in
+ * the same table, so block and unblock, which empty the input and forward
+ * chains, never touch it:
+ * - kill_forward (forward hook) drops what comes in through either hotspot
+ *   interface and would leave by any interface but lokiwg0. It matches the
+ *   interface by name, so it holds while lokiwg0 is gone and after it is
+ *   made again.
+ * - kill_output (output hook) drops DNS (port 53, UDP and TCP) that the
+ *   hotspot's DNS server (dnsmasq, which runs as HELPER_DNS_USER) sends by
+ *   any interface but lokiwg0 or lo, so the names hotspot devices ask for
+ *   never leave outside the tunnel either. Nothing else the Cardputer
+ *   itself sends is touched.
+ * "list" prints "kill-switch" on a line of its own while kill_forward
+ * exists, then the blocked devices.
  *
  * Share's interface goes through /usr/sbin/iw with fixed arguments only:
  * "iw dev wlan0 interface add lokiap0 type __ap" and "iw dev lokiap0 del".
@@ -86,6 +104,13 @@ enum {
 #define HELPER_SHARE_INTERFACE "lokiap0"
 /* The rules match only what comes in through the two hotspot interfaces. */
 #define HELPER_HOTSPOTS "{ \"" HELPER_INTERFACE "\", \"" HELPER_SHARE_INTERFACE "\" }"
+/* LokiCTL's WireGuard tunnel: the only way out while the kill switch is
+ * armed. */
+#define HELPER_TUNNEL "lokiwg0"
+/* The user the hotspot's DNS server runs as: NetworkManager starts dnsmasq
+ * for a shared connection without --user, so it drops to dnsmasq's built-in
+ * default, which Debian's dnsmasq-base leaves at "nobody". */
+#define HELPER_DNS_USER "nobody"
 #define HELPER_NFT "/usr/sbin/nft"
 #define HELPER_IW "/usr/sbin/iw"
 /* "aa:bb:cc:dd:ee:ff" */
@@ -115,13 +140,35 @@ static const char kClearTable[] =
     "add table inet lokictl\n"
     "delete table inet lokictl\n";
 
+/* The kill switch's two chains, made when missing and emptied, so the
+ * scripts below always start from the same state. A chain must be empty
+ * before it can be deleted. */
+static const char kKillChains[] =
+    "add table inet lokictl\n"
+    "add chain inet lokictl kill_forward { type filter hook forward priority filter - 5; policy accept; }\n"
+    "add chain inet lokictl kill_output { type filter hook output priority filter - 5; policy accept; }\n"
+    "flush chain inet lokictl kill_forward\n"
+    "flush chain inet lokictl kill_output\n";
+
+static const char kKillOn[] =
+    "add rule inet lokictl kill_forward iifname " HELPER_HOTSPOTS " oifname != \"" HELPER_TUNNEL "\" drop\n"
+    "add rule inet lokictl kill_output meta skuid " HELPER_DNS_USER " oifname != { \"" HELPER_TUNNEL
+    "\", \"lo\" } udp dport 53 drop\n"
+    "add rule inet lokictl kill_output meta skuid " HELPER_DNS_USER " oifname != { \"" HELPER_TUNNEL
+    "\", \"lo\" } tcp dport 53 drop\n";
+
+static const char kKillOff[] =
+    "delete chain inet lokictl kill_forward\n"
+    "delete chain inet lokictl kill_output\n";
+
 static void fail(const char* message) {
     fprintf(stderr, "%s: %s\n", kProgram, message);
 }
 
 static void usage(void) {
     fprintf(stderr,
-            "usage: %s block MAC [MAC...] | unblock MAC [MAC...] | list | clear | ap-add | ap-del\n"
+            "usage: %s block MAC [MAC...] | unblock MAC [MAC...] | list | clear | ap-add | ap-del |\n"
+            "       kill-on | kill-off\n"
             "  MAC: six pairs of hex digits joined by ':', at most %d per call\n",
             kProgram,
             HELPER_MAX_ADDRESSES);
@@ -372,6 +419,25 @@ static void print_addresses(const char* text) {
     }
 }
 
+/* True when `text` has a line that reads `wanted` once the blanks in front
+ * are skipped. */
+static int has_line(const char* text, const char* wanted) {
+    const size_t wanted_length = strlen(wanted);
+    for (const char* line = text; *line != '\0';) {
+        const char* end = strchr(line, '\n');
+        const size_t length = end ? (size_t)(end - line) : strlen(line);
+        size_t skip = 0;
+        while (skip < length && (line[skip] == ' ' || line[skip] == '\t')) {
+            ++skip;
+        }
+        if (length - skip == wanted_length && strncmp(line + skip, wanted, wanted_length) == 0) {
+            return 1;
+        }
+        line += length + (end ? 1 : 0);
+    }
+    return 0;
+}
+
 static int list_blocked(void) {
     static char output[OUTPUT_MAX];
     char* const tables[] = {"nft", "list", "tables", "inet", NULL};
@@ -379,22 +445,17 @@ static int list_blocked(void) {
     if (result != EXIT_DONE) {
         return result;
     }
-    /* Without the table nothing is blocked. */
-    int found = 0;
-    for (const char* line = output; *line != '\0';) {
-        const char* end = strchr(line, '\n');
-        const size_t length = end ? (size_t)(end - line) : strlen(line);
-        if (length == strlen("table inet lokictl") && strncmp(line, "table inet lokictl", length) == 0) {
-            found = 1;
-        }
-        line += length + (end ? 1 : 0);
-    }
-    if (!found) {
+    /* Without the table nothing is blocked and the kill switch is off. */
+    if (!has_line(output, "table inet lokictl")) {
         return EXIT_DONE;
     }
-    char* const set[] = {"nft", "list", "set", "inet", "lokictl", "blocked", NULL};
-    result = run_program(HELPER_NFT, set, "", output, sizeof(output));
+    char* const table[] = {"nft", "list", "table", "inet", "lokictl", NULL};
+    result = run_program(HELPER_NFT, table, "", output, sizeof(output));
     if (result == EXIT_DONE) {
+        if (has_line(output, "chain kill_forward {")) {
+            printf("kill-switch\n");
+        }
+        /* The rules hold no hardware address, so every one is in the set. */
         print_addresses(output);
     }
     return result;
@@ -437,7 +498,9 @@ int main(int argc, char* argv[]) {
     const int clear = strcmp(command, "clear") == 0;
     const int ap_add = strcmp(command, "ap-add") == 0;
     const int ap_del = strcmp(command, "ap-del") == 0;
-    if (!block && !unblock && !list && !clear && !ap_add && !ap_del) {
+    const int kill_on = strcmp(command, "kill-on") == 0;
+    const int kill_off = strcmp(command, "kill-off") == 0;
+    if (!block && !unblock && !list && !clear && !ap_add && !ap_del && !kill_on && !kill_off) {
         usage();
         return EXIT_USAGE;
     }
@@ -487,6 +550,11 @@ int main(int argc, char* argv[]) {
     int built = 0;
     if (clear) {
         built = append(script, &used, kClearTable);
+    } else if (kill_on || kill_off) {
+        built = append(script, &used, kKillChains);
+        if (built == 0) {
+            built = append(script, &used, kill_on ? kKillOn : kKillOff);
+        }
     } else {
         built = append(script, &used, kEnsureTable);
         if (built == 0 && block) {

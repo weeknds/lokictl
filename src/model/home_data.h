@@ -345,7 +345,17 @@ struct VpnStatus {
     // handshake time needs privileges the app does not have), or
     // kVpnReplyNone before anything came back.
     int32_t reply_seconds{kVpnReplyNone};
+    // The kill switch of the VPN gateway (a hotspot mode and the VPN
+    // together): hotspot devices may only go out through the tunnel, so
+    // while it is down they get nothing. It follows what the user asked
+    // for, not the tunnel's state, so it can be on with the state Off (the
+    // tunnel dropped). Off whenever the user has not run both together.
+    bool kill_switch{false};
 };
+
+// True while the VPN gateway's kill switch is on but the tunnel is not up:
+// hotspot devices are cut off until the VPN is on again or turned off.
+bool vpn_gateway_down(const VpnStatus& vpn);
 
 bool operator==(const VpnStatus& left, const VpnStatus& right);
 bool operator!=(const VpnStatus& left, const VpnStatus& right);

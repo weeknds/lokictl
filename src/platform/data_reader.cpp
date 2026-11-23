@@ -304,12 +304,20 @@ void DataReader::run() {
     }
 
     // On the way out: back to Client if a switch left another mode on (see
-    // stop()). Nothing reads the values any more, so none is taken.
+    // stop()), unless the user keeps the mode. Nothing reads the values any
+    // more, so none is taken.
+    if (keep_modes_.load()) {
+        return;
+    }
     try {
         source_->leave_modes(kLeaveModesLimit);
     } catch (...) {
         // Nothing more can be done on the way out.
     }
+}
+
+void DataReader::set_keep_modes(bool keep) {
+    keep_modes_.store(keep);
 }
 
 bool DataReader::read_source(model::HomeData& data) {
