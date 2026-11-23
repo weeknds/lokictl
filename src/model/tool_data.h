@@ -14,13 +14,18 @@
 
 namespace model {
 
-// The tools that can run (the Ping and DNS pages). Only one runs at a time.
+// The tools that can run (the Ping, DNS and Trace pages). Only one runs at
+// a time.
 enum class ToolKind : int32_t {
-    Ping = 0,
-    Dns  = 1,
+    Ping  = 0,
+    Dns   = 1,
+    Trace = 2,
 };
 
-const char* tool_name(ToolKind kind); // "ping", "dns"
+// How many kinds there are, for tables indexed by ToolKind.
+constexpr std::size_t kToolKindCount = 3;
+
+const char* tool_name(ToolKind kind); // "ping", "dns", "trace"
 
 // Where a tool's latest run stands.
 enum class ToolState : int32_t {
@@ -34,7 +39,7 @@ enum class ToolState : int32_t {
 // Why a run failed or found nothing.
 enum class ToolError : int32_t {
     None = 0,
-    NotAllowed,  // ping: the system refused the ICMP socket (ping_group_range)
+    NotAllowed,  // ping and trace: the system refused the ICMP socket (ping_group_range)
     NoServer,    // no IPv4 nameserver in /etc/resolv.conf
     NoSuchName,  // the DNS server said the name does not exist (NXDOMAIN)
     NoAnswer,    // the DNS server did not answer in time
@@ -55,9 +60,12 @@ constexpr std::size_t kDnsMaxAddresses = 6;
 constexpr std::size_t kToolTargetMax = 63;
 // A time not known.
 constexpr int32_t kTimeUnknown = -1;
+// A trace probes at most this many hops, and waits this long for each.
+constexpr int32_t kTraceMaxHops = 20;
+constexpr int32_t kTraceHopTimeoutMs = 1000;
 
-// PingReply::time_us of an echo that is still waiting for its reply, and
-// of one given up on.
+// PingReply::time_us (and TraceHop::time_us) of an echo that is still
+// waiting for its reply, and of one given up on.
 constexpr int32_t kPingWaiting = -2;
 constexpr int32_t kPingLost    = -1;
 
@@ -103,25 +111,63 @@ struct DnsRun {
 bool operator==(const DnsRun& left, const DnsRun& right);
 bool operator!=(const DnsRun& left, const DnsRun& right);
 
+// One hop of a trace: the probe sent with this time to live, who answered
+// it and how fast.
+struct TraceHop {
+    int32_t ttl{0};                  // 1 to kTraceMaxHops
+    std::string address;             // the IPv4 address that answered; empty while waiting or with no answer
+    std::string name;                // its reverse name (PTR); empty while not known, or when it has none
+    int32_t time_us{kPingWaiting};   // round trip in microseconds, kPingWaiting or kPingLost (no answer)
+};
+
+bool operator==(const TraceHop& left, const TraceHop& right);
+bool operator!=(const TraceHop& left, const TraceHop& right);
+
+// Why a trace stopped sending probes. The run still reads Running after
+// that while the hops' names are looked up.
+enum class TraceEnd : int32_t {
+    None = 0,     // still probing, or stopped or failed before the end
+    Reached,      // the target answered
+    Unreachable,  // a hop said the target cannot be reached (the last hop)
+    MaxHops,      // kTraceMaxHops probed without reaching the target
+};
+
+// The latest trace.
+struct TraceRun {
+    ToolState state{ToolState::Idle};
+    ToolError error{ToolError::None};
+    std::string reason;              // with ToolError::Failed, or why a probe could not be sent
+    std::string target;              // as asked: an IPv4 address or a name
+    std::string address;             // the IPv4 address traced; empty while a name is looked up
+    std::vector<TraceHop> hops;      // by time to live, the first hop first
+    TraceEnd end{TraceEnd::None};
+};
+
+bool operator==(const TraceRun& left, const TraceRun& right);
+bool operator!=(const TraceRun& left, const TraceRun& right);
+
 // What the tools show: the latest run of each and the app-wide count of
 // packets LokiCTL has sent in this run of the app.
 struct ToolsData {
     PingRun ping;
     DnsRun dns;
+    TraceRun trace;
     uint64_t sent{0};
 };
 
 bool operator==(const ToolsData& left, const ToolsData& right);
 bool operator!=(const ToolsData& left, const ToolsData& right);
 
-// True while either tool runs.
+// True while any tool runs.
 bool tool_running(const ToolsData& data);
+// The state of `kind`'s latest run.
+ToolState tool_state(const ToolsData& data, ToolKind kind);
 
 // Whether `text` may be used as a typed target: 1 to kToolTargetMax
 // characters, only a-z, 0-9 and '.', no empty label (no dot at either end,
 // no two dots in a row). A text of digits and dots only must be an IPv4
 // address (four numbers of 0-255). For DNS a name is needed, so an IPv4
-// address is refused there.
+// address is refused there; Ping and Trace take both.
 bool valid_tool_target(ToolKind kind, std::string_view text);
 
 // Whether `text` is an IPv4 address in dotted form ("192.0.2.1").

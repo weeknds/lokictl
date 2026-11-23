@@ -14,6 +14,8 @@ const char* tool_name(ToolKind kind) {
             return "ping";
         case ToolKind::Dns:
             return "dns";
+        case ToolKind::Trace:
+            return "trace";
     }
     return "ping";
 }
@@ -47,8 +49,27 @@ bool operator!=(const DnsRun& left, const DnsRun& right) {
     return !(left == right);
 }
 
+bool operator==(const TraceHop& left, const TraceHop& right) {
+    return left.ttl == right.ttl && left.address == right.address && left.name == right.name &&
+           left.time_us == right.time_us;
+}
+
+bool operator!=(const TraceHop& left, const TraceHop& right) {
+    return !(left == right);
+}
+
+bool operator==(const TraceRun& left, const TraceRun& right) {
+    return left.state == right.state && left.error == right.error && left.reason == right.reason &&
+           left.target == right.target && left.address == right.address && left.hops == right.hops &&
+           left.end == right.end;
+}
+
+bool operator!=(const TraceRun& left, const TraceRun& right) {
+    return !(left == right);
+}
+
 bool operator==(const ToolsData& left, const ToolsData& right) {
-    return left.ping == right.ping && left.dns == right.dns && left.sent == right.sent;
+    return left.ping == right.ping && left.dns == right.dns && left.trace == right.trace && left.sent == right.sent;
 }
 
 bool operator!=(const ToolsData& left, const ToolsData& right) {
@@ -56,7 +77,20 @@ bool operator!=(const ToolsData& left, const ToolsData& right) {
 }
 
 bool tool_running(const ToolsData& data) {
-    return data.ping.state == ToolState::Running || data.dns.state == ToolState::Running;
+    return data.ping.state == ToolState::Running || data.dns.state == ToolState::Running ||
+           data.trace.state == ToolState::Running;
+}
+
+ToolState tool_state(const ToolsData& data, ToolKind kind) {
+    switch (kind) {
+        case ToolKind::Ping:
+            return data.ping.state;
+        case ToolKind::Dns:
+            return data.dns.state;
+        case ToolKind::Trace:
+            return data.trace.state;
+    }
+    return ToolState::Idle;
 }
 
 bool is_ipv4_text(std::string_view text) {
@@ -114,7 +148,7 @@ bool valid_tool_target(ToolKind kind, std::string_view text) {
         return false;
     }
     if (only_numbers) {
-        return kind == ToolKind::Ping && is_ipv4_text(text);
+        return kind != ToolKind::Dns && is_ipv4_text(text);
     }
     return true;
 }

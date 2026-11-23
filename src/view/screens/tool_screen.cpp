@@ -33,11 +33,20 @@ constexpr int32_t kCaptionGap   = 5;
 constexpr int32_t kColumnWidth  = kWidth / static_cast<int32_t>(model::kPingShownReplies);
 // The typing panel.
 constexpr int32_t kDraftHeight  = 30;
+// The Trace page: the gaps between a hop row's columns, and the scroll mark
+// (a thin track with a wider thumb) at the right edge, as on the Status
+// page.
+constexpr int32_t kHopColumnGap   = 6;
+constexpr int32_t kTrackX         = view::kScreenWidth - 6;
+constexpr int32_t kThumbX         = kTrackX - 1;
+constexpr int32_t kThumbWidth     = 3;
+constexpr int32_t kThumbMinHeight = 8;
+constexpr int32_t kHopRight       = kThumbX - 4;
 
 // Three spaces between addresses on one line.
 constexpr const char* kAddressGap = "   ";
 
-// The preset targets, after the router for Ping.
+// The preset targets, after the router for Ping and Trace.
 constexpr const char* kPingPresets[] = {"9.9.9.9", "1.1.1.1"};
 constexpr const char* kDnsPresets[] = {"example.com", "wikipedia.org"};
 
@@ -129,15 +138,27 @@ ToolScreen::ToolScreen(viewmodel::BaseViewModel& view_model,
                        view::ThemeEngine& theme_engine,
                        model::AppPage page)
     : BaseScreen(view_model, assets, theme_engine),
-      kind_(page == model::AppPage::Dns ? model::ToolKind::Dns : model::ToolKind::Ping) {
+      kind_(page == model::AppPage::Dns     ? model::ToolKind::Dns
+            : page == model::AppPage::Trace ? model::ToolKind::Trace
+                                            : model::ToolKind::Ping) {
     init();
 }
 
 bool ToolScreen::handles(model::AppPage page) {
-    return page == model::AppPage::Ping || page == model::AppPage::Dns;
+    return page == model::AppPage::Ping || page == model::AppPage::Dns || page == model::AppPage::Trace;
 }
 
 view::widgets::HelpContent ToolScreen::help_content(model::ToolKind kind) {
+    if (kind == model::ToolKind::Trace) {
+        return {"TRACE",
+                {
+                    {"ESC / 4", "Back (a run goes on)"},
+                    {"Z / C", "Previous / next target"},
+                    {"F / X", "Scroll the hops"},
+                    {"5", "Type a target (ENTER keeps)"},
+                    {"ENTER / 6", "Run / stop"},
+                }};
+    }
     return {kind == model::ToolKind::Dns ? "DNS" : "PING",
             {
                 {"ESC / 4", "Back (a run goes on)"},
@@ -167,7 +188,7 @@ view::widgets::SoftKeySet ToolScreen::soft_keys() {
 
 std::vector<ToolScreen::Target> ToolScreen::targets() const {
     std::vector<Target> list;
-    if (kind_ == model::ToolKind::Ping) {
+    if (kind_ != model::ToolKind::Dns) {
         const std::string& router = view_model().home().gateway_address;
         if (model::is_ipv4_text(router)) {
             list.push_back({router, true});
@@ -193,8 +214,7 @@ int32_t ToolScreen::target_index(const std::vector<Target>& list) const {
 }
 
 bool ToolScreen::this_running() const {
-    const model::ToolsData& data = view_model().tools();
-    return (kind_ == model::ToolKind::Ping ? data.ping.state : data.dns.state) == model::ToolState::Running;
+    return model::tool_state(view_model().tools(), kind_) == model::ToolState::Running;
 }
 
 bool ToolScreen::any_running() const {
@@ -238,7 +258,25 @@ void ToolScreen::run_or_stop() {
     if (list.empty()) {
         return;
     }
+    if (kind_ == model::ToolKind::Trace) {
+        view_model().set_trace_scroll(viewmodel::BaseViewModel::kTraceFollow);
+    }
     view_model().request_tool_run(kind_, list[static_cast<std::size_t>(target_index(list))].text);
+}
+
+int32_t ToolScreen::first_hop_row() const {
+    const auto count = static_cast<int32_t>(view_model().tools().trace.hops.size());
+    const int32_t last_top = std::max<int32_t>(count - visible_hop_rows_, 0);
+    const int32_t scroll = view_model().trace_scroll();
+    return scroll == viewmodel::BaseViewModel::kTraceFollow ? last_top : std::clamp<int32_t>(scroll, 0, last_top);
+}
+
+void ToolScreen::scroll_hops(int32_t delta) {
+    const auto count = static_cast<int32_t>(view_model().tools().trace.hops.size());
+    const int32_t last_top = std::max<int32_t>(count - visible_hop_rows_, 0);
+    const int32_t next = std::clamp<int32_t>(first_hop_row() + delta, 0, last_top);
+    // At the end the list follows the newest hops again.
+    view_model().set_trace_scroll(next >= last_top ? viewmodel::BaseViewModel::kTraceFollow : next);
 }
 
 bool ToolScreen::text_entry() const {
@@ -255,6 +293,13 @@ bool ToolScreen::on_key(uint32_t key) {
             return true;
         case LV_KEY_RIGHT:
             step_target(1);
+            return true;
+        case LV_KEY_UP:
+        case LV_KEY_DOWN:
+            if (kind_ != model::ToolKind::Trace) {
+                return false;
+            }
+            scroll_hops(key == LV_KEY_UP ? -1 : 1);
             return true;
         case LV_KEY_ENTER:
             run_or_stop();
@@ -342,10 +387,16 @@ void ToolScreen::build_content(lv_obj_t* content) {
     view::style::text(target_place_, theme, view::FontRole::Small, theme.colors.muted);
     lv_obj_align(target_place_, LV_ALIGN_TOP_RIGHT, -kSideMargin, kTargetTop + small_drop);
 
-    if (kind_ == model::ToolKind::Ping) {
-        build_ping_results(main_panel_);
-    } else {
-        build_dns_results(main_panel_);
+    switch (kind_) {
+        case model::ToolKind::Ping:
+            build_ping_results(main_panel_);
+            break;
+        case model::ToolKind::Dns:
+            build_dns_results(main_panel_);
+            break;
+        case model::ToolKind::Trace:
+            build_trace_results(main_panel_);
+            break;
     }
 
     // The status line, with the Sent count and its caption at the right.
@@ -365,9 +416,12 @@ void ToolScreen::build_content(lv_obj_t* content) {
     lv_subject_add_observer_obj(view_model().tools_subject(), observer_cb, content, this);
     lv_subject_add_observer_obj(view_model().tool_target_subject(), observer_cb, content, this);
     lv_subject_add_observer_obj(view_model().tool_typing_subject(), observer_cb, content, this);
-    if (kind_ == model::ToolKind::Ping) {
+    if (kind_ != model::ToolKind::Dns) {
         // The router comes and goes with the network.
         lv_subject_add_observer_obj(view_model().home_data_subject(), observer_cb, content, this);
+    }
+    if (kind_ == model::ToolKind::Trace) {
+        lv_subject_add_observer_obj(view_model().trace_scroll_subject(), observer_cb, content, this);
     }
 }
 
@@ -426,6 +480,71 @@ void ToolScreen::build_dns_results(lv_obj_t* panel) {
     lv_obj_set_pos(server_, kSideMargin, top + 1);
 }
 
+void ToolScreen::build_trace_results(lv_obj_t* panel) {
+    const auto& theme = this->theme();
+    const lv_font_t* small = theme.font(view::FontRole::Small);
+    const lv_font_t* mono = theme.font(view::FontRole::Mono);
+    const int32_t row_height = lv_font_get_line_height(small);
+    hop_list_top_ = kTargetTop + lv_font_get_line_height(mono) + kResultsGap;
+    // The rows end above the status line, whatever the theme's line height.
+    visible_hop_rows_ = std::clamp<int32_t>((kStatusTop - 1 - hop_list_top_) / row_height, 1,
+                                            static_cast<int32_t>(kTraceRows));
+    hop_list_height_ = visible_hop_rows_ * row_height;
+
+    // Columns: the hop number (right-aligned), the address, the name (ends
+    // in dots when longer) and the time (right-aligned).
+    const int32_t number_width = text_width("20", small);
+    const int32_t address_x = kSideMargin + number_width + kHopColumnGap;
+    const int32_t address_width = text_width("255.255.255.255", small);
+    const int32_t time_width = text_width("99.9ms", small);
+    const int32_t time_x = kHopRight - time_width;
+    const int32_t name_x = address_x + address_width + kHopColumnGap;
+    const int32_t name_width = std::max<int32_t>(time_x - kHopColumnGap - name_x, 0);
+
+    for (int32_t index = 0; index < visible_hop_rows_; ++index) {
+        HopRow& row = hop_rows_[static_cast<std::size_t>(index)];
+        const int32_t top = hop_list_top_ + index * row_height;
+        row.number = plain_label(panel, "");
+        view::style::text(row.number, theme, view::FontRole::Small, theme.colors.muted);
+        lv_obj_set_size(row.number, number_width, row_height);
+        lv_obj_set_style_text_align(row.number, LV_TEXT_ALIGN_RIGHT, 0);
+        lv_obj_set_pos(row.number, kSideMargin, top);
+        row.address = plain_label(panel, "");
+        view::style::text(row.address, theme, view::FontRole::Small);
+        lv_label_set_long_mode(row.address, LV_LABEL_LONG_CLIP);
+        lv_obj_set_size(row.address, address_width, row_height);
+        lv_obj_set_pos(row.address, address_x, top);
+        row.name = plain_label(panel, "");
+        view::style::text(row.name, theme, view::FontRole::Small, theme.colors.muted);
+        lv_label_set_long_mode(row.name, LV_LABEL_LONG_DOT);
+        lv_obj_set_size(row.name, name_width, row_height);
+        lv_obj_set_pos(row.name, name_x, top);
+        row.time = plain_label(panel, "");
+        view::style::text(row.time, theme, view::FontRole::Small);
+        lv_obj_set_size(row.time, time_width, row_height);
+        lv_obj_set_style_text_align(row.time, LV_TEXT_ALIGN_RIGHT, 0);
+        lv_obj_set_pos(row.time, time_x, top);
+    }
+
+    placeholder_ = plain_label(panel, "Results show here");
+    view::style::text(placeholder_, theme, view::FontRole::Mono, theme.colors.muted);
+    fix_width(placeholder_, kWidth, mono);
+    lv_obj_set_pos(placeholder_, kSideMargin, hop_list_top_);
+    lv_obj_add_flag(placeholder_, LV_OBJ_FLAG_HIDDEN);
+
+    track_ = plain_object(panel);
+    lv_obj_set_pos(track_, kTrackX, hop_list_top_);
+    lv_obj_set_size(track_, 1, hop_list_height_);
+    lv_obj_set_style_bg_color(track_, theme.colors.border_subtle, 0);
+    lv_obj_set_style_bg_opa(track_, LV_OPA_COVER, 0);
+    lv_obj_add_flag(track_, LV_OBJ_FLAG_HIDDEN);
+    thumb_ = plain_object(panel);
+    lv_obj_set_style_bg_color(thumb_, theme.colors.muted, 0);
+    lv_obj_set_style_bg_opa(thumb_, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(thumb_, std::min<int32_t>(theme.metrics.radius, 1), 0);
+    lv_obj_add_flag(thumb_, LV_OBJ_FLAG_HIDDEN);
+}
+
 void ToolScreen::build_typing_panel(lv_obj_t* content) {
     const auto& theme = this->theme();
     typing_panel_ = plain_object(content);
@@ -437,7 +556,9 @@ void ToolScreen::build_typing_panel(lv_obj_t* content) {
     lv_obj_set_flex_flow(column, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(column, theme.metrics.space_sm, 0);
 
-    auto* title = plain_label(column, kind_ == model::ToolKind::Dns ? "Name to look up" : "Host to ping");
+    auto* title = plain_label(column, kind_ == model::ToolKind::Dns     ? "Name to look up"
+                                      : kind_ == model::ToolKind::Trace ? "Host to trace"
+                                                                        : "Host to ping");
     view::style::text(title, theme, view::FontRole::Strong);
     auto* box = plain_object(column);
     view::style::card(box, theme);
@@ -488,8 +609,18 @@ void ToolScreen::refresh_target() {
     std::string place;
     if (this_running()) {
         // The run's own target, whatever is selected.
-        value = kind_ == model::ToolKind::Dns ? data.dns.name : data.ping.target;
-        if (kind_ == model::ToolKind::Ping && value == view_model().home().gateway_address) {
+        switch (kind_) {
+            case model::ToolKind::Ping:
+                value = data.ping.target;
+                break;
+            case model::ToolKind::Dns:
+                value = data.dns.name;
+                break;
+            case model::ToolKind::Trace:
+                value = data.trace.target;
+                break;
+        }
+        if (kind_ != model::ToolKind::Dns && value == view_model().home().gateway_address) {
             caption = "router";
         }
     } else {
@@ -579,12 +710,68 @@ void ToolScreen::refresh_dns() {
     set_text_if_changed(server_, server_shown_, server);
 }
 
+void ToolScreen::refresh_trace() {
+    const auto& theme = this->theme();
+    const model::TraceRun& run = view_model().tools().trace;
+    const bool running = run.state == model::ToolState::Running;
+    const auto count = static_cast<int32_t>(run.hops.size());
+    const int32_t first = first_hop_row();
+    for (int32_t index = 0; index < visible_hop_rows_; ++index) {
+        HopRow& row = hop_rows_[static_cast<std::size_t>(index)];
+        tools::TraceRow texts;
+        texts.address.tone = tools::kToneText;
+        if (first + index < count) {
+            texts = tools::trace_row(run.hops[static_cast<std::size_t>(first + index)], running);
+        }
+        set_text_if_changed(row.number, row.number_shown, texts.number);
+        set_text_if_changed(row.address, row.address_shown, texts.address.text);
+        set_tone_if_changed(row.address, row.address_tone, texts.address.tone, theme);
+        set_text_if_changed(row.name, row.name_shown, texts.name);
+        set_text_if_changed(row.time, row.time_shown, texts.time.text);
+    }
+    set_hidden(placeholder_, run.state != model::ToolState::Idle);
+
+    // The scroll mark, only when the hops do not all fit.
+    const bool scrolls = count > visible_hop_rows_;
+    set_hidden(track_, !scrolls);
+    set_hidden(thumb_, !scrolls);
+    if (scrolls) {
+        const int32_t thumb_height = std::max<int32_t>(hop_list_height_ * visible_hop_rows_ / count, kThumbMinHeight);
+        const int32_t travel = hop_list_height_ - thumb_height;
+        const int32_t last_top = count - visible_hop_rows_;
+        const int32_t offset = last_top > 0 ? travel * first / last_top : 0;
+        if (thumb_height != thumb_height_shown_ || offset != thumb_top_shown_) {
+            lv_obj_set_size(thumb_, kThumbWidth, thumb_height);
+            lv_obj_set_pos(thumb_, kThumbX, hop_list_top_ + offset);
+            thumb_height_shown_ = thumb_height;
+            thumb_top_shown_ = offset;
+        }
+    }
+}
+
 void ToolScreen::refresh_status() {
     const auto& theme = this->theme();
     const model::ToolsData& data = view_model().tools();
-    tools::ToneText status = kind_ == model::ToolKind::Dns ? tools::dns_status(data.dns) : tools::ping_status(data.ping);
+    tools::ToneText status;
+    switch (kind_) {
+        case model::ToolKind::Ping:
+            status = tools::ping_status(data.ping);
+            break;
+        case model::ToolKind::Dns:
+            status = tools::dns_status(data.dns);
+            break;
+        case model::ToolKind::Trace:
+            status = tools::trace_status(data.trace);
+            break;
+    }
     if (!this_running() && any_running()) {
-        status = {kind_ == model::ToolKind::Dns ? "Ping is running" : "DNS lookup is running", tools::kToneMuted};
+        if (data.ping.state == model::ToolState::Running) {
+            status = {"Ping is running", tools::kToneMuted};
+        } else if (data.dns.state == model::ToolState::Running) {
+            status = {"DNS lookup is running", tools::kToneMuted};
+        } else {
+            status = {"Trace is running", tools::kToneMuted};
+        }
     }
     const bool sent_changed = set_text_if_changed(sent_, sent_shown_, std::to_string(data.sent));
     if (set_text_if_changed(status_, status_shown_, status.text) || sent_changed) {
@@ -652,10 +839,16 @@ void ToolScreen::refresh() {
         return;
     }
     refresh_target();
-    if (kind_ == model::ToolKind::Ping) {
-        refresh_ping();
-    } else {
-        refresh_dns();
+    switch (kind_) {
+        case model::ToolKind::Ping:
+            refresh_ping();
+            break;
+        case model::ToolKind::Dns:
+            refresh_dns();
+            break;
+        case model::ToolKind::Trace:
+            refresh_trace();
+            break;
     }
     refresh_status();
 }

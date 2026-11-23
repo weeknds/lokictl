@@ -86,6 +86,24 @@ std::string ping_times_text(const model::PingRun& run) {
            time_text(run.max_us) + " ms";
 }
 
+TraceRow trace_row(const model::TraceHop& hop, bool running) {
+    TraceRow row;
+    row.number = std::to_string(hop.ttl);
+    if (hop.time_us == model::kPingWaiting) {
+        row.address = {running ? "…" : "*", kToneMuted};
+        row.time = {"", kToneMuted};
+    } else if (hop.time_us == model::kPingLost || hop.address.empty()) {
+        row.address = {"*", kToneMuted};
+        row.name = "no answer";
+        row.time = {"", kToneMuted};
+    } else {
+        row.address = {hop.address, kToneText};
+        row.name = hop.name;
+        row.time = {time_text(hop.time_us) + "ms", kToneText};
+    }
+    return row;
+}
+
 ToneText ping_status(const model::PingRun& run) {
     switch (run.state) {
         case model::ToolState::Idle:
@@ -134,6 +152,44 @@ ToneText dns_status(const model::DnsRun& run) {
     return {std::to_string(count) + (count == 1 ? " address" : " addresses"), kToneSuccess};
 }
 
+ToneText trace_status(const model::TraceRun& run) {
+    const std::string hops = std::to_string(run.hops.size());
+    switch (run.state) {
+        case model::ToolState::Idle:
+            return {"One probe per hop, up to " + std::to_string(model::kTraceMaxHops), kToneMuted};
+        case model::ToolState::Running:
+            if (run.address.empty()) {
+                return {"Looking up the name…", kToneText};
+            }
+            if (run.end == model::TraceEnd::None) {
+                return {"Hop " + hops + "…", kToneText};
+            }
+            return {"Looking up names…", kToneText};
+        case model::ToolState::Stopped:
+            return {"Stopped", kToneMuted};
+        case model::ToolState::Failed:
+            if (run.error == model::ToolError::NotAllowed) {
+                return {"Trace not allowed for this user", kToneError};
+            }
+            if (run.hops.empty()) {
+                return error_status(run.error, run.reason);
+            }
+            return {failed_text(run.reason) + " at hop " + std::to_string(run.hops.size() + 1), kToneError};
+        case model::ToolState::Done:
+            break;
+    }
+    switch (run.end) {
+        case model::TraceEnd::Reached:
+            return {"Reached in " + hops + (run.hops.size() == 1 ? " hop" : " hops"), kToneSuccess};
+        case model::TraceEnd::Unreachable:
+            return {"Unreachable at hop " + hops, kToneWarning};
+        case model::TraceEnd::MaxHops:
+        case model::TraceEnd::None:
+            break;
+    }
+    return {"Not reached in " + hops + " hops", kToneWarning};
+}
+
 ToneText ping_tag(const model::PingRun& run) {
     switch (run.state) {
         case model::ToolState::Running:
@@ -143,6 +199,24 @@ ToneText ping_tag(const model::PingRun& run) {
                 return {time_text(run.avg_us) + " ms", kToneMuted};
             }
             return {"no reply", kToneWarning};
+        case model::ToolState::Failed:
+            return {"failed", kToneWarning};
+        case model::ToolState::Idle:
+        case model::ToolState::Stopped:
+            break;
+    }
+    return {};
+}
+
+ToneText trace_tag(const model::TraceRun& run) {
+    switch (run.state) {
+        case model::ToolState::Running:
+            return {"running", kToneAccent};
+        case model::ToolState::Done:
+            if (run.end == model::TraceEnd::Reached) {
+                return {std::to_string(run.hops.size()) + (run.hops.size() == 1 ? " hop" : " hops"), kToneMuted};
+            }
+            return {"not reached", kToneWarning};
         case model::ToolState::Failed:
             return {"failed", kToneWarning};
         case model::ToolState::Idle:

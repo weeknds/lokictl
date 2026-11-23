@@ -20,8 +20,8 @@ class BaseViewModel;
 
 namespace app {
 
-// The screen's side of the tools (ping and DNS lookup). It owns a
-// platform::ToolRunner, hands it the Ping and DNS pages' requests
+// The screen's side of the tools (ping, DNS lookup and trace). It owns a
+// platform::ToolRunner, hands it the tool pages' requests
 // (BaseViewModel::request_tool_run() and request_tool_stop()) and, from an
 // LVGL timer four times a second, takes the latest runs from it and gives
 // them to the view model with the app-wide Sent count
@@ -31,9 +31,11 @@ namespace app {
 // A run keeps going when its page is left. Only one tool runs at a time: a
 // request to run while one runs is ignored (the pages switch Run off then).
 //
-// Log lines: "tools: <ping|dns> started", "tools: <ping|dns> stopped by the
-// user", "tools: ping done, <r>/<s> replies", "tools: ping failed: <why>",
-// "tools: dns done, <n> addresses", "tools: dns failed: <why>" (never a
+// Log lines: "tools: <ping|dns|trace> started", "tools: <ping|dns|trace>
+// stopped by the user", "tools: ping done, <r>/<s> replies", "tools: ping
+// failed: <why>", "tools: dns done, <n> addresses", "tools: dns failed:
+// <why>", "tools: trace done, reached in <n> hops" (or "unreachable at hop
+// <n>", "not reached in <n> hops"), "tools: trace failed: <why>" (never a
 // target or an address), and "tools: runner stopped" at the end.
 //
 // Create it after the view model and destroy it before; it is not copied.

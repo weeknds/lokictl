@@ -16,15 +16,18 @@
 
 namespace screen {
 
-// The Ping and DNS pages, opened from the Tools page. One class draws both;
-// the page decides which tool it shows. Under the title bar:
+// The Ping, DNS and Trace pages, opened from the Tools page. One class
+// draws all three; the page decides which tool it shows. Under the title
+// bar:
 // - the target row: a caption ("target", "router" for the router, "name"),
 //   the target, and its place among the targets ("‹ 2/3 ›");
 // - the results. Ping: a table of the last five echoes (sequence number
 //   and time, "lost", "…" while it waits) and two summary lines (sent,
 //   received and lost; min, avg and max). DNS: the addresses found (IPv4
 //   first, up to six, several to a line when they fit) and the server
-//   asked with the time taken;
+//   asked with the time taken. Trace: one row per hop (number, address,
+//   reverse name, time in ms; "*" and "no answer" for a silent hop), as
+//   many as fit, with a thin scroll mark at the right when there are more;
 // - the status line: how the run stands, or why it failed ("Ping not
 //   allowed for this user", "No such name", "No answer"), with the app-wide
 //   Sent count at its right.
@@ -32,19 +35,21 @@ namespace screen {
 // Keys: 4 (Back) or a short ESC goes back, and a run keeps going; 5 (Edit)
 // types a target; 6 (Run) or Enter starts a run on the target, and stops
 // it while it runs (Stop). Left and right (Z/C) step through the targets:
-// for Ping the router (when there is one), 9.9.9.9 and 1.1.1.1; for DNS
-// example.com and wikipedia.org; then the typed target, if any. While this
-// tool runs, the row shows the run's target and Edit and the arrows do
-// nothing; while the other tool runs, Run is switched off.
+// for Ping and Trace the router (when there is one), 9.9.9.9 and 1.1.1.1;
+// for DNS example.com and wikipedia.org; then the typed target, if any.
+// While this tool runs, the row shows the run's target and Edit and the
+// arrows do nothing; while another tool runs, Run is switched off. On the
+// Trace page up and down (F/X) scroll the hops; while it runs and was not
+// scrolled up, the list follows the newest hop.
 //
 // Typing: a panel takes the page's place. Letters, digits and '.' are
 // added (at most model::kToolTargetMax), Backspace takes one away, Enter
 // keeps a valid target (model::valid_tool_target()) and selects it, Enter
 // on an empty text drops the typed target, and a short ESC cancels.
 //
-// The target choice, the typed target, typing and the runs live in the
-// view model, so they are kept when the page is left and across a theme
-// switch.
+// The target choice, the typed target, typing, the runs and the Trace
+// page's scroll live in the view model, so they are kept when the page is
+// left and across a theme switch.
 class ToolScreen : public BaseScreen {
 public:
     ToolScreen(viewmodel::BaseViewModel& view_model,
@@ -63,6 +68,21 @@ public:
 private:
     static constexpr std::size_t kTableColumns = model::kPingShownReplies;
     static constexpr std::size_t kAddressLines = 3;
+    // The Trace page shows at most this many hop rows (fewer when the
+    // theme's lines are taller).
+    static constexpr std::size_t kTraceRows = 4;
+
+    struct HopRow {
+        lv_obj_t* number{nullptr};
+        lv_obj_t* address{nullptr};
+        lv_obj_t* name{nullptr};
+        lv_obj_t* time{nullptr};
+        std::string number_shown;
+        std::string address_shown;
+        std::string name_shown;
+        std::string time_shown;
+        int32_t address_tone{-1};
+    };
 
     struct Target {
         std::string text;
@@ -73,6 +93,7 @@ private:
     view::widgets::SoftKeySet soft_keys() override;
     void build_ping_results(lv_obj_t* panel);
     void build_dns_results(lv_obj_t* panel);
+    void build_trace_results(lv_obj_t* panel);
     void build_typing_panel(lv_obj_t* content);
 
     // The targets to step through: the presets, then the typed one.
@@ -84,6 +105,10 @@ private:
     bool any_running() const;
 
     void step_target(int32_t delta);
+    // Trace: scrolls the hops by one row.
+    void scroll_hops(int32_t delta);
+    // Trace: the first hop row shown, from the view model's scroll.
+    int32_t first_hop_row() const;
     void start_edit();
     void run_or_stop();
     bool type_key(uint32_t key);
@@ -93,6 +118,7 @@ private:
     void refresh_target();
     void refresh_ping();
     void refresh_dns();
+    void refresh_trace();
     void refresh_status();
     void refresh_typing();
 
@@ -113,7 +139,16 @@ private:
     // DNS
     std::array<lv_obj_t*, kAddressLines> lines_{};
     lv_obj_t* server_{nullptr};
-    // Both
+    // Trace
+    std::array<HopRow, kTraceRows> hop_rows_{};
+    int32_t visible_hop_rows_{0};
+    lv_obj_t* track_{nullptr};
+    lv_obj_t* thumb_{nullptr};
+    int32_t hop_list_top_{0};
+    int32_t hop_list_height_{0};
+    int32_t thumb_top_shown_{-1};
+    int32_t thumb_height_shown_{-1};
+    // All
     lv_obj_t* status_{nullptr};
     lv_obj_t* sent_caption_{nullptr};
     lv_obj_t* sent_{nullptr};

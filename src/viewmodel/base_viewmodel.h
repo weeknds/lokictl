@@ -198,7 +198,7 @@ public:
     const std::string& hotspot_draft() const;
     void set_hotspot_draft(const std::string& draft);
 
-    // The Tools page and its Ping and DNS pages.
+    // The Tools page and its Ping, DNS and Trace pages.
     // The highlighted row of the Tools page; starts at 0. The page shows it
     // clamped to the rows that can be opened.
     lv_subject_t* tools_selection_subject();
@@ -207,7 +207,7 @@ public:
     void select_tools_row(int32_t row);
     // Opens the Tools page (see open_page()). The home page's key 7 uses it.
     bool open_tools();
-    // Sets typing back to off, then opens the Ping or DNS page (see
+    // Sets typing back to off, then opens the Ping, DNS or Trace page (see
     // open_page()).
     bool open_tool(model::ToolKind kind);
     // The target each tool uses, as its place in the page's list of
@@ -222,7 +222,7 @@ public:
     // Counts every change made with the four setters above, so the pages
     // follow. Starts at 0.
     lv_subject_t* tool_target_subject();
-    // True while the Ping or DNS page is in typing mode; the target typed
+    // True while a tool's page is in typing mode; the target typed
     // so far is tool_draft(). Kept here like the hotspot's rename.
     lv_subject_t* tool_typing_subject();
     bool tool_typing() const;
@@ -247,6 +247,13 @@ public:
     const model::ToolsData& tools() const;
     bool set_tools(const model::ToolsData& data);
     lv_subject_t* tools_subject();
+    // The Trace page's first hop row shown, or kTraceFollow (the start
+    // value) to follow the newest hops. The page clamps it to the hops.
+    static constexpr int32_t kTraceFollow = -1;
+    lv_subject_t* trace_scroll_subject();
+    int32_t trace_scroll() const;
+    // Stores `row`; nothing is written when it stays the same.
+    void set_trace_scroll(int32_t row);
 
     // The home page.
     // The values it shows (see model::HomeData). The page reads them while
@@ -326,8 +333,8 @@ private:
     reactive::BoolSubject hotspot_typing_subject_;
     std::string hotspot_draft_;
     reactive::IntSubject tools_selection_subject_;
-    int32_t tool_targets_[2]{0, 0};          // by model::ToolKind
-    std::string tool_typed_targets_[2];      // by model::ToolKind
+    int32_t tool_targets_[model::kToolKindCount]{};          // by model::ToolKind
+    std::string tool_typed_targets_[model::kToolKindCount];  // by model::ToolKind
     reactive::IntSubject tool_target_subject_;
     reactive::BoolSubject tool_typing_subject_;
     std::string tool_draft_;
@@ -337,6 +344,7 @@ private:
     std::string requested_tool_target_;
     model::ToolsData tools_;
     reactive::IntSubject tools_subject_;
+    reactive::IntSubject trace_scroll_subject_;
     reactive::IntSubject home_selection_subject_;
     reactive::IntSubject home_data_subject_;
     reactive::IntSubject key_test_selection_subject_;

@@ -10,6 +10,7 @@
 #include "logger.h"
 #include "sent_counter.h"
 
+#include <cstddef>
 #include <string>
 #include <utility>
 
@@ -110,11 +111,12 @@ void ToolController::handle_request() {
         return;  // nothing would show the run
     }
     if (view_model_.requested_tool_stop()) {
-        if (model::tool_running(data_)) {
-            runner_->stop();
-            LOG_INFO("tools: {} stopped by the user",
-                     model::tool_name(data_.ping.state == model::ToolState::Running ? model::ToolKind::Ping
-                                                                                     : model::ToolKind::Dns));
+        for (const model::ToolKind kind : {model::ToolKind::Ping, model::ToolKind::Dns, model::ToolKind::Trace}) {
+            if (model::tool_state(data_, kind) == model::ToolState::Running) {
+                runner_->stop();
+                LOG_INFO("tools: {} stopped by the user", model::tool_name(kind));
+                break;
+            }
         }
     } else {
         const model::ToolKind kind = view_model_.requested_tool();
@@ -159,6 +161,26 @@ void ToolController::log_change(const model::ToolsData& next) const {
             LOG_INFO("tools: dns done, {} addresses", dns.addresses.size());
         } else if (dns.state == model::ToolState::Done || dns.state == model::ToolState::Failed) {
             LOG_INFO("tools: dns failed: {}", why(dns.error, dns.reason));
+        }
+    }
+    const model::TraceRun& trace = next.trace;
+    if (trace.state != data_.trace.state) {
+        const std::size_t hops = trace.hops.size();
+        if (trace.state == model::ToolState::Done) {
+            switch (trace.end) {
+                case model::TraceEnd::Reached:
+                    LOG_INFO("tools: trace done, reached in {} hops", hops);
+                    break;
+                case model::TraceEnd::Unreachable:
+                    LOG_INFO("tools: trace done, unreachable at hop {}", hops);
+                    break;
+                case model::TraceEnd::MaxHops:
+                case model::TraceEnd::None:
+                    LOG_INFO("tools: trace done, not reached in {} hops", hops);
+                    break;
+            }
+        } else if (trace.state == model::ToolState::Failed) {
+            LOG_INFO("tools: trace failed: {}", why(trace.error, trace.reason));
         }
     }
 }

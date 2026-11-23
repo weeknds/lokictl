@@ -20,10 +20,12 @@
 #include "dns_message.h"
 
 #include <arpa/inet.h>
+#include <linux/errqueue.h>
 #include <netinet/in.h>
 #include <poll.h>
 #include <pthread.h>
 #include <sys/socket.h>
+#include <sys/uio.h>
 #include <unistd.h>
 
 #include <atomic>
@@ -110,6 +112,46 @@ std::vector<std::string> pretend_addresses(const std::string& name) {
     return {"198.51.100." + std::to_string(number), "2001:db8:1::" + std::to_string(number)};
 }
 
+// The made-up hops of a trace to an address outside the home network; the
+// target follows as the last hop. A hop without an address never answers.
+struct PretendHop {
+    std::string address;
+    std::string name;  // empty: the address has no reverse name
+    int32_t time_us{model::kPingLost};
+};
+
+const std::vector<PretendHop>& pretend_hops() {
+    static const std::vector<PretendHop> hops{
+        {"192.0.2.1", "router.example", 912},
+        {"198.51.100.1", "", 8804},
+        {"198.51.100.9", "core1.example.net", 9420},
+        {"", "", model::kPingLost},
+        {"203.0.113.5", "edge2.example.net", 12043},
+        {"203.0.113.77", "peer.example.org", 104208},
+    };
+    return hops;
+}
+
+constexpr int32_t kPretendRouterUs = 912;
+constexpr int32_t kPretendTargetUs = 12877;
+constexpr const char* kPretendRouterName = "router.example";
+constexpr const char* kPretendHostName = "host.example";
+// A made-up probe goes out this long after the one before it settled, so
+// the pictures can catch a trace under way (the live runner sends the next
+// one at once).
+constexpr uint32_t kPretendProbeGapMs = 100;
+
+// Whether `text` is an IPv4 address of a home network (10/8, 172.16/12,
+// 192.168/16): a made-up trace reaches it in one hop.
+bool private_ipv4(const std::string& text) {
+    if (!model::is_ipv4_text(text)) {
+        return false;
+    }
+    const int first = std::stoi(text);
+    const int second = std::stoi(text.substr(text.find('.') + 1));
+    return first == 10 || (first == 172 && second >= 16 && second <= 31) || (first == 192 && second == 168);
+}
+
 class PretendToolRunner : public ToolRunner {
 public:
     bool start(const ToolJob& job) override {
@@ -133,10 +175,16 @@ public:
             return;  // it had just ended by itself
         }
         running_ = false;
-        if (job_.kind == model::ToolKind::Ping) {
-            latest_.ping.state = model::ToolState::Stopped;
-        } else {
-            latest_.dns.state = model::ToolState::Stopped;
+        switch (job_.kind) {
+            case model::ToolKind::Ping:
+                latest_.ping.state = model::ToolState::Stopped;
+                break;
+            case model::ToolKind::Dns:
+                latest_.dns.state = model::ToolState::Stopped;
+                break;
+            case model::ToolKind::Trace:
+                latest_.trace.state = model::ToolState::Stopped;
+                break;
         }
         fresh_ = true;
     }
@@ -148,6 +196,7 @@ public:
         }
         data.ping = latest_.ping;
         data.dns = latest_.dns;
+        data.trace = latest_.trace;
         fresh_ = false;
         return true;
     }
@@ -166,18 +215,16 @@ private:
         const uint32_t elapsed = lv_tick_elaps(started_ms_);
         uint32_t sent = 0;
         bool done = false;
-        if (job_.kind == model::ToolKind::Ping) {
-            model::PingRun run = ping_at(elapsed, sent, done);
-            if (run != latest_.ping) {
-                latest_.ping = std::move(run);
-                fresh_ = true;
-            }
-        } else {
-            model::DnsRun run = dns_at(elapsed, sent, done);
-            if (run != latest_.dns) {
-                latest_.dns = std::move(run);
-                fresh_ = true;
-            }
+        switch (job_.kind) {
+            case model::ToolKind::Ping:
+                keep(ping_at(elapsed, sent, done), latest_.ping);
+                break;
+            case model::ToolKind::Dns:
+                keep(dns_at(elapsed, sent, done), latest_.dns);
+                break;
+            case model::ToolKind::Trace:
+                keep(trace_at(elapsed, sent, done), latest_.trace);
+                break;
         }
         if (sent > counted_) {
             count_sent(sent - counted_);
@@ -185,6 +232,14 @@ private:
         }
         if (done) {
             running_ = false;
+        }
+    }
+
+    template <typename Run>
+    void keep(Run run, Run& latest) {
+        if (run != latest) {
+            latest = std::move(run);
+            fresh_ = true;
         }
     }
 
@@ -255,6 +310,78 @@ private:
         return run;
     }
 
+    // A trace: the target's name is looked up first, then one probe per
+    // hop, each sent kPretendProbeGapMs after the one before settled, and a
+    // PTR question for each hop that answers, answered kPretendLookupMs
+    // later.
+    model::TraceRun trace_at(uint32_t elapsed, uint32_t& sent, bool& done) const {
+        model::TraceRun run;
+        run.state = model::ToolState::Running;
+        run.target = job_.target;
+        uint32_t at = 0;
+        std::string target_name = kPretendHostName;
+        if (!model::is_ipv4_text(job_.target)) {
+            sent = 1;
+            at = kPretendLookupMs;
+            if (elapsed < at) {
+                return run;
+            }
+            if (ends_with(job_.target, kNoSuchSuffix)) {
+                run.state = model::ToolState::Failed;
+                run.error = model::ToolError::NoSuchName;
+                done = true;
+                return run;
+            }
+            run.address = pretend_addresses(job_.target).front();
+            target_name = job_.target;
+        } else {
+            run.address = job_.target;
+        }
+
+        std::vector<PretendHop> hops;
+        if (private_ipv4(run.address)) {
+            hops.push_back({run.address, kPretendRouterName, kPretendRouterUs});
+        } else {
+            hops = pretend_hops();
+            hops.push_back({run.address, target_name, kPretendTargetUs});
+        }
+        uint32_t names_end = 0;
+        for (std::size_t index = 0; index < hops.size(); ++index) {
+            if (elapsed < at) {
+                return run;  // the next probe has not gone out yet
+            }
+            const PretendHop& hop = hops[index];
+            const bool silent = hop.address.empty();
+            const uint32_t settled = at + (silent ? static_cast<uint32_t>(model::kTraceHopTimeoutMs)
+                                                  : static_cast<uint32_t>(hop.time_us / 1000) + 1u);
+            model::TraceHop shown;
+            shown.ttl = static_cast<int32_t>(index) + 1;
+            ++sent;
+            if (elapsed >= settled) {
+                shown.time_us = hop.time_us;
+                shown.address = hop.address;
+                if (!silent) {
+                    ++sent;  // its PTR question
+                    names_end = std::max(names_end, settled + kPretendLookupMs);
+                    if (elapsed >= settled + kPretendLookupMs) {
+                        shown.name = hop.name;
+                    }
+                }
+            }
+            run.hops.push_back(shown);
+            if (elapsed < settled) {
+                return run;
+            }
+            at = settled + kPretendProbeGapMs;
+        }
+        run.end = model::TraceEnd::Reached;
+        if (elapsed >= names_end) {
+            run.state = model::ToolState::Done;
+            done = true;
+        }
+        return run;
+    }
+
     bool running_{false};
     bool closed_{false};
     bool fresh_{false};
@@ -285,6 +412,13 @@ constexpr uint8_t kIcmpEchoRequest = 8;
 constexpr uint8_t kIcmpEchoReply = 0;
 constexpr std::size_t kIcmpHeader = 8;
 constexpr std::size_t kEchoSize = 32;
+// The ICMP errors a trace reads from its socket's error queue.
+constexpr uint8_t kIcmpUnreachable = 3;
+constexpr uint8_t kIcmpTimeExceeded = 11;
+constexpr auto kHopTimeout = std::chrono::milliseconds(model::kTraceHopTimeoutMs);
+// At most this many messages are read from one socket per wake, so a flood
+// can never hold the loop (what is left is read at the next wake).
+constexpr int kMaxReads = 32;
 
 int64_t micros_between(Clock::time_point from, Clock::time_point to) {
     return std::chrono::duration_cast<std::chrono::microseconds>(to - from).count();
@@ -345,6 +479,294 @@ uint16_t icmp_checksum(const uint8_t* data, std::size_t size) {
     return static_cast<uint16_t>(~sum);
 }
 
+// Writes an echo request with `sequence` into `packet` (kEchoSize bytes).
+// The system puts its own identifier in bytes 4-5 and checks the sum
+// again; it is filled in all the same.
+void fill_echo(uint8_t* packet, uint16_t sequence) {
+    std::memset(packet, 0, kEchoSize);
+    packet[0] = kIcmpEchoRequest;
+    packet[6] = static_cast<uint8_t>(sequence >> 8);
+    packet[7] = static_cast<uint8_t>(sequence & 0xFF);
+    for (std::size_t index = kIcmpHeader; index < kEchoSize; ++index) {
+        packet[index] = static_cast<uint8_t>(index);
+    }
+    const uint16_t sum = icmp_checksum(packet, kEchoSize);
+    packet[2] = static_cast<uint8_t>(sum >> 8);
+    packet[3] = static_cast<uint8_t>(sum & 0xFF);
+}
+
+std::string ipv4_text(const in_addr& address) {
+    char text[INET_ADDRSTRLEN] = {};
+    return inet_ntop(AF_INET, &address, text, sizeof(text)) ? std::string(text) : std::string();
+}
+
+// One message of a trace socket's error queue that answers a probe.
+struct ProbeError {
+    bool usable{false};  // an ICMP Time exceeded or Destination unreachable about one of our echoes
+    uint8_t type{0};     // kIcmpTimeExceeded or kIcmpUnreachable
+    int sequence{-1};    // the echo's sequence number, from the copy of it the error carries
+    std::string from;    // who sent the error (the hop)
+};
+
+// Takes one message off the error queue of `fd`. Returns false when the
+// queue is empty or cannot be read; otherwise true, with `out.usable` set
+// only for a message this code understands. Every length is checked, and
+// the parts are copied out rather than read in place.
+bool take_probe_error(int fd, ProbeError& out) {
+    out = ProbeError{};
+    uint8_t data[64];
+    union {
+        cmsghdr align;
+        uint8_t bytes[CMSG_SPACE(sizeof(sock_extended_err) + sizeof(sockaddr_in)) + 64];
+    } control{};
+    iovec part{data, sizeof(data)};
+    sockaddr_in peer{};
+    msghdr message{};
+    message.msg_name = &peer;
+    message.msg_namelen = sizeof(peer);
+    message.msg_iov = &part;
+    message.msg_iovlen = 1;
+    message.msg_control = control.bytes;
+    message.msg_controllen = sizeof(control.bytes);
+    const ssize_t size = ::recvmsg(fd, &message, MSG_ERRQUEUE | MSG_DONTWAIT);
+    if (size < 0) {
+        return false;
+    }
+    // The data is the echo the error is about, from its ICMP header on.
+    if (static_cast<std::size_t>(size) < kIcmpHeader || data[0] != kIcmpEchoRequest) {
+        return true;
+    }
+    for (cmsghdr* header = CMSG_FIRSTHDR(&message); header != nullptr; header = CMSG_NXTHDR(&message, header)) {
+        if (header->cmsg_level != IPPROTO_IP || header->cmsg_type != IP_RECVERR ||
+            header->cmsg_len < CMSG_LEN(sizeof(sock_extended_err) + sizeof(sockaddr_in))) {
+            continue;
+        }
+        sock_extended_err error{};
+        std::memcpy(&error, CMSG_DATA(header), sizeof(error));
+        if (error.ee_origin != SO_EE_ORIGIN_ICMP ||
+            (error.ee_type != kIcmpTimeExceeded && error.ee_type != kIcmpUnreachable)) {
+            continue;
+        }
+        // The sender of the error follows the error (SO_EE_OFFENDER).
+        sockaddr_in offender{};
+        std::memcpy(&offender, CMSG_DATA(header) + sizeof(error), sizeof(offender));
+        if (offender.sin_family != AF_INET) {
+            continue;
+        }
+        out.from = ipv4_text(offender.sin_addr);
+        if (out.from.empty()) {
+            continue;
+        }
+        out.usable = true;
+        out.type = error.ee_type;
+        out.sequence = (data[6] << 8) | data[7];
+        break;
+    }
+    return true;
+}
+
+// The reverse names (PTR) of a trace's hops. Each question goes out at
+// once, without waiting for the ones before it. One with no answer in
+// kDnsTimeout is sent once more, to the next IPv4 nameserver when there is
+// one (as lookup() does), then given up. Each question sent is counted with
+// count_sent(). One socket per server, connected to it, so only that
+// server's answers get through. Only used on the tool runner's thread.
+class ReverseNames {
+public:
+    ReverseNames() : servers_(nameservers()), fds_(servers_.size(), -1), dead_(servers_.size(), false) {}
+
+    ~ReverseNames() {
+        for (const int fd : fds_) {
+            if (fd >= 0) {
+                ::close(fd);
+            }
+        }
+    }
+
+    ReverseNames(const ReverseNames&) = delete;
+    ReverseNames& operator=(const ReverseNames&) = delete;
+
+    // Asks for the name of `address`, the address of hop `hop`. An address
+    // asked for before is not asked again: its name comes back at once
+    // when it is known (otherwise found() gets it later).
+    std::string ask(std::size_t hop, const std::string& address, Clock::time_point now) {
+        const std::string name = dns::reverse_name(address);
+        if (name.empty() || servers_.empty()) {
+            return {};
+        }
+        for (Question& question : questions_) {
+            if (question.name == name) {
+                question.hops.push_back(hop);
+                return question.answer;
+            }
+        }
+        Question question;
+        question.name = name;
+        question.hops.push_back(hop);
+        question.id = static_cast<uint16_t>(random_());
+        if (!dns::build_query(question.id, name, dns::kTypePtr, question.message)) {
+            return {};
+        }
+        questions_.push_back(std::move(question));
+        send(questions_.back(), now);
+        return {};
+    }
+
+    void add_poll_entries(std::vector<pollfd>& entries) const {
+        for (std::size_t server = 0; server < fds_.size(); ++server) {
+            if (fds_[server] >= 0 && !dead_[server]) {
+                entries.push_back({fds_[server], POLLIN, 0});
+            }
+        }
+    }
+
+    // Reads the answers that came in and calls found(hop, name) for every
+    // hop whose name is now known. Answers must match a question's ID, name
+    // and type.
+    template <typename Found>
+    void receive(Clock::time_point now, Found found) {
+        uint8_t buffer[dns::kMaxMessage];
+        for (std::size_t server = 0; server < fds_.size(); ++server) {
+            for (int count = 0; count < kMaxReads && fds_[server] >= 0 && !dead_[server]; ++count) {
+                const ssize_t size = ::recv(fds_[server], buffer, sizeof(buffer), MSG_DONTWAIT);
+                if (size < 0) {
+                    if (errno == ECONNREFUSED) {
+                        // The server refused (port unreachable): its
+                        // questions go to the next one at once.
+                        dead_[server] = true;
+                        for (Question& question : questions_) {
+                            if (!question.done && question.server == server) {
+                                question.deadline = now;
+                            }
+                        }
+                    }
+                    break;
+                }
+                dns::Message message;
+                if (!dns::parse_message(buffer, static_cast<std::size_t>(size), message) || !message.response ||
+                    message.question_type != dns::kTypePtr) {
+                    continue;
+                }
+                for (Question& question : questions_) {
+                    if (question.done || message.id != question.id || message.question_name != question.name) {
+                        continue;
+                    }
+                    question.done = true;
+                    if (message.rcode == dns::kRcodeNoError) {
+                        // The first PTR record, whatever its owner: reverse
+                        // zones often answer through a CNAME.
+                        for (const dns::Record& record : message.answers) {
+                            question.answer = dns::pointer_name(buffer, static_cast<std::size_t>(size), record);
+                            if (!question.answer.empty()) {
+                                break;
+                            }
+                        }
+                    }
+                    if (!question.answer.empty()) {
+                        for (const std::size_t hop : question.hops) {
+                            found(hop, question.answer);
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    // Sends the questions with no answer in time once more, and gives up on
+    // those sent twice already.
+    void retry(Clock::time_point now) {
+        for (Question& question : questions_) {
+            if (question.done || now < question.deadline) {
+                continue;
+            }
+            if (question.tries >= kDnsTries) {
+                question.done = true;
+            } else {
+                send(question, now);
+            }
+        }
+    }
+
+    bool pending() const {
+        return std::any_of(questions_.begin(), questions_.end(), [](const Question& question) { return !question.done; });
+    }
+
+    // When the next question times out; max() with none waiting.
+    Clock::time_point next_deadline() const {
+        Clock::time_point next = Clock::time_point::max();
+        for (const Question& question : questions_) {
+            if (!question.done) {
+                next = std::min(next, question.deadline);
+            }
+        }
+        return next;
+    }
+
+private:
+    struct Question {
+        std::string name;               // "4.3.2.1.in-addr.arpa"
+        std::vector<std::size_t> hops;  // the hops with this address
+        uint16_t id{0};
+        std::vector<uint8_t> message;
+        int tries{0};
+        std::size_t server{0};          // the server of the latest try
+        Clock::time_point deadline{};
+        bool done{false};               // answered or given up
+        std::string answer;             // the name; empty when there is none
+    };
+
+    // Sends `question` for its next try: to the first server, then to the
+    // next one. A server that cannot be reached makes the try time out at
+    // once.
+    void send(Question& question, Clock::time_point now) {
+        const std::size_t server = static_cast<std::size_t>(question.tries) % servers_.size();
+        ++question.tries;
+        question.server = server;
+        question.deadline = now + kDnsTimeout;
+        const int fd = socket_for(server);
+        if (fd < 0) {
+            question.deadline = now;
+            return;
+        }
+        if (::send(fd, question.message.data(), question.message.size(), MSG_NOSIGNAL) ==
+            static_cast<ssize_t>(question.message.size())) {
+            count_sent();
+        }
+    }
+
+    // The socket for `server`, opened and connected the first time; -1
+    // when it cannot be made or the server refused.
+    int socket_for(std::size_t server) {
+        if (dead_[server]) {
+            return -1;
+        }
+        if (fds_[server] >= 0) {
+            return fds_[server];
+        }
+        sockaddr_in address{};
+        address.sin_family = AF_INET;
+        address.sin_port = htons(kDnsPort);
+        const int fd = ::socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+        if (fd < 0 || inet_pton(AF_INET, servers_[server].c_str(), &address.sin_addr) != 1 ||
+            ::connect(fd, reinterpret_cast<const sockaddr*>(&address), sizeof(address)) != 0) {
+            if (fd >= 0) {
+                ::close(fd);
+            }
+            dead_[server] = true;
+            return -1;
+        }
+        fds_[server] = fd;
+        return fd;
+    }
+
+    std::vector<std::string> servers_;
+    std::vector<int> fds_;      // by server; -1 until opened
+    std::vector<bool> dead_;    // by server: refused, or no socket
+    std::vector<Question> questions_;
+    std::random_device random_;
+};
+
 // The outcome of looking a name up.
 struct Lookup {
     model::ToolError error{model::ToolError::None};
@@ -377,14 +799,22 @@ public:
             has_job_ = true;
             job_ = job;
             stop_flag_.store(false);
-            if (job.kind == model::ToolKind::Ping) {
-                latest_.ping = model::PingRun{};
-                latest_.ping.state = model::ToolState::Running;
-                latest_.ping.target = job.target;
-            } else {
-                latest_.dns = model::DnsRun{};
-                latest_.dns.state = model::ToolState::Running;
-                latest_.dns.name = job.target;
+            switch (job.kind) {
+                case model::ToolKind::Ping:
+                    latest_.ping = model::PingRun{};
+                    latest_.ping.state = model::ToolState::Running;
+                    latest_.ping.target = job.target;
+                    break;
+                case model::ToolKind::Dns:
+                    latest_.dns = model::DnsRun{};
+                    latest_.dns.state = model::ToolState::Running;
+                    latest_.dns.name = job.target;
+                    break;
+                case model::ToolKind::Trace:
+                    latest_.trace = model::TraceRun{};
+                    latest_.trace.state = model::ToolState::Running;
+                    latest_.trace.target = job.target;
+                    break;
             }
             fresh_ = true;
         }
@@ -403,6 +833,7 @@ public:
         }
         data.ping = latest_.ping;
         data.dns = latest_.dns;
+        data.trace = latest_.trace;
         fresh_ = false;
         return true;
     }
@@ -461,23 +892,31 @@ private:
                 has_job_ = false;
             }
             try {
-                if (job.kind == model::ToolKind::Ping) {
-                    run_ping(job.target);
-                } else {
-                    run_dns(job.target);
+                switch (job.kind) {
+                    case model::ToolKind::Ping:
+                        run_ping(job.target);
+                        break;
+                    case model::ToolKind::Dns:
+                        run_dns(job.target);
+                        break;
+                    case model::ToolKind::Trace:
+                        run_trace(job.target);
+                        break;
                 }
             } catch (...) {
                 // Nothing in a job should throw; if something does (no
                 // memory), the run reads as failed.
                 std::lock_guard<std::mutex> lock(mutex_);
-                if (job.kind == model::ToolKind::Ping) {
-                    latest_.ping.state = model::ToolState::Failed;
-                    latest_.ping.error = model::ToolError::Failed;
-                    latest_.ping.reason = "internal error";
-                } else {
-                    latest_.dns.state = model::ToolState::Failed;
-                    latest_.dns.error = model::ToolError::Failed;
-                    latest_.dns.reason = "internal error";
+                switch (job.kind) {
+                    case model::ToolKind::Ping:
+                        fail_internal(latest_.ping);
+                        break;
+                    case model::ToolKind::Dns:
+                        fail_internal(latest_.dns);
+                        break;
+                    case model::ToolKind::Trace:
+                        fail_internal(latest_.trace);
+                        break;
                 }
                 fresh_ = true;
             }
@@ -486,12 +925,25 @@ private:
         }
     }
 
+    template <typename Run>
+    static void fail_internal(Run& run) {
+        run.state = model::ToolState::Failed;
+        run.error = model::ToolError::Failed;
+        run.reason = "internal error";
+    }
+
     // Called with the mutex held.
     void mark_stopped(model::ToolKind kind) {
-        if (kind == model::ToolKind::Ping) {
-            latest_.ping.state = model::ToolState::Stopped;
-        } else {
-            latest_.dns.state = model::ToolState::Stopped;
+        switch (kind) {
+            case model::ToolKind::Ping:
+                latest_.ping.state = model::ToolState::Stopped;
+                break;
+            case model::ToolKind::Dns:
+                latest_.dns.state = model::ToolState::Stopped;
+                break;
+            case model::ToolKind::Trace:
+                latest_.trace.state = model::ToolState::Stopped;
+                break;
         }
         fresh_ = true;
     }
@@ -512,6 +964,14 @@ private:
         std::lock_guard<std::mutex> lock(mutex_);
         if (run != latest_.dns) {
             latest_.dns = run;
+            fresh_ = true;
+        }
+    }
+
+    void publish(const model::TraceRun& run) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (run != latest_.trace) {
+            latest_.trace = run;
             fresh_ = true;
         }
     }
@@ -768,38 +1228,41 @@ private:
         publish(run);
     }
 
-    void run_ping(const std::string& target) {
-        model::PingRun run;
-        run.state = model::ToolState::Running;
-        run.target = target;
-        publish(run);
-
-        sockaddr_in destination{};
+    // Finds the IPv4 address of a Ping or Trace target into `destination`
+    // and run.address: the target itself, or the first address of a name
+    // (one A question, counted as sent). Returns false when the run ended
+    // here (stopped, or the name has no address), with that published.
+    template <typename Run>
+    bool find_destination(const std::string& target, sockaddr_in& destination, Run& run) {
+        destination = sockaddr_in{};
         destination.sin_family = AF_INET;
         if (model::is_ipv4_text(target) && inet_pton(AF_INET, target.c_str(), &destination.sin_addr) == 1) {
             run.address = target;
-        } else {
-            // A name is looked up first (an A question, counted as sent).
-            const Lookup found = lookup(target, false);
-            if (found.stopped) {
-                run.state = model::ToolState::Stopped;
-                publish(run);
-                return;
-            }
-            if (found.error != model::ToolError::None || found.addresses.empty() ||
-                inet_pton(AF_INET, found.addresses.front().c_str(), &destination.sin_addr) != 1) {
-                run.state = model::ToolState::Failed;
-                run.error = found.error == model::ToolError::None ? model::ToolError::NoAddress : found.error;
-                run.reason = found.reason;
-                publish(run);
-                return;
-            }
-            run.address = found.addresses.front();
+            return true;
         }
-        publish(run);
+        const Lookup found = lookup(target, false);
+        if (found.stopped) {
+            run.state = model::ToolState::Stopped;
+            publish(run);
+            return false;
+        }
+        if (found.error != model::ToolError::None || found.addresses.empty() ||
+            inet_pton(AF_INET, found.addresses.front().c_str(), &destination.sin_addr) != 1) {
+            run.state = model::ToolState::Failed;
+            run.error = found.error == model::ToolError::None ? model::ToolError::NoAddress : found.error;
+            run.reason = found.reason;
+            publish(run);
+            return false;
+        }
+        run.address = found.addresses.front();
+        return true;
+    }
 
-        // An unprivileged ICMP datagram socket: allowed for the groups in
-        // net.ipv4.ping_group_range, which this code only reads about.
+    // An unprivileged ICMP datagram socket: allowed for the groups in
+    // net.ipv4.ping_group_range, which this code only reads about. Returns
+    // -1 when the system refuses it, with the run failed and published.
+    template <typename Run>
+    int open_icmp_socket(Run& run) {
         const int fd = ::socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, IPPROTO_ICMP);
         if (fd < 0) {
             const int number = errno;
@@ -811,6 +1274,24 @@ private:
                 run.reason = error_text(number);
             }
             publish(run);
+        }
+        return fd;
+    }
+
+    void run_ping(const std::string& target) {
+        model::PingRun run;
+        run.state = model::ToolState::Running;
+        run.target = target;
+        publish(run);
+
+        sockaddr_in destination{};
+        if (!find_destination(target, destination, run)) {
+            return;
+        }
+        publish(run);
+
+        const int fd = open_icmp_socket(run);
+        if (fd < 0) {
             return;
         }
 
@@ -834,18 +1315,7 @@ private:
             // The next echo, once a second.
             if (static_cast<int32_t>(all.size()) < model::kPingCount && now >= next_send) {
                 const auto sequence = static_cast<uint16_t>(all.size() + 1);
-                std::memset(packet, 0, sizeof(packet));
-                packet[0] = kIcmpEchoRequest;
-                // The system puts its own identifier in bytes 4-5 and checks
-                // the sum again; it is filled in all the same.
-                packet[6] = static_cast<uint8_t>(sequence >> 8);
-                packet[7] = static_cast<uint8_t>(sequence & 0xFF);
-                for (std::size_t index = kIcmpHeader; index < sizeof(packet); ++index) {
-                    packet[index] = static_cast<uint8_t>(index);
-                }
-                const uint16_t sum = icmp_checksum(packet, sizeof(packet));
-                packet[2] = static_cast<uint8_t>(sum >> 8);
-                packet[3] = static_cast<uint8_t>(sum & 0xFF);
+                fill_echo(packet, sequence);
                 const Clock::time_point when = Clock::now();
                 const ssize_t written = ::sendto(fd, packet, sizeof(packet), MSG_NOSIGNAL,
                                                  reinterpret_cast<const sockaddr*>(&destination), sizeof(destination));
@@ -918,6 +1388,169 @@ private:
         }
         ::close(fd);
         sum_up(all, run);
+        publish(run);
+    }
+
+    // A trace: one echo per hop on an ICMP datagram socket, each with a time
+    // to live one higher than the last. A hop the echo dies at answers with
+    // Time exceeded, which the system puts on the socket's error queue
+    // (IP_RECVERR) with the hop's address and the start of the echo, so its
+    // sequence number (the time to live here); the target answers with an
+    // echo reply. The next echo goes out as soon as a hop answers, or after
+    // kHopTimeout. Each hop that answers gets a PTR question at once
+    // (ReverseNames); the run ends when every name is in or given up.
+    void run_trace(const std::string& target) {
+        model::TraceRun run;
+        run.state = model::ToolState::Running;
+        run.target = target;
+        publish(run);
+
+        sockaddr_in destination{};
+        if (!find_destination(target, destination, run)) {
+            return;
+        }
+        publish(run);
+
+        const int fd = open_icmp_socket(run);
+        if (fd < 0) {
+            return;
+        }
+        const int on = 1;
+        if (::setsockopt(fd, IPPROTO_IP, IP_RECVERR, &on, sizeof(on)) != 0) {
+            run.state = model::ToolState::Failed;
+            run.error = model::ToolError::Failed;
+            run.reason = error_text(errno);
+            ::close(fd);
+            publish(run);
+            return;
+        }
+
+        ReverseNames names;
+        bool waiting = false;  // the newest hop's echo has no answer yet
+        Clock::time_point sent_at;
+        uint8_t packet[kEchoSize];
+        uint8_t buffer[256];
+        bool changed = false;
+        // The newest hop answered from `address`.
+        auto answered = [&](const std::string& address, Clock::time_point when, model::TraceEnd end) {
+            model::TraceHop& hop = run.hops.back();
+            hop.address = address;
+            hop.time_us = static_cast<int32_t>(std::clamp<int64_t>(micros_between(sent_at, when), 0, INT32_MAX));
+            hop.name = names.ask(run.hops.size() - 1, address, when);
+            run.end = end;
+            waiting = false;
+            changed = true;
+        };
+        // Whether `sequence` is the newest hop's, which still waits.
+        auto expected = [&](int sequence) {
+            return waiting && sequence == static_cast<int>(run.hops.size());
+        };
+
+        while (true) {
+            if (stopping()) {
+                run.state = model::ToolState::Stopped;
+                break;
+            }
+            Clock::time_point now = Clock::now();
+            changed = false;
+
+            // The next echo, with one more hop to live.
+            if (run.end == model::TraceEnd::None && !waiting) {
+                if (static_cast<int32_t>(run.hops.size()) >= model::kTraceMaxHops) {
+                    run.end = model::TraceEnd::MaxHops;
+                    changed = true;
+                } else {
+                    const int ttl = static_cast<int>(run.hops.size()) + 1;
+                    fill_echo(packet, static_cast<uint16_t>(ttl));
+                    const Clock::time_point when = Clock::now();
+                    if (::setsockopt(fd, IPPROTO_IP, IP_TTL, &ttl, sizeof(ttl)) != 0 ||
+                        ::sendto(fd, packet, sizeof(packet), MSG_NOSIGNAL,
+                                 reinterpret_cast<const sockaddr*>(&destination),
+                                 sizeof(destination)) != static_cast<ssize_t>(sizeof(packet))) {
+                        run.state = model::ToolState::Failed;
+                        run.error = model::ToolError::Failed;
+                        run.reason = error_text(errno);
+                        break;
+                    }
+                    count_sent();
+                    model::TraceHop hop;
+                    hop.ttl = ttl;
+                    run.hops.push_back(hop);
+                    sent_at = when;
+                    waiting = true;
+                    changed = true;
+                }
+            }
+
+            // The hops' answers, from the error queue. All of it is read,
+            // so the socket does not stay readable (POLLERR).
+            ProbeError error;
+            for (int count = 0; count < kMaxReads && take_probe_error(fd, error); ++count) {
+                if (error.usable && expected(error.sequence)) {
+                    answered(error.from, Clock::now(),
+                             error.type == kIcmpUnreachable ? model::TraceEnd::Unreachable : model::TraceEnd::None);
+                }
+            }
+
+            // The target's echo reply. The system hands over only replies to
+            // this socket's identifier, without the IP header. An error it
+            // reports here goes with a message of the error queue, read above.
+            for (int count = 0; count < kMaxReads; ++count) {
+                sockaddr_in from{};
+                socklen_t from_length = sizeof(from);
+                const ssize_t size = ::recvfrom(fd, buffer, sizeof(buffer), MSG_DONTWAIT,
+                                                reinterpret_cast<sockaddr*>(&from), &from_length);
+                if (size < 0) {
+                    if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                        break;
+                    }
+                    continue;
+                }
+                if (static_cast<std::size_t>(size) < kIcmpHeader || buffer[0] != kIcmpEchoReply || buffer[1] != 0 ||
+                    !expected((buffer[6] << 8) | buffer[7])) {
+                    continue;
+                }
+                const std::string address = ipv4_text(from.sin_addr);
+                answered(address.empty() ? run.address : address, Clock::now(), model::TraceEnd::Reached);
+            }
+
+            // A hop with no answer in time.
+            now = Clock::now();
+            if (waiting && now >= sent_at + kHopTimeout) {
+                run.hops.back().time_us = model::kPingLost;
+                waiting = false;
+                changed = true;
+            }
+
+            names.receive(now, [&run, &changed](std::size_t index, const std::string& name) {
+                if (index < run.hops.size() && run.hops[index].name != name) {
+                    run.hops[index].name = name;
+                    changed = true;
+                }
+            });
+            names.retry(now);
+
+            if (changed) {
+                publish(run);
+            }
+            if (run.end != model::TraceEnd::None && !waiting && !names.pending()) {
+                run.state = model::ToolState::Done;
+                break;
+            }
+
+            // Waits for an answer, a time-out, or not at all when the next
+            // echo is due.
+            Clock::time_point wake = names.next_deadline();
+            if (waiting) {
+                wake = std::min(wake, sent_at + kHopTimeout);
+            } else if (run.end == model::TraceEnd::None) {
+                wake = now;
+            }
+            std::vector<pollfd> entries{{fd, POLLIN, 0}};
+            names.add_poll_entries(entries);
+            ::poll(entries.data(), entries.size(), wait_slice(now, wake));
+        }
+        ::close(fd);
         publish(run);
     }
 

@@ -25,6 +25,7 @@ enum class AppPage {
     Tools    = 8,
     Ping     = 9,
     Dns      = 10,
+    Trace    = 11,
 
     // Developer pages. They are opened by name only (snapshot --page) and
     // are never linked from the normal UI.

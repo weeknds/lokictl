@@ -8,6 +8,8 @@
 
 #include <arpa/inet.h>
 
+#include <netinet/in.h>
+
 namespace platform::dns {
 namespace {
 
@@ -208,6 +210,38 @@ std::string address_text(const uint8_t* data, std::size_t size, const Record& re
         }
     }
     return {};
+}
+
+std::string pointer_name(const uint8_t* data, std::size_t size, const Record& record) {
+    if (record.type != kTypePtr || record.klass != kClassIn || record.data_offset > size ||
+        record.data_length > size - record.data_offset) {
+        return {};
+    }
+    std::size_t offset = record.data_offset;
+    std::string name;
+    if (!read_name(data, size, offset, name) || offset > record.data_offset + record.data_length) {
+        return {};
+    }
+    for (const char character : name) {
+        if (character < '!' || character > '~') {
+            return {};
+        }
+    }
+    return name;
+}
+
+std::string reverse_name(const std::string& ipv4) {
+    in_addr address{};
+    if (inet_pton(AF_INET, ipv4.c_str(), &address) != 1) {
+        return {};
+    }
+    const auto* bytes = reinterpret_cast<const uint8_t*>(&address.s_addr);
+    std::string name;
+    for (int index = 3; index >= 0; --index) {
+        name += std::to_string(bytes[index]);
+        name += '.';
+    }
+    return name + "in-addr.arpa";
 }
 
 } // namespace platform::dns

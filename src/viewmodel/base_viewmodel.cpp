@@ -17,6 +17,12 @@ int page_to_int(model::AppPage page) {
     return static_cast<int>(page);
 }
 
+// The place of `kind` in the tables kept for each tool.
+std::size_t tool_slot(model::ToolKind kind) {
+    const auto slot = static_cast<std::size_t>(kind);
+    return slot < model::kToolKindCount ? slot : 0;
+}
+
 // Counts one more on a counter subject, starting again at 1 after the
 // largest value.
 void bump(reactive::IntSubject& counter) {
@@ -47,6 +53,7 @@ BaseViewModel::BaseViewModel()
       tool_typing_subject_(false),
       tool_request_subject_(0),
       tools_subject_(0),
+      trace_scroll_subject_(kTraceFollow),
       home_selection_subject_(0),
       home_data_subject_(0),
       key_test_selection_subject_(0),
@@ -360,15 +367,23 @@ bool BaseViewModel::open_tools() {
 
 bool BaseViewModel::open_tool(model::ToolKind kind) {
     set_tool_typing(false);
-    return open_page(kind == model::ToolKind::Dns ? model::AppPage::Dns : model::AppPage::Ping);
+    switch (kind) {
+        case model::ToolKind::Ping:
+            break;
+        case model::ToolKind::Dns:
+            return open_page(model::AppPage::Dns);
+        case model::ToolKind::Trace:
+            return open_page(model::AppPage::Trace);
+    }
+    return open_page(model::AppPage::Ping);
 }
 
 int32_t BaseViewModel::tool_target(model::ToolKind kind) const {
-    return tool_targets_[kind == model::ToolKind::Dns ? 1 : 0];
+    return tool_targets_[tool_slot(kind)];
 }
 
 void BaseViewModel::set_tool_target(model::ToolKind kind, int32_t index) {
-    int32_t& target = tool_targets_[kind == model::ToolKind::Dns ? 1 : 0];
+    int32_t& target = tool_targets_[tool_slot(kind)];
     if (index != target) {
         target = index;
         bump(tool_target_subject_);
@@ -376,11 +391,11 @@ void BaseViewModel::set_tool_target(model::ToolKind kind, int32_t index) {
 }
 
 const std::string& BaseViewModel::tool_typed_target(model::ToolKind kind) const {
-    return tool_typed_targets_[kind == model::ToolKind::Dns ? 1 : 0];
+    return tool_typed_targets_[tool_slot(kind)];
 }
 
 void BaseViewModel::set_tool_typed_target(model::ToolKind kind, const std::string& target) {
-    std::string& typed = tool_typed_targets_[kind == model::ToolKind::Dns ? 1 : 0];
+    std::string& typed = tool_typed_targets_[tool_slot(kind)];
     if (target != typed) {
         typed = target;
         bump(tool_target_subject_);
@@ -458,6 +473,20 @@ bool BaseViewModel::set_tools(const model::ToolsData& data) {
 
 lv_subject_t* BaseViewModel::tools_subject() {
     return tools_subject_.native();
+}
+
+lv_subject_t* BaseViewModel::trace_scroll_subject() {
+    return trace_scroll_subject_.native();
+}
+
+int32_t BaseViewModel::trace_scroll() const {
+    return trace_scroll_subject_.value();
+}
+
+void BaseViewModel::set_trace_scroll(int32_t row) {
+    if (row != trace_scroll_subject_.value()) {
+        trace_scroll_subject_.set(row);
+    }
 }
 
 const model::HomeData& BaseViewModel::home() const {

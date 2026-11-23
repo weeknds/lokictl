@@ -13,24 +13,26 @@
 
 namespace platform {
 
-// One job for a ToolRunner: a ping run or a DNS lookup of `target`.
+// One job for a ToolRunner: a ping run, a DNS lookup or a trace of
+// `target`.
 struct ToolJob {
     model::ToolKind kind{model::ToolKind::Ping};
     std::string target;  // checked with model::valid_tool_target()
 };
 
-// Runs the tools (ping, DNS lookup) away from the UI thread, one job at a
-// time, and keeps the latest run of each for the screen to take.
+// Runs the tools (ping, DNS lookup, trace) away from the UI thread, one job
+// at a time, and keeps the latest run of each for the screen to take.
 //
 // The live runner (device builds only) has one thread of its own, started
 // with the first job and kept until shutdown(); it never touches the view
 // model, LVGL or the log. Every wait in it is at most 100 ms, so a stop is
 // seen quickly: a job ends within about 0.1 s of stop(), and shutdown()
 // returns within about 0.2 s. It sends only what the tools need: echoes on
-// an unprivileged ICMP datagram socket and questions to the IPv4
-// nameservers of /etc/resolv.conf (the first one; the retry goes to the
-// next one), each counted with count_sent(). It never changes a network
-// setting.
+// an unprivileged ICMP datagram socket (a trace sets each echo's time to
+// live and reads the hops' answers from the socket's error queue) and
+// questions to the IPv4 nameservers of /etc/resolv.conf (the first one;
+// the retry goes to the next one), each counted with count_sent(). It never
+// changes a network setting.
 //
 // The pretend runner (the Mac simulator, snapshots, and the made-up data
 // sources) has no thread and never opens a socket: each take() works out
@@ -51,9 +53,10 @@ public:
     // Asks the running job to end; it then reads Stopped. Never waits; does
     // nothing without a job.
     virtual void stop() = 0;
-    // Copies the latest runs into data.ping and data.dns (data.sent is left
-    // alone) and returns true, but only when either changed since the last
-    // take(); otherwise leaves `data` alone and returns false.
+    // Copies the latest runs into data.ping, data.dns and data.trace
+    // (data.sent is left alone) and returns true, but only when any changed
+    // since the last take(); otherwise leaves `data` alone and returns
+    // false.
     virtual bool take(model::ToolsData& data) = 0;
     // Stops the job and ends the thread, waiting for it. Safe to call more
     // than once; start() refuses every job afterwards.

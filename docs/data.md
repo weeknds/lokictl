@@ -680,7 +680,7 @@ so `--keys 8` on the Devices page pictures a blocked device.
 
 ## The tools
 
-The Ping and DNS pages run their tools away from the UI thread.
+The Ping, DNS and Trace pages run their tools away from the UI thread.
 `app::ToolController` hands the pages' requests to a
 `platform::ToolRunner` and, from an LVGL timer every 250 ms, gives the
 latest runs to the view model (`tools()`, `tools_subject()`) with the Sent
@@ -708,23 +708,47 @@ count. One job runs at a time; leaving the page does not stop it.
     the parser checks every length against the end of the message and
     follows name compression only backwards. NXDOMAIN shows `No such
     name`, silence `No answer`.
+  - **Trace** sends one echo per hop on the same kind of ICMP datagram
+    socket, each with a time to live one higher than the last (1 to 20).
+    With `IP_RECVERR` set, the system puts a hop's `Time exceeded` on the
+    socket's error queue (`MSG_ERRQUEUE`), with the hop's address
+    (`SO_EE_OFFENDER`) and the start of the echo, so its sequence number;
+    the target answers with an echo reply. Each message is checked (ICMP
+    origin, type, lengths, sequence) and copied out before use; the whole
+    queue is read at every wake. The next echo goes out as soon as a hop
+    answers, or after 1 s. Probing stops at the target's reply, at
+    `Destination unreachable` or after 20 hops. Each hop that answers gets
+    a PTR question (`*.in-addr.arpa`) at once, not waiting for the ones
+    before; the same 2 s and next-nameserver rule as DNS applies, answers
+    must match ID, name and type, and a name with anything but printable
+    ASCII is dropped. The run ends when every name is in or given up. A
+    name target is looked up first (one A question).
 - **The pretend runner** (the Mac, snapshots, and the made-up data sources)
   has no thread and never opens a socket. Each run follows the LVGL time
   since it started, with fixed made-up results in the documentation ranges
   (192.0.2.0/24, 198.51.100.0/24, 2001:db8::/32): echo 6 takes 104 ms and
   echo 8 is lost, names in `.invalid` do not exist. So `--keys 6` on `ping`
   shows a run under way and `--keys 6 --settle-ms 11000` its end, and the
-  same command always gives the same picture.
+  same command always gives the same picture. A made-up trace to a home
+  network address (such as the sample router) is reached in one hop; any
+  other goes through six made-up hops (203.0.113.0/24 too, `.example`
+  names, hop 4 silent, hop 6 over 100 ms) to the target as hop 7, each
+  probe 100 ms after the one before settled. So `--keys right,6` on
+  `trace` shows a run under way and `--keys right,6 --settle-ms 2500` its
+  end.
 
 **Sent** (`platform::sent_packets()`) counts every packet LokiCTL sent in
-this run of the app: each echo and each DNS question, retries included.
+this run of the app: each echo (a trace's probes too) and each DNS
+question (a trace's PTR questions too), retries included.
 The pretend runner counts the packets it pretends to send. Later tools add
 to the same count with `platform::count_sent()`.
 
-Log lines: `tools: <ping|dns> started`, `tools: <ping|dns> stopped by the
-user`, `tools: ping done, 9/10 replies`, `tools: ping failed: <why>`,
-`tools: dns done, <n> addresses`, `tools: dns failed: <why>` (never a target
-or an address), and `tools: runner stopped` when a run was cut short by
+Log lines: `tools: <ping|dns|trace> started`, `tools: <ping|dns|trace>
+stopped by the user`, `tools: ping done, 9/10 replies`, `tools: ping failed:
+<why>`, `tools: dns done, <n> addresses`, `tools: dns failed: <why>`,
+`tools: trace done, reached in <n> hops` (or `unreachable at hop <n>`, `not
+reached in <n> hops`), `tools: trace failed: <why>` (never a target or an
+address), and `tools: runner stopped` when a run was cut short by
 quitting.
 
 ## The Status page's details

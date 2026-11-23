@@ -77,4 +77,15 @@ bool read_name(const uint8_t* data, std::size_t size, std::size_t& offset, std::
 // text form; empty for any other record or length.
 std::string address_text(const uint8_t* data, std::size_t size, const Record& record);
 
+// The name in a PTR record of `message` (lowercase, without the final
+// dot). Empty for any other record, for a name that does not end inside the
+// record's data, and for a name with anything but printable ASCII (a
+// reverse name is shown as it is, so nothing else gets through).
+std::string pointer_name(const uint8_t* data, std::size_t size, const Record& record);
+
+// The name to ask a PTR question for to find the name of the IPv4 address
+// `ipv4` ("192.0.2.1" gives "1.2.0.192.in-addr.arpa"); empty when `ipv4`
+// is not an IPv4 address.
+std::string reverse_name(const std::string& ipv4);
+
 } // namespace platform::dns

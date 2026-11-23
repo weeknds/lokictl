@@ -45,7 +45,7 @@ struct ToolInfo {
 constexpr ToolInfo kTools[] = {
     {"Ping", "Is a host there? 10 echoes"},
     {"DNS", "The addresses of a name"},
-    {"Trace", ""},
+    {"Trace", "The route, hop by hop"},
     {"Wi-Fi", ""},
     {"Ports", ""},
     {"Speed", ""},
@@ -125,8 +125,13 @@ int32_t ToolsScreen::selected_row() const {
     return std::clamp<int32_t>(view_model().tools_selection(), 0, kOpenableRows - 1);
 }
 
+static_assert(static_cast<int32_t>(model::ToolKind::Trace) == ToolsScreen::kOpenableRows - 1 &&
+                  model::kToolKindCount == static_cast<std::size_t>(ToolsScreen::kOpenableRows),
+              "the openable rows are the tools, in the order of model::ToolKind");
+
 void ToolsScreen::open_selected() {
-    view_model().open_tool(selected_row() == 1 ? model::ToolKind::Dns : model::ToolKind::Ping);
+    // The openable rows follow model::ToolKind: Ping, DNS, Trace.
+    view_model().open_tool(static_cast<model::ToolKind>(selected_row()));
 }
 
 bool ToolsScreen::on_key(uint32_t key) {
@@ -209,7 +214,8 @@ void ToolsScreen::refresh() {
         shown_selected_ = selected;
     }
 
-    const tools::ToneText tags[kOpenableRows] = {tools::ping_tag(data.ping), tools::dns_tag(data.dns)};
+    const tools::ToneText tags[kOpenableRows] = {tools::ping_tag(data.ping), tools::dns_tag(data.dns),
+                                                 tools::trace_tag(data.trace)};
     for (int32_t index = 0; index < kOpenableRows; ++index) {
         Cell& cell = cells_[static_cast<std::size_t>(index)];
         const tools::ToneText& tag = tags[index];

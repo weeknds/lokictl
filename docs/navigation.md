@@ -412,42 +412,50 @@ The help panel shows the badge `DEVICES` and four rows.
 ## The Tools page
 
 `tools` (home key 7) lists the tools in two columns: Ping, DNS and Trace on
-the left, Wi-Fi, Ports and Speed on the right. Only Ping and DNS open a
-page so far; the others are muted with `coming`. Next to Ping and DNS a tag
-tells how the latest run stands (`running`, the average time, `3 found`).
+the left, Wi-Fi, Ports and Speed on the right. Ping, DNS and Trace open a
+page so far; the others are muted with `coming`. Next to each of the three
+a tag tells how the latest run stands (`running`, the average time,
+`3 found`, `7 hops`, `not reached`).
 The status line says what the highlighted tool does, with `SENT N` at its
 right: every packet LokiCTL has sent in this run of the app (see
 [data.md](data.md#the-tools)).
 
 | Key | What it does |
 |---|---|
-| `f`/`x` or the arrows up and down | move between Ping and DNS |
+| `f`/`x` or the arrows up and down | move between Ping, DNS and Trace |
 | `6` OPEN or Enter | opens the highlighted tool |
 | `4` BACK or a short ESC | goes back |
 
 The highlight lives in the view model (`tools_selection_*`).
 
-## The Ping and DNS pages
+## The Ping, DNS and Trace pages
 
-`ping` and `dns` share one screen class (`screen::ToolScreen`). Under the
-title bar: the target row (`TARGET`, `ROUTER` or `NAME`, the target and
-`‹ 2/3 ›`), the results, and the status line with `SENT N`. Ping shows its
-last five echoes as a table (`#6` over `12.4`, `lost`, `…` while one
-waits) and two summary lines (sent, received and lost; min, avg and max in
-ms). DNS shows up to six addresses, IPv4 first and several to a line when
-they fit, and the server that answered with the time taken.
+`ping`, `dns` and `trace` share one screen class (`screen::ToolScreen`).
+Under the title bar: the target row (`TARGET`, `ROUTER` or `NAME`, the
+target and `‹ 2/3 ›`), the results, and the status line with `SENT N`.
+Ping shows its last five echoes as a table (`#6` over `12.4`, `lost`, `…`
+while one waits) and two summary lines (sent, received and lost; min, avg
+and max in ms). DNS shows up to six addresses, IPv4 first and several to a
+line when they fit, and the server that answered with the time taken.
+Trace shows one row per hop: its number, the address that answered, its
+reverse name and the time (`12.4ms`); a hop that never answers shows `*`
+and `no answer`, one still waiting `…`. As many rows as fit are shown
+(four in every theme), with a thin scroll mark at the right when there are
+more. The status line says `Hop 4…`, `Looking up names…`, then `Reached in
+10 hops`, `Unreachable at hop 6` or `Not reached in 20 hops`.
 
 | Key | What it does |
 |---|---|
 | `z`/`c` or the arrows left and right | step through the targets; off while this tool runs |
 | `5` EDIT | types a target; off while this tool runs |
 | `6` RUN / STOP or Enter | starts a run on the target, or stops it |
+| `f`/`x` or the arrows up and down | Trace only: scroll the hops; while it runs and was not scrolled up, the list follows the newest hop |
 | `4` BACK or a short ESC | goes back; a run goes on and the page shows it again later |
 
-Targets: for Ping the router (when the network has one), `9.9.9.9` and
-`1.1.1.1`; for DNS `example.com` and `wikipedia.org`; then the typed
-target. Only one tool runs at a time: while Ping runs, DNS has RUN switched
-off and says `Ping is running`, and the other way round.
+Targets: for Ping and Trace the router (when the network has one),
+`9.9.9.9` and `1.1.1.1`; for DNS `example.com` and `wikipedia.org`; then
+the typed target. Only one tool runs at a time: while one runs, the others
+have RUN switched off and say which one is running (`Ping is running`).
 
 Typing works like the Hotspot page's rename: a panel takes the page's
 place, letters, digits and `.` are added (at most 63), Backspace takes one
@@ -457,9 +465,10 @@ either end and no two in a row; digits and dots only must be an IPv4
 address, which DNS refuses (it needs a name). The keyboard sends `.` as a
 key of its own (`KEY_DOT`); `--keys` and the device kit call it `dot`.
 
-The target choice, the typed target, the draft and the runs live in the
-view model, so they survive leaving the page and a theme switch. The help
-panel shows the badge `PING` or `DNS` and five rows.
+The target choice, the typed target, the draft, the runs and the Trace
+page's scroll (`trace_scroll_*`) live in the view model, so they survive
+leaving the page and a theme switch. The help panel shows the badge
+`PING`, `DNS` or `TRACE` and five rows.
 
 ## The Status page
 
