@@ -21,7 +21,7 @@ class BaseViewModel;
 namespace app {
 
 // The screen's side of the tools (ping, DNS lookup, trace, and listening
-// on the Discover page). It owns a
+// and probing on the Discover page). It owns a
 // platform::ToolRunner, hands it the tool pages' requests
 // (BaseViewModel::request_tool_run(), request_tool_stop() and
 // request_capture_save()) and, from an
@@ -33,8 +33,8 @@ namespace app {
 // A run keeps going when its page is left. Only one tool runs at a time: a
 // request to run while one runs is ignored (the pages switch Run off then).
 //
-// Log lines: "tools: <ping|dns|trace|listen> started", "tools:
-// <ping|dns|trace|listen> stopped by the user", "tools: ping done, <r>/<s>
+// Log lines: "tools: <ping|dns|trace|listen|probe> started", "tools:
+// <ping|dns|trace|listen|probe> stopped by the user", "tools: ping done, <r>/<s>
 // replies", "tools: ping failed: <why>", "tools: dns done, <n> addresses",
 // "tools: dns failed: <why>", "tools: trace done, reached in <n> hops"
 // (or "unreachable at hop <n>", "not reached in <n> hops"), "tools: trace
@@ -42,8 +42,11 @@ namespace app {
 // "tools: listen ended, devices heard: <n>" (after a stop), "tools: listen
 // failed: <why>", "tools: listen capture save asked", "tools: listen
 // capture saved, <n> bytes" (", full" at the limit), "tools: listen capture
-// save failed: <why>" (never a target, an address, a hardware address, a
-// name or a path), and "tools: runner stopped" at the end.
+// save failed: <why>", "tools: probe done, asked: <n>, replied: <r>,
+// devices found: <d>", "tools: probe ended, asked: <n> of <t>, devices
+// found: <d>" (after a stop), "tools: probe failed: <why>" (never a
+// target, an address, a hardware address, a name or a path), and "tools:
+// runner stopped" at the end.
 //
 // Create it after the view model and destroy it before; it is not copied.
 class ToolController {

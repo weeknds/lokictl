@@ -378,6 +378,7 @@ bool BaseViewModel::open_tool(model::ToolKind kind) {
         case model::ToolKind::Trace:
             return open_page(model::AppPage::Trace);
         case model::ToolKind::Listen:
+        case model::ToolKind::Probe:
             return open_discover();
     }
     return open_page(model::AppPage::Ping);

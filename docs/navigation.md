@@ -531,12 +531,21 @@ line over: `Saving, 4:12 left, 14 KB` while the run lasts, then `Saved
 |---|---|
 | `6` START / STOP | listens for 5 minutes on the uplink interface, or stops; off without a network and while another tool runs |
 | `7` SAVE | saves the latest run as a PCAP file: on while one runs and after one that heard something, until it is saved; off while another tool runs |
+| `8` PROBE / STOP | first shows step 2, `STEP 2 OF 3: YOUR ADDRESS`: the Cardputer's IPv4 address and router, what a probe asks (`Asks 10.0.0.1-254, 20 a second`) and, in the warning colour, `Only networks you own or may test. Press 8 again to probe.`; nothing is sent (`Nothing sent yet`). A second `8` starts step 3, Probe (see [data.md](data.md#probing)); any other key, a short ESC, leaving the page or 10 s cancels. While a probe runs it reads STOP. Off without a network and while another tool runs; on a network that is not private, step 2 says so and the second `8` does nothing |
 | `f`/`x` or the arrows up and down | scroll the devices |
 | `4` BACK or a short ESC | goes back; a run goes on |
 
-Listening is a tool like Ping (`model::ToolKind::Listen`), so only one of
-them runs at a time: the tool pages say `Discover is listening`, and the
-Discover page says which tool runs. The first device shown lives in the
+After a probe the caption reads `STEP 3 OF 3: PROBE`, the list shows the
+devices of the latest listen run and the latest probe run together (one
+entry per hardware address), and the status line says `Probing 120 of
+253`, `Asking for names`, `Probed 253, 9 replied`, `Probe stopped at 120
+of 253` or what went wrong; the Sent count grows with every echo and
+question.
+
+Listening and probing are tools like Ping (`model::ToolKind::Listen` and
+`Probe`), so only one of them runs at a time: the tool pages say
+`Discover is listening` or `Discover is probing`, and the Discover page
+says which tool runs. The first device shown lives in the
 view model (`discover_scroll_*`, back to the top each time the page opens
 or a run starts). The help panel shows the badge `DISCOVER` and five rows.
 Snapshots: `--page discover` shows the page before a run, `--keys 6
@@ -544,7 +553,10 @@ Snapshots: `--page discover` shows the page before a run, `--keys 6
 `--settle-ms 12000` all of them; `--keys 6,down,down,down --settle-ms 3000`
 the printer and the TV with their kinds; `--keys 6,7 --settle-ms 4000`
 saving and `--keys 6,7,6 --settle-ms 2000` saved (the pretend runner
-writes no file); `--data offline` shows `Join a network first`.
+writes no file); `--data offline` shows `Join a network first`; `--keys 8`
+step 2, `--keys 8,8 --settle-ms 5000` a probe under way, and `--keys
+6,6,8,8,data,data --settle-ms 9000` a finished probe merged with a short
+listen run (add `down` keys to see the quiet file server and camera).
 
 ## The Status page
 

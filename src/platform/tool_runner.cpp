@@ -7,6 +7,7 @@
 #include "tool_runner.h"
 
 #include "listen.h"
+#include "probe.h"
 #include "sent_counter.h"
 
 #include "lvgl.h"
@@ -22,6 +23,7 @@
 
 #include <arpa/inet.h>
 #include <linux/errqueue.h>
+#include <net/if.h>
 #include <netinet/in.h>
 #include <poll.h>
 #include <pthread.h>
@@ -163,6 +165,10 @@ public:
         job_ = job;
         started_ms_ = lv_tick_get();
         counted_ = 0;
+        if (job.kind == model::ToolKind::Listen || job.kind == model::ToolKind::Probe) {
+            latest_.latest = job.kind;
+        }
+        fresh_ = true;
         if (job.kind == model::ToolKind::Listen) {
             save_asked_ = false;
             kept_bytes_ = 0;
@@ -196,6 +202,9 @@ public:
                 if (latest_.listen.save == model::CaptureSave::Saving) {
                     latest_.listen.save = model::CaptureSave::Saved;
                 }
+                break;
+            case model::ToolKind::Probe:
+                latest_.probe.state = model::ToolState::Stopped;
                 break;
         }
         fresh_ = true;
@@ -233,6 +242,8 @@ public:
         data.dns = latest_.dns;
         data.trace = latest_.trace;
         data.listen = latest_.listen;
+        data.probe = latest_.probe;
+        data.latest = latest_.latest;
         fresh_ = false;
         return true;
     }
@@ -264,6 +275,9 @@ private:
             case model::ToolKind::Listen:
                 // Listening sends nothing: `sent` stays 0.
                 keep(listen_at(elapsed, done), latest_.listen);
+                break;
+            case model::ToolKind::Probe:
+                keep(pretend_probe(elapsed, job_.target, sent, done), latest_.probe);
                 break;
         }
         if (sent > counted_) {
@@ -910,6 +924,14 @@ public:
                     save_flag_.store(false);
                     ++listen_generation_;
                     break;
+                case model::ToolKind::Probe:
+                    latest_.probe = model::ProbeRun{};
+                    latest_.probe.state = model::ToolState::Running;
+                    latest_.probe.interface_name = job.target;
+                    break;
+            }
+            if (job.kind == model::ToolKind::Listen || job.kind == model::ToolKind::Probe) {
+                latest_.latest = job.kind;
             }
             fresh_ = true;
         }
@@ -946,6 +968,8 @@ public:
         data.dns = latest_.dns;
         data.trace = latest_.trace;
         data.listen = latest_.listen;
+        data.probe = latest_.probe;
+        data.latest = latest_.latest;
         fresh_ = false;
         return true;
     }
@@ -1028,6 +1052,9 @@ private:
                     case model::ToolKind::Listen:
                         run_listen(job.target);
                         break;
+                    case model::ToolKind::Probe:
+                        run_probe(job.target);
+                        break;
                 }
             } catch (...) {
                 // Nothing in a job should throw; if something does (no
@@ -1045,6 +1072,9 @@ private:
                         break;
                     case model::ToolKind::Listen:
                         fail_internal(latest_.listen);
+                        break;
+                    case model::ToolKind::Probe:
+                        fail_internal(latest_.probe);
                         break;
                 }
                 fresh_ = true;
@@ -1075,6 +1105,9 @@ private:
                 break;
             case model::ToolKind::Listen:
                 latest_.listen.state = model::ToolState::Stopped;
+                break;
+            case model::ToolKind::Probe:
+                latest_.probe.state = model::ToolState::Stopped;
                 break;
         }
         fresh_ = true;
@@ -1112,6 +1145,14 @@ private:
         std::lock_guard<std::mutex> lock(mutex_);
         if (run != latest_.listen) {
             latest_.listen = run;
+            fresh_ = true;
+        }
+    }
+
+    void publish(const model::ProbeRun& run) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (run != latest_.probe) {
+            latest_.probe = run;
             fresh_ = true;
         }
     }
@@ -1692,6 +1733,289 @@ private:
         }
         ::close(fd);
         publish(run);
+    }
+
+    // Probes the network of `interface_name` (probe.h). The sweep: one echo
+    // to each address of the range, model::kProbeIntervalMs apart, on the
+    // unprivileged ICMP socket; each makes the system ask for the address by
+    // ARP, and the neighbour table, read every kProbeTableReadMs and once
+    // more kProbeSettleMs after the last echo, gives the devices that
+    // answered. Then, from one UDP socket on an ephemeral port: one mDNS
+    // service-enumeration question, one SSDP search and one mDNS reverse
+    // question per device found without a name, the same time apart; their
+    // answers come back to that port (mDNS answers a question from another
+    // port than 5353 by unicast) for kProbeAnswerMs after the last one.
+    // Answers count only from addresses in the range, and only from devices
+    // in the neighbour table. Every packet handed to the system is counted.
+    void run_probe(const std::string& interface_name) {
+        model::ProbeRun run;
+        run.state = model::ToolState::Running;
+        run.interface_name = interface_name;
+        publish(run);
+
+        ProbeRange range;
+        if (!read_probe_range(interface_name, range, run.reason)) {
+            run.state = model::ToolState::Failed;
+            run.error = model::ToolError::Failed;
+            publish(run);
+            return;
+        }
+        run.network = range.text;
+        run.total = static_cast<int32_t>(range.addresses.size());
+        const int fd = open_icmp_socket(run);
+        if (fd < 0) {
+            return;
+        }
+        publish(run);
+
+        const auto interval = std::chrono::milliseconds(model::kProbeIntervalMs);
+        const Clock::time_point begin = Clock::now();
+        const auto seconds_at = [&begin](Clock::time_point when) {
+            return static_cast<int32_t>(std::chrono::duration_cast<std::chrono::seconds>(when - begin).count());
+        };
+        HeardDevices heard(read_own_ports());
+        std::vector<Neighbour> neighbours;
+        Clock::time_point read_at{};
+        // Reads the neighbour table into `neighbours` and the list.
+        const auto read_table = [&](Clock::time_point now) {
+            std::ifstream file(kNeighbourTable);
+            std::ostringstream text;
+            text << file.rdbuf();
+            neighbours = parse_neighbours(text.str(), range);
+            for (const Neighbour& neighbour : neighbours) {
+                heard.note_neighbour(neighbour.hardware.data(), neighbour.address, seconds_at(now));
+            }
+            read_at = now;
+        };
+        // Takes the newest list and time into the run and shows it when
+        // anything changed.
+        const auto show = [&](Clock::time_point now) {
+            run.elapsed_s = seconds_at(now);
+            run.devices = heard.devices();
+            publish(run);
+        };
+
+        // The sweep.
+        std::vector<bool> replied(range.addresses.size(), false);
+        std::size_t next = 0;
+        Clock::time_point next_send = begin;
+        Clock::time_point next_read = begin + std::chrono::milliseconds(kProbeTableReadMs);
+        Clock::time_point settled = Clock::time_point::max();
+        bool stopped = false;
+        uint8_t packet[kEchoSize];
+        uint8_t buffer[256];
+        while (true) {
+            if (stopping()) {
+                stopped = true;
+                break;
+            }
+            Clock::time_point now = Clock::now();
+            if (next < range.addresses.size() && now >= next_send) {
+                sockaddr_in to{};
+                to.sin_family = AF_INET;
+                to.sin_addr.s_addr = htonl(range.addresses[next]);
+                fill_echo(packet, static_cast<uint16_t>(next + 1));
+                if (::sendto(fd, packet, sizeof(packet), MSG_NOSIGNAL, reinterpret_cast<const sockaddr*>(&to),
+                             sizeof(to)) == static_cast<ssize_t>(sizeof(packet))) {
+                    count_sent();
+                }
+                ++next;
+                run.asked = static_cast<int32_t>(next);
+                next_send += interval;
+                if (next_send < now) {
+                    next_send = now + interval;  // never send a burst after a stall
+                }
+                if (next == range.addresses.size()) {
+                    settled = now + std::chrono::milliseconds(kProbeSettleMs);
+                }
+            }
+            // Echo replies: the system hands over only those to this
+            // socket's identifier; each must come from the address its
+            // sequence number was sent to.
+            for (int count = 0; count < kMaxReads; ++count) {
+                sockaddr_in from{};
+                socklen_t from_length = sizeof(from);
+                const ssize_t size = ::recvfrom(fd, buffer, sizeof(buffer), MSG_DONTWAIT,
+                                                reinterpret_cast<sockaddr*>(&from), &from_length);
+                if (size < 0) {
+                    break;
+                }
+                if (static_cast<std::size_t>(size) < kIcmpHeader || buffer[0] != kIcmpEchoReply || buffer[1] != 0) {
+                    continue;
+                }
+                const int sequence = (buffer[6] << 8) | buffer[7];
+                if (sequence < 1 || sequence > static_cast<int>(next)) {
+                    continue;
+                }
+                const auto index = static_cast<std::size_t>(sequence - 1);
+                if (ntohl(from.sin_addr.s_addr) == range.addresses[index] && !replied[index]) {
+                    replied[index] = true;
+                    ++run.replied;
+                }
+            }
+            now = Clock::now();
+            if (now >= next_read || now >= settled) {
+                read_table(now);
+                next_read = now + std::chrono::milliseconds(kProbeTableReadMs);
+            }
+            show(now);
+            if (now >= settled) {
+                break;
+            }
+            Clock::time_point wake = std::min(next_read, settled);
+            if (next < range.addresses.size()) {
+                wake = std::min(wake, next_send);
+            }
+            wait_readable(fd, wait_slice(now, wake));
+        }
+        ::close(fd);
+
+        if (!stopped) {
+            run.step = model::ProbeStep::Names;
+            stopped = ask_names(interface_name, range, heard, neighbours, read_at, read_table, seconds_at, show);
+        }
+        run.state = stopped ? model::ToolState::Stopped : model::ToolState::Done;
+        show(Clock::now());
+    }
+
+    // The probe's questions for kinds and names (see run_probe()). Returns
+    // true when the run was stopped meanwhile. Without a UDP socket the
+    // probe just ends without them.
+    // `read_table(now)` reads the neighbour table again into `neighbours`
+    // and sets `read_at`; `seconds_at(when)` is the run's time in seconds;
+    // `show(now)` publishes the run.
+    template <typename ReadTable, typename SecondsAt, typename Show>
+    bool ask_names(const std::string& interface_name,
+                   const ProbeRange& range,
+                   HeardDevices& heard,
+                   const std::vector<Neighbour>& neighbours,
+                   const Clock::time_point& read_at,
+                   const ReadTable& read_table,
+                   const SecondsAt& seconds_at,
+                   const Show& show) {
+        constexpr uint16_t kMdnsPort = 5353;
+        constexpr uint16_t kSsdpPort = 1900;
+        constexpr uint32_t kMdnsGroup = 0xe00000fbu;  // 224.0.0.251
+        constexpr uint32_t kSsdpGroup = 0xeffffffau;  // 239.255.255.250
+        // mDNS is sent with a time to live of 255 (RFC 6762); its group
+        // never leaves the network anyway. SSDP's group could, so its
+        // search stays on this network.
+        constexpr int kMdnsTtl = 255;
+        constexpr int kSsdpTtl = 1;
+        struct Question {
+            std::vector<uint8_t> bytes;
+            uint32_t group{0};
+            uint16_t port{0};
+            int ttl{1};
+        };
+        std::random_device random;
+        const auto id = static_cast<uint16_t>(random() | 1U);
+        std::vector<Question> questions;
+        questions.push_back({mdns_query(kServiceEnumeration, dns::kTypePtr, id), kMdnsGroup, kMdnsPort, kMdnsTtl});
+        const std::string search = ssdp_search();
+        questions.push_back({std::vector<uint8_t>(search.begin(), search.end()), kSsdpGroup, kSsdpPort, kSsdpTtl});
+        for (const model::HeardDevice& device : heard.devices()) {
+            if (device.name.empty() && device.own_port.empty() && !device.address.empty()) {
+                std::vector<uint8_t> bytes = mdns_query(dns::reverse_name(device.address), dns::kTypePtr, id);
+                if (!bytes.empty()) {
+                    questions.push_back({std::move(bytes), kMdnsGroup, kMdnsPort, kMdnsTtl});
+                }
+            }
+        }
+
+        const int fd = ::socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+        if (fd < 0) {
+            return false;
+        }
+        // Multicast goes out of the probed interface, and not back to this
+        // machine's own responder.
+        ip_mreqn through{};
+        through.imr_ifindex = static_cast<int>(if_nametoindex(interface_name.c_str()));
+        const int off = 0;
+        ::setsockopt(fd, IPPROTO_IP, IP_MULTICAST_IF, &through, sizeof(through));
+        ::setsockopt(fd, IPPROTO_IP, IP_MULTICAST_LOOP, &off, sizeof(off));
+
+        const auto interval = std::chrono::milliseconds(model::kProbeIntervalMs);
+        std::size_t next = 0;
+        Clock::time_point next_send = Clock::now();
+        Clock::time_point end = Clock::time_point::max();
+        bool stopped = false;
+        uint8_t buffer[2048];
+        while (true) {
+            if (stopping()) {
+                stopped = true;
+                break;
+            }
+            Clock::time_point now = Clock::now();
+            if (next < questions.size() && now >= next_send) {
+                const Question& question = questions[next];
+                sockaddr_in to{};
+                to.sin_family = AF_INET;
+                to.sin_port = htons(question.port);
+                to.sin_addr.s_addr = htonl(question.group);
+                ::setsockopt(fd, IPPROTO_IP, IP_MULTICAST_TTL, &question.ttl, sizeof(question.ttl));
+                if (::sendto(fd, question.bytes.data(), question.bytes.size(), MSG_NOSIGNAL,
+                             reinterpret_cast<const sockaddr*>(&to),
+                             sizeof(to)) == static_cast<ssize_t>(question.bytes.size())) {
+                    count_sent();
+                }
+                ++next;
+                next_send = now + interval;
+                if (next == questions.size()) {
+                    end = now + std::chrono::milliseconds(kProbeAnswerMs);
+                }
+            }
+            for (int count = 0; count < kMaxReads; ++count) {
+                sockaddr_in from{};
+                socklen_t from_length = sizeof(from);
+                const ssize_t size = ::recvfrom(fd, buffer, sizeof(buffer), MSG_DONTWAIT,
+                                                reinterpret_cast<sockaddr*>(&from), &from_length);
+                if (size < 0) {
+                    break;
+                }
+                const uint32_t source = ntohl(from.sin_addr.s_addr);
+                if (!std::binary_search(range.addresses.begin(), range.addresses.end(), source)) {
+                    continue;
+                }
+                const auto device_of = [&neighbours, source]() -> const Neighbour* {
+                    for (const Neighbour& neighbour : neighbours) {
+                        if (neighbour.address == source) {
+                            return &neighbour;
+                        }
+                    }
+                    return nullptr;
+                };
+                // A device not in the table yet: the table is read again,
+                // at most once every kProbeTableReadMs.
+                const Clock::time_point when = Clock::now();
+                const Neighbour* device = device_of();
+                if (device == nullptr && when - read_at >= std::chrono::milliseconds(kProbeTableReadMs)) {
+                    read_table(when);
+                    device = device_of();
+                }
+                if (device == nullptr) {
+                    continue;
+                }
+                const auto length = static_cast<std::size_t>(size);
+                if (length >= 5 && std::memcmp(buffer, "HTTP/", 5) == 0) {
+                    heard.note_ssdp_reply(device->hardware.data(), source, buffer, length, seconds_at(when));
+                } else if (ntohs(from.sin_port) == kMdnsPort) {
+                    heard.note_mdns_reply(device->hardware.data(), source, buffer, length, seconds_at(when));
+                }
+            }
+            now = Clock::now();
+            show(now);
+            if (now >= end) {
+                break;
+            }
+            Clock::time_point wake = end;
+            if (next < questions.size()) {
+                wake = std::min(wake, next_send);
+            }
+            wait_readable(fd, wait_slice(now, wake));
+        }
+        ::close(fd);
+        return stopped;
     }
 
     // Listens on `interface_name` for model::kListenSeconds through the

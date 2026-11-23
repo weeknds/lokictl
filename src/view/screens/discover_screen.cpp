@@ -170,6 +170,31 @@ tools::ToneText status_text(const model::ListenRun& run, bool has_uplink) {
     return {"Listening sends nothing", tools::kToneMuted};
 }
 
+// The status line for the latest probe run.
+tools::ToneText probe_status_text(const model::ProbeRun& run) {
+    const std::string progress = std::to_string(run.asked) + " of " + std::to_string(run.total);
+    switch (run.state) {
+        case model::ToolState::Running:
+            if (run.step == model::ProbeStep::Names) {
+                return {"Asking for names", tools::kToneAccent};
+            }
+            return {run.total > 0 ? "Probing " + progress : std::string("Probing"), tools::kToneAccent};
+        case model::ToolState::Done:
+            return {"Probed " + std::to_string(run.total) + ", " + std::to_string(run.replied) + " replied",
+                    tools::kToneMuted};
+        case model::ToolState::Stopped:
+            return {"Probe stopped at " + progress, tools::kToneMuted};
+        case model::ToolState::Failed:
+            if (run.error == model::ToolError::NotAllowed) {
+                return {"Echo not allowed", tools::kToneError};
+            }
+            return {run.reason.empty() ? std::string("Probe failed") : capitalized(run.reason), tools::kToneError};
+        case model::ToolState::Idle:
+            break;
+    }
+    return {"", tools::kToneMuted};
+}
+
 // What stands in place of the list when it is empty.
 std::string note_text(const model::ListenRun& run, const std::string& uplink) {
     switch (run.state) {
@@ -205,6 +230,13 @@ DiscoverScreen::DiscoverScreen(viewmodel::BaseViewModel& view_model,
     init();
 }
 
+DiscoverScreen::~DiscoverScreen() {
+    if (confirm_timer_) {
+        lv_timer_delete(confirm_timer_);
+        confirm_timer_ = nullptr;
+    }
+}
+
 bool DiscoverScreen::handles(model::AppPage page) {
     return page == model::AppPage::Discover;
 }
@@ -216,7 +248,7 @@ view::widgets::HelpContent DiscoverScreen::help_content() {
                 {"F / X", "Scroll the devices"},
                 {"6", "Listen 5 min, sends none"},
                 {"7", "Save as PCAP, 4 MB at most"},
-                {"Accent", "This Cardputer's own ports"},
+                {"8 twice", "Probe your network, sends"},
             }};
 }
 
@@ -233,7 +265,7 @@ view::widgets::SoftKeySet DiscoverScreen::soft_keys() {
         {},
         {"Start", [this] { listen_or_stop(); }, true},
         {"Save", [this] { save(); }, false, false},
-        {},
+        {"Probe", [this] { probe_or_stop(); }, false, false},
     }};
 }
 
@@ -254,6 +286,10 @@ bool DiscoverScreen::can_listen() const {
 }
 
 void DiscoverScreen::listen_or_stop() {
+    if (confirming_) {
+        cancel_confirm();  // like any other key: only cancels
+        return;
+    }
     if (listening()) {
         view_model().request_tool_stop();
     } else if (can_listen()) {
@@ -275,24 +311,109 @@ bool DiscoverScreen::can_save() const {
 }
 
 void DiscoverScreen::save() {
+    if (confirming_) {
+        cancel_confirm();  // like any other key: only cancels
+        return;
+    }
     if (can_save()) {
         view_model().request_capture_save();
     }
 }
 
+bool DiscoverScreen::probing() const {
+    return view_model().tools().probe.state == model::ToolState::Running;
+}
+
+bool DiscoverScreen::can_probe() const {
+    if (probing()) {
+        return true;
+    }
+    return !model::tool_running(view_model().tools()) && !uplink().empty();
+}
+
+std::string DiscoverScreen::probe_address() const {
+    const std::string& address = view_model().home().uplink_address;
+    if (!model::is_ipv4_text(address)) {
+        return {};
+    }
+    const int first = std::stoi(address);
+    const int second = std::stoi(address.substr(address.find('.') + 1));
+    const bool home = first == 10 || (first == 172 && second >= 16 && second <= 31) || (first == 192 && second == 168);
+    return home ? address : std::string();
+}
+
+void DiscoverScreen::probe_or_stop() {
+    if (probing()) {
+        cancel_confirm();
+        view_model().request_tool_stop();
+        return;
+    }
+    if (!can_probe()) {
+        cancel_confirm();
+        return;
+    }
+    if (!confirming_) {
+        // Step 2: the address and what would be asked; nothing is sent.
+        confirming_ = true;
+        if (!confirm_timer_) {
+            confirm_timer_ = lv_timer_create(confirm_timer_cb, kConfirmMs, this);
+        }
+        refresh();
+        return;
+    }
+    // The second 8: the confirmation, given for this run only.
+    const bool may_probe = !probe_address().empty();
+    cancel_confirm();
+    if (may_probe) {
+        view_model().set_discover_scroll(0);
+        view_model().request_tool_run(model::ToolKind::Probe, uplink());
+    }
+}
+
+void DiscoverScreen::cancel_confirm() {
+    if (confirm_timer_) {
+        lv_timer_delete(confirm_timer_);
+        confirm_timer_ = nullptr;
+    }
+    if (confirming_) {
+        confirming_ = false;
+        refresh();
+    }
+}
+
+void DiscoverScreen::confirm_timer_cb(lv_timer_t* timer) {
+    auto* screen = static_cast<DiscoverScreen*>(lv_timer_get_user_data(timer));
+    if (screen) {
+        screen->cancel_confirm();
+    }
+}
+
 int32_t DiscoverScreen::first_entry() const {
-    const auto count = static_cast<int32_t>(view_model().tools().listen.devices.size());
+    const auto count = static_cast<int32_t>(devices_.size());
     const int32_t last_top = std::max<int32_t>(count - visible_entries_, 0);
     return std::clamp<int32_t>(view_model().discover_scroll(), 0, last_top);
 }
 
 void DiscoverScreen::scroll(int32_t delta) {
-    const auto count = static_cast<int32_t>(view_model().tools().listen.devices.size());
+    const auto count = static_cast<int32_t>(devices_.size());
     const int32_t last_top = std::max<int32_t>(count - visible_entries_, 0);
     view_model().set_discover_scroll(std::clamp<int32_t>(first_entry() + delta, 0, last_top));
 }
 
+bool DiscoverScreen::on_back() {
+    if (confirming_) {
+        cancel_confirm();
+        return true;
+    }
+    return false;
+}
+
 bool DiscoverScreen::on_key(uint32_t key) {
+    if (confirming_) {
+        // Any other key cancels the confirmation, and does nothing else.
+        cancel_confirm();
+        return true;
+    }
     switch (key) {
         case LV_KEY_UP:
             scroll(-1);
@@ -382,6 +503,12 @@ void DiscoverScreen::build_content(lv_obj_t* content) {
     lv_label_set_long_mode(note_, LV_LABEL_LONG_WRAP);
     lv_obj_set_pos(note_, kSideMargin, list_top_);
     lv_obj_add_flag(note_, LV_OBJ_FLAG_HIDDEN);
+    // Step 2's confirmation, under the note.
+    confirm_ = plain_label(content, "");
+    view::style::text(confirm_, theme, view::FontRole::Mono, theme.colors.warning);
+    lv_obj_set_width(confirm_, kWidth);
+    lv_label_set_long_mode(confirm_, LV_LABEL_LONG_WRAP);
+    lv_obj_add_flag(confirm_, LV_OBJ_FLAG_HIDDEN);
 
     track_ = plain_object(content);
     lv_obj_set_pos(track_, kTrackX, list_top_);
@@ -427,16 +554,16 @@ void DiscoverScreen::set_entry_hidden(Entry& entry, bool hidden) {
 
 void DiscoverScreen::refresh_entries() {
     const auto& theme = this->theme();
-    const model::ListenRun& run = view_model().tools().listen;
-    const auto count = static_cast<int32_t>(run.devices.size());
+    const auto count = static_cast<int32_t>(devices_.size());
     const int32_t first = first_entry();
     for (int32_t index = 0; index < visible_entries_; ++index) {
         Entry& entry = entries_[static_cast<std::size_t>(index)];
-        if (first + index >= count) {
+        if (confirming_ || first + index >= count) {
             set_entry_hidden(entry, true);
             continue;
         }
-        const model::HeardDevice& device = run.devices[static_cast<std::size_t>(first + index)];
+        const model::DiscoverDevice& shown = devices_[static_cast<std::size_t>(first + index)];
+        const model::HeardDevice& device = shown.device;
         set_entry_hidden(entry, false);
         std::string name = device.name;
         int32_t tone = tools::kToneText;
@@ -458,17 +585,56 @@ void DiscoverScreen::refresh_entries() {
                             theme);
         set_text_if_changed(entry.hardware, entry.hardware_shown, device.hardware_address);
         set_text_if_changed(entry.kind, entry.kind_shown, device.kind);
-        set_text_if_changed(entry.age, entry.age_shown, age_text(run.elapsed_s - device.heard_s));
+        set_text_if_changed(entry.age, entry.age_shown, age_text(shown.age_s));
     }
 
-    const bool empty = count == 0;
-    set_hidden(note_, !empty);
-    if (empty) {
-        set_text_if_changed(note_, note_shown_, note_text(run, uplink()));
+    // In place of the list: step 2 while a probe waits for its
+    // confirmation, else a note when there is no device to show.
+    const model::ToolsData& data = view_model().tools();
+    std::string note;
+    std::string confirm;
+    int32_t note_tone = tools::kToneMuted;
+    if (confirming_) {
+        const std::string& address = view_model().home().uplink_address;
+        const std::string& router = view_model().home().gateway_address;
+        const std::string allowed = probe_address();
+        note_tone = tools::kToneText;
+        if (!model::is_ipv4_text(address)) {
+            note = "No IPv4 address on " + uplink() + " yet, so there is nothing to probe.";
+        } else if (allowed.empty()) {
+            note = address + " is not on a private home network, so Probe stays off.";
+        } else {
+            const std::string prefix = allowed.substr(0, allowed.rfind('.') + 1);
+            note = "IP " + allowed + (router.empty() ? std::string() : ", router " + router) + "\nAsks " + prefix +
+                   "1-254, 20 a second";
+            confirm = "Only networks you own or may test.\nPress 8 again to probe.";
+        }
+    } else if (count == 0) {
+        const bool probe_shown = data.latest == model::ToolKind::Probe && data.probe.state != model::ToolState::Idle;
+        if (probe_shown && data.probe.state == model::ToolState::Running) {
+            note = "Asking every address" + (data.probe.network.empty() ? std::string() : " of " + data.probe.network) +
+                   "…";
+        } else if (probe_shown && data.probe.state != model::ToolState::Failed) {
+            note = "No devices found.";
+        } else {
+            note = note_text(data.listen, uplink());
+        }
+    }
+    set_hidden(note_, note.empty());
+    bool note_changed = false;
+    if (!note.empty()) {
+        note_changed = set_text_if_changed(note_, note_shown_, note);
+        set_tone_if_changed(note_, note_tone_, note_tone, theme);
+    }
+    set_hidden(confirm_, confirm.empty());
+    // The confirmation stands right under the note, however many lines it took.
+    if (!confirm.empty() && (set_text_if_changed(confirm_, confirm_shown_, confirm) || note_changed)) {
+        lv_obj_update_layout(note_);
+        lv_obj_set_pos(confirm_, kSideMargin, list_top_ + lv_obj_get_height(note_));
     }
 
     // The scroll mark, only when the devices do not all fit.
-    const bool scrolls = count > visible_entries_;
+    const bool scrolls = !confirming_ && count > visible_entries_;
     set_hidden(track_, !scrolls);
     set_hidden(thumb_, !scrolls);
     if (scrolls) {
@@ -488,8 +654,11 @@ void DiscoverScreen::refresh_entries() {
 void DiscoverScreen::refresh_status() {
     const auto& theme = this->theme();
     const model::ToolsData& data = view_model().tools();
-    tools::ToneText status = status_text(data.listen, !uplink().empty());
-    if (!listening() && model::tool_running(data)) {
+    const bool probe_shown = data.latest == model::ToolKind::Probe && data.probe.state != model::ToolState::Idle;
+    tools::ToneText status = probe_shown ? probe_status_text(data.probe) : status_text(data.listen, !uplink().empty());
+    if (confirming_) {
+        status = {"Nothing sent yet", tools::kToneMuted};
+    } else if (!listening() && !probing() && model::tool_running(data)) {
         if (data.ping.state == model::ToolState::Running) {
             status = {"Ping is running", tools::kToneMuted};
         } else if (data.dns.state == model::ToolState::Running) {
@@ -514,10 +683,15 @@ void DiscoverScreen::refresh_status() {
 }
 
 void DiscoverScreen::refresh() {
-    const model::ListenRun& run = view_model().tools().listen;
-    // The run's own interface once there was one, else the one a run
-    // would use.
-    std::string interface_name = run.state != model::ToolState::Idle ? run.interface_name : uplink();
+    const model::ToolsData& data = view_model().tools();
+    const model::ListenRun& run = data.listen;
+    const bool probe_shown = data.latest == model::ToolKind::Probe && data.probe.state != model::ToolState::Idle;
+    devices_ = model::discover_devices(run, data.probe);
+    // The latest run's own interface once there was one, else the one a
+    // run would use.
+    std::string interface_name = probe_shown                          ? data.probe.interface_name
+                                 : run.state != model::ToolState::Idle ? run.interface_name
+                                                                       : uplink();
     if (interface_name.empty()) {
         interface_name = "no network";
     }
@@ -527,11 +701,18 @@ void DiscoverScreen::refresh() {
         lv_obj_update_layout(interface_caption_);
         lv_obj_set_pos(count_, kSideMargin + lv_obj_get_width(interface_caption_) + kCaptionGap, kSummaryTop);
     }
-    const std::size_t heard = run.devices.size();
+    const std::size_t found = devices_.size();
+    const bool any_run = run.state != model::ToolState::Idle || data.probe.state != model::ToolState::Idle;
     set_text_if_changed(count_, count_shown_,
-                        run.state == model::ToolState::Idle
-                            ? std::string()
-                            : std::to_string(heard) + (heard == 1 ? " device" : " devices"));
+                        !any_run || confirming_ ? std::string()
+                                                : std::to_string(found) + (found == 1 ? " device" : " devices"));
+    const char* step = confirming_    ? "step 2 of 3: your address"
+                       : probe_shown ? "step 3 of 3: probe"
+                                     : "step 1 of 3: listen";
+    if (step != step_shown_) {
+        step_shown_ = step;
+        view::style::caption(step_caption_, theme(), step);
+    }
     refresh_entries();
     refresh_status();
 
@@ -548,6 +729,18 @@ void DiscoverScreen::refresh() {
         if (auto* bar = soft_key_bar()) {
             bar->set_key(3, {"Save", [this] { save(); }, false, save_key != 0});
         }
+    }
+    const int32_t probe_key = probing() ? 2 : can_probe() ? 1 : 0;
+    if (probe_key != shown_probe_key_) {
+        shown_probe_key_ = probe_key;
+        if (auto* bar = soft_key_bar()) {
+            bar->set_key(4, {probe_key == 2 ? "Stop" : "Probe", [this] { probe_or_stop(); }, false, probe_key != 0});
+        }
+    }
+    // The confirmation goes when Probe can no longer start (another tool
+    // started, or the network went away).
+    if (confirming_ && probe_key != 1) {
+        cancel_confirm();
     }
 }
 

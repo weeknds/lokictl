@@ -6,7 +6,31 @@
 
 #include "tool_data.h"
 
+#include <algorithm>
+
 namespace model {
+namespace {
+
+// An IPv4 address in dotted form as a number, for sorting; 0 when `text`
+// is not one.
+uint32_t address_number(const std::string& text) {
+    if (!is_ipv4_text(text)) {
+        return 0;
+    }
+    uint32_t number = 0;
+    uint32_t part = 0;
+    for (const char character : text) {
+        if (character == '.') {
+            number = (number << 8) | part;
+            part = 0;
+        } else {
+            part = part * 10 + static_cast<uint32_t>(character - '0');
+        }
+    }
+    return (number << 8) | part;
+}
+
+} // namespace
 
 const char* tool_name(ToolKind kind) {
     switch (kind) {
@@ -18,6 +42,8 @@ const char* tool_name(ToolKind kind) {
             return "trace";
         case ToolKind::Listen:
             return "listen";
+        case ToolKind::Probe:
+            return "probe";
     }
     return "ping";
 }
@@ -92,9 +118,21 @@ bool operator!=(const ListenRun& left, const ListenRun& right) {
     return !(left == right);
 }
 
+bool operator==(const ProbeRun& left, const ProbeRun& right) {
+    return left.state == right.state && left.error == right.error && left.reason == right.reason &&
+           left.interface_name == right.interface_name && left.network == right.network &&
+           left.step == right.step && left.total == right.total && left.asked == right.asked &&
+           left.replied == right.replied && left.elapsed_s == right.elapsed_s && left.devices == right.devices;
+}
+
+bool operator!=(const ProbeRun& left, const ProbeRun& right) {
+    return !(left == right);
+}
+
 bool operator==(const ToolsData& left, const ToolsData& right) {
     return left.ping == right.ping && left.dns == right.dns && left.trace == right.trace &&
-           left.listen == right.listen && left.sent == right.sent;
+           left.listen == right.listen && left.probe == right.probe && left.latest == right.latest &&
+           left.sent == right.sent;
 }
 
 bool operator!=(const ToolsData& left, const ToolsData& right) {
@@ -103,7 +141,8 @@ bool operator!=(const ToolsData& left, const ToolsData& right) {
 
 bool tool_running(const ToolsData& data) {
     return data.ping.state == ToolState::Running || data.dns.state == ToolState::Running ||
-           data.trace.state == ToolState::Running || data.listen.state == ToolState::Running;
+           data.trace.state == ToolState::Running || data.listen.state == ToolState::Running ||
+           data.probe.state == ToolState::Running;
 }
 
 ToolState tool_state(const ToolsData& data, ToolKind kind) {
@@ -116,8 +155,56 @@ ToolState tool_state(const ToolsData& data, ToolKind kind) {
             return data.trace.state;
         case ToolKind::Listen:
             return data.listen.state;
+        case ToolKind::Probe:
+            return data.probe.state;
     }
     return ToolState::Idle;
+}
+
+std::vector<DiscoverDevice> discover_devices(const ListenRun& listen, const ProbeRun& probe) {
+    std::vector<DiscoverDevice> list;
+    list.reserve(listen.devices.size() + probe.devices.size());
+    for (const HeardDevice& device : listen.devices) {
+        list.push_back({device, std::max<int32_t>(listen.elapsed_s - device.heard_s, 0)});
+    }
+    const std::size_t heard = list.size();
+    for (const HeardDevice& device : probe.devices) {
+        const int32_t age = std::max<int32_t>(probe.elapsed_s - device.heard_s, 0);
+        const auto end = list.begin() + static_cast<std::ptrdiff_t>(heard);
+        const auto found = std::find_if(list.begin(), end, [&device](const DiscoverDevice& entry) {
+            return entry.device.hardware_address == device.hardware_address;
+        });
+        if (found == end) {
+            list.push_back({device, age});
+            continue;
+        }
+        HeardDevice& known = found->device;
+        if (!device.address.empty()) {
+            known.address = device.address;
+        }
+        if (known.name.empty()) {
+            known.name = device.name;
+        }
+        if (known.kind.empty()) {
+            known.kind = device.kind;
+        }
+        if (known.own_port.empty()) {
+            known.own_port = device.own_port;
+        }
+        found->age_s = std::min(found->age_s, age);
+    }
+    std::sort(list.begin(), list.end(), [](const DiscoverDevice& left, const DiscoverDevice& right) {
+        const uint32_t left_address = address_number(left.device.address);
+        const uint32_t right_address = address_number(right.device.address);
+        if ((left_address == 0) != (right_address == 0)) {
+            return left_address != 0;
+        }
+        if (left_address != right_address) {
+            return left_address < right_address;
+        }
+        return left.device.hardware_address < right.device.hardware_address;
+    });
+    return list;
 }
 
 bool is_ipv4_text(std::string_view text) {
@@ -166,7 +253,7 @@ bool valid_interface_name(std::string_view text) {
 }
 
 bool valid_tool_target(ToolKind kind, std::string_view text) {
-    if (kind == ToolKind::Listen) {
+    if (kind == ToolKind::Listen || kind == ToolKind::Probe) {
         return valid_interface_name(text);
     }
     if (text.empty() || text.size() > kToolTargetMax) {

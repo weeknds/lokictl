@@ -14,19 +14,20 @@
 
 namespace model {
 
-// The tools that can run (the Ping, DNS and Trace pages, and listening on
-// the Discover page). Only one runs at a time.
+// The tools that can run (the Ping, DNS and Trace pages, and listening and
+// probing on the Discover page). Only one runs at a time.
 enum class ToolKind : int32_t {
     Ping   = 0,
     Dns    = 1,
     Trace  = 2,
     Listen = 3,
+    Probe  = 4,
 };
 
 // How many kinds there are, for tables indexed by ToolKind.
-constexpr std::size_t kToolKindCount = 4;
+constexpr std::size_t kToolKindCount = 5;
 
-const char* tool_name(ToolKind kind); // "ping", "dns", "trace", "listen"
+const char* tool_name(ToolKind kind); // "ping", "dns", "trace", "listen", "probe"
 
 // Where a tool's latest run stands.
 enum class ToolState : int32_t {
@@ -40,7 +41,7 @@ enum class ToolState : int32_t {
 // Why a run failed or found nothing.
 enum class ToolError : int32_t {
     None = 0,
-    NotAllowed,  // ping and trace: the system refused the ICMP socket (ping_group_range);
+    NotAllowed,  // ping, trace and probe: the system refused the ICMP socket (ping_group_range);
                  // listen: the capture helper may not be run, or lacks its capability
     NoServer,    // no IPv4 nameserver in /etc/resolv.conf
     NoSuchName,  // the DNS server said the name does not exist (NXDOMAIN)
@@ -201,13 +202,46 @@ struct ListenRun {
 bool operator==(const ListenRun& left, const ListenRun& right);
 bool operator!=(const ListenRun& left, const ListenRun& right);
 
-// What the tools show: the latest run of each and the app-wide count of
-// packets LokiCTL has sent in this run of the app.
+// Discover, step 3: probing. A probe asks at most this many addresses
+// (one /24), one ICMP echo every kProbeIntervalMs.
+constexpr int32_t kProbeMaxAddresses = 254;
+constexpr int32_t kProbeIntervalMs = 50;
+
+// What a probe run is doing.
+enum class ProbeStep : int32_t {
+    Sweep = 0,  // sending one echo to each address, then waiting for the last answers
+    Names,      // asking for kinds and names (mDNS and SSDP), then waiting for the answers
+};
+
+// The latest probe run of the Discover page. Every echo and question it
+// sends counts in the Sent count.
+struct ProbeRun {
+    ToolState state{ToolState::Idle};
+    ToolError error{ToolError::None};
+    std::string reason;               // with ToolError::Failed ("not a private network")
+    std::string interface_name;       // the interface probed from, for example "eth0"
+    std::string network;              // what is asked, "10.0.0.0/24"; empty until known
+    ProbeStep step{ProbeStep::Sweep};
+    int32_t total{0};                 // addresses to ask (the range without the Cardputer's own)
+    int32_t asked{0};                 // addresses asked so far
+    int32_t replied{0};               // addresses that answered their echo
+    int32_t elapsed_s{0};             // seconds since the run started; stops when it ends
+    std::vector<HeardDevice> devices; // found, like a listen run's list; at most kListenMaxDevices
+};
+
+bool operator==(const ProbeRun& left, const ProbeRun& right);
+bool operator!=(const ProbeRun& left, const ProbeRun& right);
+
+// What the tools show: the latest run of each, which of the Discover
+// page's two kinds started last, and the app-wide count of packets LokiCTL
+// has sent in this run of the app.
 struct ToolsData {
     PingRun ping;
     DnsRun dns;
     TraceRun trace;
     ListenRun listen;
+    ProbeRun probe;
+    ToolKind latest{ToolKind::Listen};  // Listen or Probe: the Discover run started last
     uint64_t sent{0};
 };
 
@@ -219,12 +253,26 @@ bool tool_running(const ToolsData& data);
 // The state of `kind`'s latest run.
 ToolState tool_state(const ToolsData& data, ToolKind kind);
 
+// One entry of the Discover page's list: what the latest listen run and
+// the latest probe run found about one hardware address, put together.
+struct DiscoverDevice {
+    HeardDevice device;  // heard_s is not used
+    int32_t age_s{0};    // seconds since it was last heard, as of the end (or now) of the run that heard it
+};
+
+// The Discover page's list: every device of `listen` and of `probe`, one
+// entry per hardware address. A device in both keeps the listen run's name
+// and kind (the probe's when the listen run has none), the probe's IPv4
+// address (the listen run's when the probe has none) and the smaller age.
+// Sorted by IPv4 address, those without one last, then by hardware address.
+std::vector<DiscoverDevice> discover_devices(const ListenRun& listen, const ProbeRun& probe);
+
 // Whether `text` may be used as a typed target: 1 to kToolTargetMax
 // characters, only a-z, 0-9 and '.', no empty label (no dot at either end,
 // no two dots in a row). A text of digits and dots only must be an IPv4
 // address (four numbers of 0-255). For DNS a name is needed, so an IPv4
-// address is refused there; Ping and Trace take both. The listen tool's
-// target is an interface, checked with valid_interface_name() instead.
+// address is refused there; Ping and Trace take both. The listen and probe
+// tools' target is an interface, checked with valid_interface_name() instead.
 bool valid_tool_target(ToolKind kind, std::string_view text);
 
 // Whether `text` is an IPv4 address in dotted form ("192.0.2.1").
@@ -232,7 +280,7 @@ bool is_ipv4_text(std::string_view text);
 
 // Whether `text` may be handed to the capture helper as an interface name:
 // 1 to kInterfaceNameMax characters of a-z, A-Z, 0-9, '.', '_' and '-', and
-// not "." or "..". The listen tool's target is checked with it.
+// not "." or "..". The listen and probe tools' target is checked with it.
 bool valid_interface_name(std::string_view text);
 
 } // namespace model

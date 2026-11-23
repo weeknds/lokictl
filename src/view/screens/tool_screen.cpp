@@ -398,6 +398,7 @@ void ToolScreen::build_content(lv_obj_t* content) {
             build_trace_results(main_panel_);
             break;
         case model::ToolKind::Listen:
+        case model::ToolKind::Probe:
             break;  // the Discover page's, never a tool page's
     }
 
@@ -622,6 +623,7 @@ void ToolScreen::refresh_target() {
                 value = data.trace.target;
                 break;
             case model::ToolKind::Listen:
+            case model::ToolKind::Probe:
                 break;  // the Discover page's, never a tool page's
         }
         if (kind_ != model::ToolKind::Dns && value == view_model().home().gateway_address) {
@@ -768,6 +770,7 @@ void ToolScreen::refresh_status() {
             status = tools::trace_status(data.trace);
             break;
         case model::ToolKind::Listen:
+        case model::ToolKind::Probe:
             break;  // the Discover page's, never a tool page's
     }
     if (!this_running() && any_running()) {
@@ -777,6 +780,8 @@ void ToolScreen::refresh_status() {
             status = {"DNS lookup is running", tools::kToneMuted};
         } else if (data.listen.state == model::ToolState::Running) {
             status = {"Discover is listening", tools::kToneMuted};
+        } else if (data.probe.state == model::ToolState::Running) {
+            status = {"Discover is probing", tools::kToneMuted};
         } else {
             status = {"Trace is running", tools::kToneMuted};
         }
@@ -858,6 +863,7 @@ void ToolScreen::refresh() {
             refresh_trace();
             break;
         case model::ToolKind::Listen:
+        case model::ToolKind::Probe:
             break;  // the Discover page's, never a tool page's
     }
     refresh_status();

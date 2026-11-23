@@ -829,6 +829,52 @@ nothing.
   administered hardware addresses on the sample's 10.0.0.x network. Its
   save writes no file and shows the made-up name `20260614-074600.pcap`.
 
+### Probing
+
+The Discover page's step 3 (`model::ToolKind::Probe`, its run in
+`tools().probe`, `model::ProbeRun`) asks every address of the uplink's own
+network, and sends. It starts only after the page's confirmation (key 8
+twice), for that run only.
+
+- **The range** (`platform::read_probe_range()` in `platform/probe.*`,
+  from `getifaddrs()` on the runner's thread): the uplink interface's
+  network, at most the /24 around its address, and only a private one
+  (10/8, 172.16/12, 192.168/16); never the network or broadcast address or
+  any of the Cardputer's own addresses. Anything else fails with a short
+  reason (`not a private network`) and sends nothing.
+- **The sweep:** one ICMP echo per address, 50 ms apart (about 13 s for a
+  /24), on the unprivileged ICMP socket Ping uses. Each echo makes the
+  system ask for the address by ARP; `/proc/net/arp`, read every second and
+  once more 3 s after the last echo, gives the complete entries inside the
+  range (`platform::parse_neighbours()`), which go into a
+  `platform::HeardDevices` list like heard frames. `replied` counts the
+  addresses that answered their echo.
+- **Kinds and names:** then, from one UDP socket on an ephemeral port
+  (never 5353, which avahi holds), with `IP_MULTICAST_IF` set to the
+  uplink and loopback off: one mDNS question for
+  `_services._dns-sd._udp.local`, one SSDP `M-SEARCH` (`ssdp:all`, MX 2,
+  multicast time to live 1) and one mDNS reverse (PTR) question per device
+  found without a name, 50 ms apart. A question from a port other than
+  5353 is answered by unicast to that port; answers count for 3 s after
+  the last question, only from addresses in the range whose device is in
+  the neighbour table. Service types give kinds, a reverse record of the
+  sender's own address gives a name, and an SSDP reply's `ST` header a kind
+  as `NT` does.
+- **Sent** counts every echo and question handed to the system (the
+  system's own ARP questions are not counted). The log gets counts only.
+- **The list:** the page shows the latest listen run and the latest probe
+  run together (`model::discover_devices()`): one entry per hardware
+  address; a device in both keeps the listen run's name and kind when it
+  has them, the probe's address and the smaller age. `ToolsData::latest`
+  says which of the two (Listen or Probe) started last, for the status
+  line and the step caption.
+- **The pretend runner** (`platform::pretend_probe()`) times the same
+  steps on the sample's 10.0.0.0/24 network (the Cardputer at .12 and
+  .13, so 252 addresses): the devices of the pretend capture plus a file
+  server and a camera that never speak up while listening, through a
+  made-up neighbour table and made-up mDNS and SSDP replies read by the
+  same code.
+
 ## The Wi-Fi list
 
 The Wi-Fi page shows `model::WifiScan`, which the block carries as

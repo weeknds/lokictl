@@ -116,8 +116,8 @@ void ToolController::handle_request() {
         }
         LOG_INFO("tools: listen capture save asked");
     } else if (view_model_.requested_tool_stop()) {
-        for (const model::ToolKind kind :
-             {model::ToolKind::Ping, model::ToolKind::Dns, model::ToolKind::Trace, model::ToolKind::Listen}) {
+        for (const model::ToolKind kind : {model::ToolKind::Ping, model::ToolKind::Dns, model::ToolKind::Trace,
+                                           model::ToolKind::Listen, model::ToolKind::Probe}) {
             if (model::tool_state(data_, kind) == model::ToolState::Running) {
                 runner_->stop();
                 LOG_INFO("tools: {} stopped by the user", model::tool_name(kind));
@@ -198,6 +198,19 @@ void ToolController::log_change(const model::ToolsData& next) const {
             LOG_INFO("tools: listen ended, devices heard: {}", listen.devices.size());
         } else if (listen.state == model::ToolState::Failed) {
             LOG_INFO("tools: listen failed: {}", why(listen.error, listen.reason));
+        }
+    }
+    // Counts only, as for listening.
+    const model::ProbeRun& probe = next.probe;
+    if (probe.state != data_.probe.state) {
+        if (probe.state == model::ToolState::Done) {
+            LOG_INFO("tools: probe done, asked: {}, replied: {}, devices found: {}", probe.asked, probe.replied,
+                     probe.devices.size());
+        } else if (probe.state == model::ToolState::Stopped) {
+            LOG_INFO("tools: probe ended, asked: {} of {}, devices found: {}", probe.asked, probe.total,
+                     probe.devices.size());
+        } else if (probe.state == model::ToolState::Failed) {
+            LOG_INFO("tools: probe failed: {}", why(probe.error, probe.reason));
         }
     }
     // Sizes only: never the file's path.

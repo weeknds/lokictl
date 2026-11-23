@@ -90,6 +90,13 @@ private:
 //   from the service types it names (owner names and PTR targets, such as
 //   "_ipp._tcp" for a printer). An SSDP NOTIFY gives a kind from its NT
 //   device type, else from the product its SERVER header names.
+// For probing (probe.h) it also learns from what came to LokiCTL's own
+// sockets: a complete entry of the system's neighbour table (hardware and
+// IPv4 address), and an mDNS or SSDP reply sent to a question of its own,
+// read like the multicast ones above. An SSDP reply ("HTTP/1.1 200") gives
+// a kind from its ST header as a NOTIFY does from NT. In any mDNS response
+// a reverse (PTR) record for the packet's source address gives a host name
+// too (the first label of the name it points to).
 // A DHCP host name always wins over an mDNS one; a kind, once known, is
 // replaced only by one from a surer source (an mDNS service, then an SSDP
 // device type, then an SSDP server product), so nothing flips back and
@@ -105,6 +112,16 @@ public:
     // run. Returns true when the list changed (also when a known device was
     // only heard again later).
     bool note_frame(const uint8_t* frame, std::size_t size, int32_t at_s);
+
+    // Notes what probing found about the device with the 6-byte hardware
+    // address `hardware`: a neighbour table entry for `address`, or an mDNS
+    // or SSDP reply from `source` to one of LokiCTL's questions. Each
+    // returns true when the list changed.
+    bool note_neighbour(const uint8_t* hardware, uint32_t address, int32_t at_s);
+    bool note_mdns_reply(const uint8_t* hardware, uint32_t source, const uint8_t* message, std::size_t size,
+                         int32_t at_s);
+    bool note_ssdp_reply(const uint8_t* hardware, uint32_t source, const uint8_t* text, std::size_t size,
+                         int32_t at_s);
 
     // The list, sorted by IPv4 address, those without one last (then by
     // hardware address).

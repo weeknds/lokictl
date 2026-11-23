@@ -459,6 +459,28 @@ bool HeardDevices::note_ipv4(const uint8_t* frame, std::size_t size, int32_t at_
     return false;
 }
 
+bool HeardDevices::note_neighbour(const uint8_t* hardware, uint32_t address, int32_t at_s) {
+    Heard heard;
+    heard.address = address;
+    return note(hardware, heard, at_s);
+}
+
+bool HeardDevices::note_mdns_reply(const uint8_t* hardware,
+                                   uint32_t source,
+                                   const uint8_t* message,
+                                   std::size_t size,
+                                   int32_t at_s) {
+    return note_mdns(message, size, true, hardware, source, at_s);
+}
+
+bool HeardDevices::note_ssdp_reply(const uint8_t* hardware,
+                                   uint32_t source,
+                                   const uint8_t* text,
+                                   std::size_t size,
+                                   int32_t at_s) {
+    return note_ssdp(text, size, hardware, source, at_s);
+}
+
 bool HeardDevices::note_dhcp(const uint8_t* bootp,
                              std::size_t size,
                              const uint8_t* sender,
@@ -555,6 +577,9 @@ bool HeardDevices::note_mdns(const uint8_t* message,
                 }
             }
         };
+        // The reverse name of the source ("4.3.2.1.in-addr.arpa"): a PTR
+        // record of it names the sender.
+        const std::string reverse = dns::reverse_name(address_text(source));
         for (const dns::Record& record : parsed.answers) {
             if ((record.klass & kClassMask) != dns::kClassIn) {
                 continue;
@@ -570,6 +595,9 @@ bool HeardDevices::note_mdns(const uint8_t* message,
                 if (dns::read_name(message, size, offset, target) &&
                     offset <= record.data_offset + record.data_length) {
                     consider(target);
+                    if (heard.name.empty() && !reverse.empty() && record.name == reverse) {
+                        heard.name = host_name(target);
+                    }
                 }
             }
         }
@@ -592,9 +620,10 @@ bool HeardDevices::note_ssdp(const uint8_t* text,
     Heard heard;
     heard.address = source;
     const std::string_view message(reinterpret_cast<const char*>(text), size);
-    // Only an announcement says what the sender is; a search (M-SEARCH)
-    // only says that it is there.
-    if (starts_with_nocase(message, "NOTIFY ")) {
+    // Only an announcement, or a reply to a search, says what the sender
+    // is; a search (M-SEARCH) only says that it is there. A reply names its
+    // type in ST where an announcement has NT.
+    if (starts_with_nocase(message, "NOTIFY ") || starts_with_nocase(message, "HTTP/1.1 200")) {
         constexpr std::size_t kTypeCount = sizeof(kSsdpKinds) / sizeof(kSsdpKinds[0]);
         std::string_view server;
         std::size_t at = message.find('\n');
@@ -610,7 +639,7 @@ bool HeardDevices::note_ssdp(const uint8_t* text,
             }
             const std::string_view name = trimmed(line.substr(0, colon));
             const std::string_view value = trimmed(line.substr(colon + 1));
-            if (name.size() == 2 && starts_with_nocase(name, "NT")) {
+            if (name.size() == 2 && (starts_with_nocase(name, "NT") || starts_with_nocase(name, "ST"))) {
                 for (std::size_t index = 0; index < kTypeCount; ++index) {
                     if (value.find(kSsdpKinds[index].service) != std::string_view::npos) {
                         heard.kind = kSsdpKinds[index].kind;

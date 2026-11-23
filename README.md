@@ -208,7 +208,7 @@ The app has 24 pages. `--list-pages` prints them in this order:
   [docs/navigation.md](docs/navigation.md#the-ping-dns-and-trace-pages)
   and [the Wi-Fi page](docs/navigation.md#the-wi-fi-page));
 - `discover`, the Discover page (home key 5), which lists the devices it
-  hears on the network while sending nothing (see
+  hears on the network while sending nothing, and those a probe finds (see
   [docs/navigation.md](docs/navigation.md#the-discover-page));
 - `demo-counter` and `demo-keys`, two demo pages kept for navigation and
   key tests: a counter and a key test page. Nothing in the app opens them
@@ -556,7 +556,11 @@ but sample network data for now (see [docs/home.md](docs/home.md)):
   device it says it is over mDNS or SSDP, how long ago it was heard),
   while sending nothing (`Sent` does not move); `6` STOP ends it early,
   `f`/`x` scroll; `7` SAVE keeps the run as a PCAP file (see "Saved
-  captures" below);
+  captures" below); `8` PROBE shows the Cardputer's address and router,
+  and a second `8` (only on networks you own or may test) gently asks
+  every address of that private network, at most 254, 20 a second, so
+  quiet devices show up too, with their kinds and names where they answer
+  (every packet counts in `Sent`);
 - a short `esc` shows the hint `Hold ESC to exit`, and holding `esc` quits.
 
 The Settings page lists the three themes; a tick marks the active one:

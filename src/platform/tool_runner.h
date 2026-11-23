@@ -14,7 +14,7 @@
 namespace platform {
 
 // One job for a ToolRunner: a ping run, a DNS lookup or a trace of
-// `target`, or listening on the interface `target`.
+// `target`, or listening on or probing from the interface `target`.
 struct ToolJob {
     model::ToolKind kind{model::ToolKind::Ping};
     std::string target;  // checked with model::valid_tool_target()
@@ -35,8 +35,12 @@ struct ToolJob {
 // the retry goes to the next one), each counted with count_sent(). A listen
 // sends nothing: it runs the capture helper (platform::CaptureProcess,
 // which alone may open the packet socket and only receives) and reads its
-// stream into the device list (listen.h). It never changes a network
-// setting. A listen run keeps what it heard (whole PCAP records, at most
+// stream into the device list (listen.h). A probe (probe.h) sends one
+// echo to each address of the uplink's own private network (at most its
+// /24), 20 a second, reads the system's neighbour table, then sends one
+// mDNS and one SSDP question and one mDNS reverse question per device found
+// without a name, each counted with count_sent(). It never changes a
+// network setting. A listen run keeps what it heard (whole PCAP records, at most
 // model::kCaptureSaveMax) until the next listen starts, so it can be saved
 // as a file (save_capture()); the file is written on this thread too.
 //
@@ -46,7 +50,7 @@ struct ToolJob {
 // results (documentation addresses only; a listen reads a made-up capture,
 // pretend_capture()), so the same keys and settle time always give the same
 // picture. It still adds the packets it pretends to send to the Sent count
-// (none for a listen). It never writes a file: a save reads as saved under
+// (none for a listen). A probe reads pretend_probe() (probe.h). It never writes a file: a save reads as saved under
 // the made-up name kPretendCaptureName (listen.h).
 //
 // All functions are called on the UI thread.
