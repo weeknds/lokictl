@@ -13,8 +13,10 @@
 #include "remote/remote_pairing.h"
 #include "remote/remote_server.h"
 #include "remote/remote_switch.h"
+#include "remote_mark.h"
 #include "remote_panel.h"
 
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -92,12 +94,36 @@ const char* start_failure_message(StopReason reason) {
     }
 }
 
+#if USE_DESKTOP
+// Blends `top` (ARGB8888, straight alpha) over `base` (ARGB8888) where they
+// overlap; both are snapshots that start at the screen's top-left corner.
+void blend_over(lv_draw_buf_t* base, const lv_draw_buf_t* top) {
+    const uint32_t width = base->header.w < top->header.w ? base->header.w : top->header.w;
+    const uint32_t height = base->header.h < top->header.h ? base->header.h : top->header.h;
+    for (uint32_t y = 0; y < height; ++y) {
+        uint8_t* out = static_cast<uint8_t*>(base->data) + static_cast<std::size_t>(y) * base->header.stride;
+        const uint8_t* in = static_cast<const uint8_t*>(top->data) + static_cast<std::size_t>(y) * top->header.stride;
+        for (uint32_t x = 0; x < width; ++x, out += 4, in += 4) {
+            const uint32_t alpha = in[3];
+            if (alpha == 0) {
+                continue;
+            }
+            for (int channel = 0; channel < 3; ++channel) {
+                out[channel] = static_cast<uint8_t>((in[channel] * alpha + out[channel] * (255U - alpha) + 127U) / 255U);
+            }
+        }
+    }
+}
+#endif
+
 } // namespace
 
 RemoteController::RemoteController(view::ThemeEngine& theme_engine)
     : panel_(std::make_unique<view::widgets::RemotePanel>(lv_layer_top(), theme_engine)),
+      mark_(std::make_unique<view::widgets::RemoteMark>(lv_layer_top(), theme_engine)),
       keys_(std::make_unique<platform::remote::KeyQueue>()) {
     panel_->build();
+    mark_->build();
 
     lv_subject_t* requests = platform::remote::switch_request_subject();
     // LVGL calls the observer once while it is added. Remembering the count
@@ -167,6 +193,7 @@ void RemoteController::stop() {
     }
 
     panel_.reset();
+    mark_.reset();
     platform::remote::set_view_state(ViewState::Off);
 }
 
@@ -264,6 +291,9 @@ void RemoteController::switch_off() {
     if (panel_) {
         panel_->hide();
     }
+    if (mark_) {
+        mark_->hide();
+    }
     message_shown_ = false;
     platform::remote::set_view_state(ViewState::Off);
     LOG_INFO("remote view: off ({})", stop_text(StopReason::Asked));
@@ -358,6 +388,9 @@ void RemoteController::poll() {
                 if (panel_) {
                     panel_->show_code(status.url, status.code, static_cast<int32_t>((left_ms + 999) / 1000));
                 }
+                if (mark_) {
+                    mark_->hide();
+                }
                 platform::remote::set_view_state(ViewState::Waiting);
                 run_key_timer(false);
                 break;
@@ -369,6 +402,9 @@ void RemoteController::poll() {
                 }
                 if (panel_) {
                     panel_->hide();
+                }
+                if (mark_) {
+                    mark_->show();
                 }
                 platform::remote::set_view_state(ViewState::Viewed);
                 run_key_timer(true);
@@ -386,6 +422,9 @@ void RemoteController::poll() {
                     if (panel_) {
                         panel_->hide();
                     }
+                }
+                if (mark_) {
+                    mark_->hide();
                 }
                 hand_off_ = nullptr;
                 server_.reset();
@@ -423,6 +462,14 @@ void RemoteController::hand_off_frame() {
     lv_draw_buf_t* snapshot = lv_snapshot_take(screen, LV_COLOR_FORMAT_ARGB8888);
     if (!snapshot) {
         return;
+    }
+    // A snapshot of the screen leaves out the top layer (help, messages,
+    // the panel and the mark), which the device's pictures have: it is
+    // taken on its own, on a clear ground, and blended over.
+    lv_draw_buf_t* top = lv_snapshot_take(lv_layer_top(), LV_COLOR_FORMAT_ARGB8888);
+    if (top) {
+        blend_over(snapshot, top);
+        lv_draw_buf_destroy(top);
     }
     // ARGB8888 is stored as B, G, R, A: as a 32-bit word, red sits at bit
     // 16, green at bit 8 and blue at bit 0.

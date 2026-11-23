@@ -19,7 +19,9 @@ time, on the Settings page.
    time left to use it (2 minutes).
 3. Open that address in a browser on the other computer and type the code.
 4. Once paired the panel goes away, the row reads `viewed` and the browser
-   shows the screen (see "The page" below).
+   shows the screen (see "The page" below). While the browser stays paired,
+   a `REMOTE` tag in the top-left corner of every page tells anyone holding
+   the Cardputer that its screen is being viewed.
 5. To stop, press Enter or key 6 (`Off`) on the row again. Quitting the app
    stops it too.
 
@@ -46,7 +48,19 @@ A key from the browser is pressed and let go at once, so it can never be a
 long press: holding ESC (which quits LokiCTL or goes back to the launcher)
 and fn+J (screenshot) only work on the Cardputer itself.
 
-When Remote view ends, the page asks for a new code.
+The page asks for a new picture about four times a second for 2 seconds
+after a key, then once a second, and once every 2 seconds when there was no
+key and no change on the screen for 30 seconds. A changing screen alone
+(the live home page) does not make it ask more often. While its browser tab
+is hidden it asks nothing at all, and asks at once when the tab shows
+again.
+
+When the Cardputer stops answering (it went out of range, or Remote view
+was switched off) or gives no answer within 5 seconds, the last picture
+stays on the page, dimmed, under the message
+`No answer from the Cardputer. Trying again...`, and the page tries again
+every 3 seconds. When Remote view ended and was switched on again,
+the page asks for the new code.
 
 ### From the command line
 
@@ -59,13 +73,27 @@ curl -b jar.txt -o screen.png http://10.0.0.12:8780/screen.png
 curl -b jar.txt -H 'Origin: http://10.0.0.12:8780' -d k=c54 http://10.0.0.12:8780/key
 ```
 
+## The REMOTE tag
+
+While a browser is paired, the Cardputer shows a small `REMOTE` tag in the
+top-left corner, at the same place on every page: over the app name in the
+title bar, and over the app name, the `sample data` mark or the first
+pane's title on the home page. It is drawn in the theme's accent colour
+(and reads `remote` in the Terminal theme, which writes such words small),
+stays still (so a still screen sends no new pictures) and is in the pictures
+the browser gets, too. It goes away when Remote view is switched off or
+switches itself off, and when the app quits. The help panel covers it while
+help shows.
+
 ## When it switches itself off
 
 The port closes, the session is forgotten and the row reads `off` when:
 
 - the code was not used within **2 minutes**;
 - **5 wrong codes** were sent;
-- the paired browser sent nothing for **10 minutes**;
+- the paired browser sent nothing for **10 minutes** (a page in a hidden
+  browser tab sends nothing, so leaving it hidden that long ends Remote
+  view too);
 - the network address went away or changed (a cable pulled, another
   network joined);
 - the app quits.
@@ -162,5 +190,5 @@ LOKICTL_REMOTE=on build/darwin-arm64/Debug/lokictl
 Open `http://127.0.0.1:8780` in a browser on the same computer and type the
 code.
 
-The simulator's pictures leave out the panels on top of the page (help,
-messages); the device's pictures have them.
+The simulator's pictures, like the device's, show what lies over the page:
+help, messages, the panel and the `REMOTE` tag.

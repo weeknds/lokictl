@@ -16,6 +16,7 @@ class ThemeEngine;
 }
 
 namespace view::widgets {
+class RemoteMark;
 class RemotePanel;
 }
 
@@ -30,9 +31,11 @@ namespace app {
 // The screen's side of Remote view. It follows the module's switch
 // requests (platform::remote::request_switch(), from the Settings row),
 // starts and stops the platform::remote::Server, shows the panel with the
-// address and the code (view::widgets::RemotePanel) and keeps the module's
-// state subject up to date (off, waiting, viewed). Everything here runs on
-// the UI thread; the server does all network work on its own thread.
+// address and the code (view::widgets::RemotePanel), shows the REMOTE mark
+// on every page while a browser is paired (view::widgets::RemoteMark) and
+// keeps the module's state subject up to date (off, waiting, viewed).
+// Everything here runs on the UI thread; the server does all network work
+// on its own thread.
 //
 // Remote view is never saved: every start is off. It switches itself off
 // when the code is not used in 2 minutes, after 5 wrong codes, after 10
@@ -49,7 +52,8 @@ namespace app {
 // On the device the server reads the framebuffer itself, so the UI thread
 // does nothing for the pictures. In the desktop simulator the server asks
 // for a picture and this controller hands over an LVGL snapshot of the
-// active screen from its timer. Desktop builds only: LOKICTL_REMOTE=on
+// active screen with the top layer (help, messages, the panel and the mark)
+// blended over it, from its timer. Desktop builds only: LOKICTL_REMOTE=on
 // switches Remote view on at start and prints the code to standard error.
 //
 // Log lines (states and counts only, never the code, the session, an
@@ -92,6 +96,7 @@ private:
     void press_waiting_key();
 
     std::unique_ptr<view::widgets::RemotePanel> panel_;
+    std::unique_ptr<view::widgets::RemoteMark> mark_;
     // Declared before the servers: their threads may use it until they end.
     std::unique_ptr<platform::remote::KeyQueue> keys_;
     std::unique_ptr<platform::remote::Server> server_;   // the one that runs

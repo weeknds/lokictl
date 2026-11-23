@@ -15,7 +15,12 @@ constexpr std::string_view kSecurityPolicy =
 
 // The page. Keys go to POST /key as k=<name> (see key_from_name()), one at a
 // time so that typed text keeps its order; pictures come from
-// GET /screen.png?since=<frame>, one request at a time.
+// GET /screen.png?since=<frame>, one request at a time: about every 250 ms
+// for 2 s after a key, then every second, every 2 s once 30 s passed without
+// a key or a new picture, and none while the tab is hidden. When the
+// Cardputer stops answering (an error, or no answer within 5 s), the last
+// picture stays, dimmed, and the page tries again every 3 s; only a 401
+// brings back the code form.
 constexpr std::string_view kPage = R"page(<!doctype html>
 <html lang="en">
 <head>
@@ -39,6 +44,7 @@ button:hover{background:var(--hi)}
 button:active{border-color:var(--go);color:var(--go)}
 button:disabled{opacity:.5;cursor:default}
 #screen{display:block;width:100%;aspect-ratio:320/170;image-rendering:pixelated;background:#000;border:1px solid var(--line);border-radius:4px}
+#screen.stale{opacity:.4}
 .soft{position:relative;height:42px;margin-top:6px}
 .soft button{position:absolute;top:0;width:12%;height:100%;padding:0;transform:translateX(-50%)}
 .pad{display:grid;grid-template-columns:repeat(3,52px) 1fr 96px;grid-template-rows:repeat(2,44px);gap:6px;margin-top:14px}
@@ -84,9 +90,16 @@ const FORM = {"Content-Type": "application/x-www-form-urlencoded"};
 const NAMES = {Escape: "esc", Enter: "enter", Backspace: "backspace", ArrowUp: "up",
   ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right", F1: "help"};
 const ENDED = "Remote view ended. Switch it on again on the Cardputer and type the new code.";
+const LOST = "No answer from the Cardputer. Trying again...";
+// Milliseconds between pictures: soon after a key, normally, when nothing
+// happened for a while, and while the Cardputer does not answer.
+const QUICK = 250, NORMAL = 1000, RESTING = 2000, RETRY = 3000;
+// A Cardputer that is off or out of range never answers: give up after 5 s.
+const limit = () => (AbortSignal.timeout ? AbortSignal.timeout(5000) : undefined);
 let state = "probe"; // "probe", then "form" or "live"
 let frame = 0, timer = 0, warnTimer = 0, blobUrl = "", polling = false, quick = false;
-let keys = [], sending = false;
+let keys = [], sending = false, lost = false;
+let lastKey = -1e9, lastChange = 0;
 
 function say(text, bad) {
   clearTimeout(warnTimer);
@@ -97,13 +110,23 @@ function say(text, bad) {
 // A problem that passes: the message goes away after 3 s.
 function warn(text) {
   say(text, true);
-  warnTimer = setTimeout(() => say(""), 3000);
+  warnTimer = setTimeout(() => say(lost ? LOST : "", lost), 3000);
+}
+
+// The picture is out of date while the Cardputer does not answer.
+function setLost(value) {
+  if (lost === value) return;
+  lost = value;
+  img.classList.toggle("stale", lost);
+  say(lost ? LOST : "", lost);
 }
 
 function showForm(text, bad) {
   state = "form";
   clearTimeout(timer);
   keys = [];
+  lost = false;
+  img.classList.remove("stale");
   view.classList.add("hide");
   form.classList.remove("hide");
   say(text, bad);
@@ -112,28 +135,39 @@ function showForm(text, bad) {
 
 function showView() {
   state = "live";
+  lastChange = performance.now();
   form.classList.add("hide");
   view.classList.remove("hide");
   say("");
 }
 
+// No timer while the tab is hidden: becoming visible asks at once.
 function schedule(ms) {
   clearTimeout(timer);
-  if (state === "live") timer = setTimeout(poll, ms);
+  if (state === "live" && !document.hidden) timer = setTimeout(poll, ms);
+}
+
+function pause() {
+  const now = performance.now();
+  if (now - lastKey < 2000) return QUICK;
+  if (now - Math.max(lastKey, lastChange) >= 30000) return RESTING;
+  return NORMAL;
 }
 
 // A picture soon, for example after a key.
 function soon() {
+  lastKey = performance.now();
   if (polling) quick = true;
   else schedule(150);
 }
 
 async function poll() {
-  if (polling) return;
+  if (polling || document.hidden) return;
   polling = true;
-  let next = 500;
+  const started = performance.now();
+  let next = 0;
   try {
-    const r = await fetch("/screen.png?since=" + frame, {cache: "no-store"});
+    const r = await fetch("/screen.png?since=" + frame, {cache: "no-store", signal: limit()});
     if (r.status === 401) {
       polling = false;
       if (state === "probe") showForm("Type the code shown on the Cardputer.", false);
@@ -143,27 +177,36 @@ async function poll() {
     if (r.status === 200) {
       const blob = await r.blob();
       frame = Number(r.headers.get("X-Frame")) || 0;
+      lastChange = performance.now();
       const url = URL.createObjectURL(blob);
       img.src = url;
       if (blobUrl) URL.revokeObjectURL(blobUrl);
       blobUrl = url;
     } else if (r.status !== 204) {
-      next = 1000;
+      next = NORMAL;
     }
     if (state === "probe") showView();
+    setLost(false);
   } catch (err) {
     if (state === "probe") {
       polling = false;
       showForm("No answer from the Cardputer. Is Remote view on?", true);
       return;
     }
-    warn("No answer from the Cardputer. Is Remote view still on?");
-    next = 2000;
+    setLost(true);
+    next = RETRY;
   }
   polling = false;
-  schedule(quick ? 150 : next);
+  // The usual pauses count from the start of this request.
+  schedule(quick ? 150 : next || Math.max(50, pause() - (performance.now() - started)));
   quick = false;
 }
+
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) clearTimeout(timer);
+  else if (polling) quick = true;
+  else if (state !== "form") poll();
+});
 
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -176,7 +219,8 @@ form.addEventListener("submit", async (e) => {
   button.disabled = true;
   say("Pairing...");
   try {
-    const r = await fetch("/pair", {method: "POST", headers: FORM, body: "code=" + digits});
+    const r = await fetch("/pair", {method: "POST", headers: FORM, body: "code=" + digits,
+      signal: limit()});
     if (r.status === 200) {
       code.value = "";
       frame = 0;
@@ -213,7 +257,7 @@ async function pump() {
     const k = keys.shift();
     try {
       const r = await fetch("/key", {method: "POST", headers: FORM, body: "k=" + k,
-        referrerPolicy: "same-origin"});
+        referrerPolicy: "same-origin", signal: limit()});
       if (r.status === 401) {
         sending = false;
         showForm(ENDED, true);
@@ -227,7 +271,7 @@ async function pump() {
       }
     } catch (err) {
       keys = [];
-      warn("No answer from the Cardputer.");
+      setLost(true);
     }
     soon();
   }
