@@ -6,11 +6,16 @@
 # only parts of the app with any rights; each gets one Linux capability as a
 # file capability (neither is setuid), and only root and members of the
 # netdev group may run them (root:netdev, mode 0750):
-# - the firewall helper may change the firewall (only its own nftables
-#   table, "inet lokictl") or add an interface (only Share's lokiap0):
-#   CAP_NET_ADMIN;
-# - the capture helper may listen to the network's ARP, DHCP, mDNS and
-#   SSDP traffic, and only receive: CAP_NET_RAW.
+# - the firewall helper, CAP_NET_ADMIN, runs twelve fixed commands. It
+#   changes only its own nftables table, "inet lokictl": block and unblock
+#   (devices on the hotspot that runs, Router's or Share's), list, clear,
+#   kill-on and kill-off (the VPN gateway's kill switch), trap-on and
+#   trap-off (the trap's low ports). It adds or removes only two
+#   interfaces of its own: ap-add and ap-del (Share's lokiap0), survey and
+#   survey-off (lokimon0, a listen-only interface on a USB Wi-Fi stick);
+# - the capture helper, CAP_NET_RAW, runs five fixed commands (discover,
+#   watch, topology, names, survey), each with a fixed filter, and only
+#   receives.
 # chgrp clears a file capability, so setcap comes last.
 
 set -e
@@ -34,8 +39,8 @@ give_right() {
 }
 
 if [ "$1" = "configure" ]; then
-    give_right "@APP_HELPER_PATH@" cap_net_admin=ep "blocking devices and Share"
-    give_right "@APP_CAPTURE_PATH@" cap_net_raw=ep "Discover"
+    give_right "@APP_HELPER_PATH@" cap_net_admin=ep "blocking devices, Share, the kill switch, the trap and the survey"
+    give_right "@APP_CAPTURE_PATH@" cap_net_raw=ep "Discover, Watch, the Map's switches, Talk and the survey"
 fi
 
 exit 0

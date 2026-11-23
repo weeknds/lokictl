@@ -40,18 +40,29 @@ std::string remove_share_interface(std::chrono::milliseconds limit = kHelperTime
 // address (lowest bit of the first byte), which never sends.
 bool valid_device_address(const std::string& address);
 
-// The trap's redirect (F9.5), through the helper's trap-on and trap-off:
-// the low ports of model::trap_services() that nothing on the Cardputer
-// listens on are sent on to the high ports LokiCTL listens on (see
-// src/helper/lokictl_helper.c). trap_on() fills `ports` with the low ports
-// sent on and makes the trap wanted while any is; trap_off() makes it not
-// wanted and removes the redirect. While it is wanted, a removal of the
-// whole table (DeviceBlocker's clear) sets the redirect up again at once.
-// Both wait for the helper, at most `limit`, so they never run on the UI
-// thread. They return an empty text when it worked, else a short reason
-// ("helper not installed"). Runs of the helper never overlap.
+// The trap's redirect (F9.5), through the helper's trap-on, which keeps
+// running while the trap does: the low ports of model::trap_services() that
+// nothing on the Cardputer listens on are sent on to the high ports LokiCTL
+// listens on (see src/helper/lokictl_helper.c). trap_on() starts it and
+// fills `ports` with the low ports it sends on (when none, it has ended
+// already). The helper checks every few seconds that nothing else began to
+// listen on them; trap_changed() takes what it says: true with `ports`
+// set to the low ports still sent on (a port only ever goes), or true with
+// `ports` empty once the helper has ended (`problem` then holds a reason
+// when it failed); false when nothing changed. trap_off() ends it, and it
+// removes its chain (when it cannot, the helper's trap-off does). While it
+// runs, a removal of the whole table (DeviceBlocker's clear) makes it set
+// the chain up again at once. trap_on() and trap_off() wait for the
+// helper, at most `limit`, so they never run on the UI thread. They return
+// an empty text when it worked, else a short reason ("helper not
+// installed"). Its stdin is a pipe LokiCTL holds, so the helper also ends
+// when LokiCTL dies.
 std::string trap_on(std::vector<uint16_t>& ports, std::chrono::milliseconds limit = kHelperTimeLimit);
+bool trap_changed(std::vector<uint16_t>& ports, std::string& problem);
 std::string trap_off(std::chrono::milliseconds limit = kHelperTimeLimit);
+// True once a trap ran and has ended: its chain is gone, but the table it
+// made may still be there, empty (DeviceBlocker::leave() removes it).
+bool trap_left_table();
 
 // The Wi-Fi survey (F9.13), through the helper's `survey-off`: removes
 // the listening interface (model::kSurveyListenInterface) a survey added
@@ -94,7 +105,14 @@ std::string blocked_devices_text(const std::vector<std::string>& addresses);
 // ask names only through it (see src/helper/lokictl_helper.c). The switch
 // follows the user's intent (set_kill_wanted(), arm_kill_switch()), not
 // what is seen: it stays while the tunnel is down and while the hotspot
-// restarts, and comes off only when the intent goes.
+// restarts, and comes off only when the intent goes. The helper reads the
+// DNS server's user when it arms the switch; armed before the hotspot
+// started, it is armed once more when the hotspot is up.
+//
+// The helper's block and unblock name the hotspot ("router" for Router's
+// wlan0, "share" for Share's lokiap0) and work only while that interface
+// really runs a hotspot; the rules are made again when the hotspot
+// changes.
 //
 // It works in one of two ways:
 // - Real (the live source on the device, when it may change the network):
@@ -137,12 +155,13 @@ public:
     // changed and `may_run_helper` is true (it is false in the first
     // reading, which runs on the UI thread, and while a switch between
     // modes runs; the table is then made to match at a later reading).
-    // `hotspot_up`: LokiCTL's hotspot is active.
-    void apply(model::HomeData& data, bool hotspot_up, bool may_run_helper);
+    // `hotspot_interface`: the interface LokiCTL's active hotspot runs on
+    // (kHotspotInterface or kShareInterface), empty when none is active.
+    void apply(model::HomeData& data, const std::string& hotspot_interface, bool may_run_helper);
 
     // On the way out (real only): removes the table, kill switch included,
-    // unless it is surely gone. Waits for the helper, at most
-    // kHelperLeaveTimeLimit.
+    // unless it is surely gone (and no trap ran, which may leave it empty).
+    // Waits for the helper, at most kHelperLeaveTimeLimit.
     void leave();
 
     // The kill switch's intent. Real: the table is made to match at the
@@ -166,7 +185,7 @@ private:
 
     // Brings the table in line with the wanted list, the kill switch and
     // the hotspot (real).
-    void settle(bool hotspot_up);
+    void settle();
     // Reads the table (the helper's `list`) and takes what it holds as
     // applied; falls back to clear() when it cannot be read.
     void adopt();
@@ -176,8 +195,9 @@ private:
     // Runs kill-on or kill-off; true when it worked, otherwise counts a
     // failure.
     bool switch_kill(bool on);
-    // Runs `command` (block or unblock) for `addresses`; true when it
-    // worked, otherwise counts a failure with `what` ("Block", "Unblock").
+    // Runs `command` (block or unblock) for the hotspot and `addresses`;
+    // true when it worked, otherwise counts a failure with `what` ("Block",
+    // "Unblock").
     bool change(const char* command, const char* what, const std::vector<std::string>& addresses);
 
     const bool real_;
@@ -187,7 +207,9 @@ private:
     Table kill_{Table::Unknown}; // the kill chains, as far as known
     bool kill_wanted_{false};
     bool settled_{false};   // nothing to do until the list, the kill switch or the hotspot changes
-    bool hotspot_up_{false};
+    std::string hotspot_;   // "router", "share", or empty while no hotspot is active
+    std::string rules_for_; // the hotspot the two rules match, as far as known (empty: unknown)
+    bool kill_for_hotspot_{false}; // the kill switch was armed while this hotspot ran
     int32_t failures_{0};
     std::string message_;
 };

@@ -391,7 +391,7 @@ void LiveDataSource::read(model::HomeData& data) {
     const bool hotspot_up = service.available && service.hotspot.active && !hotspot_interface.empty();
     const bool switching = network_manager_ && network_manager_->busy();
     const bool may_run_helper = first_read_done_ && !switching;
-    blocker_.apply(data, hotspot_up, may_run_helper && service.available);
+    blocker_.apply(data, hotspot_up ? hotspot_interface : std::string(), may_run_helper && service.available);
     first_read_done_ = true;
     if (changes_network_) {
         data.vpn.kill_switch = blocker_.kill_wanted();

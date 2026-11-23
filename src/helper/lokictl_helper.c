@@ -15,22 +15,24 @@
  * capability (set by the package's postinst; it is not setuid). Only root
  * and members of the netdev group may run it (root:netdev, mode 0750).
  *
- * It does exactly one of twelve fixed commands and exits:
+ * It does exactly one of twelve fixed commands:
  *
- *   lokictl-helper block MAC [MAC...]    block these devices on the hotspot
- *   lokictl-helper unblock MAC [MAC...]  let them through again
+ *   lokictl-helper block HOTSPOT MAC [MAC...]    block these devices on the hotspot
+ *   lokictl-helper unblock HOTSPOT MAC [MAC...]  let them through again
  *   lokictl-helper list                  print the kill switch, the trap and the blocked devices
  *   lokictl-helper clear                 remove LokiCTL's firewall table
  *   lokictl-helper ap-add                add Share's interface (lokiap0)
  *   lokictl-helper ap-del                remove Share's interface
  *   lokictl-helper kill-on               arm the VPN kill switch
  *   lokictl-helper kill-off              disarm it
- *   lokictl-helper trap-on               send the trap's low ports on to LokiCTL
- *   lokictl-helper trap-off              stop doing that
+ *   lokictl-helper trap-on               send the trap's low ports on to LokiCTL, while it runs
+ *   lokictl-helper trap-off              remove what a trap-on left behind
  *   lokictl-helper survey STICK          listen with a USB Wi-Fi stick (see below)
  *   lokictl-helper survey-off            remove the survey's listening interface
  *
- * A MAC is six pairs of hex digits joined by ':' (for example
+ * HOTSPOT is the fixed word "router" (the hotspot on HELPER_INTERFACE,
+ * wlan0) or "share" (on HELPER_SHARE_INTERFACE, lokiap0); no other text
+ * is taken. A MAC is six pairs of hex digits joined by ':' (for example
  * 02:00:00:00:00:01), not a group address; at most HELPER_MAX_ADDRESSES per
  * call. Every address is parsed into six bytes and printed again, so no
  * text of the caller ever reaches the firewall.
@@ -38,11 +40,14 @@
  * Every change goes into one nftables table of its own, "inet lokictl",
  * through /usr/sbin/nft with a fixed script: a set of blocked hardware
  * addresses and two base chains (input and forward, policy accept) that
- * drop what such a device sends in through either hotspot interface
- * (Router's wlan0, Share's lokiap0). No other table is ever touched, and
- * the rule set is never flushed. Each command runs as one nft transaction,
- * so it is done whole or not at all, and running it twice gives the same
- * result.
+ * drop what such a device sends in through the hotspot's interface. No
+ * other table is ever touched, and the rule set is never flushed. Each
+ * command runs as one nft transaction, so it is done whole or not at all,
+ * and running it twice gives the same result. block and unblock make the
+ * two rules match only the interface HOTSPOT names, and only while that
+ * interface really runs a hotspot: "iw dev IF info" must say "type AP"
+ * (exit 9 otherwise), so the uplink (wlan0 in Client mode) can never be
+ * blocked.
  *
  * The kill switch (VPN gateway: hotspot devices may only go out through
  * LokiCTL's WireGuard tunnel, lokiwg0) has two base chains of its own in
@@ -53,10 +58,16 @@
  *   interface by name, so it holds while lokiwg0 is gone and after it is
  *   made again.
  * - kill_output (output hook) drops DNS (port 53, UDP and TCP) that the
- *   hotspot's DNS server (dnsmasq, which runs as HELPER_DNS_USER) sends by
- *   any interface but lokiwg0 or lo, so the names hotspot devices ask for
- *   never leave outside the tunnel either. Nothing else the Cardputer
- *   itself sends is touched.
+ *   hotspot's DNS server sends by any interface but lokiwg0 or lo, so the
+ *   names hotspot devices ask for never leave outside the tunnel either.
+ *   Nothing else the Cardputer itself sends is touched. The DNS server is
+ *   the dnsmasq that NetworkManager starts for a shared connection: kill-on
+ *   reads the user of each dnsmasq whose parent is NetworkManager running
+ *   as root (from /proc/PID/status) and matches that user. When none runs
+ *   yet (the kill switch is armed before the hotspot starts) it takes
+ *   dnsmasq's built-in default, HELPER_DNS_USER; LokiCTL arms it again once
+ *   the hotspot is up. When one runs as root, or two run as different
+ *   users, it changes nothing (exit 10).
  * "list" prints "kill-switch" on a line of its own while kill_forward
  * exists, "trap" while the trap chain exists, then the blocked devices.
  *
@@ -69,18 +80,27 @@
  * 21, 23, 80 and 445 to 30021, 30023, 30080 and 30445). Only connections
  * addressed to this machine count ("fib daddr type local"): what it passes
  * on for a hotspot's devices is never touched. It takes no arguments.
- * A low port is sent on only when
+ * A low port is sent on only while
  * - nothing on this machine listens on it (any address, IPv4 or IPv6, any
  *   user; read from /proc/net/tcp and /proc/net/tcp6), so a real service
  *   such as SSH on 22 is never taken over (22 and every other port are
  *   not in the map anyway), and
  * - a socket of the user who runs the helper listens on its high port, so
  *   the connections only ever reach LokiCTL.
- * It prints each low port it sends on, one per line; when none qualifies
- * it does what trap-off does. Running it again sets the chain up anew
- * from what listens then. trap-off removes the chain, and the whole table
- * when nothing else is in it. The other chains and the blocked set are
- * never touched by either, and "clear" removes the trap with the rest.
+ * trap-on keeps running while the trap does. It prints "ports" and the low
+ * ports it sends on, on one line, and checks both conditions again every
+ * TRAP_RECHECK_MS: a port that fails one is dropped for good (the chain is
+ * set up again without it, and a new "ports" line is printed). Any input
+ * on its standard input sets the chain up again at once (LokiCTL sends a
+ * line after it removed the whole table). It ends when no port is left,
+ * when its standard input closes or reaches its end (LokiCTL holds it open
+ * while the trap runs, so it also ends when LokiCTL dies), on SIGTERM,
+ * SIGINT or SIGHUP, or when its parent dies (PR_SET_PDEATHSIG), and then
+ * removes the chain. trap-off removes a chain such a run left behind (it
+ * was killed). Neither ever removes the table or anything else in it: the
+ * chain goes in one transaction of its own ("add table", "add chain",
+ * "flush chain", "delete chain"), so a kill switch armed meanwhile always
+ * stays. An empty table may stay behind, which LokiCTL's "clear" removes.
  *
  * Share's interface goes through /usr/sbin/iw with fixed arguments only:
  * "iw dev wlan0 interface add lokiap0 type __ap" and "iw dev lokiap0 del".
@@ -94,26 +114,29 @@
  * SURVEY_INTERFACE, an interface with a "wireless" folder in
  * /sys/class/net whose device is a USB interface ("DEVTYPE=usb_interface"
  * in its uevent). Only then is its name used, in a path under
- * /sys/class/net and as iw's interface. The stick's own interface is never
- * changed: the survey listens through a second interface of its own,
- * SURVEY_INTERFACE (lokimon0), in monitor mode on the same stick. These
- * commands touch no firewall.
+ * /sys/class/net. The stick's own interface is never changed: the survey
+ * listens through a second interface of its own, SURVEY_INTERFACE
+ * (lokimon0), in monitor mode on the same stick. These commands touch no
+ * firewall.
  * - survey: only a stick that is idle (down, in the normal managed mode,
- *   so nothing else uses it) is taken. A SURVEY_INTERFACE a killed survey
- *   left behind is removed first. Then "iw dev STICK interface add
- *   lokimon0 type monitor" adds the listening interface, it is brought up,
- *   "ready" is printed on its own line, and it hops over the 2.4 GHz
- *   channels 1 to 14, SURVEY_DWELL_MS on each ("iw dev lokimon0 set
- *   channel N"). A channel the kernel refuses (one the country's rules do
- *   not allow) is dropped for good, so it hops only the allowed ones.
- *   Receiving is all monitor mode does here: nothing is ever sent. It ends
- *   when its standard input closes or reaches its end (LokiCTL holds it
- *   open while it wants the survey, so it also ends when LokiCTL dies,
- *   however), on SIGTERM, SIGINT or SIGHUP, when its parent dies
- *   (PR_SET_PDEATHSIG), after SURVEY_MAX_SECONDS, or when the interface
- *   stops taking channels (the stick was pulled out). It then removes
- *   SURVEY_INTERFACE ("iw dev lokimon0 del"); the stick stays down and in
- *   managed mode throughout.
+ *   so nothing else uses it) is taken. Its interface index and its radio
+ *   (the "phy" with its index, from /sys/class/net/STICK/phy80211) are
+ *   noted, and the stick's name must still have the same index after
+ *   every check. A SURVEY_INTERFACE a killed survey left behind is removed
+ *   first. Then "iw phy PHY interface add lokimon0 type monitor" adds the
+ *   listening interface on that radio, and it must turn out to be on the
+ *   noted radio (else it is removed again), it is brought up, "ready" is
+ *   printed on its own line, and it hops over the 2.4 GHz channels 1 to
+ *   14, SURVEY_DWELL_MS on each ("iw dev lokimon0 set channel N"). A
+ *   channel the kernel refuses (one the country's rules do not allow) is
+ *   dropped for good, so it hops only the allowed ones. Receiving is all
+ *   monitor mode does here: nothing is ever sent. It ends when its
+ *   standard input closes or reaches its end (LokiCTL holds it open while
+ *   it wants the survey, so it also ends when LokiCTL dies, however), on
+ *   SIGTERM, SIGINT or SIGHUP, when its parent dies (PR_SET_PDEATHSIG),
+ *   after SURVEY_MAX_SECONDS, or when the interface stops taking channels
+ *   (the stick was pulled out). It then removes SURVEY_INTERFACE ("iw dev
+ *   lokimon0 del"); the stick stays down and in managed mode throughout.
  * - survey-off: takes no argument and removes SURVEY_INTERFACE when it is
  *   there, as survey does at its end. LokiCTL uses it only after a survey
  *   that was killed.
@@ -121,15 +144,25 @@
  * USB Wi-Fi stick) is ever removed; one that is gone already (the stick
  * was pulled out) counts as removed.
  *
- * Exit status: 0 done; 2 not a command, or a bad address or stick; 3 the
- * capability is missing; 4 nft refused the change; 5 nft could not be run;
- * 6 iw refused the change (or the stick could not be brought up or down);
- * 7 iw could not be run; 8 the stick is in use (up, or not in managed
- * mode), or an interface of another kind is called lokimon0.
+ * Every nft and iw it runs gets an empty environment, no blocked signals,
+ * and SIGKILL when this program dies (PR_SET_PDEATHSIG). One that has not
+ * ended within HELPER_CHILD_LIMIT_MS is killed and counts as refused; so
+ * is one that a stop of survey or trap-on interrupts (never the run that
+ * removes what they made).
+ *
+ * Exit status: 0 done; 2 not a command, or a bad word, address or stick;
+ * 3 the capability is missing; 4 nft refused the change; 5 nft could not
+ * be run; 6 iw refused the change (or the stick could not be brought up or
+ * down, or the listening interface was not on the stick's radio); 7 iw
+ * could not be run; 8 the stick is in use (up, or not in managed mode), or
+ * an interface of another kind is called lokimon0; 9 the hotspot named is
+ * not running (its interface is not in access-point mode); 10 the
+ * hotspot's DNS server runs as root, or as more than one user.
  */
 
 #define _GNU_SOURCE
 
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <linux/capability.h>
@@ -160,6 +193,8 @@ enum {
     EXIT_IW_FAILED = 6,
     EXIT_IW_NOT_RUN = 7,
     EXIT_STICK_BUSY = 8,
+    EXIT_NOT_HOTSPOT = 9,
+    EXIT_DNS_USER = 10,
 };
 
 /* The most addresses one call takes. */
@@ -171,15 +206,20 @@ enum {
 #define HELPER_INTERFACE "wlan0"
 /* Share's interface, which runs its hotspot. */
 #define HELPER_SHARE_INTERFACE "lokiap0"
-/* The rules match only what comes in through the two hotspot interfaces. */
+/* The kill switch matches what comes in through either hotspot interface. */
 #define HELPER_HOTSPOTS "{ \"" HELPER_INTERFACE "\", \"" HELPER_SHARE_INTERFACE "\" }"
 /* LokiCTL's WireGuard tunnel: the only way out while the kill switch is
  * armed. */
 #define HELPER_TUNNEL "lokiwg0"
-/* The user the hotspot's DNS server runs as: NetworkManager starts dnsmasq
- * for a shared connection without --user, so it drops to dnsmasq's built-in
- * default, which Debian's dnsmasq-base leaves at "nobody". */
+/* The user the hotspot's DNS server runs as when none runs yet:
+ * NetworkManager starts dnsmasq for a shared connection without --user, so
+ * it drops to dnsmasq's built-in default, which Debian's dnsmasq-base
+ * leaves at "nobody". kill-on reads the real one while dnsmasq runs. */
 #define HELPER_DNS_USER "nobody"
+/* The hotspot's DNS server and the program that starts it, as their
+ * "Name:" line in /proc/PID/status shows them. */
+#define HELPER_DNS_NAME "dnsmasq"
+#define HELPER_DNS_PARENT "NetworkManager"
 /* The interfaces the trap listens through: the cable, the built-in Wi-Fi
  * (also Router's hotspot) and Share's hotspot. */
 #define TRAP_INTERFACES "{ \"eth0\", \"" HELPER_INTERFACE "\", \"" HELPER_SHARE_INTERFACE "\" }"
@@ -196,6 +236,10 @@ enum {
 #define SURVEY_MAX_FAILURES 3
 /* The 2.4 GHz channels the survey tries. */
 #define SURVEY_CHANNELS 14
+/* How often a running trap-on checks again who listens. */
+#define TRAP_RECHECK_MS 3000
+/* The longest an nft or iw run may take before it is killed. */
+#define HELPER_CHILD_LIMIT_MS 5000
 /* "aa:bb:cc:dd:ee:ff" */
 #define MAC_TEXT_LENGTH 17
 /* The longest script: the fixed lines plus HELPER_MAX_ADDRESSES addresses. */
@@ -216,17 +260,19 @@ static const struct {
 #define PROC_LINE_MAX 512
 
 /* The table, set and chains, made when missing. "add" leaves what is
- * there, and the two chains are emptied and get their one rule again, so
- * the table always ends up in exactly this shape. */
+ * there, and the two chains are emptied and get their one rule again (for
+ * the hotspot's interface, filled in by ensure_table()), so the table
+ * always ends up in exactly this shape. */
 static const char kEnsureTable[] =
     "add table inet lokictl\n"
     "add set inet lokictl blocked { type ether_addr; size " HELPER_SET_SIZE "; }\n"
     "add chain inet lokictl input { type filter hook input priority filter - 10; policy accept; }\n"
     "add chain inet lokictl forward { type filter hook forward priority filter - 10; policy accept; }\n"
     "flush chain inet lokictl input\n"
-    "flush chain inet lokictl forward\n"
-    "add rule inet lokictl input iifname " HELPER_HOTSPOTS " ether saddr @blocked drop\n"
-    "add rule inet lokictl forward iifname " HELPER_HOTSPOTS " ether saddr @blocked drop\n";
+    "flush chain inet lokictl forward\n";
+#define ENSURE_RULES                                                                                  \
+    "add rule inet lokictl input iifname \"%s\" ether saddr @blocked drop\n"                               \
+    "add rule inet lokictl forward iifname \"%s\" ether saddr @blocked drop\n"
 
 /* Adding the table first makes the delete work when there is none. */
 static const char kClearTable[] =
@@ -243,12 +289,14 @@ static const char kKillChains[] =
     "flush chain inet lokictl kill_forward\n"
     "flush chain inet lokictl kill_output\n";
 
-static const char kKillOn[] =
-    "add rule inet lokictl kill_forward iifname " HELPER_HOTSPOTS " oifname != \"" HELPER_TUNNEL "\" drop\n"
-    "add rule inet lokictl kill_output meta skuid " HELPER_DNS_USER " oifname != { \"" HELPER_TUNNEL
-    "\", \"lo\" } udp dport 53 drop\n"
-    "add rule inet lokictl kill_output meta skuid " HELPER_DNS_USER " oifname != { \"" HELPER_TUNNEL
-    "\", \"lo\" } tcp dport 53 drop\n";
+/* The kill switch's rules; %s is the DNS server's user (a name or a
+ * number), filled in by kill_on(). */
+#define KILL_ON_RULES                                                                                 \
+    "add rule inet lokictl kill_forward iifname " HELPER_HOTSPOTS " oifname != \"" HELPER_TUNNEL "\" drop\n" \
+    "add rule inet lokictl kill_output meta skuid %s oifname != { \"" HELPER_TUNNEL                      \
+    "\", \"lo\" } udp dport 53 drop\n"                                                                  \
+    "add rule inet lokictl kill_output meta skuid %s oifname != { \"" HELPER_TUNNEL                      \
+    "\", \"lo\" } tcp dport 53 drop\n"
 
 static const char kKillOff[] =
     "delete chain inet lokictl kill_forward\n"
@@ -256,16 +304,15 @@ static const char kKillOff[] =
 
 /* The trap's chain, made when missing and emptied; trap-on adds one rule
  * per low port after it. */
-static const char kTrapChain[] =
-    "add table inet lokictl\n"
-    "add chain inet lokictl trap { type nat hook prerouting priority dstnat; policy accept; }\n"
-    "flush chain inet lokictl trap\n";
-
-static const char kTrapDelete[] =
+#define TRAP_CHAIN                                                                                    \
+    "add table inet lokictl\n"                                                                        \
+    "add chain inet lokictl trap { type nat hook prerouting priority dstnat; policy accept; }\n"      \
     "flush chain inet lokictl trap\n"
-    "delete chain inet lokictl trap\n";
+static const char kTrapChain[] = TRAP_CHAIN;
 
-static const char kTableDelete[] = "delete table inet lokictl\n";
+/* Removes the trap's chain, also when there is none, and nothing else: the
+ * table and every other chain stay. */
+static const char kTrapRemove[] = TRAP_CHAIN "delete chain inet lokictl trap\n";
 
 static void fail(const char* message) {
     fprintf(stderr, "%s: %s\n", kProgram, message);
@@ -273,8 +320,9 @@ static void fail(const char* message) {
 
 static void usage(void) {
     fprintf(stderr,
-            "usage: %s block MAC [MAC...] | unblock MAC [MAC...] | list | clear | ap-add | ap-del |\n"
-            "       kill-on | kill-off | trap-on | trap-off | survey STICK | survey-off\n"
+            "usage: %s block HOTSPOT MAC [MAC...] | unblock HOTSPOT MAC [MAC...] | list | clear |\n"
+            "       ap-add | ap-del | kill-on | kill-off | trap-on | trap-off | survey STICK | survey-off\n"
+            "  HOTSPOT: router (wlan0) or share (lokiap0)\n"
             "  MAC: six pairs of hex digits joined by ':', at most %d per call\n"
             "  STICK: a USB Wi-Fi stick's interface, for example wlan1 (never wlan0)\n",
             kProgram,
@@ -365,59 +413,115 @@ static int pass_capability_on(void) {
     return 0;
 }
 
+/* Set by SIGTERM, SIGINT and SIGHUP while survey or trap-on runs. */
+static volatile sig_atomic_t stop_requested = 0;
+
+static void stop_signal(int number) {
+    (void)number;
+    stop_requested = 1;
+}
+
+static long elapsed_ms(const struct timespec* start) {
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    return (now.tv_sec - start->tv_sec) * 1000L + (now.tv_nsec - start->tv_nsec) / 1000000L;
+}
+
+/* Reads what waits in `fd` (non-blocking) into `output` (when not NULL,
+ * at most output_size - 1 bytes in all, *used so far); the rest is dropped.
+ * Returns 0 once the pipe reached its end (or failed), 1 while it is open. */
+static int read_waiting(int fd, char* output, size_t output_size, size_t* used) {
+    for (;;) {
+        char chunk[1024];
+        const ssize_t got = read(fd, chunk, sizeof(chunk));
+        if (got < 0 && errno == EINTR) {
+            continue;
+        }
+        if (got < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+            return 1;
+        }
+        if (got <= 0) {
+            return 0;
+        }
+        if (output) {
+            const size_t room = output_size - 1 - *used;
+            const size_t take = (size_t)got < room ? (size_t)got : room;
+            memcpy(output + *used, chunk, take);
+            *used += take;
+        }
+    }
+}
+
 /* Runs the program at `path` (nft or iw) with `arguments` (NULL-terminated,
  * fixed by this program), an empty environment, `input` on its standard
  * input and, when `output` is not NULL, its standard output read into
  * `output` (at most output_size - 1 bytes, ended by '\0'); otherwise its
- * standard output is dropped. Its messages go to this program's standard
- * error. Returns EXIT_DONE, EXIT_NFT_FAILED (it failed) or
+ * standard output is read and dropped. Its messages go to this program's
+ * standard error. It starts with no blocked signals, SIGPIPE at its
+ * default, and SIGKILL as its parent-death signal, so it never outlives
+ * this program. It is killed when it has not ended within
+ * HELPER_CHILD_LIMIT_MS, and, with `may_stop`, as soon as a stop signal
+ * came. Returns EXIT_DONE, EXIT_NFT_FAILED (it failed, or was killed) or
  * EXIT_NFT_NOT_RUN (it could not be run). */
 static int run_program(const char* path, char* const arguments[], const char* input, char* output,
-                       size_t output_size) {
+                       size_t output_size, int may_stop) {
     char* const environment[] = {"LC_ALL=C", NULL};
     int in_pipe[2] = {-1, -1};
     int out_pipe[2] = {-1, -1};
+    int report[2] = {-1, -1};
     if (pipe2(in_pipe, O_CLOEXEC) != 0) {
         return EXIT_NFT_NOT_RUN;
     }
-    if (output && pipe2(out_pipe, O_CLOEXEC) != 0) {
+    if (pipe2(out_pipe, O_CLOEXEC) != 0) {
         close(in_pipe[0]);
         close(in_pipe[1]);
         return EXIT_NFT_NOT_RUN;
     }
-
-    posix_spawn_file_actions_t actions;
-    posix_spawnattr_t attributes;
-    posix_spawn_file_actions_init(&actions);
-    posix_spawnattr_init(&attributes);
-    posix_spawn_file_actions_adddup2(&actions, in_pipe[0], 0);
-    if (output) {
-        posix_spawn_file_actions_adddup2(&actions, out_pipe[1], 1);
-    } else {
-        posix_spawn_file_actions_addopen(&actions, 1, "/dev/null", O_WRONLY, 0);
-    }
-    /* It starts with no blocked signals and SIGPIPE at its default. */
-    sigset_t no_signals;
-    sigset_t default_signals;
-    sigemptyset(&no_signals);
-    sigemptyset(&default_signals);
-    sigaddset(&default_signals, SIGPIPE);
-    posix_spawnattr_setsigmask(&attributes, &no_signals);
-    posix_spawnattr_setsigdefault(&attributes, &default_signals);
-    posix_spawnattr_setflags(&attributes, POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_SETSIGDEF);
-
-    pid_t child = -1;
-    const int spawned = posix_spawn(&child, path, &actions, &attributes, arguments, environment);
-    posix_spawn_file_actions_destroy(&actions);
-    posix_spawnattr_destroy(&attributes);
-    close(in_pipe[0]);
-    if (output) {
-        close(out_pipe[1]);
-    }
-    if (spawned != 0) {
+    /* Carries execve()'s error back; closes on a successful exec. */
+    if (pipe2(report, O_CLOEXEC) != 0) {
+        close(in_pipe[0]);
         close(in_pipe[1]);
-        if (output) {
-            close(out_pipe[0]);
+        close(out_pipe[0]);
+        close(out_pipe[1]);
+        return EXIT_NFT_NOT_RUN;
+    }
+    const pid_t self = getpid();
+    const pid_t child = fork();
+    if (child == 0) {
+        /* Only async-signal-safe calls from here to execve(). */
+        if (prctl(PR_SET_PDEATHSIG, SIGKILL, 0, 0, 0) != 0 || getppid() != self ||
+            dup2(in_pipe[0], 0) != 0 || dup2(out_pipe[1], 1) != 1) {
+            _exit(127);
+        }
+        signal(SIGPIPE, SIG_DFL);
+        sigset_t no_signals;
+        sigemptyset(&no_signals);
+        sigprocmask(SIG_SETMASK, &no_signals, NULL);
+        execve(path, arguments, environment);
+        const int error = errno;
+        ssize_t ignored = write(report[1], &error, sizeof(error));
+        (void)ignored;
+        _exit(127);
+    }
+    close(in_pipe[0]);
+    close(out_pipe[1]);
+    close(report[1]);
+    if (child < 0) {
+        close(in_pipe[1]);
+        close(out_pipe[0]);
+        close(report[0]);
+        return EXIT_NFT_NOT_RUN;
+    }
+    int exec_error = 0;
+    ssize_t reported = -1;
+    do {
+        reported = read(report[0], &exec_error, sizeof(exec_error));
+    } while (reported < 0 && errno == EINTR);
+    close(report[0]);
+    if (reported > 0) {
+        close(in_pipe[1]);
+        close(out_pipe[0]);
+        while (waitpid(child, NULL, 0) < 0 && errno == EINTR) {
         }
         return EXIT_NFT_NOT_RUN;
     }
@@ -439,31 +543,53 @@ static int run_program(const char* path, char* const arguments[], const char* in
     }
     close(in_pipe[1]);
 
-    if (output) {
-        size_t used = 0;
-        for (;;) {
-            char chunk[1024];
-            const ssize_t got = read(out_pipe[0], chunk, sizeof(chunk));
-            if (got < 0 && errno == EINTR) {
-                continue;
-            }
-            if (got <= 0) {
-                break;
-            }
-            const size_t room = output_size - 1 - used;
-            const size_t take = (size_t)got < room ? (size_t)got : room;
-            memcpy(output + used, chunk, take);
-            used += take;
-        }
-        output[used] = '\0';
-        close(out_pipe[0]);
-    }
-
+    /* Its output is read as it comes (its end tells that it is ending),
+     * and the wait never passes the time limit. */
+    fcntl(out_pipe[0], F_SETFL, fcntl(out_pipe[0], F_GETFL) | O_NONBLOCK);
+    int out_open = 1;
+    size_t used = 0;
+    struct timespec start;
+    clock_gettime(CLOCK_MONOTONIC, &start);
     int status = 0;
-    while (waitpid(child, &status, 0) < 0) {
-        if (errno != EINTR) {
-            return EXIT_NFT_NOT_RUN;
+    int result = EXIT_DONE;
+    for (;;) {
+        if (out_open) {
+            out_open = read_waiting(out_pipe[0], output, output_size, &used);
         }
+        const pid_t done = waitpid(child, &status, WNOHANG);
+        if (done == child) {
+            /* What it wrote just before it ended. */
+            if (out_open) {
+                read_waiting(out_pipe[0], output, output_size, &used);
+            }
+            break;
+        }
+        if (done < 0 && errno != EINTR) {
+            result = EXIT_NFT_NOT_RUN;
+            break;
+        }
+        const long spent = elapsed_ms(&start);
+        if (spent >= HELPER_CHILD_LIMIT_MS || (may_stop && stop_requested)) {
+            if (spent >= HELPER_CHILD_LIMIT_MS) {
+                fprintf(stderr, "%s: %s did not end in time and was stopped\n", kProgram, path);
+            }
+            kill(child, SIGKILL);
+            while (waitpid(child, &status, 0) < 0 && errno == EINTR) {
+            }
+            result = EXIT_NFT_FAILED;
+            break;
+        }
+        /* Wakes when output comes or its end; otherwise looks again soon. */
+        const long room = HELPER_CHILD_LIMIT_MS - spent;
+        struct pollfd entry = {out_open ? out_pipe[0] : -1, POLLIN, 0};
+        poll(&entry, 1, out_open ? (int)(room < 1000 ? room : 1000) : (int)(room < 5 ? room : 5));
+    }
+    close(out_pipe[0]);
+    if (output) {
+        output[used] = '\0';
+    }
+    if (result != EXIT_DONE) {
+        return result;
     }
     return (WIFEXITED(status) && WEXITSTATUS(status) == 0) ? EXIT_DONE : EXIT_NFT_FAILED;
 }
@@ -548,7 +674,7 @@ static int has_line(const char* text, const char* wanted) {
 static int list_blocked(void) {
     static char output[OUTPUT_MAX];
     char* const tables[] = {"nft", "list", "tables", "inet", NULL};
-    int result = run_program(HELPER_NFT, tables, "", output, sizeof(output));
+    int result = run_program(HELPER_NFT, tables, "", output, sizeof(output), 0);
     if (result != EXIT_DONE) {
         return result;
     }
@@ -557,7 +683,7 @@ static int list_blocked(void) {
         return EXIT_DONE;
     }
     char* const table[] = {"nft", "list", "table", "inet", "lokictl", NULL};
-    result = run_program(HELPER_NFT, table, "", output, sizeof(output));
+    result = run_program(HELPER_NFT, table, "", output, sizeof(output), 0);
     if (result == EXIT_DONE) {
         if (has_line(output, "chain kill_forward {")) {
             printf("kill-switch\n");
@@ -571,36 +697,17 @@ static int list_blocked(void) {
     return result;
 }
 
-/* Runs nft with `script` on its standard input and says what went wrong. */
-static int run_script(const char* script) {
+/* Runs nft with `script` on its standard input and says what went wrong;
+ * with `may_stop`, a stop signal ends the run (see run_program()). */
+static int run_script(const char* script, int may_stop) {
     char* const from_input[] = {"nft", "-f", "-", NULL};
-    const int result = run_program(HELPER_NFT, from_input, script, NULL, 0);
+    const int result = run_program(HELPER_NFT, from_input, script, NULL, 0, may_stop);
     if (result == EXIT_NFT_NOT_RUN) {
         fail("could not run " HELPER_NFT);
     } else if (result == EXIT_NFT_FAILED) {
         fail("nft refused the change");
     }
     return result;
-}
-
-/* How many lines of `text` start with "chain " or "set " once the blanks
- * in front are skipped: the chains and sets of a listed table. */
-static int count_parts(const char* text) {
-    int count = 0;
-    for (const char* line = text; *line != '\0';) {
-        const char* end = strchr(line, '\n');
-        const size_t length = end ? (size_t)(end - line) : strlen(line);
-        size_t skip = 0;
-        while (skip < length && (line[skip] == ' ' || line[skip] == '\t')) {
-            ++skip;
-        }
-        if ((length - skip > 6 && strncmp(line + skip, "chain ", 6) == 0) ||
-            (length - skip > 4 && strncmp(line + skip, "set ", 4) == 0)) {
-            ++count;
-        }
-        line += length + (end ? 1 : 0);
-    }
-    return count;
 }
 
 /* Reads the listening TCP sockets in `path` (/proc/net/tcp or
@@ -643,52 +750,31 @@ static int read_listeners(const char* path, uid_t uid, int low_busy[], int high_
     return 0;
 }
 
-/* trap-off: removes the trap's chain, and the whole table when nothing
- * else is in it. */
-static int trap_off(void) {
-    static char output[OUTPUT_MAX];
-    char* const tables[] = {"nft", "list", "tables", "inet", NULL};
-    int result = run_program(HELPER_NFT, tables, "", output, sizeof(output));
-    if (result == EXIT_DONE && !has_line(output, "table inet lokictl")) {
-        return EXIT_DONE;
-    }
-    if (result == EXIT_DONE) {
-        char* const table[] = {"nft", "list", "table", "inet", "lokictl", NULL};
-        result = run_program(HELPER_NFT, table, "", output, sizeof(output));
-    }
-    if (result != EXIT_DONE) {
-        fail(result == EXIT_NFT_NOT_RUN ? "could not run " HELPER_NFT : "nft could not list the table");
-        return result;
-    }
-    const int trap = has_line(output, "chain trap {");
-    if (count_parts(output) - trap == 0) {
-        return run_script(kTableDelete);
-    }
-    return trap ? run_script(kTrapDelete) : EXIT_DONE;
-}
-
-/* trap-on: sends each low port of kTrapPorts on to its high port, where
- * nothing listens on the low port and the caller listens on the high one;
- * prints the ports sent on. */
-static int trap_on(void) {
+/* Which pairs of kTrapPorts may be sent on now: nothing listens on the
+ * low port and a socket of `uid` listens on the high one. Anything that
+ * cannot be read counts as busy: then none may. Without IPv6 there is no
+ * tcp6 file. */
+static void trap_allowed(uid_t uid, int allowed[]) {
     int low_busy[TRAP_PORT_COUNT] = {0};
     int high_ours[TRAP_PORT_COUNT] = {0};
-    const uid_t uid = getuid();
-    /* Anything that cannot be read counts as busy: nothing is sent on.
-     * Without IPv6 there is no tcp6 file. */
     int readable = read_listeners("/proc/net/tcp", uid, low_busy, high_ours) == 0;
     if (readable && read_listeners("/proc/net/tcp6", uid, low_busy, high_ours) != 0 && errno != ENOENT) {
         readable = 0;
     }
+    for (size_t index = 0; index < TRAP_PORT_COUNT; ++index) {
+        allowed[index] = readable && !low_busy[index] && high_ours[index];
+    }
+}
 
+/* Sets the trap's chain up (in one transaction) with a rule for each pair
+ * of kTrapPorts marked in `on`. */
+static int trap_apply(const int on[]) {
     char script[SCRIPT_MAX];
     size_t used = 0;
     script[0] = '\0';
     int built = append(script, &used, kTrapChain);
-    int sent_on[TRAP_PORT_COUNT] = {0};
-    int count = 0;
-    for (size_t index = 0; readable && built == 0 && index < TRAP_PORT_COUNT; ++index) {
-        if (low_busy[index] || !high_ours[index]) {
+    for (size_t index = 0; built == 0 && index < TRAP_PORT_COUNT; ++index) {
+        if (!on[index]) {
             continue;
         }
         char rule[256];
@@ -699,25 +785,276 @@ static int trap_on(void) {
                  kTrapPorts[index].low,
                  kTrapPorts[index].high);
         built = append(script, &used, rule);
-        sent_on[index] = 1;
-        ++count;
     }
     if (built != 0) {
         fail("internal error: the script is too long");
         return EXIT_NFT_NOT_RUN;
     }
-    if (count == 0) {
-        return trap_off();
+    return run_script(script, 1);
+}
+
+/* Prints "ports" and the low ports marked in `on` on one line. */
+static void trap_print(const int on[]) {
+    printf("ports");
+    for (size_t index = 0; index < TRAP_PORT_COUNT; ++index) {
+        if (on[index]) {
+            printf(" %u", kTrapPorts[index].low);
+        }
     }
-    const int result = run_script(script);
-    if (result == EXIT_DONE) {
-        for (size_t index = 0; index < TRAP_PORT_COUNT; ++index) {
-            if (sent_on[index]) {
-                printf("%u\n", kTrapPorts[index].low);
+    printf("\n");
+    fflush(stdout);
+}
+
+/* Makes a long-running command end with its parent: the parent-death
+ * signal, and the check after it, which catches a parent that died before
+ * it was set; then SIGTERM, SIGINT and SIGHUP only ask it to stop. Returns
+ * 0, or -1 when the parent is gone already. */
+static int hold_with_parent(pid_t parent) {
+    prctl(PR_SET_PDEATHSIG, SIGTERM, 0, 0, 0);
+    if (getppid() != parent) {
+        return -1;
+    }
+    struct sigaction action;
+    memset(&action, 0, sizeof(action));
+    action.sa_handler = stop_signal;
+    sigemptyset(&action.sa_mask);
+    sigaction(SIGTERM, &action, NULL);
+    sigaction(SIGINT, &action, NULL);
+    sigaction(SIGHUP, &action, NULL);
+    return 0;
+}
+
+/* Waits `ms` milliseconds on standard input. Returns 1 when the run should
+ * end: input closed or at its end, a stop signal, or an error. With
+ * `poked`, input that arrives ends the wait early and sets *poked;
+ * without, it is read and dropped. */
+static int wait_input(int ms, int* poked) {
+    struct timespec start;
+    clock_gettime(CLOCK_MONOTONIC, &start);
+    for (;;) {
+        if (stop_requested) {
+            return 1;
+        }
+        const long done = elapsed_ms(&start);
+        if (done >= ms) {
+            return 0;
+        }
+        struct pollfd entry = {0, POLLIN, 0};
+        const int ready = poll(&entry, 1, (int)(ms - done));
+        if (ready < 0 && errno == EINTR) {
+            continue;
+        }
+        if (ready < 0 || (entry.revents & POLLNVAL)) {
+            return 1;
+        }
+        if (entry.revents & (POLLIN | POLLHUP | POLLERR)) {
+            char ignored[64];
+            const ssize_t got = read(0, ignored, sizeof(ignored));
+            if (got < 0 && (errno == EINTR || errno == EAGAIN)) {
+                continue;
+            }
+            if (got <= 0) {
+                return 1;
+            }
+            if (poked) {
+                *poked = 1;
+                return 0;
             }
         }
     }
-    return result;
+}
+
+/* trap-off: removes the trap's chain, and nothing else. Without the table
+ * there is nothing to remove (and no empty table is made). */
+static int trap_off(void) {
+    static char output[OUTPUT_MAX];
+    char* const tables[] = {"nft", "list", "tables", "inet", NULL};
+    if (run_program(HELPER_NFT, tables, "", output, sizeof(output), 0) == EXIT_DONE &&
+        !has_line(output, "table inet lokictl")) {
+        return EXIT_DONE;
+    }
+    return run_script(kTrapRemove, 0);
+}
+
+/* trap-on: sends the low ports of kTrapPorts on while the trap runs (see
+ * the top of this file), then removes its chain. */
+static int trap_on(pid_t parent) {
+    if (hold_with_parent(parent) != 0) {
+        return EXIT_DONE;
+    }
+    const uid_t uid = getuid();
+    int on[TRAP_PORT_COUNT];
+    trap_allowed(uid, on);
+    int count = 0;
+    for (size_t index = 0; index < TRAP_PORT_COUNT; ++index) {
+        count += on[index];
+    }
+    int result = count > 0 ? trap_apply(on) : EXIT_DONE;
+    if (count > 0 && result == EXIT_DONE) {
+        trap_print(on);
+        for (;;) {
+            int poked = 0;
+            if (wait_input(TRAP_RECHECK_MS, &poked)) {
+                break;
+            }
+            /* A port only ever goes: one that fails a condition is not
+             * sent on again in this run. */
+            int now[TRAP_PORT_COUNT];
+            trap_allowed(uid, now);
+            int changed = 0;
+            count = 0;
+            for (size_t index = 0; index < TRAP_PORT_COUNT; ++index) {
+                now[index] = now[index] && on[index];
+                changed = changed || now[index] != on[index];
+                count += now[index];
+            }
+            if (count == 0) {
+                memcpy(on, now, sizeof(on));
+                break;
+            }
+            if (changed || poked) {
+                result = trap_apply(now);
+                if (result != EXIT_DONE) {
+                    break;
+                }
+                if (changed) {
+                    memcpy(on, now, sizeof(on));
+                    trap_print(on);
+                }
+            }
+        }
+    }
+    /* A run a stop cut short is no failure. */
+    if (stop_requested) {
+        result = EXIT_DONE;
+    }
+    if (result != EXIT_DONE || count == 0) {
+        int none[TRAP_PORT_COUNT] = {0};
+        trap_print(none);
+    }
+    const int removed = trap_off();
+    return result != EXIT_DONE ? result : removed;
+}
+
+/* block and unblock: whether `name` (HELPER_INTERFACE or
+ * HELPER_SHARE_INTERFACE) runs a hotspot right now: "iw dev NAME info"
+ * says "type AP". Returns EXIT_DONE, EXIT_NOT_HOTSPOT or EXIT_IW_NOT_RUN. */
+static int hotspot_running(const char* name) {
+    static char output[OUTPUT_MAX];
+    char interface_name[IFNAMSIZ];
+    snprintf(interface_name, sizeof(interface_name), "%s", name);
+    char* const arguments[] = {"iw", "dev", interface_name, "info", NULL};
+    const int result = run_program(HELPER_IW, arguments, "", output, sizeof(output), 0);
+    if (result == EXIT_NFT_NOT_RUN) {
+        fail("could not run " HELPER_IW);
+        return EXIT_IW_NOT_RUN;
+    }
+    if (result != EXIT_DONE || !has_line(output, "type AP")) {
+        fprintf(stderr, "%s: no hotspot runs on %s (not in access-point mode)\n", kProgram, interface_name);
+        return EXIT_NOT_HOTSPOT;
+    }
+    return EXIT_DONE;
+}
+
+/* Reads "Name:", "PPid:" and the four user ids of "Uid:" (real,
+ * effective, saved, file system) from /proc/<pid>/status. Returns 0, or
+ * -1 when the process is gone or the file is not as expected. */
+static int read_process(const char* pid, char name[64], long* parent, unsigned long uids[4]) {
+    char path[64];
+    snprintf(path, sizeof(path), "/proc/%s/status", pid);
+    FILE* file = fopen(path, "re");
+    if (!file) {
+        return -1;
+    }
+    char line[256];
+    int found = 0;
+    name[0] = '\0';
+    while (fgets(line, sizeof(line), file)) {
+        if (strncmp(line, "Name:", 5) == 0 && sscanf(line + 5, " %63s", name) == 1) {
+            found |= 1;
+        } else if (strncmp(line, "PPid:", 5) == 0 && sscanf(line + 5, " %ld", parent) == 1) {
+            found |= 2;
+        } else if (strncmp(line, "Uid:", 4) == 0 &&
+                   sscanf(line + 4, " %lu %lu %lu %lu", &uids[0], &uids[1], &uids[2], &uids[3]) == 4) {
+            found |= 4;
+        }
+    }
+    fclose(file);
+    return found == 7 ? 0 : -1;
+}
+
+/* kill-on: the user the hotspot's DNS server runs as, into `user` (as nft
+ * takes it): the file-system user id (the one its sockets carry) of every
+ * HELPER_DNS_NAME process whose parent is HELPER_DNS_PARENT running as
+ * root; a process of that name started by anyone else is not the
+ * hotspot's. HELPER_DNS_USER when none runs. Returns 0, or -1 when one
+ * runs as root or two run as different users. */
+static int dns_server_user(char user[16]) {
+    DIR* folder = opendir("/proc");
+    if (!folder) {
+        snprintf(user, 16, "%s", HELPER_DNS_USER);
+        return 0;
+    }
+    int found = 0;
+    int mixed = 0;
+    unsigned long uid = 0;
+    struct dirent* entry;
+    while ((entry = readdir(folder)) != NULL) {
+        if (entry->d_name[0] < '1' || entry->d_name[0] > '9' ||
+            strspn(entry->d_name, "0123456789") != strlen(entry->d_name) || strlen(entry->d_name) > 10) {
+            continue;
+        }
+        char name[64];
+        long parent = 0;
+        unsigned long uids[4];
+        if (read_process(entry->d_name, name, &parent, uids) != 0 || strcmp(name, HELPER_DNS_NAME) != 0 ||
+            parent <= 0) {
+            continue;
+        }
+        char parent_pid[24];
+        char parent_name[64];
+        long grandparent = 0;
+        unsigned long parent_uids[4];
+        snprintf(parent_pid, sizeof(parent_pid), "%ld", parent);
+        if (read_process(parent_pid, parent_name, &grandparent, parent_uids) != 0 ||
+            strcmp(parent_name, HELPER_DNS_PARENT) != 0 || parent_uids[0] != 0 || parent_uids[1] != 0) {
+            continue;
+        }
+        if (found && uids[3] != uid) {
+            mixed = 1;
+        }
+        uid = uids[3];
+        found = 1;
+    }
+    closedir(folder);
+    if (mixed || (found && uid == 0)) {
+        return -1;
+    }
+    if (found) {
+        snprintf(user, 16, "%lu", uid);
+    } else {
+        snprintf(user, 16, "%s", HELPER_DNS_USER);
+    }
+    return 0;
+}
+
+/* kill-on: arms the kill switch for the DNS server's user. */
+static int kill_on(void) {
+    char user[16];
+    if (dns_server_user(user) != 0) {
+        fail("the hotspot's DNS server runs as root, or as more than one user; nothing changed");
+        return EXIT_DNS_USER;
+    }
+    char script[SCRIPT_MAX];
+    size_t used = 0;
+    script[0] = '\0';
+    char rules[1024];
+    snprintf(rules, sizeof(rules), KILL_ON_RULES, user, user);
+    if (append(script, &used, kKillChains) != 0 || append(script, &used, rules) != 0) {
+        fail("internal error: the script is too long");
+        return EXIT_NFT_NOT_RUN;
+    }
+    return run_script(script, 0);
 }
 
 /* Adds (add != 0) or removes Share's interface, unless it is already
@@ -730,7 +1067,7 @@ static int share_interface(int add) {
     char* const add_arguments[] = {
         "iw", "dev", HELPER_INTERFACE, "interface", "add", HELPER_SHARE_INTERFACE, "type", "__ap", NULL};
     char* const delete_arguments[] = {"iw", "dev", HELPER_SHARE_INTERFACE, "del", NULL};
-    const int result = run_program(HELPER_IW, add ? add_arguments : delete_arguments, "", NULL, 0);
+    const int result = run_program(HELPER_IW, add ? add_arguments : delete_arguments, "", NULL, 0, 0);
     if (result == EXIT_NFT_NOT_RUN) {
         fail("could not run " HELPER_IW);
         return EXIT_IW_NOT_RUN;
@@ -745,14 +1082,6 @@ static int share_interface(int add) {
 
 /* ---------------------------------------------------------------------
  * The Wi-Fi survey's stick. */
-
-/* Set by SIGTERM, SIGINT and SIGHUP while a survey runs. */
-static volatile sig_atomic_t survey_stop = 0;
-
-static void survey_signal(int number) {
-    (void)number;
-    survey_stop = 1;
-}
 
 /* 1 to 15 characters of a-z, A-Z, 0-9, '.', '_' and '-', not "." or "..". */
 static int valid_interface_name(const char* name) {
@@ -864,19 +1193,36 @@ static int stick_type(const char* name) {
     return type;
 }
 
-/* Runs "iw dev STICK <words...>" (fixed words only). Returns EXIT_DONE,
- * EXIT_NFT_FAILED (iw failed) or EXIT_NFT_NOT_RUN. */
-static int stick_iw(const char* name, const char* word1, const char* word2, const char* word3) {
-    char stick[IFNAMSIZ];
-    char first[16];
-    char second[16];
-    char third[16];
-    snprintf(stick, sizeof(stick), "%s", name);
-    snprintf(first, sizeof(first), "%s", word1);
-    snprintf(second, sizeof(second), "%s", word2);
-    snprintf(third, sizeof(third), "%s", word3);
-    char* const arguments[] = {"iw", "dev", stick, first, second, third, NULL};
-    return run_program(HELPER_IW, arguments, "", NULL, 0);
+/* The interface's radio, from /sys/class/net/<name>/phy80211: its name
+ * (checked like an interface name) into `phy` and its index into *index.
+ * Returns 0, or -1. */
+static int stick_phy(const char* name, char phy[32], long* index) {
+    char path[96];
+    snprintf(path, sizeof(path), "/sys/class/net/%s/phy80211/name", name);
+    FILE* file = fopen(path, "re");
+    if (!file) {
+        return -1;
+    }
+    char text[64] = "";
+    const int read_name = fscanf(file, "%63s", text) == 1;
+    fclose(file);
+    if (!read_name || strlen(text) >= 32 || !valid_interface_name(text)) {
+        return -1;
+    }
+    snprintf(path, sizeof(path), "/sys/class/net/%s/phy80211/index", name);
+    file = fopen(path, "re");
+    if (!file) {
+        return -1;
+    }
+    long value = -1;
+    const int read_index = fscanf(file, "%ld", &value) == 1;
+    fclose(file);
+    if (!read_index || value < 0) {
+        return -1;
+    }
+    snprintf(phy, 32, "%s", text);
+    *index = value;
+    return 0;
 }
 
 /* Removes the survey's listening interface (SURVEY_INTERFACE) when it is
@@ -896,7 +1242,7 @@ static int listener_remove(void) {
         return EXIT_STICK_BUSY;
     }
     char* const arguments[] = {"iw", "dev", SURVEY_INTERFACE, "del", NULL};
-    const int result = run_program(HELPER_IW, arguments, "", NULL, 0);
+    const int result = run_program(HELPER_IW, arguments, "", NULL, 0, 0);
     if (result == EXIT_NFT_NOT_RUN) {
         fail("could not run " HELPER_IW);
         return EXIT_IW_NOT_RUN;
@@ -908,58 +1254,18 @@ static int listener_remove(void) {
     return EXIT_DONE;
 }
 
-/* Waits `ms` milliseconds on standard input. Returns 1 when the survey
- * should end: input closed or at its end, a stop signal, or an error. */
-static int survey_wait(int ms) {
-    struct timespec start;
-    clock_gettime(CLOCK_MONOTONIC, &start);
-    for (;;) {
-        if (survey_stop) {
-            return 1;
-        }
-        struct timespec now;
-        clock_gettime(CLOCK_MONOTONIC, &now);
-        const long done = (now.tv_sec - start.tv_sec) * 1000L + (now.tv_nsec - start.tv_nsec) / 1000000L;
-        if (done >= ms) {
-            return 0;
-        }
-        struct pollfd entry = {0, POLLIN, 0};
-        const int ready = poll(&entry, 1, (int)(ms - done));
-        if (ready < 0 && errno == EINTR) {
-            continue;
-        }
-        if (ready < 0 || (entry.revents & (POLLERR | POLLHUP | POLLNVAL))) {
-            return 1;
-        }
-        if (entry.revents & POLLIN) {
-            char ignored[64];
-            const ssize_t got = read(0, ignored, sizeof(ignored));
-            if (got == 0 || (got < 0 && errno != EINTR && errno != EAGAIN)) {
-                return 1;
-            }
-        }
-    }
-}
-
 /* survey: add the listening interface, hop, remove it (see the top of
  * this file). */
 static int survey(const char* name, pid_t parent) {
-    /* Ends with the parent; the check after it catches a parent that died
-     * before it was set. */
-    prctl(PR_SET_PDEATHSIG, SIGTERM, 0, 0, 0);
-    if (getppid() != parent) {
+    if (hold_with_parent(parent) != 0) {
         return EXIT_DONE;
     }
-    struct sigaction action;
-    memset(&action, 0, sizeof(action));
-    action.sa_handler = survey_signal;
-    sigemptyset(&action.sa_mask);
-    sigaction(SIGTERM, &action, NULL);
-    sigaction(SIGINT, &action, NULL);
-    sigaction(SIGHUP, &action, NULL);
 
+    /* Everything below that goes by the stick's name is checked to have
+     * reached the same interface: its index before and after. */
+    const unsigned int stick_index = if_nametoindex(name);
     short flags = 0;
-    if (stick_flags(name, &flags) != 0) {
+    if (stick_index == 0 || stick_flags(name, &flags) != 0) {
         fail("no such stick");
         return EXIT_USAGE;
     }
@@ -967,24 +1273,37 @@ static int survey(const char* name, pid_t parent) {
         fail("the stick is in use (up, or not in managed mode)");
         return EXIT_STICK_BUSY;
     }
+    char phy[32];
+    long phy_index = -1;
+    if (stick_phy(name, phy, &phy_index) != 0 || !valid_stick(name) || if_nametoindex(name) != stick_index) {
+        fail("not a USB Wi-Fi stick (it changed while it was checked)");
+        return EXIT_USAGE;
+    }
     /* One a killed survey left behind goes first. */
     int result = listener_remove();
     if (result != EXIT_DONE) {
         return result;
     }
-    char stick[IFNAMSIZ];
-    snprintf(stick, sizeof(stick), "%s", name);
     char* const add_arguments[] = {
-        "iw", "dev", stick, "interface", "add", SURVEY_INTERFACE, "type", "monitor", NULL};
-    result = run_program(HELPER_IW, add_arguments, "", NULL, 0);
+        "iw", "phy", phy, "interface", "add", SURVEY_INTERFACE, "type", "monitor", NULL};
+    result = run_program(HELPER_IW, add_arguments, "", NULL, 0, 1);
     if (result == EXIT_NFT_NOT_RUN) {
         fail("could not run " HELPER_IW);
         return EXIT_IW_NOT_RUN;
     }
-    if (result != EXIT_DONE || stick_set_up(SURVEY_INTERFACE, 1) != 0) {
-        fail("the stick could not listen (monitor mode)");
-        listener_remove();
-        return EXIT_IW_FAILED;
+    /* The new interface must be on the noted radio, and the stick's name
+     * still on the noted interface. */
+    char added_phy[32];
+    long added_index = -1;
+    const int on_stick = result == EXIT_DONE && stick_phy(SURVEY_INTERFACE, added_phy, &added_index) == 0 &&
+                         added_index == phy_index && if_nametoindex(name) == stick_index;
+    if (!on_stick || stop_requested || stick_set_up(SURVEY_INTERFACE, 1) != 0) {
+        if (!stop_requested) {
+            fail(on_stick ? "the stick could not listen (monitor mode)"
+                          : "the listening interface is not on the stick");
+        }
+        const int removed = listener_remove();
+        return stop_requested && removed == EXIT_DONE ? EXIT_DONE : EXIT_IW_FAILED;
     }
     printf("ready\n");
     fflush(stdout);
@@ -1003,7 +1322,12 @@ static int survey(const char* name, pid_t parent) {
             }
             char number[4];
             snprintf(number, sizeof(number), "%d", channel);
-            result = stick_iw(SURVEY_INTERFACE, "set", "channel", number);
+            char* const arguments[] = {"iw", "dev", SURVEY_INTERFACE, "set", "channel", number, NULL};
+            result = run_program(HELPER_IW, arguments, "", NULL, 0, 1);
+            if (stop_requested) {
+                ended = 1;
+                break;
+            }
             if (result == EXIT_DONE) {
                 channels[channel] = 1;
                 failures = 0;
@@ -1016,16 +1340,21 @@ static int survey(const char* name, pid_t parent) {
                 ended = 1;
                 break;
             }
-            struct timespec now;
-            clock_gettime(CLOCK_MONOTONIC, &now);
-            ended = survey_wait(SURVEY_DWELL_MS) || now.tv_sec - start.tv_sec >= SURVEY_MAX_SECONDS;
+            ended = wait_input(SURVEY_DWELL_MS, NULL) || elapsed_ms(&start) >= SURVEY_MAX_SECONDS * 1000L;
         }
     }
     return listener_remove();
 }
 
 int main(int argc, char* argv[]) {
-    /* Before anything else: who started it, for the survey's parent check. */
+    /* First: no signal blocked and SIGCHLD at its default, whatever the
+     * caller left (a blocked SIGTERM would keep a long run going; an
+     * ignored SIGCHLD would lose every child's exit status). Then who
+     * started it, for the parent checks of survey and trap-on. */
+    sigset_t no_signals;
+    sigemptyset(&no_signals);
+    sigprocmask(SIG_SETMASK, &no_signals, NULL);
+    signal(SIGCHLD, SIG_DFL);
     const pid_t parent = getppid();
     tidy_descriptors();
     signal(SIGPIPE, SIG_IGN);
@@ -1041,13 +1370,13 @@ int main(int argc, char* argv[]) {
     const int clear = strcmp(command, "clear") == 0;
     const int ap_add = strcmp(command, "ap-add") == 0;
     const int ap_del = strcmp(command, "ap-del") == 0;
-    const int kill_on = strcmp(command, "kill-on") == 0;
-    const int kill_off = strcmp(command, "kill-off") == 0;
+    const int kill_start = strcmp(command, "kill-on") == 0;
+    const int kill_stop = strcmp(command, "kill-off") == 0;
     const int trap_start = strcmp(command, "trap-on") == 0;
     const int trap_stop = strcmp(command, "trap-off") == 0;
     const int survey_start = strcmp(command, "survey") == 0;
     const int survey_end = strcmp(command, "survey-off") == 0;
-    if (!block && !unblock && !list && !clear && !ap_add && !ap_del && !kill_on && !kill_off && !trap_start &&
+    if (!block && !unblock && !list && !clear && !ap_add && !ap_del && !kill_start && !kill_stop && !trap_start &&
         !trap_stop && !survey_start && !survey_end) {
         usage();
         return EXIT_USAGE;
@@ -1056,12 +1385,21 @@ int main(int argc, char* argv[]) {
     /* Every argument is checked before anything runs. */
     unsigned char addresses[HELPER_MAX_ADDRESSES][6];
     int count = 0;
+    const char* hotspot = NULL;
     if (block || unblock) {
-        if (argc < 3 || argc - 2 > HELPER_MAX_ADDRESSES) {
+        if (argc < 4 || argc - 3 > HELPER_MAX_ADDRESSES) {
             usage();
             return EXIT_USAGE;
         }
-        for (int index = 2; index < argc; ++index) {
+        if (strcmp(argv[2], "router") == 0) {
+            hotspot = HELPER_INTERFACE;
+        } else if (strcmp(argv[2], "share") == 0) {
+            hotspot = HELPER_SHARE_INTERFACE;
+        } else {
+            fail("not a hotspot (router or share)");
+            return EXIT_USAGE;
+        }
+        for (int index = 3; index < argc; ++index) {
             unsigned char bytes[6];
             if (parse_mac(argv[index], bytes) != 0) {
                 fail("not a device address (six pairs of hex digits joined by ':')");
@@ -1101,7 +1439,7 @@ int main(int argc, char* argv[]) {
         return share_interface(ap_add);
     }
     if (trap_start) {
-        return trap_on();
+        return trap_on(parent);
     }
     if (trap_stop) {
         return trap_off();
@@ -1112,6 +1450,9 @@ int main(int argc, char* argv[]) {
     if (survey_end) {
         return listener_remove();
     }
+    if (kill_start) {
+        return kill_on();
+    }
 
     char script[SCRIPT_MAX];
     size_t used = 0;
@@ -1119,13 +1460,22 @@ int main(int argc, char* argv[]) {
     int built = 0;
     if (clear) {
         built = append(script, &used, kClearTable);
-    } else if (kill_on || kill_off) {
+    } else if (kill_stop) {
         built = append(script, &used, kKillChains);
         if (built == 0) {
-            built = append(script, &used, kill_on ? kKillOn : kKillOff);
+            built = append(script, &used, kKillOff);
         }
     } else {
+        const int running = hotspot_running(hotspot);
+        if (running != EXIT_DONE) {
+            return running;
+        }
+        char rules[256];
+        snprintf(rules, sizeof(rules), ENSURE_RULES, hotspot, hotspot);
         built = append(script, &used, kEnsureTable);
+        if (built == 0) {
+            built = append(script, &used, rules);
+        }
         if (built == 0 && block) {
             built = append_elements(script, &used, "add", addresses, count);
         } else if (built == 0) {
@@ -1142,5 +1492,5 @@ int main(int argc, char* argv[]) {
         return EXIT_NFT_NOT_RUN;
     }
 
-    return run_script(script);
+    return run_script(script, 0);
 }

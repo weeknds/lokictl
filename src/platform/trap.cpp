@@ -160,8 +160,6 @@ constexpr int kWaitSliceMs = 100;
 constexpr int kListenBacklog = 8;
 // The most connections read at once; more are closed at once.
 constexpr std::size_t kMaxOpen = 8;
-// How often it checks that nothing else began to listen on a low port.
-constexpr int64_t kRecheckMs = 10000;
 
 constexpr char kFtpGreeting[] = "220 FTP server ready\r\n";
 constexpr char kTelnetGreeting[] = "\r\nlogin: ";
@@ -367,8 +365,9 @@ private:
         port_state(*listener.service).state = state;
     }
 
-    // Runs trap-on for the low ports still listened on, and closes those it
-    // did not send on. Returns how many low ports are sent on.
+    // Starts the helper's trap-on (which runs until trap_off()) for the low
+    // ports listened on, and closes those it did not send on. Returns how
+    // many low ports are sent on.
     int redirect() {
         bool any = false;
         for (const Listener& listener : listeners_) {
@@ -426,7 +425,6 @@ private:
         limiter_ = model::TrapLimiter{};
         open_.clear();
         hit_ids_.clear();
-        int64_t next_check = started + kRecheckMs;
         while (!stop_flag_.load()) {
             std::vector<pollfd> fds;
             for (const Listener& listener : listeners_) {
@@ -459,9 +457,8 @@ private:
             }
             open_.erase(std::remove_if(open_.begin(), open_.end(), [](const Open& open) { return open.fd < 0; }),
                         open_.end());
-            if (now >= next_check) {
-                next_check = now + kRecheckMs;
-                redirected = recheck(redirected);
+            if (redirected > 0) {
+                redirected = follow_redirect(redirected);
             }
             run_.elapsed_s = static_cast<int32_t>((now - started) / 1000);
             publish();
@@ -485,23 +482,33 @@ private:
         publish();
     }
 
-    // Something else began to listen on a low port that is sent on: the
-    // redirect is set up again without it.
-    int recheck(int redirected) {
-        if (redirected == 0) {
-            return 0;
-        }
-        const std::vector<uint16_t> busy = listening_now();
-        bool taken = false;
-        for (const Listener& listener : listeners_) {
-            taken = taken || (listener.fd >= 0 && low_port(*listener.service) && contains(busy, listener.service->port));
-        }
-        if (!taken) {
+    // The helper's trap-on checks every few seconds that nothing else
+    // began to listen on a low port it sends on, and drops such a port;
+    // when no port is left, or it failed, it ends. A low port it no longer
+    // sends on is closed here too. Returns how many it still sends on.
+    int follow_redirect(int redirected) {
+        std::vector<uint16_t> sent_on;
+        std::string problem;
+        if (!trap_changed(sent_on, problem)) {
             return redirected;
         }
-        const int count = redirect();
+        if (!problem.empty()) {
+            run_.helper_problem = problem;
+        }
+        int count = 0;
+        for (Listener& listener : listeners_) {
+            if (listener.fd < 0 || !low_port(*listener.service)) {
+                continue;
+            }
+            if (contains(sent_on, listener.service->port)) {
+                ++count;
+            } else {
+                close_listener(listener,
+                               problem.empty() ? model::TrapPortState::InUse : model::TrapPortState::NoHelper);
+            }
+        }
         if (count == 0) {
-            trap_off();
+            trap_off();  // ended already, or nothing of it is used
         }
         return count;
     }

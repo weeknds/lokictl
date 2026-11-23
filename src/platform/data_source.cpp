@@ -238,7 +238,7 @@ public:
         // Made-up WireGuard files, so the VPN row has something to offer.
         data.vpn.files = {"home", "travel"};
         pretend_.apply(data, PretendFailure{});
-        blocker_.apply(data, data.ap_active, false);
+        blocker_.apply(data, data.ap_active ? std::string(kHotspotInterface) : std::string(), false);
         scan_.apply(data, true);
     }
 

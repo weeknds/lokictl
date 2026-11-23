@@ -428,15 +428,16 @@ setuid. The package adds three things so the network features work:
   program a `netdev` member runs gets these rights, not only LokiCTL.
 - `lokictl-helper`, a tiny program with one capability, `CAP_NET_ADMIN`.
   It runs twelve fixed commands and only touches LokiCTL's own firewall
-  table (`inet lokictl`, used for blocking, the kill switch and the trap's
-  low ports), Share's extra interface, `lokiap0`, and, for the survey, a
-  listen-only interface, `lokimon0`, on a USB Wi-Fi stick (never
-  `wlan0`): adding it, its channel, and removing it.
+  table (`inet lokictl`, used for blocking on a running hotspot, the kill
+  switch and the trap's low ports), Share's extra interface, `lokiap0`,
+  and, for the survey, a listen-only interface, `lokimon0`, on a USB Wi-Fi
+  stick (never `wlan0`): adding it, its channel, and removing it.
 - `lokictl-capture`, a tiny program with one capability, `CAP_NET_RAW`.
   For Discover it only hears ARP, DHCP, mDNS and SSDP; for Watch only ARP,
-  DHCP, connection requests to the Cardputer and IPv6 router
-  announcements; for the survey only Wi-Fi beacons, kick-off frames and
-  the kind of every other frame (never its content). It can't send
+  DHCP, connection requests to the Cardputer's own address (never those
+  of the devices on its hotspot) and IPv6 router announcements; for the
+  survey only Wi-Fi beacons, kick-off frames and the kind of every other
+  frame (never its content). It can't send
   anything, and it stops when the run ends.
 
 Only root and the `netdev` group can run the two helpers. Removing the

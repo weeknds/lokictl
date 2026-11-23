@@ -5,13 +5,16 @@
  */
 
 #include "firewall.h"
+#include "mode_switch.h"
 
 #include <algorithm>
 #include <cerrno>
 #include <csignal>
 #include <cstdlib>
+#include <cstring>
 #include <fcntl.h>
 #include <mutex>
+#include <pthread.h>
 #include <sstream>
 #include <spawn.h>
 #include <sys/types.h>
@@ -38,20 +41,32 @@ constexpr const char* kKillSwitchLine = "kill-switch";
 // The line `list` prints while the trap's chain is there.
 constexpr const char* kTrapLine = "trap";
 
-// One run of the helper at a time: the data reader and the trap's thread
-// both run it, and trap-off reads the table before it changes it.
+// One short run of the helper at a time: the data reader and the trap's
+// thread both run it.
 std::mutex& helper_mutex() {
     static std::mutex mutex;
     return mutex;
 }
 
-// The trap's intent, and the lock that keeps a check of it and the run of
-// the helper that follows together (taken before helper_mutex()).
+// The trap's helper (its trap-on runs while the trap does), and the lock
+// that keeps a look at it and what follows together (taken before
+// helper_mutex()).
 std::mutex& trap_mutex() {
     static std::mutex mutex;
     return mutex;
 }
-bool trap_wanted = false;
+struct TrapHelper {
+    pid_t pid{-1};
+    int input{-1};       // its standard input, held open while the trap runs
+    int output{-1};      // its standard output (non-blocking)
+    std::string partial; // output that is not a whole line yet
+};
+TrapHelper trap_helper;
+// Set when a trap-on ran: its chain went at its end, but the table it made
+// may be left (empty) for the way out to remove.
+bool trap_made_table = false;
+// The line trap-on prints, followed by the low ports it sends on.
+constexpr const char* kTrapPortsWord = "ports";
 
 bool is_lower_hex(char character) {
     return (character >= '0' && character <= '9') || (character >= 'a' && character <= 'f');
@@ -65,7 +80,7 @@ bool contains(const std::vector<std::string>& list, const std::string& value) {
 const char* helper_exit_reason(int code) {
     switch (code) {
         case 2:
-            return "bad device address";
+            return "bad request";
         case 3:
             return "no permission";
         case 4:
@@ -78,6 +93,10 @@ const char* helper_exit_reason(int code) {
             return "iw not found";
         case 8:
             return "stick in use";
+        case 9:
+            return "hotspot not running";
+        case 10:
+            return "DNS server user unclear";
         default:
             return "helper failed";
     }
@@ -216,19 +235,221 @@ std::string run_helper(const std::vector<std::string>& arguments, milliseconds l
     return WEXITSTATUS(status) == 0 ? std::string() : std::string(helper_exit_reason(WEXITSTATUS(status)));
 }
 
-// After the whole table went: the trap's redirect again, while wanted.
+// Writes `text` to `fd` without ever raising SIGPIPE in the app: a helper
+// that has just ended leaves only EPIPE.
+void write_quietly(int fd, const char* text) {
+    sigset_t pipe_signal;
+    sigset_t old_mask;
+    sigemptyset(&pipe_signal);
+    sigaddset(&pipe_signal, SIGPIPE);
+    if (pthread_sigmask(SIG_BLOCK, &pipe_signal, &old_mask) != 0) {
+        return;
+    }
+    const ssize_t written = write(fd, text, std::strlen(text));
+    sigset_t pending;
+    if (written < 0 && errno == EPIPE && sigpending(&pending) == 0 && sigismember(&pending, SIGPIPE) == 1) {
+        int number = 0;
+        sigwait(&pipe_signal, &number);  // takes the pending SIGPIPE at once
+    }
+    pthread_sigmask(SIG_SETMASK, &old_mask, nullptr);
+}
+
+// A pipe whose ends close on exec. On Linux both are made that way at once,
+// so a child another thread starts meanwhile never gets a copy (one with
+// the trap's input would keep the trap running).
+int close_on_exec_pipe(int ends[2]) {
+#ifdef __linux__
+    return pipe2(ends, O_CLOEXEC);
+#else
+    if (pipe(ends) != 0) {
+        return -1;
+    }
+    fcntl(ends[0], F_SETFD, FD_CLOEXEC);
+    fcntl(ends[1], F_SETFD, FD_CLOEXEC);
+    return 0;
+#endif
+}
+
+void close_trap_pipes() {
+    for (int* end : {&trap_helper.input, &trap_helper.output}) {
+        if (*end >= 0) {
+            close(*end);
+            *end = -1;
+        }
+    }
+    trap_helper.partial.clear();
+}
+
+// Starts "lokictl-helper trap-on" with an empty environment, a pipe on its
+// standard input (kept open here; closing it ends the trap) and on its
+// standard output (read here), /dev/null for its standard error, no blocked
+// signals and the default action for SIGTERM, SIGINT, SIGHUP and SIGPIPE.
+// Returns an empty text, or a short reason. Under trap_mutex().
+std::string start_trap_helper() {
+    int in[2] = {-1, -1};
+    int out[2] = {-1, -1};
+    if (close_on_exec_pipe(in) != 0) {
+        return "helper could not start";
+    }
+    if (close_on_exec_pipe(out) != 0) {
+        close(in[0]);
+        close(in[1]);
+        return "helper could not start";
+    }
+    fcntl(in[1], F_SETFL, O_NONBLOCK);
+    fcntl(out[0], F_SETFL, O_NONBLOCK);
+    char program[] = "lokictl-helper";
+    char command[] = "trap-on";
+    char* argv[] = {program, command, nullptr};
+    char* environment[] = {nullptr};
+    posix_spawn_file_actions_t actions;
+    posix_spawnattr_t attributes;
+    posix_spawn_file_actions_init(&actions);
+    posix_spawnattr_init(&attributes);
+    posix_spawn_file_actions_adddup2(&actions, in[0], 0);
+    posix_spawn_file_actions_adddup2(&actions, out[1], 1);
+    posix_spawn_file_actions_addopen(&actions, 2, "/dev/null", O_WRONLY, 0);
+    sigset_t no_signals;
+    sigset_t default_signals;
+    sigemptyset(&no_signals);
+    sigemptyset(&default_signals);
+    sigaddset(&default_signals, SIGTERM);
+    sigaddset(&default_signals, SIGINT);
+    sigaddset(&default_signals, SIGHUP);
+    sigaddset(&default_signals, SIGPIPE);
+    posix_spawnattr_setsigmask(&attributes, &no_signals);
+    posix_spawnattr_setsigdefault(&attributes, &default_signals);
+    posix_spawnattr_setflags(&attributes, POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_SETSIGDEF);
+    pid_t child = -1;
+    const int error = posix_spawn(&child, APP_HELPER_PATH, &actions, &attributes, argv, environment);
+    posix_spawn_file_actions_destroy(&actions);
+    posix_spawnattr_destroy(&attributes);
+    close(in[0]);
+    close(out[1]);
+    if (error != 0) {
+        close(in[1]);
+        close(out[0]);
+        if (error == ENOENT) {
+            return "helper not installed";
+        }
+        return error == EACCES || error == EPERM ? "helper not allowed" : "helper could not start";
+    }
+    trap_helper.pid = child;
+    trap_helper.input = in[1];
+    trap_helper.output = out[0];
+    trap_helper.partial.clear();
+    return {};
+}
+
+// Reads what the trap's helper printed; the newest whole "ports" line goes
+// into `ports`. True when such a line came. Under trap_mutex().
+bool read_trap_ports(std::vector<uint16_t>& ports) {
+    if (trap_helper.output < 0) {
+        return false;
+    }
+    char chunk[256];
+    for (;;) {
+        const ssize_t got = read(trap_helper.output, chunk, sizeof(chunk));
+        if (got < 0 && errno == EINTR) {
+            continue;
+        }
+        if (got <= 0) {
+            break;
+        }
+        if (trap_helper.partial.size() < kOutputMax) {
+            trap_helper.partial.append(chunk, static_cast<std::size_t>(got));
+        }
+    }
+    bool found = false;
+    std::size_t end = 0;
+    while ((end = trap_helper.partial.find('\n')) != std::string::npos) {
+        const std::string line = trap_helper.partial.substr(0, end);
+        trap_helper.partial.erase(0, end + 1);
+        std::istringstream words(line);
+        std::string word;
+        if (!(words >> word) || word != kTrapPortsWord) {
+            continue;
+        }
+        found = true;
+        ports.clear();
+        long port = 0;
+        while (words >> port) {
+            if (port > 0 && port < 1024) {
+                ports.push_back(static_cast<uint16_t>(port));
+            }
+        }
+    }
+    return found;
+}
+
+// When the trap's helper has ended: reaps it, closes its pipes and returns
+// true, with a short reason in `problem` when it failed (one killed by a
+// signal may have left its chain, which trap-off removes). Under
+// trap_mutex().
+bool trap_helper_ended(std::string& problem, milliseconds limit) {
+    if (trap_helper.pid <= 0) {
+        return true;
+    }
+    int status = 0;
+    const pid_t done = waitpid(trap_helper.pid, &status, WNOHANG);
+    if (done == 0 || (done < 0 && errno == EINTR)) {
+        return false;
+    }
+    const pid_t pid = trap_helper.pid;
+    trap_helper.pid = -1;
+    close_trap_pipes();
+    if (done == pid && WIFEXITED(status)) {
+        problem = WEXITSTATUS(status) == 0 ? std::string() : std::string(helper_exit_reason(WEXITSTATUS(status)));
+        return true;
+    }
+    problem = "helper failed";
+    run_helper({"trap-off"}, limit);
+    return true;
+}
+
+// Ends the trap's helper: closes its standard input and sends SIGTERM, so
+// it removes its chain; waits at most `limit`, then kills it and runs
+// trap-off instead. Returns an empty text when the chain went, else a
+// short reason. Under trap_mutex().
+std::string stop_trap_helper(milliseconds limit) {
+    if (trap_helper.pid <= 0) {
+        return {};
+    }
+    if (trap_helper.input >= 0) {
+        close(trap_helper.input);
+        trap_helper.input = -1;
+    }
+    kill(trap_helper.pid, SIGTERM);
+    const auto deadline = std::chrono::steady_clock::now() + limit;
+    std::string problem;
+    while (!trap_helper_ended(problem, limit)) {
+        if (std::chrono::steady_clock::now() >= deadline) {
+            kill(trap_helper.pid, SIGKILL);
+            while (waitpid(trap_helper.pid, nullptr, 0) < 0 && errno == EINTR) {
+            }
+            trap_helper.pid = -1;
+            close_trap_pipes();
+            const std::string reason = run_helper({"trap-off"}, limit);
+            return reason.empty() ? std::string("helper timed out") : reason;
+        }
+        std::this_thread::sleep_for(kWaitStep);
+    }
+    return problem;
+}
+
+// After the whole table went: the running trap sets its chain up again.
 void restore_trap() {
     const std::lock_guard<std::mutex> lock(trap_mutex());
-    if (trap_wanted) {
-        run_helper({"trap-on"}, kHelperTimeLimit);
+    if (trap_helper.pid > 0 && trap_helper.input >= 0) {
+        write_quietly(trap_helper.input, "\n");
     }
 }
 
 // A trap a run before this one left (it was killed): removed, unless this
-// run wants one.
+// run's trap is on.
 void remove_stale_trap() {
     const std::lock_guard<std::mutex> lock(trap_mutex());
-    if (!trap_wanted) {
+    if (trap_helper.pid <= 0) {
         run_helper({"trap-off"}, kHelperTimeLimit);
     }
 }
@@ -238,27 +459,63 @@ void remove_stale_trap() {
 std::string trap_on(std::vector<uint16_t>& ports, milliseconds limit) {
     const std::lock_guard<std::mutex> lock(trap_mutex());
     ports.clear();
-    std::string output;
-    const std::string reason = run_helper({"trap-on"}, limit, &output);
+    stop_trap_helper(limit);
+    const std::string reason = start_trap_helper();
     if (!reason.empty()) {
         return reason;
     }
-    std::istringstream lines(output);
-    std::string line;
-    while (std::getline(lines, line)) {
-        const long port = std::strtol(line.c_str(), nullptr, 10);
-        if (port > 0 && port < 1024) {
-            ports.push_back(static_cast<uint16_t>(port));
+    trap_made_table = true;
+    // Its first "ports" line, within `limit`.
+    const auto deadline = std::chrono::steady_clock::now() + limit;
+    while (!read_trap_ports(ports)) {
+        std::string problem;
+        if (trap_helper_ended(problem, limit)) {
+            ports.clear();
+            return problem;
         }
+        if (std::chrono::steady_clock::now() >= deadline) {
+            ports.clear();
+            kill(trap_helper.pid, SIGKILL);
+            while (waitpid(trap_helper.pid, nullptr, 0) < 0 && errno == EINTR) {
+            }
+            trap_helper.pid = -1;
+            close_trap_pipes();
+            run_helper({"trap-off"}, limit);
+            return "helper timed out";
+        }
+        std::this_thread::sleep_for(kWaitStep);
     }
-    trap_wanted = !ports.empty();
+    if (ports.empty()) {
+        // Nothing to send on: it ends by itself.
+        return stop_trap_helper(limit);
+    }
     return {};
+}
+
+bool trap_changed(std::vector<uint16_t>& ports, std::string& problem) {
+    const std::lock_guard<std::mutex> lock(trap_mutex());
+    if (trap_helper.pid <= 0) {
+        return false;
+    }
+    const bool fresh = read_trap_ports(ports);
+    if (trap_helper_ended(problem, kHelperTimeLimit)) {
+        ports.clear();
+        return true;
+    }
+    return fresh;
 }
 
 std::string trap_off(milliseconds limit) {
     const std::lock_guard<std::mutex> lock(trap_mutex());
-    trap_wanted = false;
+    if (trap_helper.pid > 0) {
+        return stop_trap_helper(limit);
+    }
     return run_helper({"trap-off"}, limit);
+}
+
+bool trap_left_table() {
+    const std::lock_guard<std::mutex> lock(trap_mutex());
+    return trap_made_table && trap_helper.pid <= 0;
 }
 
 std::string add_share_interface(milliseconds limit) {
@@ -366,15 +623,20 @@ void DeviceBlocker::set_wanted(const std::vector<std::string>& addresses) {
     settled_ = false;
 }
 
-void DeviceBlocker::apply(model::HomeData& data, bool hotspot_up, bool may_run_helper) {
+void DeviceBlocker::apply(model::HomeData& data, const std::string& hotspot_interface, bool may_run_helper) {
     if (real_) {
-        if (hotspot_up != hotspot_up_) {
-            hotspot_up_ = hotspot_up;
+        const std::string hotspot = hotspot_interface.empty() ? std::string()
+                                    : hotspot_interface == kShareInterface ? std::string("share")
+                                                                           : std::string("router");
+        if (hotspot != hotspot_) {
+            hotspot_ = hotspot;
             settled_ = false;
+            // The DNS server's user is read again once a hotspot runs.
+            kill_for_hotspot_ = false;
         }
         if (!settled_ && may_run_helper) {
             settled_ = true;
-            settle(hotspot_up);
+            settle();
         }
     }
     const std::vector<std::string>& blocked = real_ ? applied_ : wanted_;
@@ -386,7 +648,7 @@ void DeviceBlocker::apply(model::HomeData& data, bool hotspot_up, bool may_run_h
 }
 
 void DeviceBlocker::leave() {
-    if (real_ && (table_ != Table::Absent || kill_ != Table::Absent)) {
+    if (real_ && (table_ != Table::Absent || kill_ != Table::Absent || trap_left_table())) {
         clear(kHelperLeaveTimeLimit);
     }
 }
@@ -413,6 +675,7 @@ std::string DeviceBlocker::arm_kill_switch() {
     }
     kill_wanted_ = true;
     kill_ = Table::Present;
+    kill_for_hotspot_ = !hotspot_.empty();
     // A table not read yet stays Unknown, so its blocked set is still read
     // when the hotspot is up.
     if (table_ == Table::Absent) {
@@ -421,7 +684,8 @@ std::string DeviceBlocker::arm_kill_switch() {
     return {};
 }
 
-void DeviceBlocker::settle(bool hotspot_up) {
+void DeviceBlocker::settle() {
+    const bool hotspot_up = !hotspot_.empty();
     // What a run before this one left (one that kept its mode on quitting,
     // or was killed) is read rather than removed.
     if (hotspot_up && table_ == Table::Unknown) {
@@ -434,14 +698,22 @@ void DeviceBlocker::settle(bool hotspot_up) {
         return;
     }
     // The kill switch: on while wanted, also with the hotspot down (a
-    // restart); off only when the intent went.
-    if (kill_wanted_ && kill_ != Table::Present) {
+    // restart); off only when the intent went. Armed before the hotspot
+    // started, it matched dnsmasq's default user: once the hotspot runs it
+    // is armed again for the user its DNS server really runs as.
+    if (kill_wanted_ && (kill_ != Table::Present || (hotspot_up && !kill_for_hotspot_))) {
         switch_kill(true);
     } else if (!kill_wanted_ && kill_ != Table::Absent) {
         switch_kill(false);
     }
     if (!hotspot_up) {
         return;  // the blocked set waits for the hotspot
+    }
+    // The two rules match one hotspot's interface: after a change of
+    // hotspot (or a table adopted from a run before this one) they are
+    // made again for this one.
+    if (table_ == Table::Present && rules_for_ != hotspot_ && !applied_.empty()) {
+        change("block", "Block", applied_);
     }
     if (table_ != Table::Present) {
         if (!wanted_.empty() && change("block", "Block", wanted_)) {
@@ -495,8 +767,10 @@ void DeviceBlocker::adopt() {
         }
     }
     // `list` prints nothing for a table that holds neither, so the table
-    // counts as there: removing one that is not costs one spare run.
+    // counts as there: removing one that is not costs one spare run. Which
+    // hotspot its rules match is not known.
     table_ = Table::Present;
+    rules_for_.clear();
     kill_ = kill ? Table::Present : Table::Absent;
     if (kill) {
         kill_wanted_ = true;
@@ -514,8 +788,9 @@ bool DeviceBlocker::clear(milliseconds limit) {
     table_ = Table::Absent;
     kill_ = Table::Absent;
     applied_.clear();
-    // The trap's chain went with the table; a trap that is on gets it back
-    // (the table then holds only that, which trap-off removes).
+    rules_for_.clear();
+    // The trap's chain went with the table; a trap that is on sets it up
+    // again.
     restore_trap();
     return true;
 }
@@ -528,6 +803,7 @@ bool DeviceBlocker::switch_kill(bool on) {
         return false;
     }
     kill_ = on ? Table::Present : Table::Absent;
+    kill_for_hotspot_ = on && !hotspot_.empty();
     if (on && table_ == Table::Absent) {
         table_ = Table::Present;
     }
@@ -535,10 +811,11 @@ bool DeviceBlocker::switch_kill(bool on) {
 }
 
 bool DeviceBlocker::change(const char* command, const char* what, const std::vector<std::string>& addresses) {
-    std::vector<std::string> arguments{command};
+    std::vector<std::string> arguments{command, hotspot_};
     arguments.insert(arguments.end(), addresses.begin(), addresses.end());
     const std::string reason = run_helper(arguments, kHelperTimeLimit);
     if (reason.empty()) {
+        rules_for_ = hotspot_;
         return true;
     }
     ++failures_;

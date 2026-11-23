@@ -48,9 +48,14 @@
  *    frames that reach the Cardputer anyway.
  *    watch: ARP; IPv4 UDP that is not a fragment and has both ports 67 or
  *    68 (DHCP); IPv4 TCP that is not a fragment, asks for a connection (SYN
- *    set, ACK clear) and was sent to this machine (packet type "host", so
- *    not its own outgoing ones); and IPv6 router announcements (ICMPv6
- *    type 134 right after the IPv6 header).
+ *    set, ACK clear), came to this machine (packet type "host", so not its
+ *    own outgoing ones) and goes to the interface's own IPv4 address (read
+ *    from the kernel like the one of names, but optional: without one no
+ *    TCP passes), so the connections that the devices on the Cardputer's
+ *    hotspot make to anywhere else are never heard; and IPv6 router
+ *    announcements (ICMPv6 type 134 right after the IPv6 header).
+ *    Every IPv4 test of discover, watch and names first checks that the
+ *    IPv4 header is whole (its length at least 20 bytes).
  *    topology: LLDP (EtherType 0x88cc sent to 01:80:c2:00:00:0e) and CDP
  *    (an IEEE 802.3 frame sent to 01:00:0c:cc:cc:cc with LLC SNAP, the
  *    organisation code 00:00:0c and protocol 0x2000), the frames in which
@@ -68,7 +73,9 @@
  *    whole; of every other frame only the radiotap header and the first
  *    two bytes of the Wi-Fi frame (its kind) pass, so no data, address or
  *    other content of anyone's traffic leaves the kernel.
- * 3. The socket is bound to the interface. It is never put into
+ * 3. The socket is bound to the interface, and the kernel's answer
+ *    (getsockname()) must name the interface looked up before, of the
+ *    expected link type. It is never put into
  *    promiscuous mode, so it hears only what reaches the Cardputer anyway.
  *    For topology only, the socket also listens to those two link-layer
  *    groups (PACKET_ADD_MEMBERSHIP), since a network card passes such
@@ -89,7 +96,8 @@
  *
  * Exit status: 0 done (time up, size limit, or the reader went away);
  * 2 not the command, a bad interface (for names also one without an IPv4
- * address; for survey any but lokimon0 in monitor mode) or a bad number;
+ * address; for survey any but lokimon0 in monitor mode; also one that
+ * changed while it was set up) or a bad number;
  * 3 the capability is missing; 4 the socket could not be set up, or
  * failed.
  */
@@ -159,68 +167,84 @@ enum {
 
 static const char kProgram[] = "lokictl-capture";
 
-/* discover: ARP; IPv4 UDP that is not a fragment and goes to port 5353
- * (mDNS) or 1900 (SSDP), or whose source and destination port are each 67
- * or 68 (DHCP). Accepted frames are cut to CAPTURE_SNAP_LENGTH. A load past
- * the end of a frame drops it. */
+/* discover: ARP; IPv4 UDP that is not a fragment, has a whole IPv4 header
+ * (at least 20 bytes), and goes to port 5353 (mDNS) or 1900 (SSDP), or
+ * whose source and destination port are each 67 or 68 (DHCP). Accepted
+ * frames are cut to CAPTURE_SNAP_LENGTH. A load past the end of a frame
+ * drops it. */
 static struct sock_filter kFrameFilter[] = {
     /* 0 */ BPF_STMT(BPF_LD | BPF_H | BPF_ABS, 12),           /* EtherType */
-    /* 1 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, ETH_P_ARP, 15, 0), /* ARP: 17 */
-    /* 2 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, ETH_P_IP, 0, 15),  /* not IPv4: 18 */
+    /* 1 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, ETH_P_ARP, 17, 0), /* ARP: 19 */
+    /* 2 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, ETH_P_IP, 0, 17),  /* not IPv4: 20 */
     /* 3 */ BPF_STMT(BPF_LD | BPF_B | BPF_ABS, 23),           /* IPv4 protocol */
-    /* 4 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 17, 0, 13),   /* not UDP: 18 */
+    /* 4 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 17, 0, 15),   /* not UDP: 20 */
     /* 5 */ BPF_STMT(BPF_LD | BPF_H | BPF_ABS, 20),           /* flags, fragment offset */
-    /* 6 */ BPF_JUMP(BPF_JMP | BPF_JSET | BPF_K, 0x3fff, 11, 0), /* a fragment: 18 */
+    /* 6 */ BPF_JUMP(BPF_JMP | BPF_JSET | BPF_K, 0x3fff, 13, 0), /* a fragment: 20 */
     /* 7 */ BPF_STMT(BPF_LDX | BPF_B | BPF_MSH, 14),          /* X = IPv4 header length */
-    /* 8 */ BPF_STMT(BPF_LD | BPF_H | BPF_IND, 16),           /* UDP destination port */
-    /* 9 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 5353, 7, 0),  /* mDNS: 17 */
-    /* 10 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 1900, 6, 0), /* SSDP: 17 */
-    /* 11 */ BPF_STMT(BPF_LD | BPF_H | BPF_IND, 14),          /* UDP source port */
-    /* 12 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 67, 1, 0),   /* 67: 14 */
-    /* 13 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 68, 0, 4),   /* not 68: 18 */
-    /* 14 */ BPF_STMT(BPF_LD | BPF_H | BPF_IND, 16),          /* UDP destination port */
-    /* 15 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 67, 1, 0),   /* 67: 17 */
-    /* 16 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 68, 0, 1),   /* not 68: 18 */
-    /* 17 */ BPF_STMT(BPF_RET | BPF_K, CAPTURE_SNAP_LENGTH),  /* accept */
-    /* 18 */ BPF_STMT(BPF_RET | BPF_K, 0),                    /* drop */
+    /* 8 */ BPF_STMT(BPF_MISC | BPF_TXA, 0),                  /* A = X */
+    /* 9 */ BPF_JUMP(BPF_JMP | BPF_JGE | BPF_K, 20, 0, 10),   /* shorter than 20: 20 */
+    /* 10 */ BPF_STMT(BPF_LD | BPF_H | BPF_IND, 16),          /* UDP destination port */
+    /* 11 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 5353, 7, 0), /* mDNS: 19 */
+    /* 12 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 1900, 6, 0), /* SSDP: 19 */
+    /* 13 */ BPF_STMT(BPF_LD | BPF_H | BPF_IND, 14),          /* UDP source port */
+    /* 14 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 67, 1, 0),   /* 67: 16 */
+    /* 15 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 68, 0, 4),   /* not 68: 20 */
+    /* 16 */ BPF_STMT(BPF_LD | BPF_H | BPF_IND, 16),          /* UDP destination port */
+    /* 17 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 67, 1, 0),   /* 67: 19 */
+    /* 18 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 68, 0, 1),   /* not 68: 20 */
+    /* 19 */ BPF_STMT(BPF_RET | BPF_K, CAPTURE_SNAP_LENGTH),  /* accept */
+    /* 20 */ BPF_STMT(BPF_RET | BPF_K, 0),                    /* drop */
 };
 
-/* watch: ARP; IPv4 UDP that is not a fragment and whose source and
- * destination port are each 67 or 68 (DHCP); IPv4 TCP that is not a
- * fragment, has SYN set and ACK clear, and came to this machine (packet
- * type PACKET_HOST); IPv6 whose next header is ICMPv6 with type 134 (a
- * router announcement). Accepted frames are cut to CAPTURE_SNAP_LENGTH. A
- * load past the end of a frame drops it. */
+/* The value an own-address test of a filter holds until main() sets it. */
+#define OWN_ADDRESS_UNSET 0xffffffffU
+
+/* watch: ARP; IPv4 that is not a fragment and has a whole IPv4 header (at
+ * least 20 bytes), and then either UDP whose source and destination port
+ * are each 67 or 68 (DHCP), or TCP that came to this machine (packet type
+ * PACKET_HOST), goes to the interface's own IPv4 address (instruction
+ * WATCH_ADDRESS_INDEX, set by main() from the kernel before the filter is
+ * attached) and has SYN set and ACK clear; IPv6 whose next header is
+ * ICMPv6 with type 134 (a router announcement). So a connection that a
+ * device on the Cardputer's hotspot makes to anywhere else, which reaches
+ * this machine's hardware address only to be passed on, never passes;
+ * without an IPv4 address no TCP passes at all. Accepted frames are cut to
+ * CAPTURE_SNAP_LENGTH. A load past the end of a frame drops it. */
 static struct sock_filter kWatchFilter[] = {
     /* 0 */ BPF_STMT(BPF_LD | BPF_H | BPF_ABS, 12),           /* EtherType */
-    /* 1 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, ETH_P_ARP, 24, 0), /* ARP: 26 */
-    /* 2 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, ETH_P_IP, 0, 18),  /* not IPv4: 21 */
+    /* 1 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, ETH_P_ARP, 27, 0), /* ARP: 29 */
+    /* 2 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, ETH_P_IP, 0, 21),  /* not IPv4: 24 */
     /* 3 */ BPF_STMT(BPF_LD | BPF_H | BPF_ABS, 20),           /* flags, fragment offset */
-    /* 4 */ BPF_JUMP(BPF_JMP | BPF_JSET | BPF_K, 0x3fff, 22, 0), /* a fragment: 27 */
-    /* 5 */ BPF_STMT(BPF_LD | BPF_B | BPF_ABS, 23),           /* IPv4 protocol */
-    /* 6 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 17, 0, 7),    /* not UDP: 14 */
-    /* 7 */ BPF_STMT(BPF_LDX | BPF_B | BPF_MSH, 14),          /* X = IPv4 header length */
-    /* 8 */ BPF_STMT(BPF_LD | BPF_H | BPF_IND, 14),           /* UDP source port */
-    /* 9 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 67, 1, 0),    /* 67: 11 */
-    /* 10 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 68, 0, 16),  /* not 68: 27 */
-    /* 11 */ BPF_STMT(BPF_LD | BPF_H | BPF_IND, 16),          /* UDP destination port */
-    /* 12 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 67, 13, 0),  /* 67: 26 */
-    /* 13 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 68, 12, 13), /* 68: 26, else 27 */
-    /* 14 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 6, 0, 12),   /* not TCP: 27 */
-    /* 15 */ BPF_STMT(BPF_LD | BPF_B | BPF_ABS, (uint32_t)(SKF_AD_OFF + SKF_AD_PKTTYPE)), /* packet type */
-    /* 16 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, PACKET_HOST, 0, 10), /* not to this machine: 27 */
-    /* 17 */ BPF_STMT(BPF_LDX | BPF_B | BPF_MSH, 14),         /* X = IPv4 header length */
-    /* 18 */ BPF_STMT(BPF_LD | BPF_B | BPF_IND, 27),          /* TCP flags (14 + X + 13) */
-    /* 19 */ BPF_STMT(BPF_ALU | BPF_AND | BPF_K, 0x12),       /* SYN and ACK */
-    /* 20 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x02, 5, 6), /* SYN only: 26, else 27 */
-    /* 21 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, ETH_P_IPV6, 0, 5), /* not IPv6: 27 */
-    /* 22 */ BPF_STMT(BPF_LD | BPF_B | BPF_ABS, 20),          /* IPv6 next header */
-    /* 23 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 58, 0, 3),   /* not ICMPv6: 27 */
-    /* 24 */ BPF_STMT(BPF_LD | BPF_B | BPF_ABS, 54),          /* ICMPv6 type */
-    /* 25 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 134, 0, 1),  /* router announcement: 26, else 27 */
-    /* 26 */ BPF_STMT(BPF_RET | BPF_K, CAPTURE_SNAP_LENGTH),  /* accept */
-    /* 27 */ BPF_STMT(BPF_RET | BPF_K, 0),                    /* drop */
+    /* 4 */ BPF_JUMP(BPF_JMP | BPF_JSET | BPF_K, 0x3fff, 25, 0), /* a fragment: 30 */
+    /* 5 */ BPF_STMT(BPF_LDX | BPF_B | BPF_MSH, 14),          /* X = IPv4 header length */
+    /* 6 */ BPF_STMT(BPF_MISC | BPF_TXA, 0),                  /* A = X */
+    /* 7 */ BPF_JUMP(BPF_JMP | BPF_JGE | BPF_K, 20, 0, 22),   /* shorter than 20: 30 */
+    /* 8 */ BPF_STMT(BPF_LD | BPF_B | BPF_ABS, 23),           /* IPv4 protocol */
+    /* 9 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 17, 0, 6),    /* not UDP: 16 */
+    /* 10 */ BPF_STMT(BPF_LD | BPF_H | BPF_IND, 14),          /* UDP source port */
+    /* 11 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 67, 1, 0),   /* 67: 13 */
+    /* 12 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 68, 0, 17),  /* not 68: 30 */
+    /* 13 */ BPF_STMT(BPF_LD | BPF_H | BPF_IND, 16),          /* UDP destination port */
+    /* 14 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 67, 14, 0),  /* 67: 29 */
+    /* 15 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 68, 13, 14), /* 68: 29, else 30 */
+    /* 16 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 6, 0, 13),   /* not TCP: 30 */
+    /* 17 */ BPF_STMT(BPF_LD | BPF_B | BPF_ABS, (uint32_t)(SKF_AD_OFF + SKF_AD_PKTTYPE)), /* packet type */
+    /* 18 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, PACKET_HOST, 0, 11), /* not to this machine: 30 */
+    /* 19 */ BPF_STMT(BPF_LD | BPF_W | BPF_ABS, 30),          /* IPv4 destination address */
+    /* 20 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, OWN_ADDRESS_UNSET, 0, 9), /* not the own address: 30 */
+    /* 21 */ BPF_STMT(BPF_LD | BPF_B | BPF_IND, 27),          /* TCP flags (14 + X + 13) */
+    /* 22 */ BPF_STMT(BPF_ALU | BPF_AND | BPF_K, 0x12),       /* SYN and ACK */
+    /* 23 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x02, 5, 6), /* SYN only: 29, else 30 */
+    /* 24 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, ETH_P_IPV6, 0, 5), /* not IPv6: 30 */
+    /* 25 */ BPF_STMT(BPF_LD | BPF_B | BPF_ABS, 20),          /* IPv6 next header */
+    /* 26 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 58, 0, 3),   /* not ICMPv6: 30 */
+    /* 27 */ BPF_STMT(BPF_LD | BPF_B | BPF_ABS, 54),          /* ICMPv6 type */
+    /* 28 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 134, 0, 1),  /* router announcement: 29, else 30 */
+    /* 29 */ BPF_STMT(BPF_RET | BPF_K, CAPTURE_SNAP_LENGTH),  /* accept */
+    /* 30 */ BPF_STMT(BPF_RET | BPF_K, 0),                    /* drop */
 };
+/* The instruction of kWatchFilter that holds the own address. */
+#define WATCH_ADDRESS_INDEX 20
 
 /* topology: LLDP sent to the nearest-bridge group 01:80:c2:00:00:0e, and
  * CDP: an IEEE 802.3 frame (a length, not an EtherType, at byte 12) sent
@@ -255,7 +279,6 @@ static struct sock_filter kTopologyFilter[] = {
  * and goes to port 53. UDP and TCP both keep the destination port two
  * bytes into their header. Accepted frames are cut to
  * CAPTURE_SNAP_LENGTH. A load past the end of a frame drops it. */
-#define NAMES_ADDRESS_UNSET 0xffffffffU
 static struct sock_filter kNamesFilter[] = {
     /* 0 */ BPF_STMT(BPF_LD | BPF_H | BPF_ABS, 12),           /* EtherType */
     /* 1 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, ETH_P_IP, 0, 15),  /* not IPv4: 17 */
@@ -264,7 +287,7 @@ static struct sock_filter kNamesFilter[] = {
     /* 4 */ BPF_STMT(BPF_LD | BPF_H | BPF_ABS, 20),           /* flags, fragment offset */
     /* 5 */ BPF_JUMP(BPF_JMP | BPF_JSET | BPF_K, 0x3fff, 11, 0), /* a fragment: 17 */
     /* 6 */ BPF_STMT(BPF_LD | BPF_W | BPF_ABS, 30),           /* IPv4 destination address */
-    /* 7 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, NAMES_ADDRESS_UNSET, 0, 9), /* not the own address: 17 */
+    /* 7 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, OWN_ADDRESS_UNSET, 0, 9), /* not the own address: 17 */
     /* 8 */ BPF_STMT(BPF_LD | BPF_B | BPF_ABS, 23),           /* IPv4 protocol */
     /* 9 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 17, 1, 0),    /* UDP: 11 */
     /* 10 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 6, 0, 6),    /* not TCP: 17 */
@@ -479,13 +502,14 @@ static int lock_calls(void) {
 
 /* Opens the packet socket on `name`, with `filter` locked on it, bound and
  * receiving; with `join_groups`, also listening to kTopologyGroups. With
- * `own_address`, the interface's own IPv4 address is first written into
- * kNamesFilter (which `filter` is then). With `radiotap`, the interface
- * must be in monitor mode (link type radiotap) instead of Ethernet type.
- * Exits with EXIT_USAGE, EXIT_NO_PERMISSION or EXIT_SOCKET_FAILED when it
- * cannot. */
-static int open_socket(const char* name, const struct sock_fprog* filter, int join_groups, int own_address,
-                       int radiotap) {
+ * `address_test`, the interface's own IPv4 address is first written into
+ * that instruction of `filter`; without an address, `address_required`
+ * ends the program, otherwise the test is made to fail for every frame.
+ * With `radiotap`, the interface must be in monitor mode (link type
+ * radiotap) instead of Ethernet type. Exits with EXIT_USAGE,
+ * EXIT_NO_PERMISSION or EXIT_SOCKET_FAILED when it cannot. */
+static int open_socket(const char* name, const struct sock_fprog* filter, int join_groups,
+                       struct sock_filter* address_test, int address_required, int radiotap) {
     const unsigned int index = if_nametoindex(name);
     if (index == 0) {
         fail("no such interface");
@@ -518,24 +542,28 @@ static int open_socket(const char* name, const struct sock_fprog* filter, int jo
         fail("not an Ethernet-type interface");
         _exit(EXIT_USAGE);
     }
-    if (own_address) {
+    if (address_test) {
         /* The interface's own IPv4 address, as the kernel has it; the only
          * value of a filter that is not fixed in this file. */
         memset(&request, 0, sizeof(request));
         memcpy(request.ifr_name, name, strlen(name));
         request.ifr_addr.sa_family = AF_INET;
-        if (ioctl(fd, SIOCGIFADDR, &request) != 0 || request.ifr_addr.sa_family != AF_INET) {
+        uint32_t own = 0;
+        if (ioctl(fd, SIOCGIFADDR, &request) == 0 && request.ifr_addr.sa_family == AF_INET) {
+            struct sockaddr_in address;
+            memcpy(&address, &request.ifr_addr, sizeof(address));
+            own = ntohl(address.sin_addr.s_addr);
+        }
+        if (own != 0 && own != OWN_ADDRESS_UNSET) {
+            address_test->k = own;
+        } else if (address_required) {
             fail("the interface has no IPv4 address");
             _exit(EXIT_USAGE);
+        } else {
+            /* No address: both ways out of the test lead where a frame to
+             * another address goes (dropped). */
+            address_test->jt = address_test->jf;
         }
-        struct sockaddr_in address;
-        memcpy(&address, &request.ifr_addr, sizeof(address));
-        const uint32_t own = ntohl(address.sin_addr.s_addr);
-        if (own == 0 || own == NAMES_ADDRESS_UNSET) {
-            fail("the interface has no IPv4 address");
-            _exit(EXIT_USAGE);
-        }
-        kNamesFilter[NAMES_ADDRESS_INDEX].k = own;
     }
 
     const int lock = 1;
@@ -553,6 +581,18 @@ static int open_socket(const char* name, const struct sock_fprog* filter, int jo
     if (bind(fd, (const struct sockaddr*)&address, sizeof(address)) != 0) {
         fail("could not listen on the interface");
         _exit(EXIT_SOCKET_FAILED);
+    }
+    /* What was checked above by name must be what the socket is bound to:
+     * the same interface, of the same link type, still called `name`. */
+    struct sockaddr_ll bound;
+    socklen_t bound_size = sizeof(bound);
+    memset(&bound, 0, sizeof(bound));
+    if (getsockname(fd, (struct sockaddr*)&bound, &bound_size) != 0 || bound.sll_family != AF_PACKET ||
+        bound.sll_ifindex != (int)index ||
+        bound.sll_hatype != (radiotap ? ARPHRD_IEEE80211_RADIOTAP : ARPHRD_ETHER) ||
+        if_nametoindex(name) != index) {
+        fail("the interface changed while it was set up");
+        _exit(EXIT_USAGE);
     }
     /* Only this socket's membership: the kernel drops it when the socket
      * closes. Nothing is sent to join a link-layer group. */
@@ -599,6 +639,11 @@ static int64_t now_ms(void) {
 }
 
 int main(int argc, char* argv[]) {
+    /* First: no signal blocked, whatever the caller left (a blocked
+     * SIGTERM or SIGALRM would keep it running). */
+    sigset_t no_signals;
+    sigemptyset(&no_signals);
+    sigprocmask(SIG_SETMASK, &no_signals, NULL);
     tidy_descriptors();
     /* A reader that went away shows as a failed write, not a signal. A
      * caller's ignored SIGTERM or SIGALRM must not keep this running. */
@@ -622,11 +667,13 @@ int main(int argc, char* argv[]) {
         .filter = kFrameFilter,
     };
     int join_groups = 0;
-    int own_address = 0;
+    struct sock_filter* address_test = NULL;
+    int address_required = 0;
     int radiotap = 0;
     if (strcmp(argv[1], "watch") == 0) {
         filter.len = (unsigned short)(sizeof(kWatchFilter) / sizeof(kWatchFilter[0]));
         filter.filter = kWatchFilter;
+        address_test = &kWatchFilter[WATCH_ADDRESS_INDEX];
     } else if (strcmp(argv[1], "topology") == 0) {
         filter.len = (unsigned short)(sizeof(kTopologyFilter) / sizeof(kTopologyFilter[0]));
         filter.filter = kTopologyFilter;
@@ -634,7 +681,8 @@ int main(int argc, char* argv[]) {
     } else if (strcmp(argv[1], "names") == 0) {
         filter.len = (unsigned short)(sizeof(kNamesFilter) / sizeof(kNamesFilter[0]));
         filter.filter = kNamesFilter;
-        own_address = 1;
+        address_test = &kNamesFilter[NAMES_ADDRESS_INDEX];
+        address_required = 1;
     } else if (strcmp(argv[1], "survey") == 0) {
         filter.len = (unsigned short)(sizeof(kSurveyFilter) / sizeof(kSurveyFilter[0]));
         filter.filter = kSurveyFilter;
@@ -655,7 +703,7 @@ int main(int argc, char* argv[]) {
         return EXIT_NO_PERMISSION;
     }
 
-    const int fd = open_socket(name, &filter, join_groups, own_address, radiotap);
+    const int fd = open_socket(name, &filter, join_groups, address_test, address_required, radiotap);
     /* A last stop, should the loop below ever be stuck in a write (set
      * before the seccomp filter, which does not allow it). */
     alarm((unsigned int)seconds + 5U);

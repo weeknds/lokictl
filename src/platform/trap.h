@@ -29,9 +29,10 @@ std::vector<uint16_t> read_listening_ports(const std::string& path);
 // - leaves every port of model::trap_services() alone that something on
 //   the Cardputer already listens on (/proc/net/tcp and tcp6), and listens
 //   (IPv4, as the normal user) on the listen port of each other one;
-// - for the low ports, runs the firewall helper's trap-on (platform::
-//   trap_on()), which sends them on to the listen ports; a low port it did
-//   not send on is closed again (in use, or no helper);
+// - for the low ports, starts the firewall helper's trap-on (platform::
+//   trap_on()), which sends them on to the listen ports while the run
+//   lasts; a low port it did not send on is closed again (in use, or no
+//   helper);
 // - then accepts connections: within the limits (model::TrapLimiter) each
 //   is logged at once, gets its service's harmless greeting (counted in
 //   Sent), is read for at most model::kTrapReadSeconds and
@@ -40,12 +41,13 @@ std::vector<uint16_t> read_listening_ports(const std::string& path);
 //   connection from the Cardputer itself (its own address or loopback) is
 //   closed and not counted. Nothing received is ever run, stored on disk
 //   or passed on.
-// - every 10 s it checks again that nothing else began to listen on a low
-//   port it sends on; if something did, trap-on runs again, which leaves
-//   that port alone.
-// A stop closes every socket and runs trap-off (a failure of that is left
-// in helper_problem); every wait is at most 100 ms, so a stop takes effect
-// within about 0.2 s plus the helper's run.
+// - the helper checks every 3 s that nothing else began to listen on a
+//   low port it sends on, and drops such a port; the run closes that low
+//   port too (platform::trap_changed()).
+// A stop closes every socket and ends the helper, which removes its chain
+// (platform::trap_off(); a failure of that is left in helper_problem);
+// every wait is at most 100 ms, so a stop takes effect within about 0.2 s
+// plus the helper's end.
 //
 // The pretend runner (the Mac simulator and snapshots) has no thread and
 // opens nothing: each take() adds the made-up connections up to the LVGL

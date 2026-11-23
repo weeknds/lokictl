@@ -531,8 +531,13 @@ change anything.
   its own that block and unblock never touch: `kill_forward` drops
   whatever comes in on `wlan0` or `lokiap0` and would leave by any
   interface but `lokiwg0` (by name, so it holds while the tunnel is gone),
-  and `kill_output` drops DNS (port 53) that the hotspot's `dnsmasq` (user
-  `nobody`) sends by anything but `lokiwg0` or `lo`. It follows the user's
+  and `kill_output` drops DNS (port 53) that the hotspot's `dnsmasq` sends
+  by anything but `lokiwg0` or `lo`. `kill-on` reads the user that
+  NetworkManager's `dnsmasq` runs as (`nobody` on the device); armed before
+  the hotspot starts it takes dnsmasq's default, `nobody`, and
+  `DeviceBlocker` arms it once more when the hotspot is up. If that
+  `dnsmasq` runs as root, or two run as different users, it fails with
+  `kill switch: DNS server user unclear` and changes nothing. It follows the user's
   intent, not the tunnel: it stays when the tunnel drops or NetworkManager
   takes it down, through a hotspot restart and through Block and Allow,
   and comes off (`kill-off`, or the whole table once no hotspot runs) only
@@ -783,13 +788,19 @@ LokiCTL's own nftables table, `inet lokictl`, match the list: when the
 hotspot comes up (first clearing a table a killed run may have left), when
 the list changes (only the differences), and it removes the table when the
 hotspot stops, once after the start, and on the way out before the switch
-back to Client. It never runs the helper in the first reading (the UI
-thread's) or while a switch runs; each run is killed after 3 s. A device
-counts as blocked only once the helper said so. A failed change keeps the
-old state, raises `HomeData::block_failures` and sets
+back to Client. `block` and `unblock` name the hotspot that runs (`router`
+for `wlan0`, `share` for `lokiap0`; `DeviceBlocker::apply()` gets the
+hotspot's interface), the helper refuses them unless that interface is in
+access-point mode, and the two rules match only that interface; when the
+hotspot changes, or a table was adopted, the rules are made again for the
+one that runs. It never runs the helper in the first reading (the UI
+thread's) or while a switch runs; each run is killed after 3 s (the
+helper kills its own `nft` or `iw` after 5 s, and they die with it). A
+device counts as blocked only once the helper said so. A failed change
+keeps the old state, raises `HomeData::block_failures` and sets
 `HomeData::block_message` (`Block failed: helper not installed`, `… no
-permission`, `… firewall refused`, …), which the app logs and shows as a
-message. Everywhere else (the made-up sources, test folders, the Mac,
+permission`, `… firewall refused`, `… hotspot not running`, …), which the
+app logs and shows as a message. Everywhere else (the made-up sources, test folders, the Mac,
 snapshots) every listed device counts as blocked at once and nothing runs,
 so `--keys 8` on the Devices page pictures a blocked device.
 
@@ -1283,7 +1294,8 @@ controller's message.
   use from `/proc/net/ipv6_route`, then runs
   `/usr/libexec/lokictl/lokictl-capture watch <interface> 1800` (the same
   `platform::CaptureProcess`, its `watch` filter: ARP, DHCP, TCP SYN
-  without ACK sent to this machine, IPv6 router announcements) and reads
+  without ACK sent to the interface's own IPv4 address, IPv6 router
+  announcements; never a hotspot device's connection to anywhere else) and reads
   the stream into `platform::WatchDetector`. When the helper ends
   normally (30 minutes, or 16 MiB) it runs again after a second, and the
   detector keeps what it knew; any other end fails the run.
@@ -1327,22 +1339,31 @@ at every start and stops when LokiCTL quits, keep mode or not.
   (`/proc/net/tcp` and `tcp6`), listens on the others (IPv4, as the user;
   the low ports on 30021, 30023, 30080 and 30445) and runs the firewall
   helper's `trap-on` (`platform::trap_on()`), which sends the low ports on
-  to those; a low port it did not send on is closed again (`in use`, or
-  `no helper`). Each connection, within 20 a minute in all and 5 per
+  to those and keeps running while the trap does (LokiCTL holds its
+  standard input; it removes its chain when that closes, on SIGTERM, or
+  when LokiCTL dies); a low port it did not send on is closed again (`in
+  use`, or `no helper`). Each connection, within 20 a minute in all and 5 per
   source (`model::TrapLimiter`; more are closed at once and only counted),
   is logged at once, gets a harmless greeting (FTP `220`, a Telnet
   `login:` prompt, a plain web page after the request; nothing for file
   sharing and remote desktop; one packet in Sent each), is read for at
   most 5 s and 512 bytes and is closed. At most 8 are open at once. Every
-  10 s it checks that nothing else began to listen on a low port it sends
-  on, and runs `trap-on` again without it if something did. A stop closes
-  everything and runs `trap-off`.
-- **The firewall table.** The helper runs one at a time
-  (`platform::run_helper()` holds a lock), and while the trap is set a
-  removal of the whole table (`DeviceBlocker`'s `clear`, when the hotspot
-  stops) sets the redirect up again at once. A trap chain a killed run
-  left behind goes at the next start (`clear`, or `trap-off` when the
-  table is adopted).
+  3 s the helper checks that nothing else began to listen on a low port it
+  sends on (and that LokiCTL still listens on the high one), drops such a
+  port and prints the ports left (`platform::trap_changed()`); the page
+  then shows it `in use`. A stop closes everything and ends the helper,
+  which removes its chain (`platform::trap_off()`; if it does not end
+  within 3 s it is killed and `trap-off` removes the chain).
+- **The firewall table.** The short helper runs go one at a time
+  (`platform::run_helper()` holds a lock); the trap's `trap-on` runs
+  beside them, and every change of each is one nft transaction that
+  touches only its own chains, so `trap-on`'s end never takes the kill
+  switch with it. While the trap is set, a removal of the whole table
+  (`DeviceBlocker`'s `clear`, when the hotspot stops) makes the app send
+  the helper a line, and it sets its chain up again at once. A trap chain
+  a killed run left behind goes at the next start (`clear`, or `trap-off`
+  when the table is adopted). The chain's end can leave the table empty;
+  `DeviceBlocker::leave()` removes it on the way out.
 - **The pretend runner** (the Mac and snapshots) adds four made-up
   connections in the first 6 s and shows 8080 as in use.
 - **What is kept:** the newest 100 connections, in memory only: time,
@@ -1411,9 +1432,12 @@ which `app::SurveyController` hands to the view model
   `lokimon0`, a `wireless` folder, `DEVTYPE=usb_interface`), takes it
   only when it is down and in managed mode, and leaves the stick's own
   interface that way: it adds a second, listen-only interface on the
-  stick, `lokimon0` (`iw dev <stick> interface add lokimon0 type
-  monitor`; some sticks, such as ath9k_htc ones, hear nothing when their
-  own interface is switched to monitor mode), brings it up, says `ready`,
+  stick's radio, `lokimon0` (`iw phy <phy> interface add lokimon0 type
+  monitor`, with the radio read from the stick's `phy80211`, and the
+  stick's interface number checked again after each check; some sticks,
+  such as ath9k_htc ones, hear nothing when their own interface is
+  switched to monitor mode), checks that `lokimon0` is on that radio,
+  brings it up, says `ready`,
   then hops `lokimon0` over channels 1 to 14 every 250 ms, dropping for
   good each channel the kernel refuses (the country's rules; channels 1
   to 13 in Europe). It removes `lokimon0` when its standard input closes
