@@ -863,7 +863,8 @@ the small 1.9-inch panel is something only your own eyes can judge.
 assets/
   audio/              sound effects
   fonts/              text and icon fonts and their licenses
-  images/             app icons and the simulator's device frame
+  images/             app icon (lokictl.svg and the PNGs made from it) and
+                      the simulator's device frame
 cmake/
   cm0-package.cmake   install layout and Debian packaging
   templates/          inputs for the launcher entry, systemd unit and conffiles
@@ -878,6 +879,8 @@ scripts/
                       the build image used by build-deb.sh
   device.sh           installs, runs and tests LokiCTL on a device over SSH
   device-agent.py     the device side of device.sh
+  make-icons.sh       draws the app icon PNGs from the SVG in a Debian
+                      container
 src/
   app/                startup, command line, snapshot mode, main loop, page
                       switching, key handling, assets, simulator window
@@ -905,9 +908,10 @@ deploy.sh             builds the device package and copies it to a device
 
 The name is defined in the identity block at the top of `CMakeLists.txt` (the
 `project()` line and `APP_DISPLAY_NAME`). When changing it, also rename
-`config/<name>.conf` and `assets/images/<name>*.png`, and update
-`app-builder.json` and this README. Configure stops with a clear message if the
-file names and the identity block disagree. The build image tag
+`config/<name>.conf` and `assets/images/<name>.svg` and `<name>*.png`, and
+update `app-builder.json`, `icon_name` in `scripts/make-icons.sh` and this
+README. Configure stops with a clear message if the file names and the
+identity block disagree. The build image tag
 `lokictl-build:trixie` at the top of `scripts/build-deb.sh` carries the name
 too; renaming it is optional. The device scripts carry it as well: the
 constants at the top of `scripts/device-agent.py` (program path, unit and file

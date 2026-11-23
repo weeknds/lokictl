@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SPDX-FileCopyrightText: 2026 LokiCTL contributors
+  SPDX-License-Identifier: MIT
+
+  LokiCTL app icon: a small network drawn as an L. The ringed node is the
+  device, linked by cable (lime) to two nodes and by radio (violet) to a third.
+  Colours are the Constellation theme's (src/view/theme.cpp): surface #0C1120,
+  accent #C8FF4D, link #8C7CFF. The square is filled to the edges on purpose;
+  the launcher rounds the corners and draws its own border.
+  The PNGs next to this file are made from it by scripts/make-icons.sh.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#0C1120"/>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M152 384 L364 172" stroke="#8C7CFF" stroke-width="28"/>
+    <path d="M152 120 V384 H392" stroke="#C8FF4D" stroke-width="40"/>
+  </g>
+  <circle cx="364" cy="172" r="38" fill="#8C7CFF"/>
+  <circle cx="152" cy="120" r="38" fill="#C8FF4D"/>
+  <circle cx="392" cy="384" r="38" fill="#C8FF4D"/>
+  <circle cx="152" cy="384" r="62" fill="#C8FF4D"/>
+  <circle cx="152" cy="384" r="26" fill="#0C1120"/>
+</svg>
