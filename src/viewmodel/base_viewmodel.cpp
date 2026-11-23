@@ -66,6 +66,8 @@ BaseViewModel::BaseViewModel()
       watch_request_subject_(0),
       watch_selection_subject_(0),
       watch_detail_subject_(false),
+      health_selection_subject_(0),
+      health_detail_subject_(false),
       map_selection_subject_(kMapRouter),
       home_selection_subject_(0),
       home_data_subject_(0),
@@ -450,6 +452,8 @@ bool BaseViewModel::open_tool(model::ToolKind kind) {
         case model::ToolKind::Listen:
         case model::ToolKind::Probe:
             return open_discover();
+        case model::ToolKind::Health:
+            return open_health();
     }
     return open_page(model::AppPage::Ping);
 }
@@ -728,6 +732,41 @@ bool BaseViewModel::watch_detail() const {
 void BaseViewModel::set_watch_detail(bool open) {
     if (open != watch_detail_subject_.value()) {
         watch_detail_subject_.set(open);
+    }
+}
+
+bool BaseViewModel::open_health() {
+    set_health_selection(0);
+    set_health_detail(false);
+    return open_page(model::AppPage::Health);
+}
+
+lv_subject_t* BaseViewModel::health_selection_subject() {
+    return health_selection_subject_.native();
+}
+
+int32_t BaseViewModel::health_selection() const {
+    return health_selection_subject_.value();
+}
+
+void BaseViewModel::set_health_selection(int32_t row) {
+    const int32_t next = std::max<int32_t>(row, 0);
+    if (next != health_selection_subject_.value()) {
+        health_selection_subject_.set(next);
+    }
+}
+
+lv_subject_t* BaseViewModel::health_detail_subject() {
+    return health_detail_subject_.native();
+}
+
+bool BaseViewModel::health_detail() const {
+    return health_detail_subject_.value();
+}
+
+void BaseViewModel::set_health_detail(bool open) {
+    if (open != health_detail_subject_.value()) {
+        health_detail_subject_.set(open);
     }
 }
 

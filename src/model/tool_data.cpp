@@ -48,6 +48,8 @@ const char* tool_name(ToolKind kind) {
             return "ports";
         case ToolKind::Speed:
             return "speed";
+        case ToolKind::Health:
+            return "health";
     }
     return "ping";
 }
@@ -103,7 +105,7 @@ bool operator!=(const TraceRun& left, const TraceRun& right) {
 bool operator==(const HeardDevice& left, const HeardDevice& right) {
     return left.hardware_address == right.hardware_address && left.address == right.address &&
            left.name == right.name && left.kind == right.kind && left.own_port == right.own_port &&
-           left.heard_s == right.heard_s;
+           left.heard_s == right.heard_s && left.upnp == right.upnp && left.ssdp_server == right.ssdp_server;
 }
 
 bool operator!=(const HeardDevice& left, const HeardDevice& right) {
@@ -277,11 +279,44 @@ std::string speed_server_host(std::string_view text) {
     return std::string(rest.substr(0, rest.find_first_of("/:")));
 }
 
+bool operator==(const HealthFinding& left, const HealthFinding& right) {
+    return left.issue == right.issue && left.level == right.level && left.title == right.title &&
+           left.who == right.who && left.where == right.where && left.fact == right.fact &&
+           left.port == right.port && left.order == right.order;
+}
+
+bool operator!=(const HealthFinding& left, const HealthFinding& right) {
+    return !(left == right);
+}
+
+bool operator==(const HealthLocal& left, const HealthLocal& right) {
+    return left.address == right.address && left.router == right.router && left.wifi_name == right.wifi_name &&
+           left.wifi_security == right.wifi_security && left.nearby == right.nearby && left.cable == right.cable &&
+           left.cable_name == right.cable_name && left.cable_mbps == right.cable_mbps &&
+           left.cable_duplex == right.cable_duplex;
+}
+
+bool operator!=(const HealthLocal& left, const HealthLocal& right) {
+    return !(left == right);
+}
+
+bool operator==(const HealthRun& left, const HealthRun& right) {
+    return left.state == right.state && left.error == right.error && left.reason == right.reason &&
+           left.interface_name == right.interface_name && left.network == right.network &&
+           left.step == right.step && left.total == right.total && left.asked == right.asked &&
+           left.hosts == right.hosts && left.scanned == right.scanned && left.elapsed_s == right.elapsed_s &&
+           left.findings == right.findings;
+}
+
+bool operator!=(const HealthRun& left, const HealthRun& right) {
+    return !(left == right);
+}
+
 bool operator==(const ToolsData& left, const ToolsData& right) {
     return left.ping == right.ping && left.dns == right.dns && left.trace == right.trace &&
            left.listen == right.listen && left.probe == right.probe && left.ports == right.ports &&
-           left.speed == right.speed && left.latest == right.latest && left.sent == right.sent &&
-           left.list_date == right.list_date;
+           left.speed == right.speed && left.health == right.health && left.latest == right.latest &&
+           left.sent == right.sent && left.list_date == right.list_date;
 }
 
 bool operator!=(const ToolsData& left, const ToolsData& right) {
@@ -292,7 +327,7 @@ bool tool_running(const ToolsData& data) {
     return data.ping.state == ToolState::Running || data.dns.state == ToolState::Running ||
            data.trace.state == ToolState::Running || data.listen.state == ToolState::Running ||
            data.probe.state == ToolState::Running || data.ports.state == ToolState::Running ||
-           data.speed.state == ToolState::Running;
+           data.speed.state == ToolState::Running || data.health.state == ToolState::Running;
 }
 
 ToolState tool_state(const ToolsData& data, ToolKind kind) {
@@ -311,6 +346,8 @@ ToolState tool_state(const ToolsData& data, ToolKind kind) {
             return data.ports.state;
         case ToolKind::Speed:
             return data.speed.state;
+        case ToolKind::Health:
+            return data.health.state;
     }
     return ToolState::Idle;
 }
@@ -418,7 +455,7 @@ bool valid_interface_name(std::string_view text) {
 }
 
 bool valid_tool_target(ToolKind kind, std::string_view text) {
-    if (kind == ToolKind::Listen || kind == ToolKind::Probe) {
+    if (kind == ToolKind::Listen || kind == ToolKind::Probe || kind == ToolKind::Health) {
         return valid_interface_name(text);
     }
     if (kind == ToolKind::Ports) {

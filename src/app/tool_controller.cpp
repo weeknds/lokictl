@@ -7,6 +7,7 @@
 #include "tool_controller.h"
 
 #include "base_viewmodel.h"
+#include "health_check.h"
 #include "logger.h"
 #include "sent_counter.h"
 
@@ -44,6 +45,34 @@ std::string why(model::ToolError error, const std::string& reason) {
         return reason;
     }
     return error_name(error);
+}
+
+// What the health check takes from the data layer as it starts: the
+// uplink's address and router, the joined Wi-Fi (the uplink's, else the
+// one the scan list marks as joined), NetworkManager's last scan list (the
+// Health page has it read, see DataController) and whether the uplink is a
+// cable.
+model::HealthLocal health_local(const model::HomeData& home) {
+    model::HealthLocal local;
+    local.address = home.uplink_address;
+    local.router = home.gateway_address;
+    if (home.uplink_kind == model::LinkKind::Wifi) {
+        local.wifi_name = home.wifi_name;
+        local.wifi_security = home.wifi_security;
+    }
+    for (const model::WifiNetwork& network : home.wifi_scan.networks) {
+        if (network.joined && local.wifi_security.empty()) {
+            local.wifi_name = network.name;
+            local.wifi_security = network.security;
+        }
+    }
+    local.nearby = home.wifi_scan.networks;
+    local.cable = home.uplink_kind == model::LinkKind::Cable;
+    if (local.cable) {
+        local.cable_name = home.uplink_name;
+        local.cable_mbps = home.uplink_speed_mbps;
+    }
+    return local;
 }
 
 } // namespace
@@ -120,7 +149,8 @@ void ToolController::handle_request() {
     } else if (view_model_.requested_tool_stop()) {
         for (const model::ToolKind kind : {model::ToolKind::Ping, model::ToolKind::Dns, model::ToolKind::Trace,
                                            model::ToolKind::Listen, model::ToolKind::Probe,
-                                           model::ToolKind::Ports, model::ToolKind::Speed}) {
+                                           model::ToolKind::Ports, model::ToolKind::Speed,
+                                           model::ToolKind::Health}) {
             if (model::tool_state(data_, kind) == model::ToolState::Running) {
                 runner_->stop();
                 LOG_INFO("tools: {} stopped by the user", model::tool_name(kind));
@@ -134,10 +164,21 @@ void ToolController::handle_request() {
             LOG_WARN("tools: {} refused: not a valid target", model::tool_name(kind));
             return;
         }
-        if (!runner_->start({kind, view_model_.requested_tool_target()})) {
+        platform::ToolJob job{kind, view_model_.requested_tool_target(), {}};
+        if (kind == model::ToolKind::Health) {
+            job.health = health_local(view_model_.home());
+        }
+        if (!runner_->start(job)) {
             return;  // one runs already
         }
-        LOG_INFO("tools: {} started", model::tool_name(kind));
+        if (kind == model::ToolKind::Health) {
+            // Counts only: never a network's name.
+            LOG_INFO("tools: health started, wifi networks heard: {}, joined wifi: {}, cable: {}",
+                     job.health.nearby.size(), job.health.wifi_security.empty() ? "no" : "yes",
+                     job.health.cable ? "yes" : "no");
+        } else {
+            LOG_INFO("tools: {} started", model::tool_name(kind));
+        }
     }
     // The page shows the change at once, not at the next tick.
     poll();
@@ -235,6 +276,20 @@ void ToolController::log_change(const model::ToolsData& next) const {
                      speed.down_bytes, speed.up_kbps, speed.up_bytes);
         } else if (speed.state == model::ToolState::Failed) {
             LOG_INFO("tools: speed failed: {}", why(speed.error, speed.reason));
+        }
+    }
+    // Counts only: never an address, a name or what was found where.
+    const model::HealthRun& health = next.health;
+    if (health.state != data_.health.state) {
+        const model::HealthCounts counts = model::health_counts(health.findings);
+        if (health.state == model::ToolState::Done) {
+            LOG_INFO("tools: health done, asked: {}, devices: {}, risks: {}, warnings: {}, info: {}, {} s",
+                     health.asked, health.scanned, counts.risks, counts.warnings, counts.infos, health.elapsed_s);
+        } else if (health.state == model::ToolState::Stopped) {
+            LOG_INFO("tools: health ended, asked: {} of {}, devices: {} of {}", health.asked, health.total,
+                     health.scanned, health.hosts);
+        } else if (health.state == model::ToolState::Failed) {
+            LOG_INFO("tools: health failed: {}", why(health.error, health.reason));
         }
     }
     // Sizes only: never the file's path.

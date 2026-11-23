@@ -11,8 +11,9 @@
 
 // The well-known services that deserve a word of warning when they are
 // open, each with a level and one plain line. The Ports page's host
-// detail shows them under the open port; the health check uses the same
-// table.
+// detail shows them under the open port; the health check
+// (health_check.h) uses the same table, with each rule's short title in
+// its list and the note and the fix in its detail.
 namespace model {
 
 // How much a finding matters.
@@ -28,7 +29,9 @@ const char* risk_level_name(RiskLevel level);  // "info", "warning", "risk"
 struct ServiceRule {
     uint16_t port;
     RiskLevel level;
-    const char* note;  // one short line, without the service's name ("sends passwords in plain text")
+    const char* note;   // one short line, without the service's name ("sends passwords in plain text")
+    const char* title;  // the health check's list name, at most 20 characters ("Telnet open")
+    const char* fix;    // what to do, one short sentence
 };
 
 // Every rule, by port, ascending.

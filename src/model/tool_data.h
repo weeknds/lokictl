@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include "home_data.h"
+#include "service_rules.h"
 #include "vuln_list.h"
 
 #include <cstddef>
@@ -16,8 +18,9 @@
 
 namespace model {
 
-// The tools that can run (the Ping, DNS, Trace, Ports and Speed pages, and
-// listening and probing on the Discover page). Only one runs at a time.
+// The tools that can run (the Ping, DNS, Trace, Ports, Speed and Health
+// pages, and listening and probing on the Discover page). Only one runs at
+// a time.
 enum class ToolKind : int32_t {
     Ping   = 0,
     Dns    = 1,
@@ -26,12 +29,14 @@ enum class ToolKind : int32_t {
     Probe  = 4,
     Ports  = 5,
     Speed  = 6,
+    Health = 7,
 };
 
 // How many kinds there are, for tables indexed by ToolKind.
-constexpr std::size_t kToolKindCount = 7;
+constexpr std::size_t kToolKindCount = 8;
 
-const char* tool_name(ToolKind kind); // "ping", "dns", "trace", "listen", "probe", "ports", "speed"
+// "ping", "dns", "trace", "listen", "probe", "ports", "speed", "health"
+const char* tool_name(ToolKind kind);
 
 // Where a tool's latest run stands.
 enum class ToolState : int32_t {
@@ -177,7 +182,12 @@ struct HeardDevice {
     std::string kind;              // what it is, from mDNS services or SSDP ("printer"); empty when not known
     std::string own_port;          // one of the Cardputer's own ports: its interface ("wlan0"); else empty
     int32_t heard_s{0};            // seconds into the run when it was last heard
+    bool upnp{false};              // it announced itself or answered over SSDP: UPnP is on
+    std::string ssdp_server;       // what its SSDP SERVER line said, printable, at most kSsdpServerMax characters
 };
+
+// HeardDevice::ssdp_server keeps at most this many characters.
+constexpr std::size_t kSsdpServerMax = 60;
 
 bool operator==(const HeardDevice& left, const HeardDevice& right);
 bool operator!=(const HeardDevice& left, const HeardDevice& right);
@@ -351,6 +361,96 @@ bool valid_speed_server(std::string_view text);
 // The host of a valid speed server, for the page: "speed.cloudflare.com".
 std::string speed_server_host(std::string_view text);
 
+// The health check (the Health page): one run looks for common weak spots
+// on the uplink's own network. It sweeps the network as a probe does, then
+// scans the ports of at most kHealthMaxHosts devices (the router, the
+// Cardputer itself, then the others by address) as the Ports page does, and
+// checks what it found, and the Cardputer's own links, against the rules of
+// health_check.h.
+constexpr std::size_t kHealthMaxHosts = 32;
+// A device with more open ports than this is a finding.
+constexpr std::size_t kHealthManyPorts = 8;
+// A cable link at this speed (Mbit/s) or slower is a finding.
+constexpr int32_t kHealthSlowCableMbps = 10;
+// A run keeps at most this many findings, the worst first.
+constexpr std::size_t kHealthMaxFindings = 64;
+
+// What a health check is doing.
+enum class HealthStep : int32_t {
+    Sweep = 0,  // finding the devices (the probe's sweep and questions)
+    Ports,      // scanning the devices' ports, one after the other
+};
+
+// What a finding is about. Each has its words in health_check.h.
+enum class HealthIssue : int32_t {
+    Service = 0,  // an open port with a rule in service_rules() ("Telnet open")
+    RouterPage,   // the router's settings page on plain http
+    Upnp,         // the router lets apps open ports (UPnP)
+    Holes,        // known security holes in a version a port said
+    Outdated,     // a version that no longer gets security fixes
+    Check,        // holes or an old version, but built by a vendor who may have fixed them
+    ManyPorts,    // more than kHealthManyPorts open ports on one device
+    OpenWifi,     // the joined Wi-Fi has no password
+    WepWifi,      // the joined Wi-Fi uses WEP
+    WpaWifi,      // the joined Wi-Fi uses WPA (version 1)
+    LookAlike,    // a nearby network with the joined one's name and weaker security
+    SlowCable,    // the cable link at kHealthSlowCableMbps or less, or half duplex
+};
+
+// One weak spot a health check found. Every text is one line.
+struct HealthFinding {
+    HealthIssue issue{HealthIssue::Service};
+    RiskLevel level{RiskLevel::Info};
+    std::string title;    // the list's short name: "Telnet open", "3 known holes"
+    std::string who;      // the list's short right column: "router", "this device", "10.0.0.7", "Wi-Fi", "eth0"
+    std::string where;    // the detail's line about who: "router 10.0.0.1", "printer 10.0.0.23"
+    std::string fact;     // the detail's line of facts: "Port 23, remote login", "dnsmasq 2.85, worst 9.8"
+    uint16_t port{0};     // the port it is about; 0 for none
+    int32_t order{0};     // for sorting: the device's place in the run (links first)
+};
+
+bool operator==(const HealthFinding& left, const HealthFinding& right);
+bool operator!=(const HealthFinding& left, const HealthFinding& right);
+
+// What a health check looks at besides the network's devices: the
+// Cardputer's own links, taken from the data layer as the run starts (the
+// cable's speed and duplex are read by the runner). An empty text, 0 or
+// model::kSpeedUnknown means not known.
+struct HealthLocal {
+    std::string address;              // the uplink's IPv4 address: this device
+    std::string router;               // the uplink's router (IPv4)
+    std::string wifi_name;            // the network the built-in Wi-Fi joined; empty when none
+    std::string wifi_security;        // its security, as WifiNetwork::security writes it ("WPA2")
+    std::vector<WifiNetwork> nearby;  // the networks of NetworkManager's last scan
+    bool cable{false};                // the uplink is a cable
+    std::string cable_name;           // its interface ("eth0")
+    int32_t cable_mbps{kSpeedUnknown};
+    std::string cable_duplex;         // "full" or "half"; empty when not known
+};
+
+bool operator==(const HealthLocal& left, const HealthLocal& right);
+bool operator!=(const HealthLocal& left, const HealthLocal& right);
+
+// The latest health check. Every packet it sends counts in the Sent count,
+// as the probe's and the port scan's do.
+struct HealthRun {
+    ToolState state{ToolState::Idle};
+    ToolError error{ToolError::None};
+    std::string reason;               // with ToolError::Failed ("not a private network")
+    std::string interface_name;       // the interface checked from, for example "eth0"
+    std::string network;              // what the sweep asks, "10.0.0.0/24"; empty until known
+    HealthStep step{HealthStep::Sweep};
+    int32_t total{0};                 // addresses the sweep asks
+    int32_t asked{0};                 // addresses asked so far
+    int32_t hosts{0};                 // devices to scan (at most kHealthMaxHosts)
+    int32_t scanned{0};               // devices scanned so far
+    int32_t elapsed_s{0};             // seconds since the run started; stops when it ends
+    std::vector<HealthFinding> findings;  // the worst first (health_check.h); at most kHealthMaxFindings
+};
+
+bool operator==(const HealthRun& left, const HealthRun& right);
+bool operator!=(const HealthRun& left, const HealthRun& right);
+
 // What the tools show: the latest run of each, which of the Discover
 // page's two kinds started last, and the app-wide count of packets LokiCTL
 // has sent in this run of the app.
@@ -362,6 +462,7 @@ struct ToolsData {
     ProbeRun probe;
     PortRun ports;
     SpeedRun speed;
+    HealthRun health;
     ToolKind latest{ToolKind::Listen};  // Listen or Probe: the Discover run started last
     uint64_t sent{0};
     // The date of the installed list of known security holes
@@ -396,10 +497,10 @@ std::vector<DiscoverDevice> discover_devices(const ListenRun& listen, const Prob
 // no two dots in a row). A text of digits and dots only must be an IPv4
 // address (four numbers of 0-255). For DNS a name is needed, so an IPv4
 // address is refused there; Ping and Trace take both. The port scan takes
-// only an IPv4 address that port_scan_address() allows. The listen and
-// probe tools' target is an interface, checked with valid_interface_name()
-// instead, and the speed test's is its server, checked with
-// valid_speed_server().
+// only an IPv4 address that port_scan_address() allows. The listen, probe
+// and health tools' target is an interface, checked with
+// valid_interface_name() instead, and the speed test's is its server,
+// checked with valid_speed_server().
 bool valid_tool_target(ToolKind kind, std::string_view text);
 
 // Whether `text` is an IPv4 address in dotted form ("192.0.2.1").
@@ -413,7 +514,8 @@ bool port_scan_address(std::string_view text);
 
 // Whether `text` may be handed to the capture helper as an interface name:
 // 1 to kInterfaceNameMax characters of a-z, A-Z, 0-9, '.', '_' and '-', and
-// not "." or "..". The listen and probe tools' target is checked with it.
+// not "." or "..". The listen, probe and health tools' target is checked
+// with it.
 bool valid_interface_name(std::string_view text);
 
 } // namespace model

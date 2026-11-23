@@ -465,7 +465,8 @@ void DataController::update_shown() {
     const model::AppPage page = view_model_.current_page();
     reader_.set_traffic_shown(!screen_dark_ && page == model::AppPage::Home);
     reader_.set_details_shown(!screen_dark_ && page == model::AppPage::Status);
-    reader_.set_wifi_shown(!screen_dark_ && page == model::AppPage::Wifi);
+    // The health check takes NetworkManager's last scan list as it starts.
+    reader_.set_wifi_shown(!screen_dark_ && (page == model::AppPage::Wifi || page == model::AppPage::Health));
 }
 
 bool DataController::poll() {

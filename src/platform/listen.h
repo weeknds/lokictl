@@ -97,6 +97,9 @@ private:
 // a kind from its ST header as a NOTIFY does from NT. In any mDNS response
 // a reverse (PTR) record for the packet's source address gives a host name
 // too (the first label of the name it points to).
+// An SSDP announcement or reply also marks the device as speaking UPnP and
+// keeps its SERVER line (at most model::kSsdpServerMax printable ASCII
+// characters; the last one heard), where a version may stand.
 // A DHCP host name always wins over an mDNS one; a kind, once known, is
 // replaced only by one from a surer source (an mDNS service, then an SSDP
 // device type, then an SSDP server product), so nothing flips back and
@@ -147,6 +150,8 @@ private:
         int32_t name_rank{kRankNone};
         std::string kind;
         int32_t kind_rank{kRankNone};
+        bool upnp{false};    // an SSDP announcement or reply
+        std::string server;  // its SERVER line
     };
 
     struct Entry {
@@ -158,6 +163,8 @@ private:
         int32_t kind_rank{kRankNone};
         std::string own_port;
         int32_t heard_s{0};
+        bool upnp{false};
+        std::string server;
     };
 
     bool note_arp(const uint8_t* arp, std::size_t size, int32_t at_s);

@@ -22,7 +22,8 @@ namespace screen {
 // highlighted tool does, with the app-wide Sent count at its right.
 //
 // Up and down (F/X) move through Ping, DNS, Trace, Wi-Fi, Ports and Speed. Enter
-// or key 6 (Open) opens the highlighted tool's page. Key 4 or a short ESC
+// or key 6 (Open) opens the highlighted tool's page. Key 7 (Check) opens
+// the Health page and key 8 (Watch) the Watch page. Key 4 or a short ESC
 // goes back.
 //
 // The highlight lives in the view model (tools_selection_*), so it is kept

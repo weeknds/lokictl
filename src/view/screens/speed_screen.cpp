@@ -85,6 +85,9 @@ const char* other_tool_text(const model::ToolsData& data) {
     if (data.probe.state == model::ToolState::Running) {
         return "Discover is probing";
     }
+    if (data.health.state == model::ToolState::Running) {
+        return "Health check is running";
+    }
     return "Port scan is running";
 }
 

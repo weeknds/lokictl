@@ -389,6 +389,9 @@ void KeyController::open_command_page(model::AppPage page) {
         case model::AppPage::Watch:
             view_model_.open_watch();
             return;
+        case model::AppPage::Health:
+            view_model_.open_health();
+            return;
         case model::AppPage::Status:
             view_model_.open_status();
             return;

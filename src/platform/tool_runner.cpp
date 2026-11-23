@@ -6,6 +6,7 @@
 
 #include "tool_runner.h"
 
+#include "health.h"
 #include "listen.h"
 #include "port_scan.h"
 #include "probe.h"
@@ -184,6 +185,13 @@ public:
             kept_bytes_ = 0;
             kept_full_ = false;
         }
+        if (job.kind == model::ToolKind::Health) {
+            // Worked out once: the Discover page's list as it is now, then
+            // the made-up sweep and scans.
+            std::vector<model::HeardDevice> known = latest_.listen.devices;
+            known.insert(known.end(), latest_.probe.devices.begin(), latest_.probe.devices.end());
+            health_plan_ = plan_pretend_health(job.target, job.health, known, list_path_);
+        }
         advance();
         return true;
     }
@@ -221,6 +229,9 @@ public:
                 break;
             case model::ToolKind::Speed:
                 latest_.speed.state = model::ToolState::Stopped;
+                break;
+            case model::ToolKind::Health:
+                latest_.health.state = model::ToolState::Stopped;
                 break;
         }
         fresh_ = true;
@@ -261,6 +272,7 @@ public:
         data.probe = latest_.probe;
         data.ports = latest_.ports;
         data.speed = latest_.speed;
+        data.health = latest_.health;
         data.latest = latest_.latest;
         data.list_date = latest_.list_date;
         fresh_ = false;
@@ -309,6 +321,9 @@ private:
             }
             case model::ToolKind::Speed:
                 keep(pretend_speed_test(elapsed, job_.target, sent, done), latest_.speed);
+                break;
+            case model::ToolKind::Health:
+                keep(pretend_health(health_plan_, elapsed, sent, done), latest_.health);
                 break;
         }
         if (sent > counted_) {
@@ -519,6 +534,8 @@ private:
     bool save_asked_{false};
     uint64_t kept_bytes_{0};
     bool kept_full_{false};
+    // The latest health check, worked out as it started.
+    PretendHealth health_plan_;
 };
 
 #if !USE_DESKTOP
@@ -976,6 +993,11 @@ public:
                     latest_.speed.state = model::ToolState::Running;
                     latest_.speed.server = job.target;
                     break;
+                case model::ToolKind::Health:
+                    latest_.health = model::HealthRun{};
+                    latest_.health.state = model::ToolState::Running;
+                    latest_.health.interface_name = job.target;
+                    break;
             }
             if (job.kind == model::ToolKind::Listen || job.kind == model::ToolKind::Probe) {
                 latest_.latest = job.kind;
@@ -1018,6 +1040,7 @@ public:
         data.probe = latest_.probe;
         data.ports = latest_.ports;
         data.speed = latest_.speed;
+        data.health = latest_.health;
         data.latest = latest_.latest;
         data.list_date = latest_.list_date;
         fresh_ = false;
@@ -1111,6 +1134,9 @@ private:
                     case model::ToolKind::Speed:
                         run_speed(job.target);
                         break;
+                    case model::ToolKind::Health:
+                        run_health(job);
+                        break;
                 }
             } catch (...) {
                 // Nothing in a job should throw; if something does (no
@@ -1137,6 +1163,9 @@ private:
                         break;
                     case model::ToolKind::Speed:
                         fail_internal(latest_.speed);
+                        break;
+                    case model::ToolKind::Health:
+                        fail_internal(latest_.health);
                         break;
                 }
                 fresh_ = true;
@@ -1176,6 +1205,9 @@ private:
                 break;
             case model::ToolKind::Speed:
                 latest_.speed.state = model::ToolState::Stopped;
+                break;
+            case model::ToolKind::Health:
+                latest_.health.state = model::ToolState::Stopped;
                 break;
         }
         fresh_ = true;
@@ -1237,6 +1269,14 @@ private:
         std::lock_guard<std::mutex> lock(mutex_);
         if (run != latest_.speed) {
             latest_.speed = run;
+            fresh_ = true;
+        }
+    }
+
+    void publish(const model::HealthRun& run) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (run != latest_.health) {
+            latest_.health = run;
             fresh_ = true;
         }
     }
@@ -1528,6 +1568,16 @@ private:
     // -1 when the system refuses it, with the run failed and published.
     template <typename Run>
     int open_icmp_socket(Run& run) {
+        const int fd = open_icmp_socket_unpublished(run);
+        if (fd < 0) {
+            publish(run);
+        }
+        return fd;
+    }
+
+    // The same, with the failed run left for the caller to show.
+    template <typename Run>
+    static int open_icmp_socket_unpublished(Run& run) {
         const int fd = ::socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, IPPROTO_ICMP);
         if (fd < 0) {
             const int number = errno;
@@ -1538,7 +1588,6 @@ private:
                 run.error = model::ToolError::Failed;
                 run.reason = error_text(number);
             }
-            publish(run);
         }
         return fd;
     }
@@ -1832,25 +1881,31 @@ private:
     // Answers count only from addresses in the range, and only from devices
     // in the neighbour table. Every packet handed to the system is counted.
     void run_probe(const std::string& interface_name) {
+        probe_network(interface_name, [this](const model::ProbeRun& run) { publish(run); });
+    }
+
+    // The probe itself: `out` gets the run every time it is shown (the
+    // probe's job publishes it; the health check takes its progress).
+    void probe_network(const std::string& interface_name, const std::function<void(const model::ProbeRun&)>& out) {
         model::ProbeRun run;
         run.state = model::ToolState::Running;
         run.interface_name = interface_name;
-        publish(run);
+        out(run);
 
         ProbeRange range;
         if (!read_probe_range(interface_name, range, run.reason)) {
             run.state = model::ToolState::Failed;
             run.error = model::ToolError::Failed;
-            publish(run);
+            out(run);
             return;
         }
         run.network = range.text;
         run.total = static_cast<int32_t>(range.addresses.size());
-        const int fd = open_icmp_socket(run);
+        const int fd = open_icmp_socket_unpublished(run);
+        out(run);
         if (fd < 0) {
             return;
         }
-        publish(run);
 
         const auto interval = std::chrono::milliseconds(model::kProbeIntervalMs);
         const Clock::time_point begin = Clock::now();
@@ -1876,7 +1931,7 @@ private:
         const auto show = [&](Clock::time_point now) {
             run.elapsed_s = seconds_at(now);
             run.devices = heard.devices();
-            publish(run);
+            out(run);
         };
 
         // The sweep.
@@ -2116,24 +2171,30 @@ private:
     // counted with count_sent(). Every socket is closed on the way out,
     // whatever ends the run.
     void run_ports(const std::string& target) {
+        scan_ports(target, [this](const model::PortRun& run) { publish(run); });
+    }
+
+    // The scan itself: `out` gets the run every time it changes (the
+    // scan's job publishes it; the health check keeps it per device).
+    void scan_ports(const std::string& target, const std::function<void(const model::PortRun&)>& out) {
         const std::vector<model::CommonPort>& ports = model::common_ports();
         model::PortRun run;
         run.state = model::ToolState::Running;
         run.target = target;
         run.total = static_cast<int32_t>(ports.size());
-        publish(run);
+        out(run);
 
         in_addr address{};
         if (!model::port_scan_address(target) || inet_pton(AF_INET, target.c_str(), &address) != 1) {
             run.state = model::ToolState::Failed;
             run.error = model::ToolError::BadTarget;
-            publish(run);
+            out(run);
             return;
         }
         if (!port_scan_allowed(ntohl(address.s_addr), read_own_networks(), run.reason)) {
             run.state = model::ToolState::Failed;
             run.error = model::ToolError::Failed;
-            publish(run);
+            out(run);
             return;
         }
 
@@ -2252,7 +2313,7 @@ private:
             run.state = model::ToolState::Failed;
             run.error = model::ToolError::Failed;
             run.reason = reason;
-            publish(run);
+            out(run);
         };
 
         const auto interval = std::chrono::milliseconds(model::kPortIntervalMs);
@@ -2265,7 +2326,7 @@ private:
             if (stopping()) {
                 close_all();
                 run.state = model::ToolState::Stopped;
-                publish(run);
+                out(run);
                 return;
             }
             Clock::time_point now = Clock::now();
@@ -2368,12 +2429,118 @@ private:
                 }
             }
             waiting.swap(still);
-            publish(run);
+            out(run);
         }
         // What the ports said is checked against the list of known holes
         // here, on this thread; nothing of the list is kept.
         check_port_services(run, list_path_);
         run.state = model::ToolState::Done;
+        out(run);
+    }
+
+    // The health check (health_check.h) from the interface `job.target`:
+    // first the probe's sweep and questions (probe_network(), the same
+    // packets as a probe), then a port scan (scan_ports(), the same packets
+    // as the Ports page) of each device health_hosts() picks from what the
+    // sweep found and the Discover page's list, one after the other; each
+    // finished scan is checked against the rules at once. The Cardputer's
+    // own links are checked first, from job.health and the cable's files.
+    // Neither the probe's nor the port scan's latest run changes. A stop
+    // ends it within about 0.1 s, as it does those two.
+    void run_health(const ToolJob& job) {
+        const Clock::time_point begin = Clock::now();
+        const auto seconds = [&begin] {
+            return static_cast<int32_t>(
+                std::chrono::duration_cast<std::chrono::seconds>(Clock::now() - begin).count());
+        };
+        model::HealthRun run;
+        run.state = model::ToolState::Running;
+        run.interface_name = job.target;
+        model::HealthLocal local = job.health;
+        read_cable(job.target, local);
+        run.findings = model::local_findings(local);
+        model::sort_findings(run.findings);
+        publish(run);
+
+        // The Discover page's list as it is now.
+        std::vector<model::HeardDevice> devices;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            devices = latest_.listen.devices;
+            devices.insert(devices.end(), latest_.probe.devices.begin(), latest_.probe.devices.end());
+        }
+
+        // The sweep.
+        model::ProbeRun probe;
+        probe_network(job.target, [&](const model::ProbeRun& next) {
+            probe = next;
+            run.network = next.network;
+            run.total = next.total;
+            run.asked = next.asked;
+            run.elapsed_s = seconds();
+            publish(run);
+        });
+        if (probe.state == model::ToolState::Failed) {
+            run.state = model::ToolState::Failed;
+            run.error = probe.error;
+            run.reason = probe.reason;
+            run.elapsed_s = seconds();
+            publish(run);
+            return;
+        }
+        if (probe.state != model::ToolState::Done || stopping()) {
+            run.state = model::ToolState::Stopped;
+            run.elapsed_s = seconds();
+            publish(run);
+            return;
+        }
+
+        // The devices, then their ports.
+        uint32_t network = 0;
+        uint32_t netmask = 0;
+        std::vector<model::HealthHost> hosts;
+        if (parse_network(probe.network, network, netmask)) {
+            devices.insert(devices.begin(), probe.devices.begin(), probe.devices.end());
+            hosts = model::health_hosts(local, devices, network, netmask);
+        }
+        devices.clear();
+        devices.shrink_to_fit();
+        run.step = model::HealthStep::Ports;
+        run.hosts = static_cast<int32_t>(hosts.size());
+        publish(run);
+        for (std::size_t index = 0; index < hosts.size(); ++index) {
+            model::PortRun scan;
+            scan_ports(hosts[index].address, [&](const model::PortRun& next) {
+                scan.state = next.state;
+                if (next.state != model::ToolState::Running) {
+                    scan = next;  // only the end is kept
+                }
+                if (seconds() != run.elapsed_s) {
+                    run.elapsed_s = seconds();
+                    publish(run);
+                }
+            });
+            if (scan.state == model::ToolState::Stopped || stopping()) {
+                run.state = model::ToolState::Stopped;
+                run.elapsed_s = seconds();
+                publish(run);
+                return;
+            }
+            // A device that went away, or that the system would not reach,
+            // is passed over.
+            if (scan.state == model::ToolState::Done) {
+                add_ssdp_version(hosts[index], scan, list_path_);
+                std::vector<model::HealthFinding> found =
+                    model::host_findings(hosts[index], scan, static_cast<int32_t>(index));
+                run.findings.insert(run.findings.end(), found.begin(), found.end());
+                model::sort_findings(run.findings);
+            }
+            run.scanned = static_cast<int32_t>(index + 1);
+            run.elapsed_s = seconds();
+            publish(run);
+        }
+        run.state = model::ToolState::Done;
+        run.elapsed_s = seconds();
         publish(run);
     }
 

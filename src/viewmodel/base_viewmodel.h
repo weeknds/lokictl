@@ -394,6 +394,23 @@ public:
     bool watch_detail() const;
     void set_watch_detail(bool open);
 
+    // The Health page (Tools key 7, or `health`). The health check runs as
+    // a tool (model::ToolKind::Health, requested with request_tool_run() on
+    // the uplink interface), so its run comes back in tools().health.
+    // Puts the selection on the first finding and closes the detail, then
+    // opens the page (see open_page()).
+    bool open_health();
+    // The selected finding (0 is the worst); the page clamps it to the
+    // findings there are.
+    lv_subject_t* health_selection_subject();
+    int32_t health_selection() const;
+    // Stores `row` (0 or more); nothing is written when it stays the same.
+    void set_health_selection(int32_t row);
+    // True while the selected finding's detail is shown.
+    lv_subject_t* health_detail_subject();
+    bool health_detail() const;
+    void set_health_detail(bool open);
+
     // The Map page (Discover key 5).
     // Puts the selection back on the router and empties the slots, then
     // opens the page (see open_page()).
@@ -522,6 +539,8 @@ private:
     std::string requested_watch_hardware_;
     reactive::IntSubject watch_selection_subject_;
     reactive::BoolSubject watch_detail_subject_;
+    reactive::IntSubject health_selection_subject_;
+    reactive::BoolSubject health_detail_subject_;
     reactive::IntSubject map_selection_subject_;
     std::array<std::string, kMapSlots> map_slots_;
     reactive::IntSubject home_selection_subject_;

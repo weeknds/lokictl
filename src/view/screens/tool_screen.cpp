@@ -733,7 +733,8 @@ void ToolScreen::build_content(lv_obj_t* content) {
         case model::ToolKind::Listen:
         case model::ToolKind::Probe:
         case model::ToolKind::Speed:
-            break;  // the Discover and Speed pages', never a tool page's
+        case model::ToolKind::Health:
+            break;  // the Discover, Speed and Health pages', never a tool page's
     }
 
     // The status line, with the Sent count and its caption at the right.
@@ -1092,7 +1093,8 @@ void ToolScreen::refresh_target() {
             case model::ToolKind::Listen:
             case model::ToolKind::Probe:
             case model::ToolKind::Speed:
-                break;  // the Discover and Speed pages', never a tool page's
+            case model::ToolKind::Health:
+                break;  // the Discover, Speed and Health pages', never a tool page's
         }
         if (kind_ == model::ToolKind::Ports) {
             for (const Target& target : ports_targets()) {
@@ -1292,7 +1294,8 @@ void ToolScreen::refresh_status() {
         case model::ToolKind::Listen:
         case model::ToolKind::Probe:
         case model::ToolKind::Speed:
-            break;  // the Discover and Speed pages', never a tool page's
+        case model::ToolKind::Health:
+            break;  // the Discover, Speed and Health pages', never a tool page's
     }
     if (confirming_) {
         status = {"Nothing sent yet", tools::kToneMuted};
@@ -1309,6 +1312,8 @@ void ToolScreen::refresh_status() {
             status = {"Port scan is running", tools::kToneMuted};
         } else if (data.speed.state == model::ToolState::Running) {
             status = {"Speed test is running", tools::kToneMuted};
+        } else if (data.health.state == model::ToolState::Running) {
+            status = {"Health check is running", tools::kToneMuted};
         } else {
             status = {"Trace is running", tools::kToneMuted};
         }
@@ -1629,7 +1634,8 @@ void ToolScreen::refresh() {
         case model::ToolKind::Listen:
         case model::ToolKind::Probe:
         case model::ToolKind::Speed:
-            break;  // the Discover and Speed pages', never a tool page's
+        case model::ToolKind::Health:
+            break;  // the Discover, Speed and Health pages', never a tool page's
     }
     refresh_status();
 }

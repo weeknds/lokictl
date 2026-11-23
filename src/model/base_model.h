@@ -32,6 +32,7 @@ enum class AppPage {
     Map      = 15,
     Speed    = 16,
     Watch    = 17,
+    Health   = 18,
 
     // Developer pages. They are opened by name only (snapshot --page) and
     // are never linked from the normal UI.

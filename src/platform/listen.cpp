@@ -156,6 +156,20 @@ std::string kind_text(std::string_view text) {
     return kind;
 }
 
+// An SSDP SERVER line as kept: at most model::kSsdpServerMax characters,
+// printable ASCII only (anything else becomes '?').
+std::string ssdp_server_text(std::string_view text) {
+    std::string server;
+    for (const char value : text) {
+        if (server.size() >= model::kSsdpServerMax) {
+            break;
+        }
+        const auto character = static_cast<unsigned char>(value);
+        server.push_back(character >= 0x20 && character < 0x7f ? value : '?');
+    }
+    return server;
+}
+
 // The kinds known from mDNS service types, the surest first: a device
 // that offers several is shown as the first one it offers.
 struct ServiceKind {
@@ -658,6 +672,9 @@ bool HeardDevices::note_ssdp(const uint8_t* text,
                 heard.kind_rank = kind_rank(kRankSsdpServer, 0, 1);
             }
         }
+        // It speaks UPnP; what its SERVER line says may name a version.
+        heard.upnp = true;
+        heard.server = ssdp_server_text(server);
     }
     return note(sender, heard, at_s);
 }
@@ -701,6 +718,14 @@ bool HeardDevices::note(const uint8_t* hardware, const Heard& heard, int32_t at_
         found->kind_rank = heard.kind_rank;
         changed = true;
     }
+    if (heard.upnp && !found->upnp) {
+        found->upnp = true;
+        changed = true;
+    }
+    if (!heard.server.empty() && found->server != heard.server) {
+        found->server = heard.server;
+        changed = true;
+    }
     if (found->heard_s != at_s || changed || devices_.size() != entries_.size()) {
         found->heard_s = at_s;
         rebuild();
@@ -733,6 +758,8 @@ void HeardDevices::rebuild() {
         device.kind = entry->kind;
         device.own_port = entry->own_port;
         device.heard_s = entry->heard_s;
+        device.upnp = entry->upnp;
+        device.ssdp_server = entry->server;
         devices_.push_back(std::move(device));
     }
 }

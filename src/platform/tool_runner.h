@@ -14,11 +14,15 @@
 namespace platform {
 
 // One job for a ToolRunner: a ping run, a DNS lookup, a trace or a port
-// scan of `target`, listening on or probing from the interface `target`,
-// or a speed test against the server `target`.
+// scan of `target`, listening on, probing from or checking the health of
+// the network of the interface `target`, or a speed test against the
+// server `target`.
 struct ToolJob {
     model::ToolKind kind{model::ToolKind::Ping};
     std::string target;  // checked with model::valid_tool_target()
+    // Health: the Cardputer's own links as the check starts (the runner
+    // reads the cable's speed and duplex itself).
+    model::HealthLocal health;
 };
 
 // Runs the tools (ping, DNS lookup, trace, listening, probing, port scan, speed test) away from the UI
@@ -49,7 +53,11 @@ struct ToolJob {
 // read for at most 1.5 s), then closed. A speed test
 // (speed_test.h) downloads, then uploads, each for 10 s or 50 MB over
 // HTTPS through libcurl (loaded for the run), each request counted once
-// with count_sent(). It never changes a network setting. A listen run keeps what it heard (whole PCAP records, at most
+// with count_sent(). A health check (health.h, health_check.h) is a probe's
+// sweep and questions followed by a port scan of each device it picks (at
+// most model::kHealthMaxHosts, one after the other), the same packets as
+// those two, without changing their latest runs. It never changes a
+// network setting. A listen run keeps what it heard (whole PCAP records, at most
 // model::kCaptureSaveMax) until the next listen starts, so it can be saved
 // as a file (save_capture()); the file is written on this thread too.
 //
@@ -60,7 +68,8 @@ struct ToolJob {
 // pretend_capture()), so the same keys and settle time always give the same
 // picture. A speed test reads pretend_speed_test() (speed_test.h). It still adds the packets it pretends to send to the Sent count
 // (none for a listen). A probe reads pretend_probe() (probe.h), a port
-// scan pretend_port_scan() (port_scan.h). It never writes a file: a save reads as saved under
+// scan pretend_port_scan() (port_scan.h), a health check
+// pretend_health() (health.h). It never writes a file: a save reads as saved under
 // the made-up name kPretendCaptureName (listen.h).
 //
 // All functions are called on the UI thread.
@@ -83,7 +92,7 @@ public:
     // no listen run, nothing was kept, or the run was already saved.
     virtual bool save_capture() = 0;
     // Copies the latest runs into data.ping, data.dns, data.trace,
-    // data.listen, data.probe, data.ports and data.speed, and the list's
+    // data.listen, data.probe, data.ports, data.speed and data.health, and the list's
     // date into data.list_date (data.sent is left alone) and returns true, but only when any changed
     // since the last take(); otherwise leaves `data` alone and returns
     // false.

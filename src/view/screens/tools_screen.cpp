@@ -99,9 +99,9 @@ view::widgets::HelpContent ToolsScreen::help_content() {
     return {"TOOLS",
             {
                 {"ESC / 4", "Back"},
-                {"F / X", "Up / down"},
                 {"ENTER / 6", "Open the tool"},
-                {"8", "Watch: alerts, sends none"},
+                {"7", "Health check, sends"},
+                {"8", "Watch, sends none"},
                 {"Sent", "Packets LokiCTL sent"},
             }};
 }
@@ -117,7 +117,7 @@ view::widgets::SoftKeySet ToolsScreen::soft_keys() {
         {"Back", [&view_model] { view_model.go_back(); }},
         {},
         {"Open", [this] { open_selected(); }, true},
-        {},
+        {"Check", [&view_model] { view_model.open_health(); }},
         {"Watch", [&view_model] { view_model.open_watch(); }},
     }};
 }

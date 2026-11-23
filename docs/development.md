@@ -78,7 +78,10 @@ fails. Given a text, it prints what the list says about it:
 `build/darwin-arm64/Debug/lokictl_watch_tests` (also run by `ctest`)
 replays made-up frames through Watch's alert detector
 (`tests/watch_alerts.cpp`): one of each alert kind, and ordinary traffic
-that must raise none.
+that must raise none. `build/darwin-arm64/Debug/lokictl_health_tests`
+(also run by `ctest`) gives each health check rule a made-up result that
+should raise it and one that should not, and checks that every finding's
+text fits the screen (`tests/health_rules.cpp`).
 
 ## Screenshots without a window
 

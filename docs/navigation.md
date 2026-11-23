@@ -212,7 +212,7 @@ The commands, read without regard to case:
 | `help` | lists the commands in the help panel (badge `COMMANDS`) |
 | `theme <name>` | switches the theme: `instrument`, `constellation` or `terminal` |
 | `mode <name>` | switches the mode: `client`, `router`, `share` or `vpn` (see below) |
-| `home`, `map`, `tools`, `discover`, `watch`, `wifi`, `status`, `settings` | open that page, the same way its key does |
+| `home`, `map`, `tools`, `discover`, `watch`, `health`, `wifi`, `status`, `settings` | open that page, the same way its key does |
 | `ping`, `dns`, `trace` `[target]` | open the tool's page and run it, on the target when one is given |
 | `ports [address]` | opens the Ports page and asks first, as its key 6 does; nothing is sent until the second 6 |
 | `scan` | starts Discover's passive Listen run |
@@ -515,6 +515,7 @@ right: every packet LokiCTL has sent in this run of the app (see
 |---|---|
 | `f`/`x` or the arrows up and down | move through Ping, DNS, Trace, Wi-Fi, Ports and Speed |
 | `6` OPEN or Enter | opens the highlighted tool |
+| `7` CHECK | opens the Health page |
 | `8` WATCH | opens the Watch page |
 | `4` BACK or a short ESC | goes back |
 
@@ -548,6 +549,36 @@ explanation.
 The pick and the detail live in the view model (`watch_selection_*`,
 `watch_detail_*`). While an alert other than the newest is picked, new
 alerts don't move the pick off it.
+
+## The Health page
+
+`health` (Tools key 7, or the command `health`) runs the health check: one
+run of `model::ToolKind::Health` on the tool runner, so it is a tool like
+the others (one at a time, `Sent` counts its packets, it goes on when the
+page is left). What it checks is in [checks.md](checks.md#the-health-check).
+
+Under the title bar: the summary row (interface, `2 risks, 1 warning, 3
+info`, `not checked yet`, `Nothing found`), one line per finding, worst
+first (`Risk`/`Warn`/`Info`, the short name, who: `router`, `this device`,
+an address, `Wi-Fi`, `nearby`, `eth0`), and the status line (`Finding
+devices, 120 of 252`, `Checking device 3 of 9`, `Checked 9 devices in
+1:42`, `Stopped at device 3 of 9`, or why it failed) with `SENT N`. The
+detail view shows the picked finding: name and level, who it is about, one
+line of facts (`Port 23, remote login`, `Port 53, dnsmasq 2.85, worst
+7.5`), what it means and `Fix: ...`.
+
+| Key | What it does |
+|---|---|
+| `f`/`x` or the arrows up and down | pick a finding |
+| `5` INFO or Enter | opens or closes the detail |
+| `6` CHECK / STOP | the first press shows what will be asked and sends nothing; a second press within 10 s starts the check (only on a private home network; off without a network and while another tool runs); while it runs, stops it |
+| `4` BACK or a short ESC | cancels the confirmation, closes the detail, else goes back (the check goes on) |
+
+Any other key while the confirmation shows only cancels it. The pick and
+the detail live in the view model (`health_selection_*`,
+`health_detail_*`). While the page is on top the data layer reads
+NetworkManager's scan list, as it does for the Wi-Fi page, so the check
+can look for look-alike networks.
 
 ## The Ping, DNS and Trace pages
 

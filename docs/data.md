@@ -906,6 +906,9 @@ nothing.
   (router, access point, printer, media player, media server, TV for
   DIAL), else the product its `SERVER` header names after `UPnP/1.x`.
   Questions (mDNS queries, SSDP `M-SEARCH`) only say the sender is there.
+  An SSDP announcement or reply also marks the device as speaking UPnP
+  (`upnp`) and keeps its `SERVER` line (`ssdp_server`, at most 60
+  printable characters), which the health check uses.
   A DHCP name wins over an mDNS one; a kind is only replaced by a surer
   one (mDNS, then SSDP's device type, then its server product). Every
   length is checked against the captured bytes; a frame cut short or an
@@ -1121,6 +1124,35 @@ most about 100 MB, and the page says so before it starts.
   82.9 Mbit/s; the upload (about 18 Mbit/s) runs its 10 s. So `--keys 6
   --settle-ms 3000` on `speed` shows the download, `--settle-ms 9000` the
   upload and `--settle-ms 16000` the end.
+
+### Health check
+
+The health check (`model::HealthRun`, in `tools().health`; rules in
+`model/health_check.*`, what each looks at in [checks.md](checks.md#the-health-check))
+is one more tool job, so it takes the runner like the others.
+
+- **The request** carries the Cardputer's own links as the check starts
+  (`model::HealthLocal`, filled by `app::ToolController` from the data
+  layer): the uplink's address and router, the joined Wi-Fi and its
+  security (the uplink's, else the scan list's joined entry), the scan list
+  itself and whether the uplink is a cable. The Health page has the data
+  layer read NetworkManager's scan list like the Wi-Fi page does (no scan
+  is asked for).
+- **The live runner** reads the cable's `speed` and `duplex`, then runs the
+  probe's sweep and questions (`probe_network()`), picks the devices
+  (`model::health_hosts()`: router, this device, then the sweep's and the
+  Discover list's devices on that network, by address, at most 32) and
+  scans each one's ports (`scan_ports()`), one after the other. Each
+  finished scan is checked against the list of known holes (plus the SSDP
+  SERVER line's version, `platform::add_ssdp_version()`) and turned into
+  findings at once; only the findings and counts are kept. Neither the
+  probe's nor the port scan's own latest run changes. Stop ends it within
+  about 0.1 s. The log gets counts only.
+- **The pretend runner** (`platform::pretend_health()`) works the whole
+  made-up check out as the job starts (the made-up probe and each device's
+  made-up scan, the cable at half duplex) and shows it on a short clock:
+  4 s of sweep, then 0.6 s per device. `--keys 6,6,data,data --settle-ms
+  9000` on `health` shows the end; `--keys 6,6 --settle-ms 2000` the sweep.
 
 ## Watch
 

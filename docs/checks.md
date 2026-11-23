@@ -158,3 +158,73 @@ each source again at every release.
 OpenSSH and Dropbear have no published end-of-life dates: fixes only go
 into new releases. Versions older than 2019 (OpenSSH 8.0) or 2020
 (Dropbear 2020.79) are marked old as a rule of thumb.
+
+## The health check
+
+The Health page (`7` on Tools, or the command `health`) checks your own
+network for common weak spots in one run and lists what it found, the
+worst first, each with a level:
+
+| Level | Tag | What it means |
+|---|---|---|
+| Risk | `Risk` | Should be fixed soon. |
+| Warning | `Warn` | Worth a look. |
+| Info | `Info` | Good to know; often fine at home. |
+
+### What one run does
+
+1. It checks the Cardputer's own links first: the Wi-Fi it joined, the
+   networks NetworkManager heard in its last scan (the Health page has
+   them read, the same way the Wi-Fi page does; it never asks for a new
+   scan), and the cable's speed and duplex from
+   `/sys/class/net/<interface>/speed` and `duplex`.
+2. It sweeps the uplink's own network exactly as Discover's Probe does
+   (private networks only, at most the /24 around the Cardputer's address,
+   20 echoes a second, then the mDNS and SSDP questions).
+3. It picks at most 32 devices: the router first, the Cardputer itself
+   second, then every other device the sweep or Discover's list found on
+   that network, by address. The Cardputer's other port (`wlan0` next to
+   `eth0`) is left out.
+4. It scans each device's 50 common ports one after the other, exactly as
+   the Ports page does, with the same service names and the same check
+   against the list of known holes. When a device named its software in
+   an SSDP reply (`MiniUPnPd/2.1` on many routers), that version is
+   checked too.
+
+Like Probe and Ports it only starts after a second `6`, only on a private
+home network, and every packet counts in Sent. It never changes a setting
+anywhere and never tries a password.
+
+### The checks
+
+| In the list | Level | What it looks at |
+|---|---|---|
+| `Telnet open` | Risk | TCP port 23 open. Telnet sends passwords in plain text. |
+| `FTP open` | Warning | TCP port 21 open. FTP sends passwords in plain text. |
+| `File sharing open`, `Old file sharing` | Info | TCP port 445 or 139 open (Windows file sharing, SMB). |
+| Other port rules | Info to Risk | Every port with a note on the Ports page (`src/model/service_rules.cpp`): `Debug access open` (5555, Risk), `Database open` (3306, 5432, 6379), `Remote desktop open` (3389), `Remote screen open` (5900), `Provider access` (7547), `Anyone can print` (9100) and others, at the level that table gives. |
+| `Plain router page` | Warning | The router has a plain web port open (80, 8080 and the other ports the scan asks with a web request). A login there would not be encrypted; a port that only sends you on to https looks the same, so check which it is. |
+| `Apps can open ports` | Warning | UPnP on the router: it answered the SSDP search or announced itself, or it has TCP port 1900 or 49152 open. Only the router counts: TVs and speakers answer SSDP too, and that is normal. |
+| `3 known holes` / `Hole attackers use` | Risk | A version a port named has known serious holes (see above); the second name when attackers are known to use one of them. |
+| `Old software` / `Old router software` | Warning | A version that no longer gets security fixes, and no holes. |
+| `Check for updates` | Info | Holes or an old version, but built by Debian, Ubuntu or another vendor, which may have fixed them without a new number. The Cardputer's own SSH shows this way. |
+| `Many open ports` | Warning | More than 8 of the 50 ports open on one device. |
+| `No Wi-Fi password` | Risk | The joined Wi-Fi is open. |
+| `Weak Wi-Fi lock` | Risk | The joined Wi-Fi uses WEP. |
+| `Old Wi-Fi lock` | Warning | The joined Wi-Fi uses WPA (version 1). |
+| `Look-alike network` | Warning | A network nearby has the joined one's name but weak security (open, OWE, WEP or WPA), weaker than the joined one's. A mesh point with WPA2/3 next to WPA2 is not flagged. |
+| `Slow cable link` | Warning | The cable link runs at 10 Mbit/s or less, or at half duplex. |
+
+The rules and their words are in `src/model/health_check.cpp` and
+`src/model/service_rules.cpp`; `tests/health_rules.cpp`
+(`lokictl_health_tests`, or `ctest`) checks each rule with a made-up
+result and that every text fits the screen.
+
+### Limits
+
+- It is a quick look, not an audit: 50 ports per device, TCP only, at most
+  32 devices and one /24.
+- Versions are only compared by number (see above).
+- A device that doesn't answer pings and isn't in Discover's list is
+  missed.
+- The Wi-Fi checks only know what NetworkManager heard in its last scan.

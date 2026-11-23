@@ -798,8 +798,8 @@ target_link_libraries(${PROJECT_NAME}
 )
 
 # Checks of the service and version reading and of the list of known
-# security holes (tests/vuln_checks.cpp), and of Watch's alerts, on the Mac
-# only:
+# security holes (tests/vuln_checks.cpp), of Watch's alerts and of the
+# health check's rules, on the Mac only:
 # build/darwin-arm64/Debug/lokictl_tests, or ctest.
 if(USE_DESKTOP)
     add_executable(${PROJECT_NAME}_tests tests/vuln_checks.cpp src/platform/dns_message.cpp)
@@ -824,6 +824,16 @@ if(USE_DESKTOP)
     target_link_libraries(${PROJECT_NAME}_watch_tests PRIVATE ${PROJECT_NAME}_model)
     target_compile_definitions(${PROJECT_NAME}_watch_tests PRIVATE USE_DESKTOP=1)
     add_test(NAME watch_alerts COMMAND ${PROJECT_NAME}_watch_tests)
+
+    # The health check's rules from made-up results (tests/health_rules.cpp):
+    # build/darwin-arm64/Debug/lokictl_health_tests, or ctest.
+    add_executable(${PROJECT_NAME}_health_tests tests/health_rules.cpp)
+    target_link_libraries(${PROJECT_NAME}_health_tests PRIVATE ${PROJECT_NAME}_model)
+    target_compile_definitions(${PROJECT_NAME}_health_tests
+        PRIVATE
+            VULN_LIST_PATH="${CMAKE_CURRENT_SOURCE_DIR}/assets/data/vulndb.tsv"
+    )
+    add_test(NAME health_rules COMMAND ${PROJECT_NAME}_health_tests)
 endif()
 
 # Package deb

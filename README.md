@@ -145,6 +145,23 @@ how many packets LokiCTL has sent.
   can use another server with a `speed_test_server=` line in the
   `[application]` section of `~/.config/lokictl/lokictl.conf`.
 
+### Health check
+
+`7` on Tools (or the command `health`) opens the health check. It looks
+for common weak spots on your own network in one go: it finds the
+devices the way Discover's probe does, then tries the 50 common ports on
+up to 32 of them (your router and the Cardputer first) the way Ports
+does, and also looks at your Wi-Fi's security, nearby look-alike networks
+and the cable link. Press `6`, read what it will ask, and press `6` again
+to start; `6` stops it. A run takes a minute or a few, and nothing is
+sent before the second `6`.
+
+The list shows what it found, the worst first, one line each:
+`Risk Telnet open  router`, `Warn Slow cable link  eth0`. Pick one with
+F/X and press `Enter` or `5` to see what it means and what to do. Use it
+only on networks you own or may test. [docs/checks.md](docs/checks.md)
+lists every check.
+
 ### Watch
 
 `8` on Tools (or the command `watch`) opens Watch. Press `6` and it keeps
@@ -256,7 +273,7 @@ and names, up and down (fn+F and fn+X) bring back the last 8 commands, and
 | Command | What it does |
 |---|---|
 | `help` | Lists the commands. |
-| `home`, `map`, `tools`, `discover`, `watch`, `wifi`, `status`, `settings` | Opens that page. |
+| `home`, `map`, `tools`, `discover`, `watch`, `health`, `wifi`, `status`, `settings` | Opens that page. |
 | `theme <name>` | Switches to `instrument`, `constellation` or `terminal`. |
 | `mode <name>` | Switches to `client`, `router`, `share` or `vpn`. |
 | `ping [target]` | Pings a host, or the target that's selected on the Ping page. |
@@ -317,6 +334,11 @@ the details and lists every file LokiCTL writes.
 | `Check` | The software was built by a system like Debian or Ubuntu, which often fixes holes without a new version number. Install the device's updates; the holes may already be gone. |
 | Score | How bad a hole is, from 0 to 10 (10 is worst). |
 | Encrypted | The port uses TLS, so others on the network can't read what is sent. |
+| `Risk` | A health check finding that should be fixed soon. |
+| `Warn` | A health check finding worth a look. |
+| `Info` | A health check finding that is good to know, and often fine at home. |
+| Look-alike network | A network nearby that uses your Wi-Fi's name with weaker security. It may be a trap to catch devices. |
+| UPnP | A router feature that lets apps and devices open ports to the internet by themselves. |
 | Sent | How many packets LokiCTL has sent since it started. |
 
 ## Data use
