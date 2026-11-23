@@ -20,8 +20,9 @@ Settings page where you pick the theme. On the device the home page shows
 the real time, battery charge, network link and traffic (download and
 upload speed with a moving graph). Of the network features above, the
 Modes page with Client and Router (sharing the cable's internet through a
-hotspot) works; the others do not exist yet. The made-up example data used
-in the simulator and in screenshots is marked `sample data`.
+hotspot) works; the others do not exist yet. The home page marks the
+simulator's made-up example data `sample data`, and the store screenshots
+show made-up data only.
 
 The device package also builds, and it installs and runs on a real
 CardputerZero. From your computer, `scripts/device.sh` installs and starts it
@@ -872,7 +873,9 @@ cmake/
 config/               default settings file
 docs/                 notes on the bundled fonts, the themes, navigation,
                       the home page and the data layer
-screenshot/           simulator screenshots
+screenshot/
+  store/              the store screenshots (320 x 170), made by
+                      scripts/store-screenshots.sh
 scripts/
   build-deb.sh        builds the device package in a Debian arm64 container
   build-deb.Dockerfile
@@ -881,6 +884,9 @@ scripts/
   device-agent.py     the device side of device.sh
   make-icons.sh       draws the app icon PNGs from the SVG in a Debian
                       container
+  store-screenshots.sh
+                      draws the store screenshots with the simulator's
+                      snapshot mode from made-up sample data
 src/
   app/                startup, command line, snapshot mode, main loop, page
                       switching, key handling, assets, simulator window

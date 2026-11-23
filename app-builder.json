@@ -9,8 +9,10 @@
     "description": "LokiCTL turns the CardputerZero into a pocket network multitool. It shows live network status, switches the device between router, hotspot-sharing and VPN-gateway modes, finds the devices on a network and offers everyday network tools. Three switchable visual themes are included: Instrument, Constellation and Terminal.",
     "categories": ["TODO"],
     "screenshots": [
-      "screenshot/app-simulator-dark-darwin.png",
-      "screenshot/app-simulator-light-darwin.png"
+      "screenshot/store/1-home.png",
+      "screenshot/store/2-modes.png",
+      "screenshot/store/3-map.png",
+      "screenshot/store/4-speed.png"
     ],
     "icon": "assets/images/lokictl.png",
     "license": "MIT",
