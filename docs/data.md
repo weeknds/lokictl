@@ -682,7 +682,8 @@ so `--keys 8` on the Devices page pictures a blocked device.
 
 ## The tools
 
-The Ping, DNS and Trace pages run their tools away from the UI thread.
+The Ping, DNS and Trace pages, and listening on the Discover page (see
+[Listening](#listening)), run their tools away from the UI thread.
 `app::ToolController` hands the pages' requests to a
 `platform::ToolRunner` and, from an LVGL timer every 250 ms, gives the
 latest runs to the view model (`tools()`, `tools_subject()`) with the Sent
@@ -743,15 +744,58 @@ count. One job runs at a time; leaving the page does not stop it.
 this run of the app: each echo (a trace's probes too) and each DNS
 question (a trace's PTR questions too), retries included.
 The pretend runner counts the packets it pretends to send. Later tools add
-to the same count with `platform::count_sent()`.
+to the same count with `platform::count_sent()`. Listening adds nothing.
 
-Log lines: `tools: <ping|dns|trace> started`, `tools: <ping|dns|trace>
-stopped by the user`, `tools: ping done, 9/10 replies`, `tools: ping failed:
-<why>`, `tools: dns done, <n> addresses`, `tools: dns failed: <why>`,
-`tools: trace done, reached in <n> hops` (or `unreachable at hop <n>`, `not
-reached in <n> hops`), `tools: trace failed: <why>` (never a target or an
-address), and `tools: runner stopped` when a run was cut short by
-quitting.
+Log lines: `tools: <ping|dns|trace|listen> started`, `tools:
+<ping|dns|trace|listen> stopped by the user`, `tools: ping done, 9/10
+replies`, `tools: ping failed: <why>`, `tools: dns done, <n> addresses`,
+`tools: dns failed: <why>`, `tools: trace done, reached in <n> hops` (or
+`unreachable at hop <n>`, `not reached in <n> hops`), `tools: trace failed:
+<why>`, `tools: listen done, devices heard: <n>, frames: <f>`, `tools:
+listen ended, devices heard: <n>`, `tools: listen failed: <why>` (never a
+target, an address, a hardware address or a name), and `tools: runner
+stopped` when a run was cut short by quitting.
+
+### Listening
+
+The Discover page's step 1 (`model::ToolKind::Listen`, its run in
+`tools().listen`, `model::ListenRun`) lists the devices heard on the
+uplink interface (`HomeData::uplink_name`) for 5 minutes, and sends
+nothing.
+
+- **The live runner** runs the capture helper,
+  `/usr/libexec/lokictl/lokictl-capture discover <interface> 300`
+  (`platform::CaptureProcess` in `platform/listen.*`), with `posix_spawn`,
+  an empty environment, no blocked signals and its standard output on a
+  pipe (closed on exec, read without blocking). The helper alone holds
+  `CAP_NET_RAW`; it hears only ARP and DHCP, drops every capability and
+  can then only receive (see the README). The runner reads its PCAP stream
+  without any rights (`platform::CaptureReader`: a wrong file header or a
+  record longer than 2048 bytes ends the run with `bad capture data`) and
+  hands each frame to `platform::HeardDevices`. Stop and quitting send the
+  helper SIGTERM and SIGKILL after 100 ms. The helper's exit status 2 shows
+  `Interface not usable`, 3 `Capture not allowed`, 4 `Capture could not
+  start`; a helper that is missing shows `Capture helper not installed`.
+- **The device list** (`platform::HeardDevices`) keeps one entry per
+  hardware address (group addresses and zeros ignored), at most 64, sorted
+  by IPv4 address with those without one last. From ARP it takes the
+  sender's hardware and IPv4 address (a probe's 0.0.0.0 gives none). From
+  DHCP it takes the client's hardware address from `chaddr` (never the
+  frame's sender, which may be the server), its address (`ciaddr`, the
+  requested address of a request, or the address an acknowledgement gives)
+  and its host name (option 12: the first label, at most 32 printable ASCII
+  characters, anything else `?`), plus the server itself. Every length is
+  checked against the captured bytes; a frame cut short or an option
+  running past the end is read only as far as it is whole. The Cardputer's
+  own ports (`/sys/class/net/*/address`, without `lo`) are marked with
+  their interface.
+- **The pretend runner** reads a made-up capture
+  (`platform::pretend_capture()`) through the same reader and list, each
+  frame at its own time: this device's cable and Wi-Fi ports, the router
+  (asking again every 10 s), a TV, a printer and a phone that take their
+  addresses over DHCP, a speaker that probes first, one frame cut short
+  and one DHCP option that runs past the end, all with made-up locally
+  administered hardware addresses on the sample's 10.0.0.x network.
 
 ## The Wi-Fi list
 

@@ -397,6 +397,8 @@ void ToolScreen::build_content(lv_obj_t* content) {
         case model::ToolKind::Trace:
             build_trace_results(main_panel_);
             break;
+        case model::ToolKind::Listen:
+            break;  // the Discover page's, never a tool page's
     }
 
     // The status line, with the Sent count and its caption at the right.
@@ -619,6 +621,8 @@ void ToolScreen::refresh_target() {
             case model::ToolKind::Trace:
                 value = data.trace.target;
                 break;
+            case model::ToolKind::Listen:
+                break;  // the Discover page's, never a tool page's
         }
         if (kind_ != model::ToolKind::Dns && value == view_model().home().gateway_address) {
             caption = "router";
@@ -763,12 +767,16 @@ void ToolScreen::refresh_status() {
         case model::ToolKind::Trace:
             status = tools::trace_status(data.trace);
             break;
+        case model::ToolKind::Listen:
+            break;  // the Discover page's, never a tool page's
     }
     if (!this_running() && any_running()) {
         if (data.ping.state == model::ToolState::Running) {
             status = {"Ping is running", tools::kToneMuted};
         } else if (data.dns.state == model::ToolState::Running) {
             status = {"DNS lookup is running", tools::kToneMuted};
+        } else if (data.listen.state == model::ToolState::Running) {
+            status = {"Discover is listening", tools::kToneMuted};
         } else {
             status = {"Trace is running", tools::kToneMuted};
         }
@@ -849,6 +857,8 @@ void ToolScreen::refresh() {
         case model::ToolKind::Trace:
             refresh_trace();
             break;
+        case model::ToolKind::Listen:
+            break;  // the Discover page's, never a tool page's
     }
     refresh_status();
 }

@@ -14,18 +14,19 @@
 
 namespace model {
 
-// The tools that can run (the Ping, DNS and Trace pages). Only one runs at
-// a time.
+// The tools that can run (the Ping, DNS and Trace pages, and listening on
+// the Discover page). Only one runs at a time.
 enum class ToolKind : int32_t {
-    Ping  = 0,
-    Dns   = 1,
-    Trace = 2,
+    Ping   = 0,
+    Dns    = 1,
+    Trace  = 2,
+    Listen = 3,
 };
 
 // How many kinds there are, for tables indexed by ToolKind.
-constexpr std::size_t kToolKindCount = 3;
+constexpr std::size_t kToolKindCount = 4;
 
-const char* tool_name(ToolKind kind); // "ping", "dns", "trace"
+const char* tool_name(ToolKind kind); // "ping", "dns", "trace", "listen"
 
 // Where a tool's latest run stands.
 enum class ToolState : int32_t {
@@ -39,7 +40,8 @@ enum class ToolState : int32_t {
 // Why a run failed or found nothing.
 enum class ToolError : int32_t {
     None = 0,
-    NotAllowed,  // ping and trace: the system refused the ICMP socket (ping_group_range)
+    NotAllowed,  // ping and trace: the system refused the ICMP socket (ping_group_range);
+                 // listen: the capture helper may not be run, or lacks its capability
     NoServer,    // no IPv4 nameserver in /etc/resolv.conf
     NoSuchName,  // the DNS server said the name does not exist (NXDOMAIN)
     NoAnswer,    // the DNS server did not answer in time
@@ -146,12 +148,48 @@ struct TraceRun {
 bool operator==(const TraceRun& left, const TraceRun& right);
 bool operator!=(const TraceRun& left, const TraceRun& right);
 
+// Discover, step 1: listening. A run listens this long, keeps at most this
+// many devices, and keeps a host name at most this long.
+constexpr int32_t kListenSeconds = 5 * 60;
+constexpr std::size_t kListenMaxDevices = 64;
+constexpr std::size_t kHostNameMax = 32;
+// An interface name is at most this long (the system's limit, IFNAMSIZ - 1).
+constexpr std::size_t kInterfaceNameMax = 15;
+
+// One device heard while listening. A text that is not known is empty.
+struct HeardDevice {
+    std::string hardware_address;  // "02:00:00:00:00:01"
+    std::string address;           // its IPv4 address as text; empty while none was heard
+    std::string name;              // the host name it gave over DHCP; empty when none
+    std::string own_port;          // one of the Cardputer's own ports: its interface ("wlan0"); else empty
+    int32_t heard_s{0};            // seconds into the run when it was last heard
+};
+
+bool operator==(const HeardDevice& left, const HeardDevice& right);
+bool operator!=(const HeardDevice& left, const HeardDevice& right);
+
+// The latest listen run of the Discover page. It only receives: nothing is
+// sent, so the Sent count does not move.
+struct ListenRun {
+    ToolState state{ToolState::Idle};
+    ToolError error{ToolError::None};
+    std::string reason;               // with ToolError::Failed
+    std::string interface_name;       // the interface listened on, for example "eth0"
+    int32_t elapsed_s{0};             // seconds since the run started; stops when it ends
+    int32_t frames{0};                // ARP and DHCP frames heard
+    std::vector<HeardDevice> devices; // by IPv4 address, those without one last; at most kListenMaxDevices
+};
+
+bool operator==(const ListenRun& left, const ListenRun& right);
+bool operator!=(const ListenRun& left, const ListenRun& right);
+
 // What the tools show: the latest run of each and the app-wide count of
 // packets LokiCTL has sent in this run of the app.
 struct ToolsData {
     PingRun ping;
     DnsRun dns;
     TraceRun trace;
+    ListenRun listen;
     uint64_t sent{0};
 };
 
@@ -167,10 +205,16 @@ ToolState tool_state(const ToolsData& data, ToolKind kind);
 // characters, only a-z, 0-9 and '.', no empty label (no dot at either end,
 // no two dots in a row). A text of digits and dots only must be an IPv4
 // address (four numbers of 0-255). For DNS a name is needed, so an IPv4
-// address is refused there; Ping and Trace take both.
+// address is refused there; Ping and Trace take both. The listen tool's
+// target is an interface, checked with valid_interface_name() instead.
 bool valid_tool_target(ToolKind kind, std::string_view text);
 
 // Whether `text` is an IPv4 address in dotted form ("192.0.2.1").
 bool is_ipv4_text(std::string_view text);
+
+// Whether `text` may be handed to the capture helper as an interface name:
+// 1 to kInterfaceNameMax characters of a-z, A-Z, 0-9, '.', '_' and '-', and
+// not "." or "..". The listen tool's target is checked with it.
+bool valid_interface_name(std::string_view text);
 
 } // namespace model

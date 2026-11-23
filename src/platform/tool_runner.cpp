@@ -6,6 +6,7 @@
 
 #include "tool_runner.h"
 
+#include "listen.h"
 #include "sent_counter.h"
 
 #include "lvgl.h"
@@ -185,6 +186,9 @@ public:
             case model::ToolKind::Trace:
                 latest_.trace.state = model::ToolState::Stopped;
                 break;
+            case model::ToolKind::Listen:
+                latest_.listen.state = model::ToolState::Stopped;
+                break;
         }
         fresh_ = true;
     }
@@ -197,6 +201,7 @@ public:
         data.ping = latest_.ping;
         data.dns = latest_.dns;
         data.trace = latest_.trace;
+        data.listen = latest_.listen;
         fresh_ = false;
         return true;
     }
@@ -224,6 +229,10 @@ private:
                 break;
             case model::ToolKind::Trace:
                 keep(trace_at(elapsed, sent, done), latest_.trace);
+                break;
+            case model::ToolKind::Listen:
+                // Listening sends nothing: `sent` stays 0.
+                keep(listen_at(elapsed, done), latest_.listen);
                 break;
         }
         if (sent > counted_) {
@@ -376,6 +385,35 @@ private:
         }
         run.end = model::TraceEnd::Reached;
         if (elapsed >= names_end) {
+            run.state = model::ToolState::Done;
+            done = true;
+        }
+        return run;
+    }
+
+    // A listen run: the made-up capture of the time so far, read by the
+    // same code as the helper's stream (in small pieces, so records arrive
+    // split), each frame at its own time.
+    model::ListenRun listen_at(uint32_t elapsed, bool& done) const {
+        constexpr uint32_t kLimitMs = static_cast<uint32_t>(model::kListenSeconds) * 1000u;
+        constexpr std::size_t kPiece = 7;
+        const uint32_t shown = std::min(elapsed, kLimitMs);
+        model::ListenRun run;
+        run.state = model::ToolState::Running;
+        run.interface_name = job_.target;
+        run.elapsed_s = static_cast<int32_t>(shown / 1000);
+        const std::vector<uint8_t> stream = pretend_capture(shown);
+        CaptureReader reader;
+        HeardDevices heard(pretend_own_ports());
+        const auto on_frame = [&heard](const uint8_t* frame, std::size_t size, uint32_t seconds) {
+            heard.note_frame(frame, size, static_cast<int32_t>(seconds));
+        };
+        for (std::size_t at = 0; at < stream.size(); at += kPiece) {
+            reader.feed(stream.data() + at, std::min(kPiece, stream.size() - at), on_frame);
+        }
+        run.frames = heard.frames();
+        run.devices = heard.devices();
+        if (elapsed >= kLimitMs) {
             run.state = model::ToolState::Done;
             done = true;
         }
@@ -815,6 +853,11 @@ public:
                     latest_.trace.state = model::ToolState::Running;
                     latest_.trace.target = job.target;
                     break;
+                case model::ToolKind::Listen:
+                    latest_.listen = model::ListenRun{};
+                    latest_.listen.state = model::ToolState::Running;
+                    latest_.listen.interface_name = job.target;
+                    break;
             }
             fresh_ = true;
         }
@@ -834,6 +877,7 @@ public:
         data.ping = latest_.ping;
         data.dns = latest_.dns;
         data.trace = latest_.trace;
+        data.listen = latest_.listen;
         fresh_ = false;
         return true;
     }
@@ -902,6 +946,9 @@ private:
                     case model::ToolKind::Trace:
                         run_trace(job.target);
                         break;
+                    case model::ToolKind::Listen:
+                        run_listen(job.target);
+                        break;
                 }
             } catch (...) {
                 // Nothing in a job should throw; if something does (no
@@ -916,6 +963,9 @@ private:
                         break;
                     case model::ToolKind::Trace:
                         fail_internal(latest_.trace);
+                        break;
+                    case model::ToolKind::Listen:
+                        fail_internal(latest_.listen);
                         break;
                 }
                 fresh_ = true;
@@ -943,6 +993,9 @@ private:
                 break;
             case model::ToolKind::Trace:
                 latest_.trace.state = model::ToolState::Stopped;
+                break;
+            case model::ToolKind::Listen:
+                latest_.listen.state = model::ToolState::Stopped;
                 break;
         }
         fresh_ = true;
@@ -972,6 +1025,14 @@ private:
         std::lock_guard<std::mutex> lock(mutex_);
         if (run != latest_.trace) {
             latest_.trace = run;
+            fresh_ = true;
+        }
+    }
+
+    void publish(const model::ListenRun& run) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (run != latest_.listen) {
+            latest_.listen = run;
             fresh_ = true;
         }
     }
@@ -1551,6 +1612,92 @@ private:
             ::poll(entries.data(), entries.size(), wait_slice(now, wake));
         }
         ::close(fd);
+        publish(run);
+    }
+
+    // Listens on `interface_name` for model::kListenSeconds through the
+    // capture helper, which alone may open the packet socket and only
+    // receives; its stream is read here without privileges. Sends nothing.
+    void run_listen(const std::string& interface_name) {
+        model::ListenRun run;
+        run.state = model::ToolState::Running;
+        run.interface_name = interface_name;
+        HeardDevices heard(read_own_ports());
+        CaptureReader reader;
+        CaptureProcess capture;
+        if (!capture.start(interface_name, model::kListenSeconds, run.error, run.reason)) {
+            run.state = model::ToolState::Failed;
+            publish(run);
+            return;
+        }
+
+        const Clock::time_point begin = Clock::now();
+        // The helper ends itself at its time limit; should it stay longer,
+        // it is ended here a little after.
+        const Clock::time_point give_up = begin + std::chrono::seconds(model::kListenSeconds + 5);
+        enum class End { Running, Stopped, Closed, Broken, Overdue };
+        End end = End::Running;
+        uint8_t buffer[4096];
+        while (end == End::Running) {
+            if (stopping()) {
+                end = End::Stopped;
+                break;
+            }
+            pollfd entry{capture.fd(), POLLIN, 0};
+            ::poll(&entry, 1, kWaitSliceMs);
+            const Clock::time_point now = Clock::now();
+            const auto at_s = static_cast<int32_t>(std::chrono::duration_cast<std::chrono::seconds>(now - begin).count());
+            const auto on_frame = [&heard, at_s](const uint8_t* frame, std::size_t size, uint32_t /*seconds*/) {
+                heard.note_frame(frame, size, at_s);
+            };
+            for (int reads = 0; reads < kMaxReads && end == End::Running; ++reads) {
+                const ssize_t got = ::read(capture.fd(), buffer, sizeof(buffer));
+                if (got < 0 && errno == EINTR) {
+                    continue;
+                }
+                if (got < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+                    break;
+                }
+                if (got <= 0) {
+                    end = End::Closed;  // the helper is done (or failed)
+                } else if (!reader.feed(buffer, static_cast<std::size_t>(got), on_frame)) {
+                    end = End::Broken;
+                }
+            }
+            if (end == End::Running && now >= give_up) {
+                end = End::Overdue;
+            }
+            run.elapsed_s = std::min(at_s, model::kListenSeconds);
+            run.frames = heard.frames();
+            run.devices = heard.devices();
+            if (end == End::Running) {
+                publish(run);
+            }
+        }
+
+        switch (end) {
+            case End::Stopped:
+                capture.stop();
+                run.state = model::ToolState::Stopped;
+                break;
+            case End::Broken:
+                capture.stop();
+                run.state = model::ToolState::Failed;
+                run.error = model::ToolError::Failed;
+                run.reason = "bad capture data";
+                break;
+            case End::Overdue:
+                capture.stop();
+                run.state = model::ToolState::Done;
+                break;
+            case End::Closed:
+            case End::Running: {
+                const int status = capture.finish();
+                run.state = capture_exit_ok(status, run.error, run.reason) ? model::ToolState::Done
+                                                                           : model::ToolState::Failed;
+                break;
+            }
+        }
         publish(run);
     }
 

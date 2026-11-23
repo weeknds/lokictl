@@ -56,6 +56,7 @@ BaseViewModel::BaseViewModel()
       trace_scroll_subject_(kTraceFollow),
       wifi_scroll_subject_(0),
       wifi_scan_request_subject_(0),
+      discover_scroll_subject_(0),
       home_selection_subject_(0),
       home_data_subject_(0),
       key_test_selection_subject_(0),
@@ -376,6 +377,8 @@ bool BaseViewModel::open_tool(model::ToolKind kind) {
             return open_page(model::AppPage::Dns);
         case model::ToolKind::Trace:
             return open_page(model::AppPage::Trace);
+        case model::ToolKind::Listen:
+            return open_discover();
     }
     return open_page(model::AppPage::Ping);
 }
@@ -517,6 +520,26 @@ void BaseViewModel::request_wifi_scan() {
 
 lv_subject_t* BaseViewModel::wifi_scan_request_subject() {
     return wifi_scan_request_subject_.native();
+}
+
+bool BaseViewModel::open_discover() {
+    set_discover_scroll(0);
+    return open_page(model::AppPage::Discover);
+}
+
+lv_subject_t* BaseViewModel::discover_scroll_subject() {
+    return discover_scroll_subject_.native();
+}
+
+int32_t BaseViewModel::discover_scroll() const {
+    return discover_scroll_subject_.value();
+}
+
+void BaseViewModel::set_discover_scroll(int32_t row) {
+    const int32_t next = std::max<int32_t>(row, 0);
+    if (next != discover_scroll_subject_.value()) {
+        discover_scroll_subject_.set(next);
+    }
 }
 
 const model::HomeData& BaseViewModel::home() const {

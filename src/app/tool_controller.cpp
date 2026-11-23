@@ -111,7 +111,8 @@ void ToolController::handle_request() {
         return;  // nothing would show the run
     }
     if (view_model_.requested_tool_stop()) {
-        for (const model::ToolKind kind : {model::ToolKind::Ping, model::ToolKind::Dns, model::ToolKind::Trace}) {
+        for (const model::ToolKind kind :
+             {model::ToolKind::Ping, model::ToolKind::Dns, model::ToolKind::Trace, model::ToolKind::Listen}) {
             if (model::tool_state(data_, kind) == model::ToolState::Running) {
                 runner_->stop();
                 LOG_INFO("tools: {} stopped by the user", model::tool_name(kind));
@@ -181,6 +182,17 @@ void ToolController::log_change(const model::ToolsData& next) const {
             }
         } else if (trace.state == model::ToolState::Failed) {
             LOG_INFO("tools: trace failed: {}", why(trace.error, trace.reason));
+        }
+    }
+    // Counts only: never a hardware address, an address or a name.
+    const model::ListenRun& listen = next.listen;
+    if (listen.state != data_.listen.state) {
+        if (listen.state == model::ToolState::Done) {
+            LOG_INFO("tools: listen done, devices heard: {}, frames: {}", listen.devices.size(), listen.frames);
+        } else if (listen.state == model::ToolState::Stopped) {
+            LOG_INFO("tools: listen ended, devices heard: {}", listen.devices.size());
+        } else if (listen.state == model::ToolState::Failed) {
+            LOG_INFO("tools: listen failed: {}", why(listen.error, listen.reason));
         }
     }
 }

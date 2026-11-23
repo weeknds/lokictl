@@ -191,7 +191,7 @@ Options:
   long; it finishes in a fraction of a second.
 - `--help`: shows a short summary of all options.
 
-The app has 23 pages. `--list-pages` prints them in this order:
+The app has 24 pages. `--list-pages` prints them in this order:
 
 - `home`, the home page, where the app starts (see
   [docs/home.md](docs/home.md));
@@ -207,6 +207,9 @@ The app has 23 pages. `--list-pages` prints them in this order:
   and its Ping, DNS lookup, Trace and Wi-Fi pages (see
   [docs/navigation.md](docs/navigation.md#the-ping-dns-and-trace-pages)
   and [the Wi-Fi page](docs/navigation.md#the-wi-fi-page));
+- `discover`, the Discover page (home key 5), which lists the devices it
+  hears on the network while sending nothing (see
+  [docs/navigation.md](docs/navigation.md#the-discover-page));
 - `demo-counter` and `demo-keys`, two demo pages kept for navigation and
   key tests: a counter and a key test page. Nothing in the app opens them
   any more, so they are drawn by name only, with `--page`; the counter
@@ -547,7 +550,11 @@ but sample network data for now (see [docs/home.md](docs/home.md)):
 - `7` TOOLS opens the Tools page: Ping, DNS lookup, Trace (the route to
   a host, hop by hop) and Wi-Fi (the networks nearby), with a count of
   every packet LokiCTL sent;
-- `5` SCAN is dimmed and does nothing yet;
+- `5` SCAN opens the Discover page: `6` START listens on the network the
+  Cardputer is on for 5 minutes and lists every device it hears (hardware
+  address, IPv4 address, the name it gave over DHCP, how long ago it was
+  heard), while sending nothing (`Sent` does not move); `6` STOP ends it
+  early, `f`/`x` scroll;
 - a short `esc` shows the hint `Hold ESC to exit`, and holding `esc` quits.
 
 The Settings page lists the three themes; a tick marks the active one:
@@ -662,6 +669,22 @@ it quits; removing the package removes them too. Like the polkit rule,
 block or unblock devices on the hotspot and add or remove `lokiap0`, and
 nothing else.
 
+The Discover page needs a second right: hearing the network's raw traffic.
+A second, separate helper does that,
+`/usr/libexec/lokictl/lokictl-capture` (source: `src/helper/lokictl_capture.c`),
+with the single capability `CAP_NET_RAW`, again not setuid and only for
+root and the `netdev` group. It does one fixed command (`discover`, an
+interface and a number of seconds, at most 30 minutes). It opens a packet
+socket with a fixed filter that lets only ARP and DHCP through, never in
+promiscuous mode, then drops every capability and locks itself (seccomp)
+so that it can only receive, never send. It writes what it hears to the
+app as a PCAP stream on a pipe (no file) and stops at its time limit,
+after 16 MiB, or when the app goes away; the app reads the stream without
+any rights. **Every program of a `netdev` member may run it too**, so it
+could listen to the ARP and DHCP traffic that reaches the Cardputer, and
+nothing else. The store may refuse either helper; both are optional for
+the rest of the app.
+
 The two demo pages, the counter and the key test page, are not opened from
 the home page. They are reached with `--page` in snapshot runs (see
 [Screenshots without a window](#screenshots-without-a-window)), where the
@@ -724,7 +747,7 @@ switching "Dim when idle" on the Settings page saves it in
 `~/.config/lokictl/lokictl.conf`, and so do the first switch to Router
 (the hotspot's password), a new name or password on the Hotspot page and
 blocking a device (the `blocked_devices=` list). The package also installs
-the polkit rule and the firewall helper described above. Switching to Router or Share changes the network (see the Modes
+the polkit rule and the two helpers described above. Switching to Router or Share changes the network (see the Modes
 page above); quitting LokiCTL switches back to Client. While it runs, LokiCTL dims the screen
 through `/sys/class/backlight/backlight/brightness` and puts the old value
 back when it quits (see [docs/data.md](docs/data.md#battery-care)). A saved picture

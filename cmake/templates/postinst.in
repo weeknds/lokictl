@@ -2,29 +2,40 @@
 # SPDX-FileCopyrightText: 2026 LokiCTL contributors
 # SPDX-License-Identifier: MIT
 #
-# Gives the firewall helper its one right. The helper is the only part of
-# @APP_DISPLAY_NAME@ that may change the firewall (only its own nftables table,
-# "inet lokictl") or add an interface (only Share's lokiap0). It gets the
-# CAP_NET_ADMIN capability as a file capability (it is not setuid), and only
-# root and members of the netdev group may run it. chgrp clears a file
-# capability, so setcap comes last.
+# Gives @APP_DISPLAY_NAME@'s two helpers their one right each. They are the
+# only parts of the app with any rights; each gets one Linux capability as a
+# file capability (neither is setuid), and only root and members of the
+# netdev group may run them (root:netdev, mode 0750):
+# - the firewall helper may change the firewall (only its own nftables
+#   table, "inet lokictl") or add an interface (only Share's lokiap0):
+#   CAP_NET_ADMIN;
+# - the capture helper may listen to the network's ARP and DHCP traffic,
+#   and only receive: CAP_NET_RAW.
+# chgrp clears a file capability, so setcap comes last.
 
 set -e
 
-helper="@APP_HELPER_PATH@"
-
-if [ "$1" = "configure" ] && [ -f "$helper" ]; then
+# give_right <path> <capability> <what stops working without it>
+give_right() {
+    if [ ! -f "$1" ]; then
+        return 0
+    fi
     if getent group netdev >/dev/null 2>&1; then
-        chgrp netdev "$helper"
-        chmod 0750 "$helper"
-        if ! setcap cap_net_admin=ep "$helper"; then
-            echo "@APP_NAME@: could not give $helper its capability; blocking devices and Share will not work" >&2
+        chgrp netdev "$1"
+        chmod 0750 "$1"
+        if ! setcap "$2" "$1"; then
+            echo "@APP_NAME@: could not give $1 its capability; $3 will not work" >&2
         fi
     else
         # Without the netdev group nobody but root may run it.
-        chmod 0700 "$helper"
-        echo "@APP_NAME@: there is no netdev group; blocking devices will not work" >&2
+        chmod 0700 "$1"
+        echo "@APP_NAME@: there is no netdev group; $3 will not work" >&2
     fi
+}
+
+if [ "$1" = "configure" ]; then
+    give_right "@APP_HELPER_PATH@" cap_net_admin=ep "blocking devices and Share"
+    give_right "@APP_CAPTURE_PATH@" cap_net_raw=ep "Discover"
 fi
 
 exit 0

@@ -20,7 +20,8 @@ class BaseViewModel;
 
 namespace app {
 
-// The screen's side of the tools (ping, DNS lookup and trace). It owns a
+// The screen's side of the tools (ping, DNS lookup, trace, and listening
+// on the Discover page). It owns a
 // platform::ToolRunner, hands it the tool pages' requests
 // (BaseViewModel::request_tool_run() and request_tool_stop()) and, from an
 // LVGL timer four times a second, takes the latest runs from it and gives
@@ -31,12 +32,15 @@ namespace app {
 // A run keeps going when its page is left. Only one tool runs at a time: a
 // request to run while one runs is ignored (the pages switch Run off then).
 //
-// Log lines: "tools: <ping|dns|trace> started", "tools: <ping|dns|trace>
-// stopped by the user", "tools: ping done, <r>/<s> replies", "tools: ping
-// failed: <why>", "tools: dns done, <n> addresses", "tools: dns failed:
-// <why>", "tools: trace done, reached in <n> hops" (or "unreachable at hop
-// <n>", "not reached in <n> hops"), "tools: trace failed: <why>" (never a
-// target or an address), and "tools: runner stopped" at the end.
+// Log lines: "tools: <ping|dns|trace|listen> started", "tools:
+// <ping|dns|trace|listen> stopped by the user", "tools: ping done, <r>/<s>
+// replies", "tools: ping failed: <why>", "tools: dns done, <n> addresses",
+// "tools: dns failed: <why>", "tools: trace done, reached in <n> hops"
+// (or "unreachable at hop <n>", "not reached in <n> hops"), "tools: trace
+// failed: <why>", "tools: listen done, devices heard: <n>, frames: <f>",
+// "tools: listen ended, devices heard: <n>" (after a stop), "tools: listen
+// failed: <why>" (never a target, an address, a hardware address or a
+// name), and "tools: runner stopped" at the end.
 //
 // Create it after the view model and destroy it before; it is not copied.
 class ToolController {

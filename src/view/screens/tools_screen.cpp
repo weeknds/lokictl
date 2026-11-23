@@ -125,8 +125,11 @@ int32_t ToolsScreen::selected_row() const {
     return std::clamp<int32_t>(view_model().tools_selection(), 0, kOpenableRows - 1);
 }
 
+// Listening, the last tool kind, belongs to the Discover page and has no
+// row here.
 static_assert(static_cast<int32_t>(model::ToolKind::Trace) == ToolsScreen::kWifiRow - 1 &&
-                  model::kToolKindCount == static_cast<std::size_t>(ToolsScreen::kWifiRow) &&
+                  static_cast<int32_t>(model::ToolKind::Listen) == ToolsScreen::kWifiRow &&
+                  model::kToolKindCount == static_cast<std::size_t>(ToolsScreen::kWifiRow) + 1 &&
                   ToolsScreen::kWifiRow == ToolsScreen::kOpenableRows - 1,
               "the openable rows are the tools, in the order of model::ToolKind, then Wi-Fi");
 

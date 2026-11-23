@@ -272,6 +272,19 @@ public:
     void request_wifi_scan();
     lv_subject_t* wifi_scan_request_subject();
 
+    // The Discover page (home key 5). Listening runs as a tool
+    // (model::ToolKind::Listen, requested with request_tool_run() on the
+    // uplink interface), so its run comes back in tools().listen.
+    // Sets the first device shown back to 0, then opens the page (see
+    // open_page()).
+    bool open_discover();
+    // The first device it shows; starts at 0. The page clamps it to the
+    // devices there are.
+    lv_subject_t* discover_scroll_subject();
+    int32_t discover_scroll() const;
+    // Stores `row` (0 or more); nothing is written when it stays the same.
+    void set_discover_scroll(int32_t row);
+
     // The home page.
     // The values it shows (see model::HomeData). The page reads them while
     // it is built, and they change while it is open: the data layer hands
@@ -364,6 +377,7 @@ private:
     reactive::IntSubject trace_scroll_subject_;
     reactive::IntSubject wifi_scroll_subject_;
     reactive::IntSubject wifi_scan_request_subject_;
+    reactive::IntSubject discover_scroll_subject_;
     reactive::IntSubject home_selection_subject_;
     reactive::IntSubject home_data_subject_;
     reactive::IntSubject key_test_selection_subject_;

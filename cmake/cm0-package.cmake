@@ -33,11 +33,17 @@ install(TARGETS ${PROJECT_NAME}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
-# The firewall helper (device builds only). It is installed for root alone;
-# postinst gives it to the netdev group and its capability (see
-# templates/postinst.in).
+# The firewall helper and the capture helper (device builds only). They are
+# installed for root alone; postinst gives them to the netdev group and each
+# its one capability (see templates/postinst.in).
 if(TARGET ${APP_HELPER_NAME})
     install(TARGETS ${APP_HELPER_NAME}
+        RUNTIME DESTINATION ${APP_HELPER_INSTALL_DIR}
+        PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE
+    )
+endif()
+if(TARGET ${APP_CAPTURE_NAME})
+    install(TARGETS ${APP_CAPTURE_NAME}
         RUNTIME DESTINATION ${APP_HELPER_INSTALL_DIR}
         PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE
     )
@@ -173,7 +179,7 @@ configure_file(
     @ONLY
 )
 set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${APP_GENERATED_DIR}/conffiles")
-# With the helper: postinst gives it its capability, prerm removes the
+# With the helpers: postinst gives each its capability, prerm removes the
 # firewall table on removal. Strict permissions want them executable.
 if(TARGET ${APP_HELPER_NAME})
     foreach(script IN ITEMS postinst prerm)

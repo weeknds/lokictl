@@ -16,6 +16,8 @@ const char* tool_name(ToolKind kind) {
             return "dns";
         case ToolKind::Trace:
             return "trace";
+        case ToolKind::Listen:
+            return "listen";
     }
     return "ping";
 }
@@ -68,8 +70,28 @@ bool operator!=(const TraceRun& left, const TraceRun& right) {
     return !(left == right);
 }
 
+bool operator==(const HeardDevice& left, const HeardDevice& right) {
+    return left.hardware_address == right.hardware_address && left.address == right.address &&
+           left.name == right.name && left.own_port == right.own_port && left.heard_s == right.heard_s;
+}
+
+bool operator!=(const HeardDevice& left, const HeardDevice& right) {
+    return !(left == right);
+}
+
+bool operator==(const ListenRun& left, const ListenRun& right) {
+    return left.state == right.state && left.error == right.error && left.reason == right.reason &&
+           left.interface_name == right.interface_name && left.elapsed_s == right.elapsed_s &&
+           left.frames == right.frames && left.devices == right.devices;
+}
+
+bool operator!=(const ListenRun& left, const ListenRun& right) {
+    return !(left == right);
+}
+
 bool operator==(const ToolsData& left, const ToolsData& right) {
-    return left.ping == right.ping && left.dns == right.dns && left.trace == right.trace && left.sent == right.sent;
+    return left.ping == right.ping && left.dns == right.dns && left.trace == right.trace &&
+           left.listen == right.listen && left.sent == right.sent;
 }
 
 bool operator!=(const ToolsData& left, const ToolsData& right) {
@@ -78,7 +100,7 @@ bool operator!=(const ToolsData& left, const ToolsData& right) {
 
 bool tool_running(const ToolsData& data) {
     return data.ping.state == ToolState::Running || data.dns.state == ToolState::Running ||
-           data.trace.state == ToolState::Running;
+           data.trace.state == ToolState::Running || data.listen.state == ToolState::Running;
 }
 
 ToolState tool_state(const ToolsData& data, ToolKind kind) {
@@ -89,6 +111,8 @@ ToolState tool_state(const ToolsData& data, ToolKind kind) {
             return data.dns.state;
         case ToolKind::Trace:
             return data.trace.state;
+        case ToolKind::Listen:
+            return data.listen.state;
     }
     return ToolState::Idle;
 }
@@ -123,7 +147,25 @@ bool is_ipv4_text(std::string_view text) {
     return parts == 4;
 }
 
+bool valid_interface_name(std::string_view text) {
+    if (text.empty() || text.size() > kInterfaceNameMax || text == "." || text == "..") {
+        return false;
+    }
+    for (const char character : text) {
+        const bool allowed = (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') ||
+                             (character >= '0' && character <= '9') || character == '.' || character == '_' ||
+                             character == '-';
+        if (!allowed) {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool valid_tool_target(ToolKind kind, std::string_view text) {
+    if (kind == ToolKind::Listen) {
+        return valid_interface_name(text);
+    }
     if (text.empty() || text.size() > kToolTargetMax) {
         return false;
     }

@@ -536,6 +536,28 @@ if(NOT USE_DESKTOP)
     target_link_options(${APP_HELPER_NAME} PRIVATE -Wl,-z,relro -Wl,-z,now)
 endif()
 
+# The capture helper (src/helper): a second small C program, the only part
+# of the app that may listen to raw network traffic, and only receive (see
+# the file). Device builds only; the package installs it at
+# APP_CAPTURE_PATH, where the app runs it for the Discover page
+# (src/platform/listen.cpp).
+set(APP_CAPTURE_NAME "${APP_NAME}-capture")
+set(APP_CAPTURE_PATH "/usr/${APP_HELPER_INSTALL_DIR}/${APP_CAPTURE_NAME}")
+target_compile_definitions(${PROJECT_NAME}_platform PRIVATE APP_CAPTURE_PATH="${APP_CAPTURE_PATH}")
+if(NOT USE_DESKTOP)
+    add_executable(${APP_CAPTURE_NAME} src/helper/lokictl_capture.c)
+    set_target_properties(${APP_CAPTURE_NAME} PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    target_compile_options(${APP_CAPTURE_NAME} PRIVATE
+        -Wall -Wextra -fstack-protector-strong
+        $<$<NOT:$<CONFIG:Debug>>:-D_FORTIFY_SOURCE=2>
+    )
+    target_link_options(${APP_CAPTURE_NAME} PRIVATE -Wl,-z,relro -Wl,-z,now)
+endif()
+
 # ====================================================
 # Model sources
 # ====================================================
