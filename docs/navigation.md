@@ -517,6 +517,7 @@ right: every packet LokiCTL has sent in this run of the app (see
 |---|---|
 | `f`/`x` or the arrows up and down | move through Ping, DNS, Trace, Wi-Fi, Ports and Speed |
 | `6` OPEN or Enter | opens the highlighted tool |
+| `5` LOGIN | opens the Sign-in page (hotel and cafe Wi-Fi) |
 | `7` CHECK | opens the Health page |
 | `8` WATCH | opens the Watch page |
 | `4` BACK or a short ESC | goes back |
@@ -643,6 +644,37 @@ The pick and the detail live in the view model (`leak_selection_*`,
 `leak_detail_*`). The made-up sources pretend: the file `home` passes, the
 file `travel` leaks name lookups and IPv6 (and in the gateway the kill
 switch is missing).
+
+## The Sign-in page
+
+`signin` (Tools key 5, LOGIN, or the command `signin`) checks whether the
+Wi-Fi wants a sign-in on a web page first: one run of
+`model::ToolKind::Signin` on the tool runner, asked for as the page opens
+(unless another tool runs) and again on `6`. What it checks is in
+[checks.md](checks.md#wi-fi-sign-in).
+
+Like the Hotspot page, it has no title bar: a QR code at the left and a
+column at its right. The column: `Wi-Fi sign-in`, the verdict in its
+colour (`Sign-in needed` amber, `No sign-in needed` green, `Checking…`,
+`No answer`, `Can't tell`, `Not checked`), one hint under it (`Scan with
+your phone`, `The internet is open`, `Press 6 to check`, the reason), the
+sign-in page's host under `SIGN-IN PAGE` while one is needed, whether the
+system's own check is on under `AUTO CHECK` (`on`, or `off on this system`
+in amber) and `SENT N` at the bottom. The code (black on white) shows only
+while a sign-in is needed; otherwise a note stands in its place. The
+detail view shows the whole address (at most three lines), what it means,
+what to do and the Share-mode tip: sign in from a phone on LokiCTL's
+hotspot and every device on it gets internet. With the auto check off and
+no sign-in needed it says so instead.
+
+| Key | What it does |
+|---|---|
+| `5` INFO or Enter | opens or closes the detail |
+| `6` CHECK / STOP | checks again (dimmed while another tool runs); while it runs, stops it |
+| `4` BACK or a short ESC | closes the detail, else goes back (a check goes on) |
+
+The detail lives in the view model (`signin_detail_*`). Snapshots open the
+page without a check; `--keys 6` runs one.
 
 ## The Ping, DNS and Trace pages
 

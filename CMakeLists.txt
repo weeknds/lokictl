@@ -799,8 +799,8 @@ target_link_libraries(${PROJECT_NAME}
 
 # Checks of the service and version reading and of the list of known
 # security holes (tests/vuln_checks.cpp), of Watch's alerts, of the
-# health check's rules, of the leak test's rules, of the trap, of the
-# topology frames and of reports,
+# health check's rules, of the leak test's rules, of the sign-in check, of
+# the trap, of the topology frames and of reports,
 # on the Mac only:
 # build/darwin-arm64/Debug/lokictl_tests, or ctest.
 if(USE_DESKTOP)
@@ -842,6 +842,14 @@ if(USE_DESKTOP)
     add_executable(${PROJECT_NAME}_leak_tests tests/leak_rules.cpp)
     target_link_libraries(${PROJECT_NAME}_leak_tests PRIVATE ${PROJECT_NAME}_model)
     add_test(NAME leak_rules COMMAND ${PROJECT_NAME}_leak_tests)
+
+    # The Wi-Fi sign-in check: answers, redirect addresses and the fetch
+    # against a test server on 127.0.0.1 (tests/signin_checks.cpp):
+    # build/darwin-arm64/Debug/lokictl_signin_tests, or ctest.
+    add_executable(${PROJECT_NAME}_signin_tests tests/signin_checks.cpp src/platform/signin_fetch.cpp)
+    target_include_directories(${PROJECT_NAME}_signin_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/platform)
+    target_link_libraries(${PROJECT_NAME}_signin_tests PRIVATE ${PROJECT_NAME}_model)
+    add_test(NAME signin_checks COMMAND ${PROJECT_NAME}_signin_tests)
 
     # The Status page's summary: cable and battery lines, the battery clock
     # (tests/status_summary.cpp): build/darwin-arm64/Debug/lokictl_status_tests,

@@ -12,6 +12,8 @@
 #include "port_scan.h"
 #include "probe.h"
 #include "sent_counter.h"
+#include "signin_check.h"
+#include "signin_fetch.h"
 #include "speed_test.h"
 #include "topology.h"
 
@@ -238,6 +240,9 @@ public:
             case model::ToolKind::Leak:
                 latest_.leak.state = model::ToolState::Stopped;
                 break;
+            case model::ToolKind::Signin:
+                latest_.signin.state = model::ToolState::Stopped;
+                break;
         }
         fresh_ = true;
     }
@@ -279,6 +284,7 @@ public:
         data.speed = latest_.speed;
         data.health = latest_.health;
         data.leak = latest_.leak;
+        data.signin = latest_.signin;
         data.latest = latest_.latest;
         data.list_date = latest_.list_date;
         fresh_ = false;
@@ -339,6 +345,9 @@ private:
                 keep(std::move(run), latest_.leak);
                 break;
             }
+            case model::ToolKind::Signin:
+                keep(pretend_signin_check(elapsed, job_.signin, sent, done), latest_.signin);
+                break;
         }
         if (sent > counted_) {
             count_sent(sent - counted_);
@@ -579,6 +588,8 @@ constexpr auto kPingTimeout = std::chrono::milliseconds(model::kPingTimeoutMs);
 constexpr auto kDnsTimeout = std::chrono::milliseconds(2000);
 constexpr int kDnsTries = 2;
 constexpr uint16_t kDnsPort = 53;
+// The sign-in check's plain-HTTP port.
+constexpr uint16_t kHttpPort = 80;
 constexpr const char* kResolvConf = "/etc/resolv.conf";
 // ICMP echo request and reply, and the size of the echo: the 8-byte header
 // and 24 bytes of data.
@@ -1032,6 +1043,10 @@ public:
                     latest_.leak.gateway = job.leak.gateway;
                     latest_.leak.file = job.leak.file;
                     break;
+                case model::ToolKind::Signin:
+                    latest_.signin = model::SigninRun{};
+                    latest_.signin.state = model::ToolState::Running;
+                    break;
             }
             if (job.kind == model::ToolKind::Listen || job.kind == model::ToolKind::Probe) {
                 latest_.latest = job.kind;
@@ -1076,6 +1091,7 @@ public:
         data.speed = latest_.speed;
         data.health = latest_.health;
         data.leak = latest_.leak;
+        data.signin = latest_.signin;
         data.latest = latest_.latest;
         data.list_date = latest_.list_date;
         fresh_ = false;
@@ -1175,6 +1191,9 @@ private:
                     case model::ToolKind::Leak:
                         run_leak(job.leak);
                         break;
+                    case model::ToolKind::Signin:
+                        run_signin();
+                        break;
                 }
             } catch (...) {
                 // Nothing in a job should throw; if something does (no
@@ -1207,6 +1226,9 @@ private:
                         break;
                     case model::ToolKind::Leak:
                         fail_internal(latest_.leak);
+                        break;
+                    case model::ToolKind::Signin:
+                        fail_internal(latest_.signin);
                         break;
                 }
                 fresh_ = true;
@@ -1252,6 +1274,9 @@ private:
                 break;
             case model::ToolKind::Leak:
                 latest_.leak.state = model::ToolState::Stopped;
+                break;
+            case model::ToolKind::Signin:
+                latest_.signin.state = model::ToolState::Stopped;
                 break;
         }
         fresh_ = true;
@@ -1329,6 +1354,14 @@ private:
         std::lock_guard<std::mutex> lock(mutex_);
         if (run != latest_.leak) {
             latest_.leak = run;
+            fresh_ = true;
+        }
+    }
+
+    void publish(const model::SigninRun& run) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (run != latest_.signin) {
+            latest_.signin = run;
             fresh_ = true;
         }
     }
@@ -2614,6 +2647,37 @@ private:
             publish(run);
         };
         run_leak_test(local, leak_without_vpn_, stop, show);
+    }
+
+    // The sign-in check (signin_fetch.h): the check page's IPv4 address
+    // from the DNS server (one question), then one plain-HTTP GET to it
+    // (counted once), of which only the head is read and judged. The
+    // sign-in address is never logged.
+    void run_signin() {
+        model::SigninRun run;
+        run.state = model::ToolState::Running;
+        sockaddr_in server{};
+        if (!find_destination(model::kSigninCheckHost, server, run)) {
+            return;  // stopped, or no address: published
+        }
+        publish(run);
+        server.sin_port = htons(kHttpPort);
+        const std::function<bool()> stop = [this] { return stopping(); };
+        count_sent();
+        std::string head;
+        const std::string reason =
+            fetch_signin_head(server, model::kSigninCheckHost, model::kSigninCheckPath, stop, head);
+        if (stopping()) {
+            run.state = model::ToolState::Stopped;
+        } else if (!reason.empty()) {
+            run.state = model::ToolState::Failed;
+            run.error = model::ToolError::Failed;
+            run.reason = reason;
+        } else {
+            model::judge_signin(run, model::read_signin_reply(head));
+            run.state = model::ToolState::Done;
+        }
+        publish(run);
     }
 
     // Listens on `interface_name` for model::kListenSeconds through the

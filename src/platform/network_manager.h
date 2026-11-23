@@ -30,6 +30,10 @@ struct NetworkManagerReading {
     bool wifi_on{true};          // the Wi-Fi radio is switched on (in software and by its switch)
     bool connecting{false};      // a managed Wi-Fi or cable device is being connected
     model::Internet internet{model::Internet::Unknown}; // the service's own internet check
+    // The service's internet check is set up and switched on (its
+    // connectivity check). Without it the service never sees a sign-in
+    // page and says "full" whenever it is connected.
+    bool internet_check{true};
 
     // A managed Wi-Fi device that is joined to a network as a client.
     struct WifiLink {
@@ -93,6 +97,7 @@ constexpr const char* kVpnProfile = "LokiCTL VPN";
 // - Wi-Fi uplink: the name, security and speed of the Wi-Fi link whose
 //   interface is the uplink's (a speed that is not known keeps the old one).
 // - With a link: HomeData::internet is the service's internet check.
+// - HomeData::internet_check says whether that check is set up and on.
 // - Without a link: HomeData::offline_state is NetworkOff when networking is
 //   switched off, else Connecting while a device is being connected, else
 //   WifiOff when the Wi-Fi radio is off, else Unknown (plainly no network).
@@ -127,6 +132,7 @@ std::string clean_network_name(const std::string& name);
 //   connecting yes|no
 //   managed <interface>     a Wi-Fi device the service manages
 //   internet unknown|none|portal|limited|full
+//   check on|off            the service's internet check (without this line: on)
 //   link <interface> <security|-> <speed_mbps|-> <network name ...>
 //   ap <interface> <security|-> <network name ...>
 //   vpn on|connecting <file> [<server>]

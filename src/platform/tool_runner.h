@@ -26,6 +26,10 @@ struct ToolJob {
     // Leak: the VPN as the test starts (the target is the tunnel's
     // interface).
     model::LeakLocal leak;
+    // Sign-in check: the link and NetworkManager's internet check as it
+    // starts (the target is model::kSigninCheckHost). Only the pretend
+    // runner reads it.
+    model::SigninLocal signin;
 };
 
 // Runs the tools (ping, DNS lookup, trace, listening, probing, port scan, speed test) away from the UI
@@ -65,6 +69,9 @@ struct ToolJob {
 // nothing) and, in the VPN gateway, the helper's `list`; it sends one
 // counted HTTPS request for the public address. The address a test with
 // the VPN off saw is kept in memory for the next tests' comparison. A
+// sign-in check (signin_fetch.h) asks the DNS server for the check page's
+// address (one question) and sends one plain-HTTP GET to it (one counted
+// request), reading only the answer's head; it never follows a redirect. A
 // listen run keeps what it heard (whole PCAP records, at most
 // model::kCaptureSaveMax) until the next listen starts, so it can be saved
 // as a file (save_capture()); the file is written on this thread too.
@@ -78,7 +85,7 @@ struct ToolJob {
 // (none for a listen). A probe reads pretend_probe() (probe.h), a port
 // scan pretend_port_scan() (port_scan.h), a health check
 // pretend_health() (health.h), a leak test pretend_leak_test()
-// (leak_test.h). It never writes a file: a save reads as saved under
+// (leak_test.h), a sign-in check pretend_signin_check() (signin_fetch.h). It never writes a file: a save reads as saved under
 // the made-up name kPretendCaptureName (listen.h).
 //
 // All functions are called on the UI thread.
@@ -101,7 +108,7 @@ public:
     // no listen run, nothing was kept, or the run was already saved.
     virtual bool save_capture() = 0;
     // Copies the latest runs into data.ping, data.dns, data.trace,
-    // data.listen, data.probe, data.ports, data.speed, data.health and data.leak, and the list's
+    // data.listen, data.probe, data.ports, data.speed, data.health, data.leak and data.signin, and the list's
     // date into data.list_date (data.sent is left alone) and returns true, but only when any changed
     // since the last take(); otherwise leaves `data` alone and returns
     // false.

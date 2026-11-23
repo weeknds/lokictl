@@ -49,6 +49,7 @@ public:
     bool show_watch_screen();
     bool show_health_screen();
     bool show_leak_screen();
+    bool show_signin_screen();
     bool show_trap_screen();
     bool show_map_screen();
     bool show_speed_screen();

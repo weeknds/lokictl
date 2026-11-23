@@ -189,6 +189,13 @@ public:
     using UsbWifiListener = std::function<void(const std::string& interface_name, bool connected)>;
     void set_usb_wifi_listener(UsbWifiListener listener);
 
+    // Told each time NetworkManager's own check finds a sign-in page
+    // (model::Internet::Portal) where the reading before had none (the
+    // first reading counts), on the UI thread; a listener set after such a
+    // reading is told at once. Empty: only the log says it.
+    using SigninListener = std::function<void()>;
+    void set_signin_listener(SigninListener listener);
+
     // Tells the controller whether the screen is dark (app::PowerController,
     // F3.7). While it is, the reader is told that neither the traffic nor
     // the Status page's details are shown, so the live source stops reading
@@ -281,6 +288,8 @@ private:
     bool logged_ap_active_{false};
     std::size_t logged_clients_{0};
     UsbWifiListener usb_wifi_listener_;
+    SigninListener signin_listener_;
+    bool portal_seen_{false};  // the reading handed over last said Internet::Portal
     bool usb_wifi_logged_{false};
     std::vector<model::UsbWifiAdapter> usb_wifi_;  // the adapters handed over last
 };

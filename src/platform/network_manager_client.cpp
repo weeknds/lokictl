@@ -611,6 +611,8 @@ void NetworkManagerClient::read(NetworkManagerReading& reading) {
         nm_client_networking_get_enabled(client) && nm_client_get_state(client) != NM_STATE_ASLEEP;
     reading.wifi_on = nm_client_wireless_get_enabled(client) && nm_client_wireless_hardware_get_enabled(client);
     reading.internet = internet_of(nm_client_get_connectivity(client));
+    reading.internet_check =
+        nm_client_connectivity_check_get_available(client) && nm_client_connectivity_check_get_enabled(client);
 
     const GPtrArray* devices = nm_client_get_devices(client);
     for (guint index = 0; devices != nullptr && index < devices->len; ++index) {

@@ -111,6 +111,7 @@ void apply_network_manager(const NetworkManagerReading& reading, model::HomeData
         show_vpn(data, tunnel);
     }
 
+    data.internet_check = reading.internet_check;
     if (data.uplink_kind != model::LinkKind::None) {
         data.internet = reading.internet;
         data.offline_state = model::OfflineState::Unknown;
@@ -252,6 +253,8 @@ NetworkManagerReading read_network_manager_file(const std::filesystem::path& pat
             parse_switch(value, "yes", "no", reading.connecting);
         } else if (key == "internet") {
             parse_internet(value, reading.internet);
+        } else if (key == "check") {
+            parse_switch(value, "on", "off", reading.internet_check);
         } else if (key == "managed") {
             reading.managed_wifi.push_back(value);
         } else if (key == "kill-switch") {

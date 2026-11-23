@@ -74,6 +74,7 @@ BaseViewModel::BaseViewModel()
       health_detail_subject_(false),
       leak_selection_subject_(0),
       leak_detail_subject_(false),
+      signin_detail_subject_(false),
       report_request_subject_(0),
       map_selection_subject_(kMapRouter),
       home_selection_subject_(0),
@@ -463,6 +464,8 @@ bool BaseViewModel::open_tool(model::ToolKind kind) {
             return open_health();
         case model::ToolKind::Leak:
             return open_leak();
+        case model::ToolKind::Signin:
+            return open_signin();
     }
     return open_page(model::AppPage::Ping);
 }
@@ -884,6 +887,32 @@ bool BaseViewModel::leak_detail() const {
 void BaseViewModel::set_leak_detail(bool open) {
     if (open != leak_detail_subject_.value()) {
         leak_detail_subject_.set(open);
+    }
+}
+
+bool BaseViewModel::open_signin() {
+    set_signin_detail(false);
+    if (!open_page(model::AppPage::Signin)) {
+        return false;  // nothing is sent for a page that did not open
+    }
+    // One check as the page opens, unless a tool runs (key 6 checks again).
+    if (!model::tool_running(tools())) {
+        request_tool_run(model::ToolKind::Signin, model::kSigninCheckHost);
+    }
+    return true;
+}
+
+lv_subject_t* BaseViewModel::signin_detail_subject() {
+    return signin_detail_subject_.native();
+}
+
+bool BaseViewModel::signin_detail() const {
+    return signin_detail_subject_.value();
+}
+
+void BaseViewModel::set_signin_detail(bool open) {
+    if (open != signin_detail_subject_.value()) {
+        signin_detail_subject_.set(open);
     }
 }
 

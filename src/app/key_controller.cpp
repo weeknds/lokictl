@@ -33,6 +33,7 @@ constexpr uint32_t kThemeToastDurationMs = 2500;
 constexpr uint32_t kBatteryToastDurationMs = 5000;
 constexpr uint32_t kBlockToastDurationMs = 4000;
 constexpr uint32_t kUsbWifiToastDurationMs = 3000;
+constexpr uint32_t kSigninToastDurationMs = 5000;
 constexpr uint32_t kWatchToastDurationMs = 4000;
 constexpr uint32_t kReportToastDurationMs = 3000;
 constexpr const char* kPagePathFull = "Too many pages open: go back first";
@@ -112,6 +113,11 @@ void KeyController::show_usb_wifi(const std::string& interface_name, bool connec
                              "",
                              view::widgets::ToastTone::Default,
                              kUsbWifiToastDurationMs);
+}
+
+void KeyController::show_signin_needed() {
+    toast_->show_highlighted("", "Wi-Fi wants you to sign in", "", view::widgets::ToastTone::Warning,
+                             kSigninToastDurationMs);
 }
 
 void KeyController::set_wake_handler(std::function<bool()> handler) {
@@ -414,6 +420,9 @@ void KeyController::open_command_page(model::AppPage page) {
             return;
         case model::AppPage::Leak:
             view_model_.open_leak();
+            return;
+        case model::AppPage::Signin:
+            view_model_.open_signin();
             return;
         case model::AppPage::Status:
             view_model_.open_status();

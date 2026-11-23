@@ -31,6 +31,7 @@ const std::vector<PageInfo>& page_registry() {
         {"health", model::AppPage::Health},
         {"trap", model::AppPage::Trap},
         {"leak", model::AppPage::Leak},
+        {"signin", model::AppPage::Signin},
         // The two demo pages are kept for navigation and key tests. Like the
         // dev- pages, they are opened by name only (snapshot --page), since
         // nothing in the app links to them; the counter page's key 8 opens

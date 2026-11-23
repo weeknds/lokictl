@@ -53,6 +53,8 @@ const char* tool_name(ToolKind kind) {
             return "health";
         case ToolKind::Leak:
             return "leak";
+        case ToolKind::Signin:
+            return "signin";
     }
     return "ping";
 }
@@ -410,11 +412,21 @@ bool operator!=(const LeakRun& left, const LeakRun& right) {
     return !(left == right);
 }
 
+bool operator==(const SigninRun& left, const SigninRun& right) {
+    return left.state == right.state && left.error == right.error && left.reason == right.reason &&
+           left.address == right.address && left.verdict == right.verdict && left.status == right.status &&
+           left.target == right.target;
+}
+
+bool operator!=(const SigninRun& left, const SigninRun& right) {
+    return !(left == right);
+}
+
 bool operator==(const ToolsData& left, const ToolsData& right) {
     return left.ping == right.ping && left.dns == right.dns && left.trace == right.trace &&
            left.listen == right.listen && left.probe == right.probe && left.ports == right.ports &&
            left.speed == right.speed && left.health == right.health && left.leak == right.leak &&
-           left.latest == right.latest &&
+           left.signin == right.signin && left.latest == right.latest &&
            left.sent == right.sent && left.list_date == right.list_date;
 }
 
@@ -427,7 +439,7 @@ bool tool_running(const ToolsData& data) {
            data.trace.state == ToolState::Running || data.listen.state == ToolState::Running ||
            data.probe.state == ToolState::Running || data.ports.state == ToolState::Running ||
            data.speed.state == ToolState::Running || data.health.state == ToolState::Running ||
-           data.leak.state == ToolState::Running;
+           data.leak.state == ToolState::Running || data.signin.state == ToolState::Running;
 }
 
 ToolState tool_state(const ToolsData& data, ToolKind kind) {
@@ -450,6 +462,8 @@ ToolState tool_state(const ToolsData& data, ToolKind kind) {
             return data.health.state;
         case ToolKind::Leak:
             return data.leak.state;
+        case ToolKind::Signin:
+            return data.signin.state;
     }
     return ToolState::Idle;
 }
@@ -565,6 +579,9 @@ bool valid_tool_target(ToolKind kind, std::string_view text) {
     }
     if (kind == ToolKind::Speed) {
         return valid_speed_server(text);
+    }
+    if (kind == ToolKind::Signin) {
+        return text == kSigninCheckHost;
     }
     if (text.empty() || text.size() > kToolTargetMax) {
         return false;

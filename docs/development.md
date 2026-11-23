@@ -85,6 +85,13 @@ text fits the screen (`tests/health_rules.cpp`).
 `build/darwin-arm64/Debug/lokictl_leak_tests` (also run by `ctest`)
 checks which ways the VPN leak test counts as a leak and that every line
 it shows stays short (`tests/leak_rules.cpp`).
+`build/darwin-arm64/Debug/lokictl_signin_tests` (also run by `ctest`)
+reads made-up answers and redirect addresses for the Wi-Fi sign-in check,
+including hostile ones, and fetches from a small test server on
+127.0.0.1 that redirects, answers 204, answers with its own page, never
+ends its head, closes or stays silent (`tests/signin_checks.cpp`). With a
+port as its argument it only fetches from `127.0.0.1:<port>` and prints
+what it read, for any local test server.
 `build/darwin-arm64/Debug/lokictl_trap_tests` (also run by `ctest`)
 checks the trap's limits, how what a visitor sent is shown, the reading of
 the listening ports and the fixed port map (`tests/trap_checks.cpp`).

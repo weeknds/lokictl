@@ -169,6 +169,7 @@ int run_data_readout(platform::DataSourceKind kind, uint32_t steps, const std::s
     print_history("down_history", data.down_history);
     print_history("up_history", data.up_history);
     std::printf("internet=%s\n", model::internet_name(data.internet));
+    std::printf("internet_check=%s\n", data.internet_check ? "on" : "off");
     std::printf("state=%s\n", model::offline_state_name(data.offline_state));
     print_details(data.details);
     // The USB Wi-Fi adapters: how many, then one line per adapter, with the

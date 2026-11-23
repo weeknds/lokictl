@@ -398,7 +398,16 @@ a stand-in that is never available, so there these values stay unknown
   (portal) in the warning colour: in the middle of Instrument's status
   strip, in the corner of Terminal's link pane (where `sample data` stands
   on made-up values, which win) and in place of Constellation's `internet`
-  caption.
+  caption. Each time the check turns to `portal` (the first reading
+  counts), every page shows the message `Wi-Fi wants you to sign in` (see
+  [checks.md](checks.md#wi-fi-sign-in)); the log says `data: the network
+  wants a sign-in`.
+- **Whether that check is on** (`internet_check`): NetworkManager's
+  connectivity check needs an address in its settings and must be
+  switched on (`ConnectivityCheckAvailable` and `ConnectivityCheckEnabled`).
+  Without it NetworkManager says `full` whenever it is connected and never
+  `portal`, and the Sign-in page says the auto check is off. On the
+  Cardputer's stock system it is off. LokiCTL only reads it.
 - **Without a link:** why. `network off` when networking is switched off,
   else `connecting` while a Wi-Fi or cable device is being connected, else
   `wi-fi off` when the radio is off, else `no network`. A cable that is not
@@ -861,11 +870,20 @@ done, asked: <n>`, `tools: ports ended, asked: <n> of <t>`, `tools: ports
 failed: <why>`, `tools: speed done, down <d> kbit/s (<n> bytes), up <u> kbit/s
 (<m> bytes)`, `tools: speed failed: <why>`, `tools: leak started, vpn:
 on|off, gateway: yes|no`, `tools: leak done, leaks: <n>, not checked:
-<u>`, `tools: leak ended`, `tools: leak failed: <why>` (never a target, a
-server, an address, a hardware address, a name, a file name or a port
-result), and `tools: runner stopped` when a run was cut short by
-quitting. The leak test adds one to Sent for its one HTTPS request (see
-[checks.md](checks.md#the-vpn-leak-test)).
+<u>`, `tools: leak ended`, `tools: leak failed: <why>`, `tools: signin
+started`, `tools: signin done, no sign-in needed|sign-in needed|unclear,
+status <n>`, `tools: signin ended`, `tools: signin failed: <why>` (never a
+target, a server, an address, a sign-in address, a hardware address, a
+name, a file name or a port result), and `tools: runner stopped` when a
+run was cut short by quitting. The leak test adds one to Sent for its one
+HTTPS request (see [checks.md](checks.md#the-vpn-leak-test)); the sign-in
+check adds two, its DNS question (sent once more when unanswered) and its
+one plain-HTTP request (see
+[checks.md](checks.md#wi-fi-sign-in)). The made-up sources pretend the
+check: with NetworkManager's `internet portal` (a test folder's
+`networkmanager` file) the network redirects to
+`http://portal.example.net/login?from=lobby`, without a link nothing
+answers, and otherwise no sign-in is needed.
 
 ### Listening
 
@@ -1600,6 +1618,7 @@ up_kbps=300
 down_history=12,18,30,44,62,80,100,86,70,52,40,30,24,20,28,40,56,72,60,46,34,26,30,38
 up_history=8,10,8,14,22,12,8,10,30,55,100,60,28,14,8,8,12,20,12,8,10,16,10,8
 internet=unknown
+internet_check=on
 state=unknown
 ports=2
 port=eth0 kind=cable state=no-link uplink=no ipv4=unknown ipv6=unknown ipv6_link=unknown router=unknown speed_mbps=unknown duplex=unknown drops=unknown link_downs=unknown signal_dbm=unknown hardware=02:4c:4b:00:00:01 security=unknown network=unknown
@@ -1652,6 +1671,7 @@ The lines always come in this order:
 | `down_kbps=`, `up_kbps=` | the current rates in kbit/s |
 | `down_history=`, `up_history=` | the two graphs: 24 shares of 0 to 100 (100 is the history's peak), oldest first, separated by commas |
 | `internet=` | NetworkManager's internet check: `full`, `limited`, `portal`, `none` or `unknown` (always `unknown` without a link) |
+| `internet_check=` | whether NetworkManager's own internet check is set up and on: `on` or `off` (`on` without NetworkManager) |
 | `state=` | why there is no link: `connecting`, `wifi-off`, `network-off` or `unknown` (always `unknown` with a link) |
 | `ports=` | how many ports the Status page lists |
 | `port=` | one line per port: its interface, then `kind=`, `state=` (`off`, `no-link`, `connected`, `access-point` or `unknown`), `uplink=`, `ipv4=`, `ipv6=`, `ipv6_link=`, `router=`, `speed_mbps=`, `signal_dbm=`, `hardware=`, `security=` and, last because it may hold spaces, `network=` |
@@ -1707,7 +1727,8 @@ link wlan0 WPA2 72 Harbour-Cafe
 ```
 
 gives `network=Harbour-Cafe`, `security=WPA2`, `speed_mbps=72` and
-`internet=portal` on a Wi-Fi uplink `wlan0`. Other lines: `networking on|off`,
+`internet=portal` on a Wi-Fi uplink `wlan0`. Other lines: `check on|off`
+(NetworkManager's own internet check; on without the line), `networking on|off`,
 `wifi on|off`, `connecting yes|no` and `managed <interface>` (a Wi-Fi
 device NetworkManager manages; see [USB Wi-Fi adapters](#usb-wi-fi-adapters));
 in a `link` line `-` means not known.

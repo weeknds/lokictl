@@ -21,7 +21,7 @@ class BaseViewModel;
 namespace app {
 
 // The screen's side of the tools (ping, DNS lookup, trace, port scan, speed
-// test, health check, leak test, and listening and probing on the Discover page). It owns a
+// test, health check, leak test, sign-in check, and listening and probing on the Discover page). It owns a
 // platform::ToolRunner, hands it the tool pages' requests
 // (BaseViewModel::request_tool_run(), request_tool_stop() and
 // request_capture_save()) and, from an
@@ -52,7 +52,10 @@ namespace app {
 // ended, asked: <n> of <t>, devices: <d> of <h>" (after a stop), "tools:
 // health failed: <why>", "tools: leak started, vpn: on|off, gateway:
 // yes|no", "tools: leak done, leaks: <n>, not checked: <u>", "tools: leak
-// ended" (after a stop), "tools: leak failed: <why>", "tools: speed done, down <d> kbit/s
+// ended" (after a stop), "tools: leak failed: <why>", "tools: signin
+// started", "tools: signin done, no sign-in needed|sign-in needed|unclear,
+// status <n>", "tools: signin ended" (after a stop), "tools: signin
+// failed: <why>", "tools: speed done, down <d> kbit/s
 // (<n> bytes), up <u> kbit/s (<m> bytes)", "tools: speed failed: <why>" (never a target, a server, an address, a
 // hardware address, a name, a port result or a path), and "tools: runner
 // stopped" at the end.

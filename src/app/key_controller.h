@@ -106,6 +106,10 @@ public:
     // Wi-Fi adapter connected: wlan1" or "USB Wi-Fi adapter removed: wlan1".
     void show_usb_wifi(const std::string& interface_name, bool connected);
 
+    // The message when NetworkManager finds a sign-in page: "Wi-Fi wants
+    // you to sign in" (the Sign-in page, Tools key 5, helps).
+    void show_signin_needed();
+
     // The message for a Watch alert: "Watch: Scan on you", or "Watch: 3 new
     // alerts" for several at once.
     void show_watch_alert(const std::string& text);

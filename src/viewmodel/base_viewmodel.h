@@ -456,6 +456,18 @@ public:
     bool leak_detail() const;
     void set_leak_detail(bool open);
 
+    // The Sign-in page (Tools key 5, or `signin`). The check runs as a tool
+    // (model::ToolKind::Signin, requested with request_tool_run() on
+    // model::kSigninCheckHost), so its run comes back in tools().signin.
+    // Closes the detail, opens the page (see open_page()) and, only when
+    // it opened, asks for one check unless a tool runs.
+    bool open_signin();
+    // True while the page's detail (the full address and what to do) is
+    // shown.
+    lv_subject_t* signin_detail_subject();
+    bool signin_detail() const;
+    void set_signin_detail(bool open);
+
     // Reports: asks to save what LokiCTL has found as a report (key 8 on
     // the Health page, R on the Watch and Discover pages, the command
     // `report`). The view model only passes the request on:
@@ -601,6 +613,7 @@ private:
     reactive::BoolSubject health_detail_subject_;
     reactive::IntSubject leak_selection_subject_;
     reactive::BoolSubject leak_detail_subject_;
+    reactive::BoolSubject signin_detail_subject_;
     reactive::IntSubject report_request_subject_;
     reactive::IntSubject map_selection_subject_;
     std::array<std::string, kMapSlots> map_slots_;

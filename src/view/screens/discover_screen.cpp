@@ -685,6 +685,8 @@ void DiscoverScreen::refresh_status() {
             status = {"Health check is running", tools::kToneMuted};
         } else if (data.leak.state == model::ToolState::Running) {
             status = {"Leak test is running", tools::kToneMuted};
+        } else if (data.signin.state == model::ToolState::Running) {
+            status = {"Sign-in check is running", tools::kToneMuted};
         } else {
             status = {"Trace is running", tools::kToneMuted};
         }

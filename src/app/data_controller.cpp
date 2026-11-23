@@ -324,6 +324,15 @@ void DataController::set_usb_wifi_listener(UsbWifiListener listener) {
     usb_wifi_listener_ = std::move(listener);
 }
 
+void DataController::set_signin_listener(SigninListener listener) {
+    signin_listener_ = std::move(listener);
+    // The first reading comes before the listener is set: a sign-in page
+    // seen there is told now.
+    if (signin_listener_ && portal_seen_) {
+        signin_listener_();
+    }
+}
+
 void DataController::change_blocked() {
     const std::string& address = view_model_.requested_block_address();
     if (!platform::valid_device_address(address)) {
@@ -503,6 +512,15 @@ void DataController::deliver(const model::HomeData& data) {
     }
 
     check_usb_wifi(data.usb_wifi);
+
+    const bool portal = data.internet == model::Internet::Portal;
+    if (portal && !portal_seen_) {
+        LOG_INFO("data: the network wants a sign-in");
+        if (signin_listener_) {
+            signin_listener_();
+        }
+    }
+    portal_seen_ = portal;
 }
 
 void DataController::log_battery(int32_t percent, model::BatteryState state) {

@@ -148,6 +148,16 @@ how many packets LokiCTL has sent.
   whichever comes first. It uses Cloudflare's speed test over HTTPS. You
   can use another server with a `speed_test_server=` line in the
   `[application]` section of `~/.config/lokictl/lokictl.conf`.
+- Login (`5` on Tools, or the command `signin`) helps with hotel and cafe
+  Wi-Fi that wants you to sign in on a web page first. Opening it checks
+  once (`6` checks again): `No sign-in needed`, or `Sign-in needed` with a
+  QR code that opens the sign-in page on your phone. `5` shows the whole
+  address. Tip: switch to Share, join LokiCTL's hotspot with your phone and
+  sign in there. The network then lets the Cardputer in, and every device
+  on its hotspot gets internet through that one sign-in. When the system
+  notices a sign-in page by itself, LokiCTL says `Wi-Fi wants you to sign
+  in` on any page. Where that check is off (the page shows `Auto check:
+  off on this system`), open Login yourself.
 
 ### Health check
 
@@ -341,7 +351,7 @@ and names, up and down (fn+F and fn+X) bring back the last 8 commands, and
 |---|---|
 | `help` | Lists the commands. |
 | `report` | Saves a report of what LokiCTL has found (see [Reports](#reports)). |
-| `home`, `map`, `tools`, `discover`, `watch`, `trap`, `health`, `leak`, `wifi`, `status`, `settings` | Opens that page. |
+| `home`, `map`, `tools`, `discover`, `watch`, `trap`, `health`, `leak`, `signin`, `wifi`, `status`, `settings` | Opens that page. |
 | `theme <name>` | Switches to `instrument`, `constellation` or `terminal`. |
 | `mode <name>` | Switches to `client`, `router`, `share` or `vpn`. |
 | `ping [target]` | Pings a host, or the target that's selected on the Ping page. |
@@ -415,13 +425,16 @@ the details and lists every file LokiCTL writes.
 | `Caught` | How many times someone connected to the trap. |
 | Full, half (duplex) | Whether a cable link sends both ways at once (full) or takes turns (half, slower). |
 | Drops | How many times the cable link went off since LokiCTL started. More than 3 means a loose cable or a bad port. |
+| Sign-in page | The web page a hotel or cafe Wi-Fi shows before it lets you on the internet (a captive portal). |
+| Auto check | The system's own internet check (NetworkManager's). When it's on, LokiCTL tells you about a sign-in page by itself. |
 
 ## Data use
 
 - A speed test moves up to about 100 MB, so be careful on a metered
   connection. It talks to Cloudflare unless you set another server.
 - Apart from the tools you start yourself, LokiCTL sends nothing to the
-  internet. There are no accounts and no analytics. The list of known
+  internet. Opening Login counts as starting a tool: it sends one small
+  plain web request to Cloudflare. There are no accounts and no analytics. The list of known
   security holes is built in and works offline; it is updated with each
   release.
 - Settings, the hotspot password, Watch's known devices, saved captures

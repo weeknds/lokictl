@@ -393,6 +393,10 @@ struct HomeData {
     std::string wifi_security;         // security of that network, for example "WPA2"
     int32_t wifi_signal_dbm{kSignalUnknown}; // received signal of that network, dBm (negative)
     Internet internet{Internet::Unknown}; // whether the internet answers; Unknown without a link
+    // NetworkManager's internet check is set up and on, so it can notice a
+    // sign-in page (Internet::Portal). True when NetworkManager is not
+    // there to ask.
+    bool internet_check{true};
     OfflineState offline_state{OfflineState::Unknown}; // why there is no link; Unknown with one
     bool ap_active{false};             // true while the device runs its own access point
     // The access point's values, the uptime and the clients only mean

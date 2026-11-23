@@ -158,6 +158,9 @@ const char* other_tool_text(const model::ToolsData& data) {
     if (data.leak.state == model::ToolState::Running) {
         return "Leak test is running";
     }
+    if (data.signin.state == model::ToolState::Running) {
+        return "Sign-in check is running";
+    }
     return "Port scan is running";
 }
 

@@ -18,9 +18,9 @@
 
 namespace model {
 
-// The tools that can run (the Ping, DNS, Trace, Ports, Speed, Health and
-// Leak pages, and listening and probing on the Discover page). Only one
-// runs at a time.
+// The tools that can run (the Ping, DNS, Trace, Ports, Speed, Health,
+// Leak and Sign-in pages, and listening and probing on the Discover page).
+// Only one runs at a time.
 enum class ToolKind : int32_t {
     Ping   = 0,
     Dns    = 1,
@@ -31,13 +31,14 @@ enum class ToolKind : int32_t {
     Speed  = 6,
     Health = 7,
     Leak   = 8,
+    Signin = 9,
 };
 
 // How many kinds there are, for tables indexed by ToolKind.
-constexpr std::size_t kToolKindCount = 9;
+constexpr std::size_t kToolKindCount = 10;
 
 // "ping", "dns", "trace", "listen", "probe", "ports", "speed", "health",
-// "leak"
+// "leak", "signin"
 const char* tool_name(ToolKind kind);
 
 // Where a tool's latest run stands.
@@ -572,6 +573,49 @@ struct LeakRun {
 bool operator==(const LeakRun& left, const LeakRun& right);
 bool operator!=(const LeakRun& left, const LeakRun& right);
 
+// The Wi-Fi sign-in check (the Sign-in page, Tools key 5): one plain-HTTP
+// GET of a page that answers "204 No Content" when the internet is open.
+// A Wi-Fi network that wants a sign-in (a hotel, a cafe) answers it itself,
+// usually with a redirect to its sign-in page. Only the answer's head is
+// read, and no redirect is followed. The words and rules are in
+// model/signin_check.h.
+constexpr const char* kSigninCheckHost = "cp.cloudflare.com";
+constexpr const char* kSigninCheckPath = "/generate_204";
+constexpr const char* kSigninCheckUrl  = "http://cp.cloudflare.com/generate_204";
+
+// How a sign-in check came out.
+enum class SigninVerdict : int32_t {
+    Waiting = 0, // not checked (yet)
+    Clear,       // the check page answered itself: no sign-in needed
+    Needed,      // something else answered: the network wants a sign-in
+    Unclear,     // an answer that is neither (SigninRun::status says which)
+};
+
+// What the sign-in check takes from the data layer as it starts. Only the
+// pretend runner uses it (the live one asks the network).
+struct SigninLocal {
+    bool link{false};                     // the Cardputer has an uplink
+    Internet internet{Internet::Unknown}; // NetworkManager's own check
+};
+
+// The latest sign-in check. The sign-in page's address is shown on the
+// screen only: never logged or saved (it often carries a session code).
+struct SigninRun {
+    ToolState state{ToolState::Idle};
+    ToolError error{ToolError::None};
+    std::string reason;          // with ToolError::Failed
+    std::string address;         // the check page's IPv4 address, once looked up
+    SigninVerdict verdict{SigninVerdict::Waiting};
+    int32_t status{0};           // the answer's HTTP status; 0 when none came
+    // Needed: the sign-in page's address from the redirect (an absolute
+    // http or https address, see model::signin_target()); empty when the
+    // answer gave none that may be shown.
+    std::string target;
+};
+
+bool operator==(const SigninRun& left, const SigninRun& right);
+bool operator!=(const SigninRun& left, const SigninRun& right);
+
 // What the tools show: the latest run of each, which of the Discover
 // page's two kinds started last, and the app-wide count of packets LokiCTL
 // has sent in this run of the app.
@@ -585,6 +629,7 @@ struct ToolsData {
     SpeedRun speed;
     HealthRun health;
     LeakRun leak;
+    SigninRun signin;
     ToolKind latest{ToolKind::Listen};  // Listen or Probe: the Discover run started last
     uint64_t sent{0};
     // The date of the installed list of known security holes
@@ -622,7 +667,8 @@ std::vector<DiscoverDevice> discover_devices(const ListenRun& listen, const Prob
 // only an IPv4 address that port_scan_address() allows. The listen, probe,
 // health and leak tools' target is an interface (the leak test's is the
 // tunnel's), checked with valid_interface_name() instead, and the speed
-// test's is its server, checked with valid_speed_server().
+// test's is its server, checked with valid_speed_server(). The sign-in
+// check's is always kSigninCheckHost.
 bool valid_tool_target(ToolKind kind, std::string_view text);
 
 // Whether `text` is an IPv4 address in dotted form ("192.0.2.1").

@@ -263,3 +263,45 @@ checks, each with its own line:
   browsers on other devices (WebRTC and the like).
 - It sees where traffic would go now, not what an app did earlier.
 - Addresses are shown on the screen only, never logged or saved.
+
+## Wi-Fi sign-in
+
+Login (`5` on Tools, or the command `signin`) looks for a sign-in page
+(a captive portal), the web page hotel and cafe Wi-Fi shows before it
+lets you on the internet.
+
+- **The check.** One plain-HTTP request, `GET
+  http://cp.cloudflare.com/generate_204`, after one DNS question for its
+  address. On an open internet that page answers `204 No Content`. A
+  network that wants a sign-in answers in its place, usually with a
+  redirect to its sign-in page. Only the answer's head is read (at most
+  4 KB), no redirect is followed and nothing is sent after it. Sent goes
+  up by two (three when the DNS question has to be asked again). The page checks once as it opens and again on `6`.
+- **What the answer means.** `204`: no sign-in needed. A redirect (301,
+  302, 303, 307, 308) or `511`: sign-in needed. Any other `2xx`: sign-in
+  needed too, because the network put its own page in place of the empty
+  answer. Anything else: `Can't tell` with the code. No answer at all: `No
+  answer` with the reason.
+- **The address.** The redirect's `Location` is shown only when it is a
+  whole `http://` or `https://` address of at most 512 plain characters,
+  with a host and no user name. Anything else (a relative address, another
+  scheme, spaces or control characters) is dropped and the page says `not
+  given`. The QR code holds that address when it has at most 200
+  characters, so the dots stay big enough for a phone camera. Otherwise
+  it holds the check page's own address: opened on a phone on the same
+  network (or on LokiCTL's hotspot), the network sends it to the sign-in
+  page too.
+- **One sign-in for all.** In Share mode the hotspot devices reach the
+  network through the Cardputer, so the network sees them as the
+  Cardputer. Sign in from a phone on LokiCTL's hotspot and the Cardputer
+  is signed in, and every device on the hotspot gets internet.
+- **The message.** NetworkManager can check the internet by itself (its
+  connectivity check). When that check says `portal`, LokiCTL shows `Wi-Fi
+  wants you to sign in` on any page. Many systems, Raspberry Pi OS among
+  them, ship with that check off: then NetworkManager never notices a
+  sign-in page, the page shows `Auto check: off on this system`, and you
+  open Login yourself. LokiCTL never changes NetworkManager's settings.
+
+The sign-in address often carries a session code or your device's
+hardware address, so it is shown on the screen only, never logged or
+saved.

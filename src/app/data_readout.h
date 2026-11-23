@@ -37,6 +37,7 @@ namespace app {
 //   down_history=<24 shares of 0-100, oldest first, by commas>
 //   up_history=<the same for the upload>
 //   internet=<unknown|none|portal|limited|full>
+//   internet_check=<on|off> (NetworkManager's own internet check)
 //   state=<unknown|connecting|wifi-off|network-off>
 // then the Status page's details (the live source reads them as if that
 // page were open):

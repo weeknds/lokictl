@@ -333,6 +333,7 @@ bool operator==(const HomeData& left, const HomeData& right) {
            left.wifi_security == right.wifi_security &&
            left.wifi_signal_dbm == right.wifi_signal_dbm &&
            left.internet == right.internet &&
+           left.internet_check == right.internet_check &&
            left.offline_state == right.offline_state &&
            left.ap_active == right.ap_active &&
            left.ap_name == right.ap_name &&

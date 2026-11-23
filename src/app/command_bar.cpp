@@ -45,6 +45,7 @@ constexpr CommandSpec kCommands[] = {
     {"trap", CommandKind::Page, model::AppPage::Trap, model::ToolKind::Ping, nullptr},
     {"health", CommandKind::Page, model::AppPage::Health, model::ToolKind::Ping, nullptr},
     {"leak", CommandKind::Page, model::AppPage::Leak, model::ToolKind::Ping, nullptr},
+    {"signin", CommandKind::Page, model::AppPage::Signin, model::ToolKind::Ping, nullptr},
     {"wifi", CommandKind::Page, model::AppPage::Wifi, model::ToolKind::Ping, nullptr},
     {"status", CommandKind::Page, model::AppPage::Status, model::ToolKind::Ping, nullptr},
     {"settings", CommandKind::Page, model::AppPage::Settings, model::ToolKind::Ping, nullptr},
@@ -362,6 +363,7 @@ std::string tool_command_refusal(model::ToolKind kind,
             {model::ToolKind::Speed, "Speed test is running"},
             {model::ToolKind::Health, "Health check is running"},
             {model::ToolKind::Leak, "Leak test is running"},
+            {model::ToolKind::Signin, "Sign-in check is running"},
         };
         for (const Running& running : kRunning) {
             if (model::tool_state(tools, running.kind) == model::ToolState::Running) {
@@ -408,6 +410,8 @@ model::AppPage tool_command_page(model::ToolKind kind) {
             return model::AppPage::Health;
         case model::ToolKind::Leak:
             return model::AppPage::Leak;
+        case model::ToolKind::Signin:
+            return model::AppPage::Signin;
         case model::ToolKind::Listen:
         case model::ToolKind::Probe:
             break;

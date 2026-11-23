@@ -99,10 +99,10 @@ view::widgets::HelpContent ToolsScreen::help_content() {
     return {"TOOLS",
             {
                 {"ESC / 4", "Back"},
+                {"5", "Hotel Wi-Fi sign-in"},
                 {"ENTER / 6", "Open the tool"},
                 {"7", "Health check, sends"},
                 {"8", "Watch, sends none"},
-                {"Sent", "Packets LokiCTL sent"},
             }};
 }
 
@@ -115,7 +115,7 @@ view::widgets::SoftKeySet ToolsScreen::soft_keys() {
     auto& view_model = this->view_model();
     return {{
         {"Back", [&view_model] { view_model.go_back(); }},
-        {},
+        {"Login", [&view_model] { view_model.open_signin(); }},
         {"Open", [this] { open_selected(); }, true},
         {"Check", [&view_model] { view_model.open_health(); }},
         {"Watch", [&view_model] { view_model.open_watch(); }},

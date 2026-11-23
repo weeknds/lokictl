@@ -18,6 +18,7 @@
 #include "discover_screen.h"
 #include "health_screen.h"
 #include "leak_screen.h"
+#include "signin_screen.h"
 #include "trap_screen.h"
 #include "watch_screen.h"
 #include "hotspot_screen.h"
@@ -186,6 +187,14 @@ bool ScreenManager::show_leak_screen() {
         return false;
     }
     page_loaded(model::AppPage::Leak);
+    return true;
+}
+
+bool ScreenManager::show_signin_screen() {
+    if (!load_screen(std::make_unique<screen::SigninScreen>(view_model_, assets_, theme_engine_))) {
+        return false;
+    }
+    page_loaded(model::AppPage::Signin);
     return true;
 }
 
@@ -361,6 +370,10 @@ bool ScreenManager::show_page(model::AppPage page) {
 
     if (screen::LeakScreen::handles(page)) {
         return show_leak_screen();
+    }
+
+    if (screen::SigninScreen::handles(page)) {
+        return show_signin_screen();
     }
 
     if (screen::MapScreen::handles(page)) {

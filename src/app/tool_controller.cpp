@@ -10,6 +10,7 @@
 #include "health_check.h"
 #include "leak_check.h"
 #include "logger.h"
+#include "signin_check.h"
 #include "sent_counter.h"
 
 #include <cstddef>
@@ -151,7 +152,8 @@ void ToolController::handle_request() {
         for (const model::ToolKind kind : {model::ToolKind::Ping, model::ToolKind::Dns, model::ToolKind::Trace,
                                            model::ToolKind::Listen, model::ToolKind::Probe,
                                            model::ToolKind::Ports, model::ToolKind::Speed,
-                                           model::ToolKind::Health, model::ToolKind::Leak}) {
+                                           model::ToolKind::Health, model::ToolKind::Leak,
+                                           model::ToolKind::Signin}) {
             if (model::tool_state(data_, kind) == model::ToolState::Running) {
                 runner_->stop();
                 LOG_INFO("tools: {} stopped by the user", model::tool_name(kind));
@@ -171,6 +173,9 @@ void ToolController::handle_request() {
         }
         if (kind == model::ToolKind::Leak) {
             job.leak = model::leak_local(view_model_.home());
+        }
+        if (kind == model::ToolKind::Signin) {
+            job.signin = model::signin_local(view_model_.home());
         }
         if (!runner_->start(job)) {
             return;  // one runs already
@@ -310,6 +315,21 @@ void ToolController::log_change(const model::ToolsData& next) const {
             LOG_INFO("tools: leak ended");
         } else if (leak.state == model::ToolState::Failed) {
             LOG_INFO("tools: leak failed: {}", why(leak.error, leak.reason));
+        }
+    }
+    // The verdict and the status only: never the sign-in address.
+    const model::SigninRun& signin = next.signin;
+    if (signin.state != data_.signin.state) {
+        if (signin.state == model::ToolState::Done) {
+            LOG_INFO("tools: signin done, {}, status {}",
+                     signin.verdict == model::SigninVerdict::Clear    ? "no sign-in needed"
+                     : signin.verdict == model::SigninVerdict::Needed ? "sign-in needed"
+                                                                      : "unclear",
+                     signin.status);
+        } else if (signin.state == model::ToolState::Stopped) {
+            LOG_INFO("tools: signin ended");
+        } else if (signin.state == model::ToolState::Failed) {
+            LOG_INFO("tools: signin failed: {}", why(signin.error, signin.reason));
         }
     }
     // Sizes only: never the file's path.
