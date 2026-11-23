@@ -412,6 +412,9 @@ void KeyController::open_command_page(model::AppPage page) {
         case model::AppPage::Health:
             view_model_.open_health();
             return;
+        case model::AppPage::Leak:
+            view_model_.open_leak();
+            return;
         case model::AppPage::Status:
             view_model_.open_status();
             return;

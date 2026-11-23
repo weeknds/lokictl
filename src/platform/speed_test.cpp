@@ -783,7 +783,152 @@ private:
     bool phase_over_{false};
 };
 
+// The most of the trace page's answer that is kept: it is about 250 bytes.
+constexpr std::size_t kTraceMaxBytes = 4096;
+constexpr long kTraceTimeoutMs = 15000;
+
+struct TraceBody {
+    std::string text;
+    bool too_long{false};
+};
+
+size_t trace_write_cb(char* data, size_t size, size_t count, void* user) {
+    auto* body = static_cast<TraceBody*>(user);
+    const size_t bytes = size * count;
+    if (body->text.size() + bytes > kTraceMaxBytes) {
+        body->too_long = true;
+        return 0;  // ends the transfer
+    }
+    body->text.append(data, bytes);
+    return bytes;
+}
+
+// The address of the "ip=" line of a trace answer, when it is an IPv4
+// address; else empty.
+std::string trace_address(const std::string& text) {
+    std::size_t start = 0;
+    while (start < text.size()) {
+        std::size_t end = text.find('\n', start);
+        if (end == std::string::npos) {
+            end = text.size();
+        }
+        std::string line = text.substr(start, end - start);
+        if (!line.empty() && line.back() == '\r') {
+            line.pop_back();
+        }
+        if (line.compare(0, 3, "ip=") == 0) {
+            const std::string value = line.substr(3);
+            return model::is_ipv4_text(value) ? value : std::string();
+        }
+        start = end + 1;
+    }
+    return {};
+}
+
+// One GET of the trace page; see fetch_public_address(). `finished` says
+// whether the request ran to its end (otherwise a name lookup may still
+// run inside libcurl).
+std::string fetch_trace(const CurlApi& api, const std::function<bool()>& stopping, std::string& address,
+                        bool& finished) {
+    finished = false;
+    TraceBody body;
+    CURLM* multi = api.multi_init();
+    CURL* easy = api.easy_init();
+    std::string reason;
+    bool added = false;
+    if (multi == nullptr || easy == nullptr) {
+        reason = "out of memory";
+    } else {
+        api.easy_setopt(easy, CURLOPT_NOSIGNAL, 1L);
+        api.easy_setopt(easy, CURLOPT_QUICK_EXIT, 1L);
+        api.easy_setopt(easy, CURLOPT_PROTOCOLS_STR, "https");
+        api.easy_setopt(easy, CURLOPT_IPRESOLVE, static_cast<long>(CURL_IPRESOLVE_V4));
+        api.easy_setopt(easy, CURLOPT_USERAGENT, "lokictl");
+        api.easy_setopt(easy, CURLOPT_CONNECTTIMEOUT_MS, kConnectTimeoutMs);
+        api.easy_setopt(easy, CURLOPT_TIMEOUT_MS, kTraceTimeoutMs);
+        api.easy_setopt(easy, CURLOPT_FAILONERROR, 1L);
+        api.easy_setopt(easy, CURLOPT_TLS13_CIPHERS, kTls13Suites);
+        api.easy_setopt(easy, CURLOPT_WRITEFUNCTION, &trace_write_cb);
+        api.easy_setopt(easy, CURLOPT_WRITEDATA, static_cast<void*>(&body));
+        api.easy_setopt(easy, CURLOPT_URL, model::kLeakTraceUrl);
+        if (api.multi_add_handle(multi, easy) != CURLM_OK) {
+            reason = "transfer failed";
+        } else {
+            added = true;
+            count_sent();
+        }
+    }
+    while (added && reason.empty()) {
+        int running = 0;
+        if (api.multi_perform(multi, &running) != CURLM_OK) {
+            reason = "transfer failed";
+            break;
+        }
+        bool done = false;
+        CURLcode result = CURLE_OK;
+        int waiting = 0;
+        while (CURLMsg* message = api.multi_info_read(multi, &waiting)) {
+            if (message->msg == CURLMSG_DONE && message->easy_handle == easy) {
+                done = true;
+                result = message->data.result;
+            }
+        }
+        if (done) {
+            finished = true;
+            long status = 0;
+            api.easy_getinfo(easy, CURLINFO_RESPONSE_CODE, &status);
+            if (body.too_long) {
+                reason = "answer too long";
+            } else if (result != CURLE_OK) {
+                reason = failure_reason(api, result, status);
+            } else if (status != 200) {
+                reason = "server said " + std::to_string(status);
+            } else {
+                address = trace_address(body.text);
+                if (address.empty()) {
+                    reason = "no address in the answer";
+                }
+            }
+            break;
+        }
+        if (stopping()) {
+            reason = "stopped";
+            break;
+        }
+        api.multi_poll(multi, nullptr, 0, kWaitSliceMs, nullptr);
+    }
+    if (added) {
+        api.multi_remove_handle(multi, easy);
+    }
+    if (easy != nullptr) {
+        api.easy_cleanup(easy);
+    }
+    if (multi != nullptr) {
+        api.multi_cleanup(multi);
+    }
+    if (!added) {
+        finished = true;  // no request ever started
+    }
+    return reason;
+}
+
 } // namespace
+
+std::string fetch_public_address(const std::function<bool()>& stopping, std::string& address) {
+    address.clear();
+    std::string reason;
+    const CurlApi* api = load_curl(reason);
+    if (api == nullptr) {
+        return reason;
+    }
+    bool finished = false;
+    reason = fetch_trace(*api, stopping, address, finished);
+    if (!finished) {
+        curl_library().kept = true;
+    }
+    release_curl();
+    return reason;
+}
 
 void run_speed_test(const std::string& server,
                     const std::function<bool()>& stopping,
@@ -821,6 +966,11 @@ void run_speed_test(const std::string& server,
     run.server = server;
     fail_run(run, "built without libcurl");
     publish(run);
+}
+
+std::string fetch_public_address(const std::function<bool()>& /*stopping*/, std::string& address) {
+    address.clear();
+    return "built without libcurl";
 }
 #endif
 #endif

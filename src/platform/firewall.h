@@ -53,6 +53,13 @@ bool valid_device_address(const std::string& address);
 std::string trap_on(std::vector<uint16_t>& ports, std::chrono::milliseconds limit = kHelperTimeLimit);
 std::string trap_off(std::chrono::milliseconds limit = kHelperTimeLimit);
 
+// Whether LokiCTL's table holds the VPN kill switch's chains right now,
+// read through the helper's `list` (the leak test, F9.8). It changes
+// nothing. Waits for the helper, at most `limit`, so it never runs on the
+// UI thread. Returns an empty text when it could be read (`present` then
+// says), else a short reason ("helper not installed").
+std::string read_kill_switch(bool& present, std::chrono::milliseconds limit = kHelperTimeLimit);
+
 // The saved list (the blocked_devices= key): addresses separated by commas,
 // spaces allowed around them. Capitals become lowercase; anything else
 // that is not a valid_device_address() and repeats are dropped, and of the

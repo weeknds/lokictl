@@ -430,6 +430,7 @@ rows and a status line, and it is drawn the same way in every theme:
 | `f`/`x` or up/down | moves the highlight; it stops at the first and the last row |
 | `z`/`c` or left/right | on the VPN row, picks another WireGuard file (not while a tunnel runs) |
 | `Enter` or `6` USE | switches to the highlighted mode; USE is dimmed on the mode that is on, on VPN without files, and while a switch runs; on the VPN row while the tunnel runs it reads OFF and turns the VPN off (a hotspot stays; without one that is Client) |
+| `5` LEAK | opens the Leak page (the VPN leak test), in any mode |
 | `7` QR | opens the Hotspot page, in any mode |
 | `8` OFF | only on the VPN row while the gateway's kill switch is on without a tunnel: turns the VPN off, which frees the hotspot devices (`6` USE there turns the tunnel on again) |
 | `4` BACK or a short ESC | goes back |
@@ -612,6 +613,36 @@ the detail live in the view model (`health_selection_*`,
 `health_detail_*`). While the page is on top the data layer reads
 NetworkManager's scan list, as it does for the Wi-Fi page, so the check
 can look for look-alike networks.
+
+## The Leak page
+
+`leak` (Modes key 5, or the command `leak`) runs the VPN leak test: one
+run of `model::ToolKind::Leak` on the tool runner (one tool at a time, it
+goes on when the page is left). Opening the page sends nothing. What it
+checks is in [checks.md](checks.md#the-vpn-leak-test).
+
+Under the title bar: one line per check, in the verdict's colour (green no
+leak, red leak, amber can't tell, muted not checked): `Name lookups:
+through VPN` / `NOT through VPN`, `IPv6: no leak` / `NOT through VPN`,
+`Public address: 198.51.100.7` / `NOT hidden` / `no answer`, `Kill switch:
+on` / `NOT on` / `hotspot only`. With the VPN off the first two read `VPN
+is off`. The status line says `VPN is off: nothing to test`, `Press 6 to
+test the VPN`, `Checking…`, `No leaks found`, `2 leaks found`, `No leak
+seen, 1 unclear` or `VPN off: your address noted`, with `SENT N`. The
+detail view shows the picked check: its name and verdict, one line of
+facts (`10.0.0.1 goes by wlan0`) and what it means and what to do.
+
+| Key | What it does |
+|---|---|
+| `f`/`x` or the arrows up and down | pick a check, in the detail too |
+| `5` INFO or Enter | opens or closes the detail |
+| `6` RUN / STOP | runs the test (dimmed while the VPN is starting or another tool runs); while it runs, stops it |
+| `4` BACK or a short ESC | closes the detail, else goes back (the test goes on) |
+
+The pick and the detail live in the view model (`leak_selection_*`,
+`leak_detail_*`). The made-up sources pretend: the file `home` passes, the
+file `travel` leaks name lookups and IPv6 (and in the gateway the kill
+switch is missing).
 
 ## The Ping, DNS and Trace pages
 

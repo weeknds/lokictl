@@ -53,6 +53,17 @@ model::SpeedRun pretend_speed_test(uint32_t elapsed_ms, const std::string& serve
 void run_speed_test(const std::string& server,
                     const std::function<bool()>& stopping,
                     const std::function<void(const model::SpeedRun&)>& publish);
+
+// The leak test's public address (F9.8): one GET of model::kLeakTraceUrl
+// over HTTPS and IPv4 only, on the calling thread (the tool runner's),
+// through libcurl loaded the same way as for the speed test. The answer is
+// read up to 4 KB; its "ip=" line gives `address` (an IPv4 address in
+// dotted form). The request is counted once with count_sent(); it gives
+// up after 15 s, and `stopping` is asked at least every 0.1 s. Returns an
+// empty text with `address` set, else a short reason ("stopped" after a
+// stop). Certificates are checked; no redirect is followed; nothing is
+// logged.
+std::string fetch_public_address(const std::function<bool()>& stopping, std::string& address);
 #endif
 
 } // namespace platform

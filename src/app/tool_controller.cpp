@@ -8,6 +8,7 @@
 
 #include "base_viewmodel.h"
 #include "health_check.h"
+#include "leak_check.h"
 #include "logger.h"
 #include "sent_counter.h"
 
@@ -150,7 +151,7 @@ void ToolController::handle_request() {
         for (const model::ToolKind kind : {model::ToolKind::Ping, model::ToolKind::Dns, model::ToolKind::Trace,
                                            model::ToolKind::Listen, model::ToolKind::Probe,
                                            model::ToolKind::Ports, model::ToolKind::Speed,
-                                           model::ToolKind::Health}) {
+                                           model::ToolKind::Health, model::ToolKind::Leak}) {
             if (model::tool_state(data_, kind) == model::ToolState::Running) {
                 runner_->stop();
                 LOG_INFO("tools: {} stopped by the user", model::tool_name(kind));
@@ -168,6 +169,9 @@ void ToolController::handle_request() {
         if (kind == model::ToolKind::Health) {
             job.health = health_local(view_model_.home());
         }
+        if (kind == model::ToolKind::Leak) {
+            job.leak = model::leak_local(view_model_.home());
+        }
         if (!runner_->start(job)) {
             return;  // one runs already
         }
@@ -176,6 +180,10 @@ void ToolController::handle_request() {
             LOG_INFO("tools: health started, wifi networks heard: {}, joined wifi: {}, cable: {}",
                      job.health.nearby.size(), job.health.wifi_security.empty() ? "no" : "yes",
                      job.health.cable ? "yes" : "no");
+        } else if (kind == model::ToolKind::Leak) {
+            // Never the file's name or an address.
+            LOG_INFO("tools: leak started, vpn: {}, gateway: {}", job.leak.vpn_on ? "on" : "off",
+                     job.leak.gateway ? "yes" : "no");
         } else {
             LOG_INFO("tools: {} started", model::tool_name(kind));
         }
@@ -290,6 +298,18 @@ void ToolController::log_change(const model::ToolsData& next) const {
                      health.scanned, health.hosts);
         } else if (health.state == model::ToolState::Failed) {
             LOG_INFO("tools: health failed: {}", why(health.error, health.reason));
+        }
+    }
+    // Counts only: never an address, a server or the file's name.
+    const model::LeakRun& leak = next.leak;
+    if (leak.state != data_.leak.state) {
+        if (leak.state == model::ToolState::Done) {
+            LOG_INFO("tools: leak done, leaks: {}, not checked: {}", model::leak_fail_count(leak),
+                     model::leak_unknown_count(leak));
+        } else if (leak.state == model::ToolState::Stopped) {
+            LOG_INFO("tools: leak ended");
+        } else if (leak.state == model::ToolState::Failed) {
+            LOG_INFO("tools: leak failed: {}", why(leak.error, leak.reason));
         }
     }
     // Sizes only: never the file's path.

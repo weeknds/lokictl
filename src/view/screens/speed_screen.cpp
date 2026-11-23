@@ -88,6 +88,9 @@ const char* other_tool_text(const model::ToolsData& data) {
     if (data.health.state == model::ToolState::Running) {
         return "Health check is running";
     }
+    if (data.leak.state == model::ToolState::Running) {
+        return "Leak test is running";
+    }
     return "Port scan is running";
 }
 

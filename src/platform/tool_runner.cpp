@@ -7,6 +7,7 @@
 #include "tool_runner.h"
 
 #include "health.h"
+#include "leak_test.h"
 #include "listen.h"
 #include "port_scan.h"
 #include "probe.h"
@@ -234,6 +235,9 @@ public:
             case model::ToolKind::Health:
                 latest_.health.state = model::ToolState::Stopped;
                 break;
+            case model::ToolKind::Leak:
+                latest_.leak.state = model::ToolState::Stopped;
+                break;
         }
         fresh_ = true;
     }
@@ -274,6 +278,7 @@ public:
         data.ports = latest_.ports;
         data.speed = latest_.speed;
         data.health = latest_.health;
+        data.leak = latest_.leak;
         data.latest = latest_.latest;
         data.list_date = latest_.list_date;
         fresh_ = false;
@@ -326,6 +331,14 @@ private:
             case model::ToolKind::Health:
                 keep(pretend_health(health_plan_, elapsed, sent, done), latest_.health);
                 break;
+            case model::ToolKind::Leak: {
+                model::LeakRun run = pretend_leak_test(elapsed, job_.leak, leak_without_vpn_, sent, done);
+                if (done && !run.vpn_on && !run.public_address.empty()) {
+                    leak_without_vpn_ = run.public_address;
+                }
+                keep(std::move(run), latest_.leak);
+                break;
+            }
         }
         if (sent > counted_) {
             count_sent(sent - counted_);
@@ -548,6 +561,8 @@ private:
     bool kept_full_{false};
     // The latest health check, worked out as it started.
     PretendHealth health_plan_;
+    // The address the latest made-up leak test with the VPN off saw.
+    std::string leak_without_vpn_;
 };
 
 #if !USE_DESKTOP
@@ -1010,6 +1025,13 @@ public:
                     latest_.health.state = model::ToolState::Running;
                     latest_.health.interface_name = job.target;
                     break;
+                case model::ToolKind::Leak:
+                    latest_.leak = model::LeakRun{};
+                    latest_.leak.state = model::ToolState::Running;
+                    latest_.leak.vpn_on = job.leak.vpn_on;
+                    latest_.leak.gateway = job.leak.gateway;
+                    latest_.leak.file = job.leak.file;
+                    break;
             }
             if (job.kind == model::ToolKind::Listen || job.kind == model::ToolKind::Probe) {
                 latest_.latest = job.kind;
@@ -1053,6 +1075,7 @@ public:
         data.ports = latest_.ports;
         data.speed = latest_.speed;
         data.health = latest_.health;
+        data.leak = latest_.leak;
         data.latest = latest_.latest;
         data.list_date = latest_.list_date;
         fresh_ = false;
@@ -1149,6 +1172,9 @@ private:
                     case model::ToolKind::Health:
                         run_health(job);
                         break;
+                    case model::ToolKind::Leak:
+                        run_leak(job.leak);
+                        break;
                 }
             } catch (...) {
                 // Nothing in a job should throw; if something does (no
@@ -1178,6 +1204,9 @@ private:
                         break;
                     case model::ToolKind::Health:
                         fail_internal(latest_.health);
+                        break;
+                    case model::ToolKind::Leak:
+                        fail_internal(latest_.leak);
                         break;
                 }
                 fresh_ = true;
@@ -1220,6 +1249,9 @@ private:
                 break;
             case model::ToolKind::Health:
                 latest_.health.state = model::ToolState::Stopped;
+                break;
+            case model::ToolKind::Leak:
+                latest_.leak.state = model::ToolState::Stopped;
                 break;
         }
         fresh_ = true;
@@ -1289,6 +1321,14 @@ private:
         std::lock_guard<std::mutex> lock(mutex_);
         if (run != latest_.health) {
             latest_.health = run;
+            fresh_ = true;
+        }
+    }
+
+    void publish(const model::LeakRun& run) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (run != latest_.leak) {
+            latest_.leak = run;
             fresh_ = true;
         }
     }
@@ -2566,6 +2606,16 @@ private:
         run_speed_test(server, stop, show);
     }
 
+    // Runs the leak test (leak_test.h) on this thread; the address a test
+    // with the VPN off saw stays in leak_without_vpn_ for the next ones.
+    void run_leak(const model::LeakLocal& local) {
+        const std::function<bool()> stop = [this] { return stopping(); };
+        const std::function<void(const model::LeakRun&)> show = [this](const model::LeakRun& run) {
+            publish(run);
+        };
+        run_leak_test(local, leak_without_vpn_, stop, show);
+    }
+
     // Listens on `interface_name` for model::kListenSeconds through the
     // capture helper, which alone may open the packet socket and only
     // receives; its stream is read here without privileges. On a cable
@@ -2804,6 +2854,9 @@ private:
     uint64_t listen_generation_{0};
     const std::string capture_folder_;
     const std::string list_path_;
+    // The public address the latest leak test with the VPN off saw; only
+    // the thread uses it. Never saved.
+    std::string leak_without_vpn_;
 };
 #endif
 

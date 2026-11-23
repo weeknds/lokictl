@@ -131,9 +131,9 @@ view::widgets::HelpContent ModesScreen::help_content() {
     return {"MODES",
             {
                 {"ESC / 4", "Back"},
-                {"F / X", "Up / down"},
                 {"ENTER / 6", "Switch to the mode"},
                 {"Z / C", "VPN: pick a file"},
+                {"5", "VPN leak test"},
                 {"7", "Hotspot: join code, name"},
             }};
 }
@@ -207,7 +207,7 @@ view::widgets::SoftKeySet ModesScreen::soft_keys() {
     auto& view_model = this->view_model();
     return {{
         {"Back", [&view_model] { view_model.go_back(); }},
-        {},
+        {"Leak", [&view_model] { view_model.open_leak(); }},
         {"Use", [this] { use_selected(); }, true, false},
         {"QR", [&view_model] { view_model.open_hotspot(); }},
         {},  // key 8: Off while the gateway is down (see refresh())

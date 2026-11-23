@@ -734,7 +734,8 @@ void ToolScreen::build_content(lv_obj_t* content) {
         case model::ToolKind::Probe:
         case model::ToolKind::Speed:
         case model::ToolKind::Health:
-            break;  // the Discover, Speed and Health pages', never a tool page's
+        case model::ToolKind::Leak:
+            break;  // the Discover, Speed, Health and Leak pages', never a tool page's
     }
 
     // The status line, with the Sent count and its caption at the right.
@@ -1094,7 +1095,8 @@ void ToolScreen::refresh_target() {
             case model::ToolKind::Probe:
             case model::ToolKind::Speed:
             case model::ToolKind::Health:
-                break;  // the Discover, Speed and Health pages', never a tool page's
+            case model::ToolKind::Leak:
+                break;  // the Discover, Speed, Health and Leak pages', never a tool page's
         }
         if (kind_ == model::ToolKind::Ports) {
             for (const Target& target : ports_targets()) {
@@ -1295,7 +1297,8 @@ void ToolScreen::refresh_status() {
         case model::ToolKind::Probe:
         case model::ToolKind::Speed:
         case model::ToolKind::Health:
-            break;  // the Discover, Speed and Health pages', never a tool page's
+        case model::ToolKind::Leak:
+            break;  // the Discover, Speed, Health and Leak pages', never a tool page's
     }
     if (confirming_) {
         status = {"Nothing sent yet", tools::kToneMuted};
@@ -1314,6 +1317,8 @@ void ToolScreen::refresh_status() {
             status = {"Speed test is running", tools::kToneMuted};
         } else if (data.health.state == model::ToolState::Running) {
             status = {"Health check is running", tools::kToneMuted};
+        } else if (data.leak.state == model::ToolState::Running) {
+            status = {"Leak test is running", tools::kToneMuted};
         } else {
             status = {"Trace is running", tools::kToneMuted};
         }
@@ -1635,7 +1640,8 @@ void ToolScreen::refresh() {
         case model::ToolKind::Probe:
         case model::ToolKind::Speed:
         case model::ToolKind::Health:
-            break;  // the Discover, Speed and Health pages', never a tool page's
+        case model::ToolKind::Leak:
+            break;  // the Discover, Speed, Health and Leak pages', never a tool page's
     }
     refresh_status();
 }

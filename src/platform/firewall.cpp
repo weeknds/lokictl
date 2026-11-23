@@ -283,6 +283,23 @@ bool valid_device_address(const std::string& address) {
     return (low_digit & 1) == 0;
 }
 
+std::string read_kill_switch(bool& present, milliseconds limit) {
+    present = false;
+    std::string output;
+    const std::string reason = run_helper({"list"}, limit, &output);
+    if (!reason.empty()) {
+        return reason;
+    }
+    std::istringstream lines(output);
+    std::string line;
+    while (std::getline(lines, line)) {
+        if (line == kKillSwitchLine) {
+            present = true;
+        }
+    }
+    return {};
+}
+
 std::vector<std::string> parse_blocked_devices(const std::string& text, std::size_t* dropped) {
     return parse_device_list(text, kMaxBlockedDevices, dropped);
 }

@@ -44,8 +44,8 @@ namespace screen {
 // (BaseViewModel::request_vpn_off(): a hotspot stays). While the gateway's
 // kill switch is on without the tunnel, key 6 on the VPN row turns the
 // tunnel on again (Use) and key 8 (Off) turns the VPN off, which frees the
-// hotspot devices. Key 7 (QR) opens the
-// Hotspot page, in any mode. Key 4 or a short ESC goes back. The page never waits for the switch: the data layer does it, and
+// hotspot devices. Key 5 (Leak) opens the Leak page (the VPN leak test)
+// and key 7 (QR) the Hotspot page, in any mode. Key 4 or a short ESC goes back. The page never waits for the switch: the data layer does it, and
 // the page follows HomeData::mode and HomeData::mode_switch as they arrive.
 //
 // The highlight lives in the view model (modes_selection_*), where

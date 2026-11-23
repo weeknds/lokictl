@@ -228,3 +228,38 @@ result and that every text fits the screen.
 - A device that doesn't answer pings and isn't in Discover's list is
   missed.
 - The Wi-Fi checks only know what NetworkManager heard in its last scan.
+
+## The VPN leak test
+
+`5` on Modes (or the command `leak`) checks, with the VPN on, that the
+Cardputer's own traffic doesn't go around the tunnel (`lokiwg0`). Four
+checks, each with its own line:
+
+- **Name lookups.** Each nameserver in `/etc/resolv.conf` that the system
+  uses (the first three) gets a UDP socket connected to it. Connecting a
+  UDP socket sends nothing, but the system picks the source address it
+  would use, and that address's interface is the way lookups go. Any
+  server reached by another interface is a leak (`Name lookups: NOT
+  through VPN`, detail `10.0.0.1 goes by wlan0`). The usual fix is a
+  `DNS =` line in the WireGuard file. A server on the Cardputer itself
+  (`127.0.0.53`) can't be judged, because it asks on out of sight.
+- **IPv6.** When an interface other than the tunnel has a public IPv6
+  address, the same trick finds the way to a public IPv6 address. Through
+  the tunnel, or no way out at all, is fine; another interface is a leak.
+  Without IPv6 on the network there is nothing to leak.
+- **Public address.** One HTTPS request (IPv4) to Cloudflare's trace page,
+  `https://www.cloudflare.com/cdn-cgi/trace`, which answers with the
+  address it saw. A run with the VPN off only notes this address, in
+  memory; a later run with the VPN on fails when it sees the same one.
+  Without a noted address it is shown, not judged.
+- **Kill switch.** Only in the VPN gateway (a hotspot mode with the VPN):
+  the helper's read-only `list` says whether the kill chains are in
+  LokiCTL's firewall table. Outside the gateway the line says `hotspot
+  only`, because the kill switch only guards hotspot devices.
+
+### Limits
+
+- It checks the Cardputer's own traffic and the gateway's kill switch, not
+  browsers on other devices (WebRTC and the like).
+- It sees where traffic would go now, not what an app did earlier.
+- Addresses are shown on the screen only, never logged or saved.

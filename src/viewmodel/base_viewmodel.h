@@ -440,6 +440,22 @@ public:
     bool health_detail() const;
     void set_health_detail(bool open);
 
+    // The Leak page (Modes key 5, or `leak`). The leak test runs as a tool
+    // (model::ToolKind::Leak, requested with request_tool_run() on the
+    // tunnel's interface), so its run comes back in tools().leak. Puts the
+    // selection on the first check and closes the detail, then opens the
+    // page (see open_page()).
+    bool open_leak();
+    // The selected check (model::LeakCheck); the page clamps it.
+    lv_subject_t* leak_selection_subject();
+    int32_t leak_selection() const;
+    // Stores `row` (0 or more); nothing is written when it stays the same.
+    void set_leak_selection(int32_t row);
+    // True while the selected check's detail is shown.
+    lv_subject_t* leak_detail_subject();
+    bool leak_detail() const;
+    void set_leak_detail(bool open);
+
     // Reports: asks to save what LokiCTL has found as a report (key 8 on
     // the Health page, R on the Watch and Discover pages, the command
     // `report`). The view model only passes the request on:
@@ -583,6 +599,8 @@ private:
     reactive::BoolSubject trap_detail_subject_;
     reactive::IntSubject health_selection_subject_;
     reactive::BoolSubject health_detail_subject_;
+    reactive::IntSubject leak_selection_subject_;
+    reactive::BoolSubject leak_detail_subject_;
     reactive::IntSubject report_request_subject_;
     reactive::IntSubject map_selection_subject_;
     std::array<std::string, kMapSlots> map_slots_;

@@ -799,7 +799,8 @@ target_link_libraries(${PROJECT_NAME}
 
 # Checks of the service and version reading and of the list of known
 # security holes (tests/vuln_checks.cpp), of Watch's alerts, of the
-# health check's rules, of the trap, of the topology frames and of reports,
+# health check's rules, of the leak test's rules, of the trap, of the
+# topology frames and of reports,
 # on the Mac only:
 # build/darwin-arm64/Debug/lokictl_tests, or ctest.
 if(USE_DESKTOP)
@@ -835,6 +836,12 @@ if(USE_DESKTOP)
             VULN_LIST_PATH="${CMAKE_CURRENT_SOURCE_DIR}/assets/data/vulndb.tsv"
     )
     add_test(NAME health_rules COMMAND ${PROJECT_NAME}_health_tests)
+
+    # The VPN leak test's rules and line lengths (tests/leak_rules.cpp):
+    # build/darwin-arm64/Debug/lokictl_leak_tests, or ctest.
+    add_executable(${PROJECT_NAME}_leak_tests tests/leak_rules.cpp)
+    target_link_libraries(${PROJECT_NAME}_leak_tests PRIVATE ${PROJECT_NAME}_model)
+    add_test(NAME leak_rules COMMAND ${PROJECT_NAME}_leak_tests)
 
     # The trap's limits, shown text and port reading (tests/trap_checks.cpp):
     # build/darwin-arm64/Debug/lokictl_trap_tests, or ctest.

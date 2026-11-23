@@ -859,9 +859,13 @@ replies`, `tools: ping failed: <why>`, `tools: dns done, <n> addresses`,
 listen ended, devices heard: <n>`, `tools: listen failed: <why>`, `tools: ports
 done, asked: <n>`, `tools: ports ended, asked: <n> of <t>`, `tools: ports
 failed: <why>`, `tools: speed done, down <d> kbit/s (<n> bytes), up <u> kbit/s
-(<m> bytes)`, `tools: speed failed: <why>` (never a target, a server, an
-address, a hardware address, a name or a port result), and `tools: runner stopped` when a run was cut short by
-quitting.
+(<m> bytes)`, `tools: speed failed: <why>`, `tools: leak started, vpn:
+on|off, gateway: yes|no`, `tools: leak done, leaks: <n>, not checked:
+<u>`, `tools: leak ended`, `tools: leak failed: <why>` (never a target, a
+server, an address, a hardware address, a name, a file name or a port
+result), and `tools: runner stopped` when a run was cut short by
+quitting. The leak test adds one to Sent for its one HTTPS request (see
+[checks.md](checks.md#the-vpn-leak-test)).
 
 ### Listening
 

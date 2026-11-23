@@ -18,9 +18,9 @@
 
 namespace model {
 
-// The tools that can run (the Ping, DNS, Trace, Ports, Speed and Health
-// pages, and listening and probing on the Discover page). Only one runs at
-// a time.
+// The tools that can run (the Ping, DNS, Trace, Ports, Speed, Health and
+// Leak pages, and listening and probing on the Discover page). Only one
+// runs at a time.
 enum class ToolKind : int32_t {
     Ping   = 0,
     Dns    = 1,
@@ -30,12 +30,14 @@ enum class ToolKind : int32_t {
     Ports  = 5,
     Speed  = 6,
     Health = 7,
+    Leak   = 8,
 };
 
 // How many kinds there are, for tables indexed by ToolKind.
-constexpr std::size_t kToolKindCount = 8;
+constexpr std::size_t kToolKindCount = 9;
 
-// "ping", "dns", "trace", "listen", "probe", "ports", "speed", "health"
+// "ping", "dns", "trace", "listen", "probe", "ports", "speed", "health",
+// "leak"
 const char* tool_name(ToolKind kind);
 
 // Where a tool's latest run stands.
@@ -497,6 +499,79 @@ struct HealthRun {
 bool operator==(const HealthRun& left, const HealthRun& right);
 bool operator!=(const HealthRun& left, const HealthRun& right);
 
+// The VPN leak test (the Leak page, Modes key 5): one run checks that the
+// Cardputer's traffic does not go around the VPN tunnel. Four checks, each
+// with its own verdict, in this order (model::LeakCheck in leak_check.h):
+// name lookups, IPv6, the public address and the hotspot's kill switch.
+// Only the public address sends anything (one HTTPS request to
+// kLeakTraceUrl, counted in Sent); the rest only asks the system.
+// Cloudflare's trace page: one short line per fact, "ip=<address>" among
+// them. Asked over IPv4 only, so the address always fits its line.
+constexpr const char* kLeakTraceUrl = "https://www.cloudflare.com/cdn-cgi/trace";
+
+// How one check of a leak test came out.
+enum class LeakVerdict : int32_t {
+    Waiting = 0, // not checked (yet)
+    Pass,        // nothing goes around the tunnel here
+    Fail,        // something goes around the tunnel
+    Unknown,     // it could not be checked; the run's reason for it says why
+    Info,        // a fact only: the VPN is off, nothing to compare with, no hotspot
+};
+
+// Why a leak test's IPv6 check passed, or how it failed.
+enum class LeakIpv6 : int32_t {
+    None = 0,    // not known (yet)
+    NoNetwork,   // no interface but the tunnel has a global IPv6 address
+    NoWayOut,    // IPv6 has no route out at all
+    Tunnel,      // IPv6 goes out by the tunnel
+    Around,      // IPv6 goes out by another interface (LeakRun::ipv6_interface)
+};
+
+// What the leak test takes from the data layer as it starts.
+struct LeakLocal {
+    bool vpn_on{false};   // the tunnel is up (VpnState::On)
+    // A hotspot runs with the VPN wanted (the gateway, even with the
+    // tunnel down): the kill switch should be armed.
+    bool gateway{false};
+    std::string file;     // the tunnel's file, without ".conf"; empty with the VPN off
+};
+
+bool operator==(const LeakLocal& left, const LeakLocal& right);
+bool operator!=(const LeakLocal& left, const LeakLocal& right);
+
+// The latest leak test. With the VPN off a run only notes the public
+// address (address_without_vpn of the next runs) and judges nothing else.
+// Addresses here are shown on the screen only: never logged or saved.
+struct LeakRun {
+    ToolState state{ToolState::Idle};
+    ToolError error{ToolError::None};
+    std::string reason;           // with ToolError::Failed
+    bool vpn_on{false};           // as the run started
+    bool gateway{false};          // as the run started
+    std::string file;             // the tunnel's file as the run started
+    // Name lookups: where the system's nameservers are asked.
+    LeakVerdict dns{LeakVerdict::Waiting};
+    int32_t dns_servers{0};       // nameservers checked
+    std::string dns_server;       // Fail: one that goes around; Unknown: the local one; Pass: the first
+    std::string dns_interface;    // Fail: the interface it goes out by ("wlan0"); empty when not known
+    std::string dns_reason;       // Unknown: why ("no DNS server", "a local helper asks")
+    // IPv6.
+    LeakVerdict ipv6{LeakVerdict::Waiting};
+    LeakIpv6 ipv6_way{LeakIpv6::None};
+    std::string ipv6_interface;   // Around: the interface IPv6 goes out by
+    // The public address, as Cloudflare saw the request (IPv4).
+    LeakVerdict address{LeakVerdict::Waiting};
+    std::string public_address;   // empty when not known
+    std::string address_without_vpn;  // the address a run with the VPN off saw; empty when none did
+    std::string address_reason;   // Unknown: why ("no answer from the server")
+    // The hotspot's kill switch (the VPN gateway's kill chains).
+    LeakVerdict kill{LeakVerdict::Waiting};
+    std::string kill_reason;      // Unknown: why ("helper not installed")
+};
+
+bool operator==(const LeakRun& left, const LeakRun& right);
+bool operator!=(const LeakRun& left, const LeakRun& right);
+
 // What the tools show: the latest run of each, which of the Discover
 // page's two kinds started last, and the app-wide count of packets LokiCTL
 // has sent in this run of the app.
@@ -509,6 +584,7 @@ struct ToolsData {
     PortRun ports;
     SpeedRun speed;
     HealthRun health;
+    LeakRun leak;
     ToolKind latest{ToolKind::Listen};  // Listen or Probe: the Discover run started last
     uint64_t sent{0};
     // The date of the installed list of known security holes
@@ -543,10 +619,10 @@ std::vector<DiscoverDevice> discover_devices(const ListenRun& listen, const Prob
 // no two dots in a row). A text of digits and dots only must be an IPv4
 // address (four numbers of 0-255). For DNS a name is needed, so an IPv4
 // address is refused there; Ping and Trace take both. The port scan takes
-// only an IPv4 address that port_scan_address() allows. The listen, probe
-// and health tools' target is an interface, checked with
-// valid_interface_name() instead, and the speed test's is its server,
-// checked with valid_speed_server().
+// only an IPv4 address that port_scan_address() allows. The listen, probe,
+// health and leak tools' target is an interface (the leak test's is the
+// tunnel's), checked with valid_interface_name() instead, and the speed
+// test's is its server, checked with valid_speed_server().
 bool valid_tool_target(ToolKind kind, std::string_view text);
 
 // Whether `text` is an IPv4 address in dotted form ("192.0.2.1").

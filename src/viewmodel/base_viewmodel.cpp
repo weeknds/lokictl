@@ -72,6 +72,8 @@ BaseViewModel::BaseViewModel()
       trap_detail_subject_(false),
       health_selection_subject_(0),
       health_detail_subject_(false),
+      leak_selection_subject_(0),
+      leak_detail_subject_(false),
       report_request_subject_(0),
       map_selection_subject_(kMapRouter),
       home_selection_subject_(0),
@@ -459,6 +461,8 @@ bool BaseViewModel::open_tool(model::ToolKind kind) {
             return open_discover();
         case model::ToolKind::Health:
             return open_health();
+        case model::ToolKind::Leak:
+            return open_leak();
     }
     return open_page(model::AppPage::Ping);
 }
@@ -845,6 +849,41 @@ bool BaseViewModel::health_detail() const {
 void BaseViewModel::set_health_detail(bool open) {
     if (open != health_detail_subject_.value()) {
         health_detail_subject_.set(open);
+    }
+}
+
+bool BaseViewModel::open_leak() {
+    set_leak_selection(0);
+    set_leak_detail(false);
+    return open_page(model::AppPage::Leak);
+}
+
+lv_subject_t* BaseViewModel::leak_selection_subject() {
+    return leak_selection_subject_.native();
+}
+
+int32_t BaseViewModel::leak_selection() const {
+    return leak_selection_subject_.value();
+}
+
+void BaseViewModel::set_leak_selection(int32_t row) {
+    const int32_t next = std::max<int32_t>(row, 0);
+    if (next != leak_selection_subject_.value()) {
+        leak_selection_subject_.set(next);
+    }
+}
+
+lv_subject_t* BaseViewModel::leak_detail_subject() {
+    return leak_detail_subject_.native();
+}
+
+bool BaseViewModel::leak_detail() const {
+    return leak_detail_subject_.value();
+}
+
+void BaseViewModel::set_leak_detail(bool open) {
+    if (open != leak_detail_subject_.value()) {
+        leak_detail_subject_.set(open);
     }
 }
 

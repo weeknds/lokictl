@@ -51,6 +51,8 @@ const char* tool_name(ToolKind kind) {
             return "speed";
         case ToolKind::Health:
             return "health";
+        case ToolKind::Leak:
+            return "leak";
     }
     return "ping";
 }
@@ -384,10 +386,35 @@ bool operator!=(const HealthRun& left, const HealthRun& right) {
     return !(left == right);
 }
 
+bool operator==(const LeakLocal& left, const LeakLocal& right) {
+    return left.vpn_on == right.vpn_on && left.gateway == right.gateway && left.file == right.file;
+}
+
+bool operator!=(const LeakLocal& left, const LeakLocal& right) {
+    return !(left == right);
+}
+
+bool operator==(const LeakRun& left, const LeakRun& right) {
+    return left.state == right.state && left.error == right.error && left.reason == right.reason &&
+           left.vpn_on == right.vpn_on && left.gateway == right.gateway && left.file == right.file &&
+           left.dns == right.dns && left.dns_servers == right.dns_servers && left.dns_server == right.dns_server &&
+           left.dns_interface == right.dns_interface && left.dns_reason == right.dns_reason &&
+           left.ipv6 == right.ipv6 && left.ipv6_way == right.ipv6_way &&
+           left.ipv6_interface == right.ipv6_interface && left.address == right.address &&
+           left.public_address == right.public_address && left.address_without_vpn == right.address_without_vpn &&
+           left.address_reason == right.address_reason && left.kill == right.kill &&
+           left.kill_reason == right.kill_reason;
+}
+
+bool operator!=(const LeakRun& left, const LeakRun& right) {
+    return !(left == right);
+}
+
 bool operator==(const ToolsData& left, const ToolsData& right) {
     return left.ping == right.ping && left.dns == right.dns && left.trace == right.trace &&
            left.listen == right.listen && left.probe == right.probe && left.ports == right.ports &&
-           left.speed == right.speed && left.health == right.health && left.latest == right.latest &&
+           left.speed == right.speed && left.health == right.health && left.leak == right.leak &&
+           left.latest == right.latest &&
            left.sent == right.sent && left.list_date == right.list_date;
 }
 
@@ -399,7 +426,8 @@ bool tool_running(const ToolsData& data) {
     return data.ping.state == ToolState::Running || data.dns.state == ToolState::Running ||
            data.trace.state == ToolState::Running || data.listen.state == ToolState::Running ||
            data.probe.state == ToolState::Running || data.ports.state == ToolState::Running ||
-           data.speed.state == ToolState::Running || data.health.state == ToolState::Running;
+           data.speed.state == ToolState::Running || data.health.state == ToolState::Running ||
+           data.leak.state == ToolState::Running;
 }
 
 ToolState tool_state(const ToolsData& data, ToolKind kind) {
@@ -420,6 +448,8 @@ ToolState tool_state(const ToolsData& data, ToolKind kind) {
             return data.speed.state;
         case ToolKind::Health:
             return data.health.state;
+        case ToolKind::Leak:
+            return data.leak.state;
     }
     return ToolState::Idle;
 }
@@ -527,7 +557,7 @@ bool valid_interface_name(std::string_view text) {
 }
 
 bool valid_tool_target(ToolKind kind, std::string_view text) {
-    if (kind == ToolKind::Listen || kind == ToolKind::Probe || kind == ToolKind::Health) {
+    if (kind == ToolKind::Listen || kind == ToolKind::Probe || kind == ToolKind::Health || kind == ToolKind::Leak) {
         return valid_interface_name(text);
     }
     if (kind == ToolKind::Ports) {

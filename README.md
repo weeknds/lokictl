@@ -308,6 +308,14 @@ marks what's on.
   around it, and the page says `VPN down: hotspot devices blocked`. `6` on
   the VPN row reconnects, and `8` turns the VPN off and lets them out
   directly again.
+- Leak test (`5` on Modes, or the command `leak`) checks that nothing goes
+  around the tunnel: name lookups, IPv6, the public address the internet
+  sees and, in the VPN gateway, the kill switch. One line each, like
+  `Name lookups: through VPN` or `IPv6: NOT through VPN`; `5` on a line
+  says what it means and what to do. Run it once with the VPN off first:
+  it then only notes your own public address, and the next run with the
+  VPN on checks that the address changed. It sends one HTTPS request, to
+  Cloudflare's address page; the rest only asks the Cardputer itself.
 
 Router and Share can't run at the same time. Go back to Client first.
 
@@ -329,7 +337,7 @@ and names, up and down (fn+F and fn+X) bring back the last 8 commands, and
 |---|---|
 | `help` | Lists the commands. |
 | `report` | Saves a report of what LokiCTL has found (see [Reports](#reports)). |
-| `home`, `map`, `tools`, `discover`, `watch`, `trap`, `health`, `wifi`, `status`, `settings` | Opens that page. |
+| `home`, `map`, `tools`, `discover`, `watch`, `trap`, `health`, `leak`, `wifi`, `status`, `settings` | Opens that page. |
 | `theme <name>` | Switches to `instrument`, `constellation` or `terminal`. |
 | `mode <name>` | Switches to `client`, `router`, `share` or `vpn`. |
 | `ping [target]` | Pings a host, or the target that's selected on the Ping page. |
