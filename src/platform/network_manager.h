@@ -39,6 +39,10 @@ struct NetworkManagerReading {
     };
     std::vector<WifiLink> wifi_links;
 
+    // The interfaces of every Wi-Fi device the service manages, joined or
+    // not (see model::UsbWifiAdapter::managed).
+    std::vector<std::string> managed_wifi;
+
     // LokiCTL's own hotspot (the profile kHotspotProfile), while it is
     // active. Router is on exactly then, or Share when it runs on
     // kShareInterface.
@@ -96,6 +100,7 @@ std::string clean_network_name(const std::string& name);
 //   networking on|off
 //   wifi on|off             the Wi-Fi radio
 //   connecting yes|no
+//   managed <interface>     a Wi-Fi device the service manages
 //   internet unknown|none|portal|limited|full
 //   link <interface> <security|-> <speed_mbps|-> <network name ...>
 //   ap <interface> <security|-> <network name ...>

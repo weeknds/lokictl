@@ -460,6 +460,11 @@ void NetworkManagerClient::read(NetworkManagerReading& reading) {
         if ((type != NM_DEVICE_TYPE_WIFI && type != NM_DEVICE_TYPE_ETHERNET) || !nm_device_get_managed(device)) {
             continue;
         }
+        if (type == NM_DEVICE_TYPE_WIFI) {
+            if (const char* managed_name = nm_device_get_iface(device)) {
+                reading.managed_wifi.emplace_back(managed_name);
+            }
+        }
         const NMDeviceState state = nm_device_get_state(device);
         if (state >= NM_DEVICE_STATE_PREPARE && state < NM_DEVICE_STATE_ACTIVATED) {
             reading.connecting = true;

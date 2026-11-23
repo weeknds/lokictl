@@ -285,6 +285,33 @@ bool operator!=(const WifiScan& left, const WifiScan& right);
 // by name) and keeps the first kWifiMaxNetworks.
 void sort_wifi_networks(std::vector<WifiNetwork>& networks);
 
+// Whether the system's network service (NetworkManager) manages a USB
+// Wi-Fi adapter.
+enum class Managed {
+    Unknown = 0, // no network service to ask
+    Yes,
+    No,
+};
+
+// The name of a managed state in lowercase: "unknown", "yes" or "no". Used
+// by the --print-data readout.
+const char* managed_name(Managed managed);
+
+// One USB Wi-Fi adapter (a Wi-Fi stick) that is plugged in. LokiCTL only
+// shows it: it never changes it, and works the same without one.
+// A text that is not known is empty.
+struct UsbWifiAdapter {
+    std::string interface_name; // its interface, for example "wlan1"
+    std::string driver;         // kernel driver, for example "ath9k_htc"
+    std::string usb_id;         // USB vendor:product, for example "0cf3:9271"
+    std::string name;           // as the stick names itself, for example "ATHEROS USB2.0 WLAN"
+    Managed managed{Managed::Unknown};
+    std::string device;         // where it is plugged in (a system path); tells adapters apart, never shown
+};
+
+bool operator==(const UsbWifiAdapter& left, const UsbWifiAdapter& right);
+bool operator!=(const UsbWifiAdapter& left, const UsbWifiAdapter& right);
+
 // Everything the home page shows. Numbers are stored as numbers in the units
 // noted on each field; the page turns them into text. A value that is not
 // known has a value of its own (an empty text, or one of the constants
@@ -339,6 +366,7 @@ struct HomeData {
     std::string block_message;
     StatusDetails details;             // the Status page's extra values (see StatusDetails)
     WifiScan wifi_scan;                // the Wi-Fi page's list (see WifiScan)
+    std::vector<UsbWifiAdapter> usb_wifi; // USB Wi-Fi adapters plugged in, by interface name; read on every page
 };
 
 // Every field is compared. A new field must be added here too: the data

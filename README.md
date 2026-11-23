@@ -36,6 +36,14 @@ scans and probes still ask first. TAB completes commands and names, up and
 down recall the last commands, and `help` lists them all (see
 [docs/navigation.md](docs/navigation.md#the-command-bar)).
 
+**No USB Wi-Fi adapter needed.** Everything runs on the CardputerZero's
+built-in Wi-Fi. A USB Wi-Fi adapter (a Wi-Fi stick) is optional: when you
+plug one in or take it out, LokiCTL says so in a short message, and the
+Status page lists it (interface, name, driver, USB id and whether
+NetworkManager manages it). LokiCTL never changes the adapter, and its
+Wi-Fi scan, hotspot and modes always use the built-in Wi-Fi (see
+[docs/data.md](docs/data.md#usb-wi-fi-adapters)).
+
 **Remote view** shows the Cardputer's screen in a web browser on another
 computer on the same network and takes key presses from there. It is off at
 every start; you switch it on on the Settings page, and the browser needs a
@@ -212,8 +220,8 @@ The app has 28 pages. `--list-pages` prints them in this order:
   [docs/home.md](docs/home.md));
 - `settings`, the Settings page with the theme picker, the "Dim when
   idle" switch and the "Remote view" row, which the home page opens;
-- `status`, the Status page with every detail (ports, DNS, battery,
-  device), which the home page's key 8 opens (see
+- `status`, the Status page with every detail (ports, USB Wi-Fi
+  adapters, DNS, battery, device), which the home page's key 8 opens (see
   [docs/navigation.md](docs/navigation.md#the-status-page));
 - `modes`, `hotspot` and `devices`: the Modes page (home key 4), the
   Hotspot page with the join code (key 7 there) and the Devices page (home
@@ -299,7 +307,8 @@ link=cable
 and goes on with the network's lines (`interface=`, `address=`, `router=`,
 `speed_mbps=` and more, down to `state=`), then the Status page's details
 (one `port=` line per port, `dns=`, the battery, processor, memory and
-uptime lines). A value that is not known prints `unknown`.
+uptime lines), then `usb_wifi=` with one `usb_wifi_adapter=` line per USB
+Wi-Fi adapter. A value that is not known prints `unknown`.
 
 It takes `--data` and `--data-steps` and nothing else. The environment
 variable `LOKICTL_DATA_ROOT=<folder>` makes the `live` source read
@@ -566,7 +575,7 @@ but sample network data for now (see [docs/home.md](docs/home.md)):
   last client;
 - `6` SETUP opens the Settings page;
 - `8` INFO opens the Status page, a list of every detail (every network
-  port, DNS, battery, processor, memory) that scrolls with `f`/`x` and
+  port, USB Wi-Fi adapters, DNS, battery, processor, memory) that scrolls with `f`/`x` and
   jumps between its parts with `z`/`c` or `5`/`6`;
 - `4` MODES opens the Modes page (below);
 - `enter` opens the Devices page (below), on the selected client;

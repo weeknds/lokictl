@@ -291,6 +291,10 @@ void DataController::set_block_failure_listener(BlockFailureListener listener) {
     block_failure_listener_ = std::move(listener);
 }
 
+void DataController::set_usb_wifi_listener(UsbWifiListener listener) {
+    usb_wifi_listener_ = std::move(listener);
+}
+
 void DataController::change_blocked() {
     const std::string& address = view_model_.requested_block_address();
     if (!platform::valid_device_address(address)) {
@@ -461,6 +465,8 @@ void DataController::deliver(const model::HomeData& data) {
         clients != logged_clients_) {
         log_link(data.uplink_kind, data.ap_active, clients);
     }
+
+    check_usb_wifi(data.usb_wifi);
 }
 
 void DataController::log_battery(int32_t percent, model::BatteryState state) {
@@ -517,6 +523,52 @@ void DataController::log_link(model::LinkKind kind, bool ap_active, std::size_t 
              model::link_kind_name(kind),
              ap_active ? "on" : "off",
              clients);
+}
+
+void DataController::check_usb_wifi(const std::vector<model::UsbWifiAdapter>& adapters) {
+    const auto contains = [](const std::vector<model::UsbWifiAdapter>& list, const model::UsbWifiAdapter& adapter) {
+        return std::any_of(list.begin(), list.end(), [&adapter](const model::UsbWifiAdapter& other) {
+            return other.device == adapter.device;
+        });
+    };
+    if (!usb_wifi_logged_) {
+        // The adapters there at the start are only logged: none of them was
+        // just plugged in.
+        usb_wifi_logged_ = true;
+        if (adapters.empty()) {
+            LOG_INFO("data: usb wi-fi: none");
+        }
+        for (const model::UsbWifiAdapter& adapter : adapters) {
+            LOG_INFO("data: usb wi-fi adapter {} ({}, {})",
+                     adapter.interface_name,
+                     adapter.driver.empty() ? "unknown" : adapter.driver,
+                     adapter.usb_id.empty() ? "unknown" : adapter.usb_id);
+        }
+        usb_wifi_ = adapters;
+        return;
+    }
+    // Only the adapters themselves count: a new managed state or a renamed
+    // interface on the same stick says nothing.
+    for (const model::UsbWifiAdapter& adapter : usb_wifi_) {
+        if (!contains(adapters, adapter)) {
+            LOG_INFO("data: usb wi-fi adapter removed: {}", adapter.interface_name);
+            if (usb_wifi_listener_) {
+                usb_wifi_listener_(adapter.interface_name, false);
+            }
+        }
+    }
+    for (const model::UsbWifiAdapter& adapter : adapters) {
+        if (!contains(usb_wifi_, adapter)) {
+            LOG_INFO("data: usb wi-fi adapter connected: {} ({}, {})",
+                     adapter.interface_name,
+                     adapter.driver.empty() ? "unknown" : adapter.driver,
+                     adapter.usb_id.empty() ? "unknown" : adapter.usb_id);
+            if (usb_wifi_listener_) {
+                usb_wifi_listener_(adapter.interface_name, true);
+            }
+        }
+    }
+    usb_wifi_ = adapters;
 }
 
 } // namespace app

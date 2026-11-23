@@ -754,8 +754,9 @@ on the Mac.
 
 `status` lists every detail the home page has no room for: each network
 port (Wi-Fi and cable) with its state, network name, security, signal,
-speed, IPv4 and IPv6 addresses, router and hardware address, then the DNS
-servers, the battery's details and the device (processor temperature,
+speed, IPv4 and IPv6 addresses, router and hardware address, then the USB
+Wi-Fi adapters (`none (optional)` without one), the DNS servers, the
+battery's details and the device (processor temperature,
 free memory, time since start). [data.md](data.md#the-status-pages-details)
 says where the values come from. It has a title bar and shows six rows at a
 time; a thin mark at the right edge shows where they lie in the whole list.
@@ -763,7 +764,7 @@ time; a thin mark at the right edge shows where they lie in the whole list.
 | Key | What it does |
 |---|---|
 | `f`/`x` or up/down | scrolls one row; it stops at the first and the last row |
-| `z`/`c` or left/right, `5` UP, `6` DOWN | jumps to the previous or next heading (a port, `dns`, `battery`, `device`) |
+| `z`/`c` or left/right, `5` UP, `6` DOWN | jumps to the previous or next heading (a port, `usb wi-fi`, `dns`, `battery`, `device`) |
 | `4` BACK or a short ESC | goes back to the home page |
 
 The first row shown lives in the view model, so it is kept when the theme

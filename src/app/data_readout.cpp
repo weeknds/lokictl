@@ -167,6 +167,17 @@ int run_data_readout(platform::DataSourceKind kind, uint32_t steps, const std::s
     std::printf("internet=%s\n", model::internet_name(data.internet));
     std::printf("state=%s\n", model::offline_state_name(data.offline_state));
     print_details(data.details);
+    // The USB Wi-Fi adapters: how many, then one line per adapter, with the
+    // name last because it may hold spaces.
+    std::printf("usb_wifi=%zu\n", data.usb_wifi.size());
+    for (const model::UsbWifiAdapter& adapter : data.usb_wifi) {
+        std::printf("usb_wifi_adapter=%s driver=%s usb_id=%s managed=%s name=%s\n",
+                    text_or_unknown(adapter.interface_name).c_str(),
+                    text_or_unknown(adapter.driver).c_str(),
+                    text_or_unknown(adapter.usb_id).c_str(),
+                    model::managed_name(adapter.managed),
+                    text_or_unknown(adapter.name).c_str());
+    }
     // One line per client, last, since there may be none.
     for (const model::HomeClient& client : data.clients) {
         auto text = [](const std::string& value) { return value.empty() ? std::string("unknown") : value; };

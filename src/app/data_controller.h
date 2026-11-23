@@ -93,6 +93,12 @@ std::string random_hotspot_password();
 // listener. Log lines: "data: block a device (<n> blocked)", "data: unblock
 // a device (<n> blocked)" (never an address) and "data: <message>".
 //
+// USB Wi-Fi adapters: it logs those of the first reading ("data: usb
+// wi-fi: none" or "data: usb wi-fi adapter <interface> (<driver>, <usb
+// id>)"), then "data: usb wi-fi adapter connected: <interface> (<driver>,
+// <usb id>)" and "data: usb wi-fi adapter removed: <interface>" as they
+// come and go, and tells the USB Wi-Fi listener.
+//
 // Wi-Fi scans: it hands the Wi-Fi page's requests
 // (BaseViewModel::request_wifi_scan()) to the reader, and tells the reader
 // whether that page is on top (DataReader::set_wifi_shown()), so the live
@@ -169,6 +175,13 @@ public:
     using BlockFailureListener = std::function<void(const std::string& message)>;
     void set_block_failure_listener(BlockFailureListener listener);
 
+    // Told about each USB Wi-Fi adapter that is plugged in (`connected`) or
+    // removed after the first reading, with its interface name, on the UI
+    // thread. Adapters there at the first reading are only logged. Empty:
+    // only the log says it.
+    using UsbWifiListener = std::function<void(const std::string& interface_name, bool connected)>;
+    void set_usb_wifi_listener(UsbWifiListener listener);
+
     // Tells the controller whether the screen is dark (app::PowerController,
     // F3.7). While it is, the reader is told that neither the traffic nor
     // the Status page's details are shown, so the live source stops reading
@@ -217,6 +230,10 @@ private:
     void deliver(const model::HomeData& data);
     void log_battery(int32_t percent, model::BatteryState state);
     void log_link(model::LinkKind kind, bool ap_active, std::size_t clients);
+    // Logs the USB Wi-Fi adapters of the first reading, then each one
+    // plugged in or removed (told apart by UsbWifiAdapter::device), and
+    // tells the listener.
+    void check_usb_wifi(const std::vector<model::UsbWifiAdapter>& adapters);
 
     viewmodel::BaseViewModel& view_model_;
     platform::DataReader reader_;
@@ -250,6 +267,9 @@ private:
     model::LinkKind logged_kind_{model::LinkKind::None};
     bool logged_ap_active_{false};
     std::size_t logged_clients_{0};
+    UsbWifiListener usb_wifi_listener_;
+    bool usb_wifi_logged_{false};
+    std::vector<model::UsbWifiAdapter> usb_wifi_;  // the adapters handed over last
 };
 
 } // namespace app

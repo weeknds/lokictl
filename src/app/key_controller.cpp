@@ -32,6 +32,7 @@ namespace {
 constexpr uint32_t kThemeToastDurationMs = 2500;
 constexpr uint32_t kBatteryToastDurationMs = 5000;
 constexpr uint32_t kBlockToastDurationMs = 4000;
+constexpr uint32_t kUsbWifiToastDurationMs = 3000;
 constexpr const char* kPagePathFull = "Too many pages open: go back first";
 
 bool is_soft_key(uint32_t key) {
@@ -85,6 +86,14 @@ void KeyController::show_dimming_not_saved() {
 
 void KeyController::show_block_failed(const std::string& message) {
     toast_->show(message, view::widgets::ToastTone::Error, kBlockToastDurationMs);
+}
+
+void KeyController::show_usb_wifi(const std::string& interface_name, bool connected) {
+    toast_->show_highlighted(connected ? "USB Wi-Fi adapter connected: " : "USB Wi-Fi adapter removed: ",
+                             interface_name,
+                             "",
+                             view::widgets::ToastTone::Default,
+                             kUsbWifiToastDurationMs);
 }
 
 void KeyController::set_wake_handler(std::function<bool()> handler) {

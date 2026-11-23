@@ -655,6 +655,10 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override,
     data.set_block_failure_listener([&key_controller](const std::string& message) {
         key_controller.show_block_failed(message);
     });
+    // A USB Wi-Fi adapter is optional; plugging one in or out only says so.
+    data.set_usb_wifi_listener([&key_controller](const std::string& interface_name, bool connected) {
+        key_controller.show_usb_wifi(interface_name, connected);
+    });
 
     // Declared after everything its listener uses, so it is destroyed before
     // them. When the user picks a theme in Settings, the theme switches
@@ -700,6 +704,7 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override,
     remote.stop();
     tools.stop();
     data.set_block_failure_listener({});
+    data.set_usb_wifi_listener({});
     data.stop();
 
     if (quit_observer) {

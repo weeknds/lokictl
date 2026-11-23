@@ -256,6 +256,32 @@ void sort_wifi_networks(std::vector<WifiNetwork>& networks) {
     }
 }
 
+const char* managed_name(Managed managed) {
+    switch (managed) {
+        case Managed::Unknown:
+            return "unknown";
+        case Managed::Yes:
+            return "yes";
+        case Managed::No:
+            return "no";
+    }
+    return "unknown";
+}
+
+// Every field, in the order they are declared.
+bool operator==(const UsbWifiAdapter& left, const UsbWifiAdapter& right) {
+    return left.interface_name == right.interface_name &&
+           left.driver == right.driver &&
+           left.usb_id == right.usb_id &&
+           left.name == right.name &&
+           left.managed == right.managed &&
+           left.device == right.device;
+}
+
+bool operator!=(const UsbWifiAdapter& left, const UsbWifiAdapter& right) {
+    return !(left == right);
+}
+
 // Every field of HomeData, in the order they are declared. A new field must
 // be added here too (see home_data.h).
 bool operator==(const HomeData& left, const HomeData& right) {
@@ -289,7 +315,8 @@ bool operator==(const HomeData& left, const HomeData& right) {
            left.block_failures == right.block_failures &&
            left.block_message == right.block_message &&
            left.details == right.details &&
-           left.wifi_scan == right.wifi_scan;
+           left.wifi_scan == right.wifi_scan &&
+           left.usb_wifi == right.usb_wifi;
 }
 
 bool operator!=(const HomeData& left, const HomeData& right) {

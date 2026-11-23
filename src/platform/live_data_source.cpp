@@ -7,6 +7,7 @@
 #include "live_data_source.h"
 
 #include "device_info.h"
+#include "usb_wifi.h"
 
 #include <algorithm>
 #include <ctime>
@@ -219,6 +220,11 @@ void LiveDataSource::read(model::HomeData& data) {
         network_read_at_ = now;
         network_read_ = true;
     }
+    // USB Wi-Fi adapters, on every page, so plugging one in or out is
+    // noticed wherever the user is; in a test folder at every call.
+    if (network_due || test_folder_) {
+        usb_wifi_ = read_usb_wifi(root_);
+    }
     data.uplink_kind = network_.kind;
     data.uplink_name = network_.interface_name;
     data.uplink_address = network_.address;
@@ -233,6 +239,8 @@ void LiveDataSource::read(model::HomeData& data) {
         service = read_network_manager_file(network_manager_file_);
     }
     apply_network_manager(service, data);
+    data.usb_wifi = usb_wifi_;
+    apply_usb_wifi_managed(service, data.usb_wifi);
     hotspot_interface_ = service.available && service.hotspot.active ? service.hotspot.interface_name : std::string();
 
     // The devices on the hotspot. Read before a pretend switch is applied,

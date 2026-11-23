@@ -1063,6 +1063,48 @@ Every reader only reads. In a test folder the same files are read under
 the folder, and the `addresses` file may give a prefix:
 `<interface> <IPv4>/<prefix>`.
 
+## USB Wi-Fi adapters
+
+LokiCTL needs no USB Wi-Fi adapter (a Wi-Fi stick): every feature runs on
+the built-in Wi-Fi, `wlan0`. The Wi-Fi scan, the hotspot and the modes
+always use `wlan0`, and LokiCTL never changes a stick. It only notices when
+one is plugged in or removed, and says so. (If NetworkManager joins a
+managed stick to a network and routes the traffic through it, the home
+page shows that link like any other uplink.)
+
+- **Reading** (`platform::read_usb_wifi()` in `src/platform/usb_wifi.h`):
+  every interface in `/sys/class/net` with a `wireless` folder whose
+  `device/uevent` says `DEVTYPE=usb_interface`. The built-in Wi-Fi sits on
+  SDIO and a USB network cable port has no `wireless` folder, so neither
+  counts. The driver comes from `DRIVER=`, the USB id from `PRODUCT=`
+  (`cf3/9271/108` reads `0cf3:9271`), the name from the USB device's
+  `manufacturer` and `product` files (printable ASCII only, at most 48
+  bytes). Interfaces on the same stick (a monitor interface beside
+  `wlan1`) are one adapter, named after the first by name. At most four.
+- **Managed:** whether NetworkManager manages it (`yes`, `no`, or `--`
+  without the service), from the same connection as the names. It reads
+  `no` where NetworkManager is set to leave the stick alone (an
+  `unmanaged-devices` rule); otherwise NetworkManager usually takes it as
+  a second Wi-Fi device and it reads `yes`.
+- **When:** with the network, every 5 s, whatever page is on top (in a test
+  folder at every reading), into `HomeData::usb_wifi`. It only reads; it
+  never changes the adapter or any network setting.
+- **Message:** when a stick appears or goes after the first reading,
+  `app::DataController` logs it and the app shows `USB Wi-Fi adapter
+  connected: wlan1` or `USB Wi-Fi adapter removed: wlan1` for 3 s, on any
+  page. A stick that is there at the start is only logged, and a new
+  managed state or a renamed interface on the same stick shows nothing.
+- **Status page:** after the ports, a `usb wi-fi` part: per adapter its
+  interface, name, driver, usb id and managed state; with none, `adapter
+  none (optional)` and `built-in Wi-Fi is used`. The stick's own port gets
+  ` · usb` after its name.
+- **Test folder:** a stick is a folder like the device's, for example
+  `sys/class/net/wlan1` as a link to
+  `../../devices/.../1-1.2/1-1.2:1.0/net/wlan1`, with a `wireless` folder,
+  `device` as a link to `../../../1-1.2:1.0`, that folder's `uevent`, and
+  `manufacturer` and `product` one folder above it. The made-up sources
+  have no adapter.
+
 ## The demo script
 
 The demo shows that the page follows its data. It is fixed, so pictures of
@@ -1287,6 +1329,7 @@ cpu_temp_tenths=523
 memory_free_mb=212
 memory_total_mb=446
 uptime_s=191820
+usb_wifi=0
 ```
 
 The lines always come in this order:
@@ -1319,6 +1362,8 @@ The lines always come in this order:
 | `dns=` | the DNS servers, separated by commas |
 | `battery_voltage_mv=` to `battery_full_min=` | the battery's details: voltage (mV), current (mA, negative while discharging), temperature (tenths of a degree), health, cycles, charge and full charge (mAh), minutes until empty and until full |
 | `cpu_temp_tenths=`, `memory_free_mb=`, `memory_total_mb=`, `uptime_s=` | the processor's temperature (tenths of a degree), free and total memory (MiB) and the seconds since the device started |
+| `usb_wifi=` | how many USB Wi-Fi adapters are plugged in (see [USB Wi-Fi adapters](#usb-wi-fi-adapters)) |
+| `usb_wifi_adapter=` | one line per adapter (none without one): its interface, then `driver=`, `usb_id=`, `managed=` (`yes`, `no` or `unknown`) and, last because it may hold spaces, `name=` |
 | `client=` | one line per connected client, in the page's order (none without clients): its hardware address, then `address=`, `signal_dbm=`, `rate_kbps=` (both ways together), `joined_s=` (seconds on the access point), `new=` (`yes` for the first five minutes) and, last because it may hold spaces, `name=` |
 
 A value that is not known prints `unknown`. `network=`, `security=` and
@@ -1360,7 +1405,9 @@ link wlan0 WPA2 72 Harbour-Cafe
 
 gives `network=Harbour-Cafe`, `security=WPA2`, `speed_mbps=72` and
 `internet=portal` on a Wi-Fi uplink `wlan0`. Other lines: `networking on|off`,
-`wifi on|off` and `connecting yes|no`; in a `link` line `-` means not known.
+`wifi on|off`, `connecting yes|no` and `managed <interface>` (a Wi-Fi
+device NetworkManager manages; see [USB Wi-Fi adapters](#usb-wi-fi-adapters));
+in a `link` line `-` means not known.
 `ap wlan0 WPA2 LokiCTL-1A2B` says LokiCTL's hotspot runs on `wlan0`
 (Router, with that name and security; `ap lokiap0 …` means Share). In a test folder a switch on the
 Modes page only pretends (see [Switching modes](#switching-modes)), and
@@ -1509,6 +1556,10 @@ In a normal run the data layer writes these lines:
   blocked)` for each change of the list (never an address), and the
   failure's message, for example `data: Block failed: no permission`, as a
   warning;
+- `data: usb wi-fi: none` or `data: usb wi-fi adapter wlan1 (ath9k_htc,
+  0cf3:9271)` for the first reading, then `data: usb wi-fi adapter
+  connected: wlan1 (ath9k_htc, 0cf3:9271)` and `data: usb wi-fi adapter
+  removed: wlan1` as sticks come and go;
 - `data: reader stopped` once on the way out.
 
 A snapshot logs only warnings, so these lines do not appear there, and

@@ -231,6 +231,8 @@ NetworkManagerReading read_network_manager_file(const std::filesystem::path& pat
             parse_switch(value, "yes", "no", reading.connecting);
         } else if (key == "internet") {
             parse_internet(value, reading.internet);
+        } else if (key == "managed") {
+            reading.managed_wifi.push_back(value);
         }
     }
     return reading;

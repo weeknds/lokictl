@@ -22,6 +22,7 @@ constexpr std::size_t kTextBufferSize = 48;
 constexpr const char* kMinusSign = "−";
 constexpr const char* kDegrees = "°C";
 constexpr const char* kUplinkMark = " · uplink";
+constexpr const char* kUsbMark = " · usb";
 
 bool known(int32_t value) {
     return value != model::kDetailUnknown;
@@ -96,10 +97,13 @@ void add_long_rows(std::vector<StatusRow>& rows, const char* label, const std::s
     add_row(rows, "", text.substr(cut));
 }
 
-void add_port(std::vector<StatusRow>& rows, const model::StatusPort& port) {
+void add_port(std::vector<StatusRow>& rows, const model::StatusPort& port, bool usb) {
     std::string heading = home::link_kind_text(port.kind) + " " + port.name;
     if (port.uplink) {
         heading += kUplinkMark;
+    }
+    if (usb) {
+        heading += kUsbMark;
     }
     add_heading(rows, heading, port_state_text(port), port_state_tone(port.state));
 
@@ -117,6 +121,50 @@ void add_port(std::vector<StatusRow>& rows, const model::StatusPort& port) {
         add_row(rows, "router", port.router);
     }
     add_row(rows, "hardware", port.hardware_address);
+}
+
+bool is_usb_wifi(const model::HomeData& data, const std::string& interface_name) {
+    for (const model::UsbWifiAdapter& adapter : data.usb_wifi) {
+        if (adapter.interface_name == interface_name) {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::string managed_text(model::Managed managed) {
+    switch (managed) {
+        case model::Managed::Yes:
+            return "yes";
+        case model::Managed::No:
+            return "no";
+        case model::Managed::Unknown:
+            break;
+    }
+    return kUnknownText;
+}
+
+// LokiCTL needs no USB Wi-Fi adapter, so "none" is a normal state and says
+// so.
+void add_usb_wifi(std::vector<StatusRow>& rows, const std::vector<model::UsbWifiAdapter>& adapters) {
+    if (adapters.empty()) {
+        add_heading(rows, "usb wi-fi", "none", NoteTone::Quiet);
+        add_row(rows, "adapter", "none (optional)");
+        add_row(rows, "", "built-in Wi-Fi is used");
+        return;
+    }
+    const std::size_t count = adapters.size();
+    add_heading(rows,
+                "usb wi-fi",
+                std::to_string(count) + (count == 1 ? " adapter" : " adapters"),
+                NoteTone::Plain);
+    for (const model::UsbWifiAdapter& adapter : adapters) {
+        add_row(rows, "interface", adapter.interface_name);
+        add_long_rows(rows, "name", adapter.name, ' ');
+        add_row(rows, "driver", adapter.driver);
+        add_row(rows, "usb id", adapter.usb_id);
+        add_row(rows, "managed", managed_text(adapter.managed));
+    }
 }
 
 std::string battery_state_text(model::BatteryState state) {
@@ -225,8 +273,9 @@ std::vector<StatusRow> status_rows(const model::HomeData& data) {
         add_row(rows, "ports", "");
     }
     for (const model::StatusPort& port : details.ports) {
-        add_port(rows, port);
+        add_port(rows, port, is_usb_wifi(data, port.name));
     }
+    add_usb_wifi(rows, data.usb_wifi);
 
     add_heading(rows, "dns", "", NoteTone::Plain);
     if (details.dns.empty()) {

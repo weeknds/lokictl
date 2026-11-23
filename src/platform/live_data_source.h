@@ -22,6 +22,7 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace platform {
 
@@ -96,6 +97,11 @@ public:
     // applies the changes the service has announced since and asks the
     // service nothing (see NetworkManagerClient). In a test folder the
     // stand-in file is read at every call instead.
+    //
+    // The USB Wi-Fi adapters (HomeData::usb_wifi, see read_usb_wifi()):
+    // with the network, whatever page is shown; in a test folder at every
+    // call. Their managed state comes from the network service at every
+    // call (apply_usb_wifi_managed()).
     //
     // The Status page's details: only while they are shown
     // (set_details_shown()). The ports and the DNS servers are read with
@@ -195,6 +201,7 @@ private:
     bool battery_read_{false};
     std::chrono::steady_clock::time_point battery_read_at_{};
     NetworkReading network_;
+    std::vector<model::UsbWifiAdapter> usb_wifi_; // read with the network
     bool network_read_{false};
     std::chrono::steady_clock::time_point network_read_at_{};
     HotspotClients clients_;

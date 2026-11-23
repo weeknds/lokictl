@@ -45,7 +45,12 @@ constexpr std::size_t kValueChars = 26;
 //   network, security, signal, speed, IPv4, IPv6, link-local, router and
 //   hardware, for a cable speed, IPv4, IPv6, link-local, router and
 //   hardware; otherwise only hardware. Without any port: a heading
-//   "network" and one row "ports --".
+//   "network" and one row "ports --". A port that is a USB Wi-Fi adapter's
+//   interface gets " · usb" after its name.
+// - "usb wi-fi" with the number of adapters as the note
+//   (HomeData::usb_wifi): per adapter interface, name, driver, usb id and
+//   managed; without one the note "none" and the rows "adapter none
+//   (optional)" and "built-in Wi-Fi is used", because LokiCTL needs none;
 // - "dns": one "server" row per DNS server, or one "server --";
 // - "battery" with the charge as the note (in the warning tone while the
 //   battery is low): state, voltage, current, temp, health, cycles, charge
