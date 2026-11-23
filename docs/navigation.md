@@ -848,12 +848,59 @@ or why it failed, with `SENT N` at its right.
 | Key | What it does |
 |---|---|
 | `6` RUN / STOP or Enter | starts a test, or stops it; off while another tool runs |
+| `7` LAN | opens [the LAN page](#the-lan-page) |
 | `4` BACK or a short ESC | goes back; a test goes on and the page shows it again later |
 
 The command bar's `speed` opens this page and starts a test, the same as
 the first `6`; it does nothing while a tool runs, so it never stops a
 test. The run lives in the view model (`tools().speed`). The help panel shows
-the badge `SPEED` and four rows.
+the badge `SPEED` and five rows.
+
+## The LAN page
+
+`lan` (the Speed page's key 7, `screen::LanScreen`) measures the speed
+between the Cardputer and another device on the same network with iperf3
+(see [data.md](data.md#lan-speed-test)). It has two sides; key 7 switches
+between them while nothing runs, and the side is kept.
+
+**Test** (the first side): the target row (what it is, `ROUTER`, a device
+name, `TYPED`, then its address and `‹ 2/5 ›`), then DOWN (from that
+device to the Cardputer) and UP as on the Speed page, then the status
+line: `Tests 10 s each way`, `Download 4 of 10 s`, `Upload 7 of 10 s`,
+`Done`, `Stopped` or why it failed in a few words (`No iperf3 server
+there`, `No answer from there`, `Their server is busy`), with `SENT N` at
+its right. The list holds the router, the devices Discover and the
+hotspot found, then the typed address; never the Cardputer itself.
+
+| Key | What it does |
+|---|---|
+| `6` RUN / STOP or Enter | tests 10 s each way, or stops; off while another tool runs |
+| `Z` / `C` | the previous or next device |
+| `5` EDIT | type an address (digits and dots, `ENTER` keeps, an empty one drops it); only local addresses |
+| `7` SERVE | switches to the server side |
+| `4` BACK or a short ESC | goes back; a test goes on |
+
+**Server**: `TYPE THIS IN THE APP` with the place at the right
+(`network`, or `‹ hotspot 2/2 ›` while the hotspot runs), the address in
+large type with `port 5201`, then the latest three tests, newest first
+(`From 192.168.1.20: 94.1 Mbit/s` when the Cardputer received, `To ...`
+when it sent, two lines for a test both ways; `Works with any iperf3 app`
+before the first), then the status line: `Off, press 6 to listen`,
+`Waiting for a phone or PC`, `Testing with 192.168.1.20`, `Join a network
+first` or why it failed (`Port 5201 is busy`).
+
+| Key | What it does |
+|---|---|
+| `6` START / STOP or Enter | listens, or stops; off while another tool runs |
+| `Z` / `C` | network or hotspot address, while off |
+| `7` TEST | switches to the test side |
+| `4` BACK or a short ESC | goes back, which turns the server off |
+
+The server listens only while this page is on top (`app::LanController`
+turns it off when the page is left or its address goes away). The run
+lives in the view model (`lan()`), and the side, the picked device, the
+typed address and the picked place too. The help panel shows the badge
+`LAN` and five rows for each side.
 
 ## The Wi-Fi page
 

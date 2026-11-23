@@ -9,6 +9,7 @@
 #include "subjects.h"
 #include "base_model.h"
 #include "tool_data.h"
+#include "lan_speed.h"
 #include "trap_data.h"
 #include "talk_data.h"
 #include "watch_data.h"
@@ -491,6 +492,40 @@ public:
     bool signin_detail() const;
     void set_signin_detail(bool open);
 
+    // The LAN page (Speed key 7, or `lan`): the speed to another device on
+    // the network, or the Cardputer as the server a phone or PC tests
+    // against. The run is app::LanController's and comes back in lan().
+    // Opens the page (see open_page()); what it shows and picks is kept.
+    bool open_lan();
+    // Only ever set on the UI thread, by app::LanController; set_lan()
+    // returns false and tells nobody when `run` equals what is held.
+    const model::LanRun& lan() const;
+    bool set_lan(const model::LanRun& run);
+    lv_subject_t* lan_subject();
+    // Asks for a test against `target`, for the server on `target` (one of
+    // the Cardputer's own addresses, model::LanRun::places) or to stop.
+    // app::LanController carries it out. Counts every request.
+    enum class LanRequest { Test, Serve, Stop };
+    void request_lan(LanRequest request, const std::string& target = {});
+    lv_subject_t* lan_request_subject();
+    LanRequest requested_lan() const;
+    const std::string& requested_lan_target() const;
+    // What the page shows and has picked, kept across a theme switch: the
+    // server side (true) or the test side (false, the start value); the
+    // test's target as its place in the page's list (kToolTargetTyped for
+    // the typed one, which is last) and the typed target; the server's
+    // address as its place in model::LanRun::places. lan_choice_subject()
+    // counts every change made with these setters.
+    lv_subject_t* lan_choice_subject();
+    bool lan_server_side() const;
+    void set_lan_server_side(bool server);
+    int32_t lan_target() const;
+    void set_lan_target(int32_t index);
+    const std::string& lan_typed_target() const;
+    void set_lan_typed_target(const std::string& target);
+    int32_t lan_place() const;
+    void set_lan_place(int32_t index);
+
     // Reports: asks to save what LokiCTL has found as a report (key 8 on
     // the Health page, R on the Watch and Discover pages, the command
     // `report`). The view model only passes the request on:
@@ -642,6 +677,16 @@ private:
     reactive::IntSubject leak_selection_subject_;
     reactive::BoolSubject leak_detail_subject_;
     reactive::BoolSubject signin_detail_subject_;
+    model::LanRun lan_;
+    reactive::IntSubject lan_subject_;
+    reactive::IntSubject lan_request_subject_;
+    LanRequest requested_lan_{LanRequest::Stop};
+    std::string requested_lan_target_;
+    reactive::IntSubject lan_choice_subject_;
+    bool lan_server_side_{false};
+    int32_t lan_target_{0};
+    std::string lan_typed_target_;
+    int32_t lan_place_{0};
     reactive::IntSubject report_request_subject_;
     reactive::IntSubject map_selection_subject_;
     std::array<std::string, kMapSlots> map_slots_;

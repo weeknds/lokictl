@@ -78,6 +78,9 @@ BaseViewModel::BaseViewModel()
       leak_selection_subject_(0),
       leak_detail_subject_(false),
       signin_detail_subject_(false),
+      lan_subject_(0),
+      lan_request_subject_(0),
+      lan_choice_subject_(0),
       report_request_subject_(0),
       map_selection_subject_(kMapRouter),
       home_selection_subject_(0),
@@ -965,6 +968,95 @@ bool BaseViewModel::open_signin() {
         request_tool_run(model::ToolKind::Signin, model::kSigninCheckHost);
     }
     return true;
+}
+
+bool BaseViewModel::open_lan() {
+    return open_page(model::AppPage::Lan);
+}
+
+const model::LanRun& BaseViewModel::lan() const {
+    return lan_;
+}
+
+bool BaseViewModel::set_lan(const model::LanRun& run) {
+    if (run == lan_) {
+        return false;
+    }
+    lan_ = run;
+    bump(lan_subject_);
+    return true;
+}
+
+lv_subject_t* BaseViewModel::lan_subject() {
+    return lan_subject_.native();
+}
+
+void BaseViewModel::request_lan(LanRequest request, const std::string& target) {
+    requested_lan_ = request;
+    requested_lan_target_ = target;
+    bump(lan_request_subject_);
+}
+
+lv_subject_t* BaseViewModel::lan_request_subject() {
+    return lan_request_subject_.native();
+}
+
+BaseViewModel::LanRequest BaseViewModel::requested_lan() const {
+    return requested_lan_;
+}
+
+const std::string& BaseViewModel::requested_lan_target() const {
+    return requested_lan_target_;
+}
+
+lv_subject_t* BaseViewModel::lan_choice_subject() {
+    return lan_choice_subject_.native();
+}
+
+bool BaseViewModel::lan_server_side() const {
+    return lan_server_side_;
+}
+
+void BaseViewModel::set_lan_server_side(bool server) {
+    if (server != lan_server_side_) {
+        lan_server_side_ = server;
+        bump(lan_choice_subject_);
+    }
+}
+
+int32_t BaseViewModel::lan_target() const {
+    return lan_target_;
+}
+
+void BaseViewModel::set_lan_target(int32_t index) {
+    const int32_t next = std::max<int32_t>(index, 0);
+    if (next != lan_target_) {
+        lan_target_ = next;
+        bump(lan_choice_subject_);
+    }
+}
+
+const std::string& BaseViewModel::lan_typed_target() const {
+    return lan_typed_target_;
+}
+
+void BaseViewModel::set_lan_typed_target(const std::string& target) {
+    if (target != lan_typed_target_) {
+        lan_typed_target_ = target;
+        bump(lan_choice_subject_);
+    }
+}
+
+int32_t BaseViewModel::lan_place() const {
+    return lan_place_;
+}
+
+void BaseViewModel::set_lan_place(int32_t index) {
+    const int32_t next = std::max<int32_t>(index, 0);
+    if (next != lan_place_) {
+        lan_place_ = next;
+        bump(lan_choice_subject_);
+    }
 }
 
 lv_subject_t* BaseViewModel::signin_detail_subject() {

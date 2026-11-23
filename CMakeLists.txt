@@ -800,8 +800,8 @@ target_link_libraries(${PROJECT_NAME}
 # Checks of the service and version reading and of the list of known
 # security holes (tests/vuln_checks.cpp), of Watch's alerts, of the
 # health check's rules, of the leak test's rules, of the sign-in check, of
-# the trap, of the topology frames, of the names hotspot devices look up and
-# of reports,
+# the trap, of the topology frames, of the names hotspot devices look up, of
+# the LAN speed test's iperf3 output and of reports,
 # on the Mac only:
 # build/darwin-arm64/Debug/lokictl_tests, or ctest.
 if(USE_DESKTOP)
@@ -889,6 +889,20 @@ if(USE_DESKTOP)
     target_compile_options(${PROJECT_NAME}_talk_tests PRIVATE -fsanitize=address,undefined -fno-sanitize-recover=all)
     target_link_options(${PROJECT_NAME}_talk_tests PRIVATE -fsanitize=address,undefined)
     add_test(NAME talk_checks COMMAND ${PROJECT_NAME}_talk_tests)
+
+    # The LAN speed test's reading of iperf3 output: saved output, errors,
+    # output cut off at every byte and hostile lines (tests/lan_checks.cpp),
+    # with the address and undefined-behaviour checkers:
+    # build/darwin-arm64/Debug/lokictl_lan_tests, or ctest.
+    add_executable(${PROJECT_NAME}_lan_tests tests/lan_checks.cpp)
+    target_link_libraries(${PROJECT_NAME}_lan_tests PRIVATE ${PROJECT_NAME}_model)
+    target_compile_definitions(${PROJECT_NAME}_lan_tests
+        PRIVATE
+            IPERF3_SAMPLES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/iperf3"
+    )
+    target_compile_options(${PROJECT_NAME}_lan_tests PRIVATE -fsanitize=address,undefined -fno-sanitize-recover=all)
+    target_link_options(${PROJECT_NAME}_lan_tests PRIVATE -fsanitize=address,undefined)
+    add_test(NAME lan_checks COMMAND ${PROJECT_NAME}_lan_tests)
 
     # Reports: escaping of every text from the network, and saving, listing
     # and reading the files (tests/report_checks.cpp), with the address and

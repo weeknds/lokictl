@@ -115,8 +115,9 @@ view::widgets::HelpContent SpeedScreen::help_content() {
             {
                 {"ESC / 4", "Back (a run goes on)"},
                 {"ENTER / 6", "Run / stop"},
-                {"Data", "Up to " + std::to_string(model::kSpeedPhaseMs / 1000) + " s, " +
+                {"Data", std::to_string(model::kSpeedPhaseMs / 1000) + " s or " +
                              std::to_string(model::kSpeedPhaseBytesMax / 1000000) + " MB each way"},
+                {"7", "Speed to a device here"},
                 {"Sent", "One per request here"},
             }};
 }
@@ -133,7 +134,7 @@ view::widgets::SoftKeySet SpeedScreen::soft_keys() {
         {"Back", [&view_model] { view_model.go_back(); }},
         {},
         {"Run", [this] { run_or_stop(); }, true},
-        {},
+        {"LAN", [&view_model] { view_model.open_lan(); }},
         {},
     }};
 }

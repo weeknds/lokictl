@@ -27,7 +27,8 @@ namespace screen {
 //   "Connecting", "Download 4 of 10 s", "Upload 7 of 10 s", "Done",
 //   "Stopped" or why it failed, with the app-wide Sent count at its right.
 //
-// Keys: 4 (Back) or a short ESC goes back, and a run keeps going; 6 (Run)
+// Keys: 4 (Back) or a short ESC goes back, and a run keeps going; 7 (LAN)
+// opens the LAN page (the speed to a device on this network); 6 (Run)
 // or Enter starts a test (a download, then an upload, each for 10 s or
 // 50 MB, whichever comes first) and stops it while it runs (Stop). While another tool runs, Run is switched off. The
 // command bar's `speed` opens the page and asks for a start

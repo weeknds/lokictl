@@ -1190,6 +1190,50 @@ most about 100 MB, and the page says so before it starts.
   --settle-ms 3000` on `speed` shows the download, `--settle-ms 9000` the
   upload and `--settle-ms 16000` the end.
 
+### LAN speed test
+
+The LAN page (`model::LanRun`, `app::LanController`,
+`platform::LanRunner`) measures the speed inside your own network with
+the `iperf3` program (Debian's package, 3.17 or later; the `.deb` depends
+on it). Debian's package asks whether to start its own iperf3 server at
+boot (shown by an interactive `apt install`); the answer defaults to no,
+LokiCTL needs no, and it never changes it.
+
+- **How it runs:** `/usr/bin/iperf3` as a child process of LokiCTL, as
+  your user (never as root: the runner refuses), with a fixed argument
+  list, no shell, an empty environment and only a pipe for its output.
+  The child gets no other file of LokiCTL's and is killed when LokiCTL
+  quits or is killed (the parent-death signal), so no iperf3 is ever left
+  running. Its output is `--json-stream` (one JSON object per line as each
+  event happens; plain `--json` only prints at the end), read by a small
+  strict reader (`model/lan_speed.*`): depth and line length limits, every
+  number clamped, a cut-off line ignored.
+- **Test:** `iperf3 -c <address> -4 -p 5201 -t 10 -i 0.5
+  --connect-timeout 3000 --json-stream -R` (the other device sends), then
+  the same without `-R`. Each half second gives a bar; the final speed and
+  bytes are the receiver's. Only private and link-local addresses
+  (`model::valid_lan_target()`). It needs an iperf3 server on that device.
+- **Server:** `iperf3 -s -4 -B <address> -p 5201 -1 --json-stream`, on the
+  one address shown (the uplink's, or the hotspot's), never on all of
+  them; `-1` answers one test, and the runner starts it again after each
+  (a second later after a connection that was not a test). A test longer
+  than 120 s is ended. iperf3's own error text is never shown: it becomes
+  a few plain words (`model::lan_error_words()`).
+- **Data and Sent:** a test moves as much as the link carries for 10 s
+  each way, all inside your network. **Sent** counts one per iperf3 test
+  (two for a test from the Cardputer, one for each test it answers).
+- **Log lines:** `lan: test started`, `lan: test done, down <d> kbit/s
+  (<n> bytes), up <u> kbit/s (<m> bytes)`, `lan: test stopped by the
+  user`, `lan: test failed: <why>`, `lan: server on (network|hotspot)`,
+  `lan: server test done, <k> kbit/s, in|out|both ways`, `lan: server
+  off, tests: <n>` (with `, page left` or `, address gone`), `lan: server
+  failed: <why>`, `lan: runner stopped`; never an address.
+- **The pretend runner** (the Mac and snapshots) starts nothing: a test
+  takes about 20.4 s (about 94 and 92 Mbit/s), so `--keys 6 --settle-ms
+  6000` on `lan` shows the download and `--settle-ms 21500` the end; the
+  server (`--keys 7,6`) gets a made-up test from host `.23` of its own
+  network at 3 s (in) and at 15 s (out).
+
 ### Health check
 
 The health check (`model::HealthRun`, in `tools().health`; rules in

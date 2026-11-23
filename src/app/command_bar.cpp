@@ -47,6 +47,7 @@ constexpr CommandSpec kCommands[] = {
     {"leak", CommandKind::Page, model::AppPage::Leak, model::ToolKind::Ping, nullptr},
     {"signin", CommandKind::Page, model::AppPage::Signin, model::ToolKind::Ping, nullptr},
     {"talk", CommandKind::Page, model::AppPage::Talk, model::ToolKind::Ping, nullptr},
+    {"lan", CommandKind::Page, model::AppPage::Lan, model::ToolKind::Ping, nullptr},
     {"wifi", CommandKind::Page, model::AppPage::Wifi, model::ToolKind::Ping, nullptr},
     {"status", CommandKind::Page, model::AppPage::Status, model::ToolKind::Ping, nullptr},
     {"settings", CommandKind::Page, model::AppPage::Settings, model::ToolKind::Ping, nullptr},

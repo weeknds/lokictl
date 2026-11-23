@@ -11,6 +11,10 @@ not have, so the package adds three small things: a polkit rule and two
 helper programs with one Linux capability each. This page says what each
 one allows, and what LokiCTL writes on the device.
 
+The LAN speed test runs Debian's `iperf3` program as your user, only while
+you use it, and needs no extra rights. It doesn't need iperf3's own server
+(`iperf3.service`): if apt asks whether to start it, keep the default, No.
+
 The [README](../README.md#permissions) has the short version.
 
 ## The polkit rule

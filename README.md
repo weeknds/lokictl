@@ -12,9 +12,9 @@ A pocket network multitool for the M5Stack CardputerZero.
 LokiCTL shows what your network is doing at a glance. It can turn the
 CardputerZero into a small router or hotspot, send traffic through a
 WireGuard VPN, find the devices on your network and run the usual network
-tools: ping, DNS lookup, traceroute, a Wi-Fi scan, a port scan and a speed
-test. Everything runs on the built-in Wi-Fi and the Ethernet port, so you
-don't need extra hardware.
+tools: ping, DNS lookup, traceroute, a Wi-Fi scan, a port scan and speed
+tests to the internet and inside your own network. Everything runs on the
+built-in Wi-Fi and the Ethernet port, so you don't need extra hardware.
 
 It has three looks (Instrument, Constellation and Terminal) and a command
 bar if you'd rather type than press keys.
@@ -33,9 +33,11 @@ sudo apt install ./lokictl_<version>-<revision>_arm64.deb
 
 apt also installs what LokiCTL needs: `dnsmasq-base` and `nftables` for the
 hotspot, `iw` and `libcap2-bin` for the helpers, and `libcurl4t64` with
-`ca-certificates` for the speed test. `sudo apt remove lokictl` removes the
-app, its polkit rule and its helpers. Your settings in `~/.config/lokictl/`
-stay.
+`ca-certificates` for the speed test, and `iperf3` for the LAN speed test.
+If apt asks whether to start iperf3 as a daemon, keep the default, No:
+LokiCTL only runs it while you use the LAN page. `sudo apt remove lokictl`
+removes the app, its polkit rule and its helpers. Your settings in
+`~/.config/lokictl/` stay.
 
 The network features need your user to be in the `netdev` group. The
 standard user on the CardputerZero image already is.
@@ -156,6 +158,15 @@ how many packets LokiCTL has sent.
   whichever comes first. It uses Cloudflare's speed test over HTTPS. You
   can use another server with a `speed_test_server=` line in the
   `[application]` section of `~/.config/lokictl/lokictl.conf`.
+- LAN (`7` on Speed, or the command `lan`) measures the speed to another
+  device on your own network with iperf3, 10 seconds each way. Pick the
+  router or a device Discover found with `Z`/`C`, or type an address with
+  `5`; that device needs an iperf3 server running (`iperf3 -s`). Or press
+  `7` to turn it around: the Cardputer becomes the server, shows its
+  address (`Type this in the app`) and lists each test a phone or PC runs
+  against it, like `From 192.168.1.20: 94 Mbit/s`. Any iperf3 app works.
+  The server only listens while the page is open and switched on, on that
+  one address and port 5201, and stops when you leave the page.
 - Login (`5` on Tools, or the command `signin`) helps with hotel and cafe
   Wi-Fi that wants you to sign in on a web page first. Opening it checks
   once (`6` checks again): `No sign-in needed`, or `Sign-in needed` with a
@@ -359,7 +370,7 @@ and names, up and down (fn+F and fn+X) bring back the last 8 commands, and
 |---|---|
 | `help` | Lists the commands. |
 | `report` | Saves a report of what LokiCTL has found (see [Reports](#reports)). |
-| `home`, `map`, `tools`, `discover`, `watch`, `trap`, `health`, `leak`, `signin`, `talk`, `wifi`, `status`, `settings` | Opens that page. |
+| `home`, `map`, `tools`, `discover`, `watch`, `trap`, `health`, `leak`, `signin`, `talk`, `lan`, `wifi`, `status`, `settings` | Opens that page. |
 | `theme <name>` | Switches to `instrument`, `constellation` or `terminal`. |
 | `mode <name>` | Switches to `client`, `router`, `share` or `vpn`. |
 | `ping [target]` | Pings a host, or the target that's selected on the Ping page. |
@@ -435,12 +446,16 @@ the details and lists every file LokiCTL writes.
 | Drops | How many times the cable link went off since LokiCTL started. More than 3 means a loose cable or a bad port. |
 | Sign-in page | The web page a hotel or cafe Wi-Fi shows before it lets you on the internet (a captive portal). |
 | Auto check | The system's own internet check (NetworkManager's). When it's on, LokiCTL tells you about a sign-in page by itself. |
+| iperf3 | A free program that measures the speed between two devices on the same network. One side runs it as a server, the other tests against it; there are iperf3 apps for phones too. |
 | Looked up (DNS) | Before a device talks to a website or service, it asks for the address of its name (a DNS lookup). The Talk page lists those names. |
 
 ## Data use
 
 - A speed test moves up to about 100 MB, so be careful on a metered
   connection. It talks to Cloudflare unless you set another server.
+- A LAN speed test stays inside your own network: it moves as much as the
+  link can carry for 10 seconds each way, and talks only to the device
+  you picked or to the phone or PC that tests against the Cardputer.
 - Apart from the tools you start yourself, LokiCTL sends nothing to the
   internet. Opening Login counts as starting a tool: it sends one small
   plain web request to Cloudflare. There are no accounts and no analytics. The list of known

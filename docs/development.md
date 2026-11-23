@@ -98,6 +98,12 @@ made-up frames over UDP and TCP, whole and cut at every byte, and refuses
 broken and hostile ones (answers, other opcodes, compression loops, names
 over 255 bytes, lengths past the end, random bytes); it also checks the
 counting per device for the Talk page (`tests/talk_checks.cpp`).
+`build/darwin-arm64/Debug/lokictl_lan_tests` (also run by `ctest`, with
+the address and undefined-behaviour checkers) reads saved iperf3 3.18
+output (`tests/iperf3/`, as a client both ways and as a server in, out
+and both ways, plus errors), the same output cut at every byte and in
+pieces, and hostile lines (deep nesting, bad escapes, huge numbers,
+over-long lines, a peer that is no address) (`tests/lan_checks.cpp`).
 `build/darwin-arm64/Debug/lokictl_trap_tests` (also run by `ctest`)
 checks the trap's limits, how what a visitor sent is shown, the reading of
 the listening ports and the fixed port map (`tests/trap_checks.cpp`).
@@ -212,6 +218,9 @@ The app has 28 pages. `--list-pages` prints them in this order:
   [the Ports page](navigation.md#the-ports-page),
   [the Speed page](navigation.md#the-speed-page) and
   [the Wi-Fi page](navigation.md#the-wi-fi-page));
+- `lan`, the LAN page (Speed key 7): the speed to another device on the
+  network with iperf3, or the Cardputer as the server (see
+  [navigation.md](navigation.md#the-lan-page));
 - `discover`, the Discover page (home key 5), which lists the devices it
   hears on the network while sending nothing, and those a probe finds (see
   [navigation.md](navigation.md#the-discover-page));

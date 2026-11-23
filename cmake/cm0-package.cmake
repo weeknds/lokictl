@@ -172,6 +172,14 @@ if(APP_USE_CURL)
         set(APP_DEBIAN_TOOL_DEPENDS "libcurl4t64, ca-certificates")
     endif()
 endif()
+# The LAN speed test runs iperf3 as a child process, with --json-stream
+# (iperf3 3.17 or later). Debian's package asks whether to start its own
+# server at boot; its answer defaults to no, and LokiCTL never changes it.
+if(APP_DEBIAN_TOOL_DEPENDS)
+    string(APPEND APP_DEBIAN_TOOL_DEPENDS ", iperf3 (>= 3.17)")
+else()
+    set(APP_DEBIAN_TOOL_DEPENDS "iperf3 (>= 3.17)")
+endif()
 if(NOT USE_DESKTOP AND NOT CMAKE_CROSSCOMPILING)
     set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
     # CPack adds the libraries dpkg-shlibdeps finds to this list.

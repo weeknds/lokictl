@@ -31,6 +31,7 @@
 #include "theme_engine.h"
 #include "tool_controller.h"
 #include "talk_controller.h"
+#include "lan_controller.h"
 #include "trap_controller.h"
 #include "report_controller.h"
 #include "report_files.h"
@@ -690,6 +691,10 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override,
     // live on the device, made-up on the Mac. Memory only; stopped right
     // after the main loop, next to Watch.
     TalkController talk(view_model, platform::make_talk_runner(live_watch));
+    // The LAN speed test (iperf3 as a child process): live on the device,
+    // made-up on the Mac. Stopped right after the main loop, so no iperf3
+    // is left running.
+    LanController lan(view_model, platform::make_lan_runner(live_watch));
     // Reports: saved into ~/Documents/LokiCTL/reports on the device; the
     // simulator saves only into a folder named by LOKICTL_REPORT_DIR.
     ReportController reports(view_model, platform::report_folder());
@@ -780,6 +785,7 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override,
     watch.start();
     trap.start();
     talk.start();
+    lan.start();
     reports.start();
     while (running && stop_signal == 0
 #if USE_DESKTOP
@@ -800,6 +806,7 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override,
     trap.stop();
     trap.set_hit_listener({});
     talk.stop();
+    lan.stop();
     watch.stop();
     watch.set_alert_listener({});
     data.set_block_failure_listener({});

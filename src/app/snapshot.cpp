@@ -27,6 +27,8 @@
 #include "trap_controller.h"
 #include "talk.h"
 #include "talk_controller.h"
+#include "lan_runner.h"
+#include "lan_controller.h"
 #include "report_controller.h"
 #include "report_files.h"
 #include "watch_controller.h"
@@ -307,6 +309,9 @@ int run_snapshot(const SnapshotRequest& request) {
     // The names the sample's hotspot devices look up, made-up.
     TalkController talk(view_model, platform::make_talk_runner(false));
     talk.start();
+    // The LAN speed test, made-up: nothing is started.
+    LanController lan(view_model, platform::make_lan_runner(false));
+    lan.start();
     // Reports only go to a folder named by LOKICTL_REPORT_DIR here, so a
     // snapshot never writes into the user's own folders.
     ReportController reports(view_model, platform::report_folder());
