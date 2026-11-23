@@ -128,6 +128,8 @@ bool load_application_config(const std::string& path,
             config.hotspot_name = trim(line.substr(separator + 1));
         } else if (section == "application" && key == "blocked_devices") {
             config.blocked_devices = trim(line.substr(separator + 1));
+        } else if (section == "application" && key == "known_devices") {
+            config.known_devices = trim(line.substr(separator + 1));
         } else if (section == "application" && key == "speed_test_server") {
             config.speed_test_server = trim(line.substr(separator + 1));
         } else if (section == "application" && key == "dark_mode") {
@@ -196,6 +198,9 @@ bool save_application_config(const std::string& path,
     }
     if (config.blocked_devices) {
         keys.push_back({"blocked_devices", "blocked_devices=" + *config.blocked_devices, false});
+    }
+    if (config.known_devices) {
+        keys.push_back({"known_devices", "known_devices=" + *config.known_devices, false});
     }
 
     std::vector<std::string> updated;

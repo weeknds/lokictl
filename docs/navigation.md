@@ -212,7 +212,7 @@ The commands, read without regard to case:
 | `help` | lists the commands in the help panel (badge `COMMANDS`) |
 | `theme <name>` | switches the theme: `instrument`, `constellation` or `terminal` |
 | `mode <name>` | switches the mode: `client`, `router`, `share` or `vpn` (see below) |
-| `home`, `map`, `tools`, `discover`, `wifi`, `status`, `settings` | open that page, the same way its key does |
+| `home`, `map`, `tools`, `discover`, `watch`, `wifi`, `status`, `settings` | open that page, the same way its key does |
 | `ping`, `dns`, `trace` `[target]` | open the tool's page and run it, on the target when one is given |
 | `ports [address]` | opens the Ports page and asks first, as its key 6 does; nothing is sent until the second 6 |
 | `scan` | starts Discover's passive Listen run |
@@ -515,9 +515,39 @@ right: every packet LokiCTL has sent in this run of the app (see
 |---|---|
 | `f`/`x` or the arrows up and down | move through Ping, DNS, Trace, Wi-Fi, Ports and Speed |
 | `6` OPEN or Enter | opens the highlighted tool |
+| `8` WATCH | opens the Watch page |
 | `4` BACK or a short ESC | goes back |
 
 The highlight lives in the view model (`tools_selection_*`).
+
+## The Watch page
+
+`watch` (Tools key 8, or the command `watch`) shows Watch's passive
+alerts. Watch runs on its own (`app::WatchController`), next to any tool,
+and keeps going when the page is left; a `WATCH` tag shows in the title bar
+of every page with one while it runs, and each new alert shows as a short
+message on any page (`Watch: Scan on you`, or `Watch: 3 new alerts`).
+
+Under the title bar: the summary row (interface, `8 alerts`, `4 known`),
+one line per alert, newest first (time, short name, the IPv4 address or
+else the hardware address), and the status line (`Watching 12:34, sends
+none`, `Learning devices, 0:42 left`, `Stopped after 3:10`, `Capture not
+allowed`, `Join a network first`). The detail view shows the picked alert
+in full: name and time, address and hardware address, one line of facts
+(`Tried 20 ports`, `Router was ...`, `First server ...`) and the plain
+explanation.
+
+| Key | What it does |
+|---|---|
+| `f`/`x` or the arrows up and down | pick an alert |
+| `5` INFO or Enter | opens or closes the detail |
+| `6` START / STOP | starts Watch on the uplink or stops it (off without a network) |
+| `7` KNOWN | marks the picked new device as known |
+| `4` BACK or a short ESC | closes the detail, else goes back (Watch goes on) |
+
+The pick and the detail live in the view model (`watch_selection_*`,
+`watch_detail_*`). While an alert other than the newest is picked, new
+alerts don't move the pick off it.
 
 ## The Ping, DNS and Trace pages
 

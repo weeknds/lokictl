@@ -1228,7 +1228,8 @@ CaptureProcess::~CaptureProcess() {
 bool CaptureProcess::start(const std::string& interface_name,
                            int32_t seconds,
                            model::ToolError& error,
-                           std::string& reason) {
+                           std::string& reason,
+                           CaptureCommand command) {
     if (pid_ > 0 || !model::valid_interface_name(interface_name)) {
         error = model::ToolError::Failed;
         reason = "interface not usable";
@@ -1243,7 +1244,8 @@ bool CaptureProcess::start(const std::string& interface_name,
     // Only this end stays here; it never blocks the runner's loop.
     fcntl(ends[0], F_SETFL, fcntl(ends[0], F_GETFL) | O_NONBLOCK);
 
-    std::string words[] = {"lokictl-capture", "discover", interface_name, std::to_string(seconds)};
+    std::string words[] = {"lokictl-capture", command == CaptureCommand::Watch ? "watch" : "discover",
+                           interface_name, std::to_string(seconds)};
     char* argv[] = {words[0].data(), words[1].data(), words[2].data(), words[3].data(), nullptr};
     char* environment[] = {nullptr};
 

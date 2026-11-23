@@ -56,6 +56,12 @@ struct ApplicationConfig {
     // has no such key; when it appears more than once, the last line
     // counts. It is not checked here (see platform::parse_blocked_devices()).
     std::optional<std::string> blocked_devices;
+    // The `known_devices` key of [application]: the hardware addresses of
+    // the devices Watch knows (it raises no "New device" alert for them),
+    // separated by commas; empty for none. Unset when the file has no such
+    // key; when it appears more than once, the last line counts. It is not
+    // checked here (see platform::parse_device_list()).
+    std::optional<std::string> known_devices;
     // The `speed_test_server` key of [application]: the speed test's server
     // ("https://speed.cloudflare.com"), as it stands after the '='
     // (trimmed). Unset when the file has no such key; when it appears more
@@ -87,8 +93,9 @@ bool load_application_config(const std::string& path,
 //   `dim_when_idle=yes|no` when config.dim_when_idle is set,
 //   `keep_mode=yes|no` when config.keep_mode is set,
 //   `hotspot_password=<password>` when config.hotspot_password is set,
-//   `hotspot_name=<name>` when config.hotspot_name is set and
-//   `blocked_devices=<list>` when config.blocked_devices is set. Each replaces
+//   `hotspot_name=<name>` when config.hotspot_name is set,
+//   `blocked_devices=<list>` when config.blocked_devices is set and
+//   `known_devices=<list>` when config.known_devices is set. Each replaces
 //   the first line of its key in the section, and any further lines of
 //   that key are dropped; with no such line it goes at the end of the
 //   section. A key that is not set is left as it is in the file.

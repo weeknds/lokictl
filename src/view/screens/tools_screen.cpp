@@ -101,6 +101,7 @@ view::widgets::HelpContent ToolsScreen::help_content() {
                 {"ESC / 4", "Back"},
                 {"F / X", "Up / down"},
                 {"ENTER / 6", "Open the tool"},
+                {"8", "Watch: alerts, sends none"},
                 {"Sent", "Packets LokiCTL sent"},
             }};
 }
@@ -117,7 +118,7 @@ view::widgets::SoftKeySet ToolsScreen::soft_keys() {
         {},
         {"Open", [this] { open_selected(); }, true},
         {},
-        {},
+        {"Watch", [&view_model] { view_model.open_watch(); }},
     }};
 }
 

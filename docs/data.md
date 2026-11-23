@@ -1122,6 +1122,48 @@ most about 100 MB, and the page says so before it starts.
   --settle-ms 3000` on `speed` shows the download, `--settle-ms 9000` the
   upload and `--settle-ms 16000` the end.
 
+## Watch
+
+Watch (`model::WatchData`, in `BaseViewModel::watch()`) warns about
+suspicious things on the uplink's network while LokiCTL is open. It only
+listens and never blocks anything. It does not use the tool runner, so it
+runs next to any tool: `app::WatchController` owns a
+`platform::WatchRunner` (`platform/watch.*`), takes its run four times a
+second, keeps the known devices and hands each new alert to the key
+controller's message.
+
+- **The live runner** (device builds) has its own thread. It reads the
+  router's hardware address from `/proc/net/arp` and the IPv6 routers in
+  use from `/proc/net/ipv6_route`, then runs
+  `/usr/libexec/lokictl/lokictl-capture watch <interface> 1800` (the same
+  `platform::CaptureProcess`, its `watch` filter: ARP, DHCP, TCP SYN
+  without ACK sent to this machine, IPv6 router announcements) and reads
+  the stream into `platform::WatchDetector`. When the helper ends
+  normally (30 minutes, or 16 MiB) it runs again after a second, and the
+  detector keeps what it knew; any other end fails the run.
+- **The pretend runner** (the Mac and snapshots) feeds made-up frames
+  (`platform::pretend_watch_frames()`: one of each alert within the first
+  17 s) through the same detector, timed from the start.
+- **The detector** (`platform/watch_detector.cpp`) holds every threshold
+  in `model/watch_data.h`: a scan is 10 different ports within 10 s from
+  one source; a flood is more than 50 ARP frames in one second; two
+  hardware addresses on one IPv4 address count within 2 minutes; a scan or
+  flood may alert again after 60 quiet seconds; everything else alerts
+  once per subject per run. The Cardputer's own hardware addresses never
+  count. Every table has a fixed size. On a first run (no known devices)
+  the first 60 s learn the devices heard instead of alerting; they are
+  saved only once the whole minute has passed, so a run stopped sooner
+  keeps nothing and the next one learns again.
+- **Known devices** are saved on the device as `known_devices=` (at most
+  64, the oldest dropped first); the simulator starts with made-up ones
+  and never writes them.
+- Log lines: `watch: started`, `watch: stopped by the user`, `watch:
+  ended, alerts: <n>, frames: <f>`, `watch: failed: <why>`, `watch: alert:
+  <kind>`, `watch: learned devices: <n>`, `watch: device marked known`
+  (never an address, a hardware address or a name).
+- `tests/watch_alerts.cpp` (`lokictl_watch_tests`) replays made-up frames
+  for each alert kind, and ordinary traffic that must raise none.
+
 ## The Wi-Fi list
 
 The Wi-Fi page shows `model::WifiScan`, which the block carries as

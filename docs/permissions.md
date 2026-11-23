@@ -74,21 +74,27 @@ and nothing else.
 
 ## lokictl-capture (CAP_NET_RAW)
 
-The Discover page needs a second right: hearing the network's raw traffic.
+The Discover page and Watch need a second right: hearing the network's raw
+traffic.
 A second, separate helper does that,
 `/usr/libexec/lokictl/lokictl-capture` (source: `src/helper/lokictl_capture.c`),
 with the single capability `CAP_NET_RAW`, again not setuid and only for
-root and the `netdev` group. It does one fixed command (`discover`, an
-interface and a number of seconds, at most 30 minutes). It opens a packet
-socket with a fixed filter that lets only ARP, DHCP, mDNS (UDP to port
-5353) and SSDP (UDP to port 1900) through, never in promiscuous mode and
-without joining any multicast group, then drops every capability and
+root and the `netdev` group. It does one of two fixed commands, `discover`
+or `watch`, each with an interface and a number of seconds (at most 30
+minutes), which differ only in their fixed filter. It opens a packet socket
+with that filter: for `discover` only ARP, DHCP, mDNS (UDP to port 5353)
+and SSDP (UDP to port 1900); for `watch` only ARP, DHCP, TCP connection
+requests (SYN without ACK) sent to the Cardputer itself, and IPv6 router
+announcements (ICMPv6 type 134). It is never in promiscuous mode and joins
+no multicast group. Then it drops every capability and
 locks itself (seccomp) so that it can only receive, never send. It writes
 what it hears to the app as a PCAP stream on a pipe (no file) and stops at
 its time limit, after 16 MiB, or when the app goes away; the app reads the
-stream without any rights. **Every program of a `netdev` member may run it
+stream without any rights; for Watch the app runs it again every 30
+minutes while Watch is on. **Every program of a `netdev` member may run it
 too**, so it could listen to the ARP, DHCP, mDNS and SSDP traffic that
-reaches the Cardputer, and nothing else.
+reaches the Cardputer, to connection requests made to the Cardputer and to
+IPv6 router announcements, and nothing else.
 
 Both helpers are only needed for the features above. Without them the rest
 of the app works, and the pages say what is missing (`Block failed: helper
@@ -127,8 +133,9 @@ it runs. The file never leaves the device.
 - `~/.config/lokictl/lokictl.conf`, readable by you only: the theme,
   "Dim when idle", "Keep mode after quitting", the hotspot's name and
   password (the password is made once, at the first switch to Router or
-  Share) and the list of blocked devices (`blocked_devices=`). The app
-  reads `speed_test_server=` there but never writes it.
+  Share), the list of blocked devices (`blocked_devices=`) and Watch's
+  known devices (`known_devices=`). The app reads `speed_test_server=`
+  there but never writes it.
 - `~/.config/lokictl/wireguard/`, the folder for your WireGuard files (see
   above).
 - `~/.local/share/lokictl/captures/`, only when you save a capture.

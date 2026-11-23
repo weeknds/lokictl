@@ -221,6 +221,10 @@ bool valid_device_address(const std::string& address) {
 }
 
 std::vector<std::string> parse_blocked_devices(const std::string& text, std::size_t* dropped) {
+    return parse_device_list(text, kMaxBlockedDevices, dropped);
+}
+
+std::vector<std::string> parse_device_list(const std::string& text, std::size_t max, std::size_t* dropped) {
     std::vector<std::string> addresses;
     std::size_t left_out = 0;
     std::size_t start = 0;
@@ -244,8 +248,8 @@ std::vector<std::string> parse_blocked_devices(const std::string& text, std::siz
         }
         start = end + 1;
     }
-    if (addresses.size() > kMaxBlockedDevices) {
-        const std::size_t extra = addresses.size() - kMaxBlockedDevices;
+    if (addresses.size() > max) {
+        const std::size_t extra = addresses.size() - max;
         addresses.erase(addresses.begin(), addresses.begin() + static_cast<std::ptrdiff_t>(extra));
         left_out += extra;
     }

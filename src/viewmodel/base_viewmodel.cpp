@@ -62,6 +62,10 @@ BaseViewModel::BaseViewModel()
       wifi_scroll_subject_(0),
       wifi_scan_request_subject_(0),
       discover_scroll_subject_(0),
+      watch_subject_(0),
+      watch_request_subject_(0),
+      watch_selection_subject_(0),
+      watch_detail_subject_(false),
       map_selection_subject_(kMapRouter),
       home_selection_subject_(0),
       home_data_subject_(0),
@@ -655,6 +659,76 @@ void BaseViewModel::request_wifi_scan() {
 
 lv_subject_t* BaseViewModel::wifi_scan_request_subject() {
     return wifi_scan_request_subject_.native();
+}
+
+bool BaseViewModel::open_watch() {
+    set_watch_selection(0);
+    set_watch_detail(false);
+    return open_page(model::AppPage::Watch);
+}
+
+const model::WatchData& BaseViewModel::watch() const {
+    return watch_;
+}
+
+bool BaseViewModel::set_watch(const model::WatchData& data) {
+    if (data == watch_) {
+        return false;
+    }
+    watch_ = data;
+    bump(watch_subject_);
+    return true;
+}
+
+lv_subject_t* BaseViewModel::watch_subject() {
+    return watch_subject_.native();
+}
+
+void BaseViewModel::request_watch(WatchRequest request, const std::string& hardware) {
+    requested_watch_ = request;
+    requested_watch_hardware_ = request == WatchRequest::MarkKnown ? hardware : std::string();
+    bump(watch_request_subject_);
+}
+
+lv_subject_t* BaseViewModel::watch_request_subject() {
+    return watch_request_subject_.native();
+}
+
+BaseViewModel::WatchRequest BaseViewModel::requested_watch() const {
+    return requested_watch_;
+}
+
+const std::string& BaseViewModel::requested_watch_hardware() const {
+    return requested_watch_hardware_;
+}
+
+lv_subject_t* BaseViewModel::watch_selection_subject() {
+    return watch_selection_subject_.native();
+}
+
+int32_t BaseViewModel::watch_selection() const {
+    return watch_selection_subject_.value();
+}
+
+void BaseViewModel::set_watch_selection(int32_t row) {
+    const int32_t next = std::max<int32_t>(row, 0);
+    if (next != watch_selection_subject_.value()) {
+        watch_selection_subject_.set(next);
+    }
+}
+
+lv_subject_t* BaseViewModel::watch_detail_subject() {
+    return watch_detail_subject_.native();
+}
+
+bool BaseViewModel::watch_detail() const {
+    return watch_detail_subject_.value();
+}
+
+void BaseViewModel::set_watch_detail(bool open) {
+    if (open != watch_detail_subject_.value()) {
+        watch_detail_subject_.set(open);
+    }
 }
 
 bool BaseViewModel::open_discover() {

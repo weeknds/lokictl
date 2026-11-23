@@ -9,15 +9,17 @@
  * traffic. It only ever receives; it never sends a packet.
  *
  * LokiCTL runs as the normal user. Hearing the ARP, DHCP, mDNS and SSDP
- * traffic of the network (the Discover page) needs a packet socket, which
- * takes one Linux capability, CAP_NET_RAW. This small program holds it as a
+ * traffic of the network (the Discover page), and what Watch looks for,
+ * needs a packet socket, which takes one Linux capability, CAP_NET_RAW. This small program holds it as a
  * file capability (set by the package's postinst; it is not setuid), and
  * only root and members of the netdev group may run it (root:netdev, mode
  * 0750).
  *
- * It does exactly one fixed command:
+ * It does one of two fixed commands, which differ only in their frame
+ * filter:
  *
  *   lokictl-capture discover INTERFACE SECONDS
+ *   lokictl-capture watch INTERFACE SECONDS
  *
  * INTERFACE is the name of an existing network interface of Ethernet type
  * (a cable port, or Wi-Fi in its normal mode): 1 to 15 characters of a-z,
@@ -26,12 +28,18 @@
  *
  * In order:
  * 1. A packet socket is opened with protocol 0, so it receives nothing yet.
- * 2. A fixed classic BPF filter is attached and locked: ARP, and IPv4 UDP
- *    that is not a fragment and either has both ports 67 or 68 (DHCP) or
- *    goes to port 5353 (mDNS) or 1900 (SSDP); every frame cut to
- *    CAPTURE_SNAP_LENGTH bytes. Nothing else ever reaches this program.
- *    No multicast group is joined: it hears only the mDNS and SSDP frames
- *    that reach the Cardputer anyway.
+ * 2. A fixed classic BPF filter is attached and locked; every frame is cut
+ *    to CAPTURE_SNAP_LENGTH bytes, and nothing else ever reaches this
+ *    program.
+ *    discover: ARP, and IPv4 UDP that is not a fragment and either has
+ *    both ports 67 or 68 (DHCP) or goes to port 5353 (mDNS) or 1900
+ *    (SSDP). No multicast group is joined: it hears only the mDNS and SSDP
+ *    frames that reach the Cardputer anyway.
+ *    watch: ARP; IPv4 UDP that is not a fragment and has both ports 67 or
+ *    68 (DHCP); IPv4 TCP that is not a fragment, asks for a connection (SYN
+ *    set, ACK clear) and was sent to this machine (packet type "host", so
+ *    not its own outgoing ones); and IPv6 router announcements (ICMPv6
+ *    type 134 right after the IPv6 header).
  * 3. The socket is bound to the interface. It is never put into
  *    promiscuous mode, so it hears only what reaches the Cardputer anyway.
  * 4. Every capability is dropped, no_new_privs is set, and a seccomp filter
@@ -113,10 +121,10 @@ enum {
 
 static const char kProgram[] = "lokictl-capture";
 
-/* ARP; IPv4 UDP that is not a fragment and goes to port 5353 (mDNS) or
- * 1900 (SSDP), or whose source and destination port are each 67 or 68
- * (DHCP). Accepted frames are cut to CAPTURE_SNAP_LENGTH. A load past the
- * end of a frame drops it. */
+/* discover: ARP; IPv4 UDP that is not a fragment and goes to port 5353
+ * (mDNS) or 1900 (SSDP), or whose source and destination port are each 67
+ * or 68 (DHCP). Accepted frames are cut to CAPTURE_SNAP_LENGTH. A load past
+ * the end of a frame drops it. */
 static struct sock_filter kFrameFilter[] = {
     /* 0 */ BPF_STMT(BPF_LD | BPF_H | BPF_ABS, 12),           /* EtherType */
     /* 1 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, ETH_P_ARP, 15, 0), /* ARP: 17 */
@@ -137,6 +145,43 @@ static struct sock_filter kFrameFilter[] = {
     /* 16 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 68, 0, 1),   /* not 68: 18 */
     /* 17 */ BPF_STMT(BPF_RET | BPF_K, CAPTURE_SNAP_LENGTH),  /* accept */
     /* 18 */ BPF_STMT(BPF_RET | BPF_K, 0),                    /* drop */
+};
+
+/* watch: ARP; IPv4 UDP that is not a fragment and whose source and
+ * destination port are each 67 or 68 (DHCP); IPv4 TCP that is not a
+ * fragment, has SYN set and ACK clear, and came to this machine (packet
+ * type PACKET_HOST); IPv6 whose next header is ICMPv6 with type 134 (a
+ * router announcement). Accepted frames are cut to CAPTURE_SNAP_LENGTH. A
+ * load past the end of a frame drops it. */
+static struct sock_filter kWatchFilter[] = {
+    /* 0 */ BPF_STMT(BPF_LD | BPF_H | BPF_ABS, 12),           /* EtherType */
+    /* 1 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, ETH_P_ARP, 24, 0), /* ARP: 26 */
+    /* 2 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, ETH_P_IP, 0, 18),  /* not IPv4: 21 */
+    /* 3 */ BPF_STMT(BPF_LD | BPF_H | BPF_ABS, 20),           /* flags, fragment offset */
+    /* 4 */ BPF_JUMP(BPF_JMP | BPF_JSET | BPF_K, 0x3fff, 22, 0), /* a fragment: 27 */
+    /* 5 */ BPF_STMT(BPF_LD | BPF_B | BPF_ABS, 23),           /* IPv4 protocol */
+    /* 6 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 17, 0, 7),    /* not UDP: 14 */
+    /* 7 */ BPF_STMT(BPF_LDX | BPF_B | BPF_MSH, 14),          /* X = IPv4 header length */
+    /* 8 */ BPF_STMT(BPF_LD | BPF_H | BPF_IND, 14),           /* UDP source port */
+    /* 9 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 67, 1, 0),    /* 67: 11 */
+    /* 10 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 68, 0, 16),  /* not 68: 27 */
+    /* 11 */ BPF_STMT(BPF_LD | BPF_H | BPF_IND, 16),          /* UDP destination port */
+    /* 12 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 67, 13, 0),  /* 67: 26 */
+    /* 13 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 68, 12, 13), /* 68: 26, else 27 */
+    /* 14 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 6, 0, 12),   /* not TCP: 27 */
+    /* 15 */ BPF_STMT(BPF_LD | BPF_B | BPF_ABS, (uint32_t)(SKF_AD_OFF + SKF_AD_PKTTYPE)), /* packet type */
+    /* 16 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, PACKET_HOST, 0, 10), /* not to this machine: 27 */
+    /* 17 */ BPF_STMT(BPF_LDX | BPF_B | BPF_MSH, 14),         /* X = IPv4 header length */
+    /* 18 */ BPF_STMT(BPF_LD | BPF_B | BPF_IND, 27),          /* TCP flags (14 + X + 13) */
+    /* 19 */ BPF_STMT(BPF_ALU | BPF_AND | BPF_K, 0x12),       /* SYN and ACK */
+    /* 20 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x02, 5, 6), /* SYN only: 26, else 27 */
+    /* 21 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, ETH_P_IPV6, 0, 5), /* not IPv6: 27 */
+    /* 22 */ BPF_STMT(BPF_LD | BPF_B | BPF_ABS, 20),          /* IPv6 next header */
+    /* 23 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 58, 0, 3),   /* not ICMPv6: 27 */
+    /* 24 */ BPF_STMT(BPF_LD | BPF_B | BPF_ABS, 54),          /* ICMPv6 type */
+    /* 25 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 134, 0, 1),  /* router announcement: 26, else 27 */
+    /* 26 */ BPF_STMT(BPF_RET | BPF_K, CAPTURE_SNAP_LENGTH),  /* accept */
+    /* 27 */ BPF_STMT(BPF_RET | BPF_K, 0),                    /* drop */
 };
 
 /* One allowed system call: on a match it is allowed, otherwise the next
@@ -186,7 +231,7 @@ static void fail(const char* message) {
 
 static void usage(void) {
     fprintf(stderr,
-            "usage: %s discover INTERFACE SECONDS\n"
+            "usage: %s discover|watch INTERFACE SECONDS\n"
             "  INTERFACE: an Ethernet-type interface, for example eth0 or wlan0\n"
             "  SECONDS: 1 to %d\n",
             kProgram,
@@ -295,10 +340,10 @@ static int lock_calls(void) {
     return prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &program, 0, 0);
 }
 
-/* Opens the packet socket on `name`, with the filter locked on it, bound
- * and receiving. Exits with EXIT_USAGE, EXIT_NO_PERMISSION or
+/* Opens the packet socket on `name`, with `filter` locked on it, bound and
+ * receiving. Exits with EXIT_USAGE, EXIT_NO_PERMISSION or
  * EXIT_SOCKET_FAILED when it cannot. */
-static int open_socket(const char* name) {
+static int open_socket(const char* name, const struct sock_fprog* filter) {
     const unsigned int index = if_nametoindex(name);
     if (index == 0) {
         fail("no such interface");
@@ -328,12 +373,8 @@ static int open_socket(const char* name) {
         _exit(EXIT_USAGE);
     }
 
-    struct sock_fprog filter = {
-        .len = (unsigned short)(sizeof(kFrameFilter) / sizeof(kFrameFilter[0])),
-        .filter = kFrameFilter,
-    };
     const int lock = 1;
-    if (setsockopt(fd, SOL_SOCKET, SO_ATTACH_FILTER, &filter, sizeof(filter)) != 0 ||
+    if (setsockopt(fd, SOL_SOCKET, SO_ATTACH_FILTER, filter, sizeof(*filter)) != 0 ||
         setsockopt(fd, SOL_SOCKET, SO_LOCK_FILTER, &lock, sizeof(lock)) != 0) {
         fail("could not set the frame filter");
         _exit(EXIT_SOCKET_FAILED);
@@ -387,9 +428,18 @@ int main(int argc, char* argv[]) {
     signal(SIGALRM, SIG_DFL);
 
     /* Every argument is checked before anything is opened. */
-    if (argc != 4 || strcmp(argv[1], "discover") != 0) {
+    if (argc != 4 || (strcmp(argv[1], "discover") != 0 && strcmp(argv[1], "watch") != 0)) {
         usage();
         return EXIT_USAGE;
+    }
+    /* The command picks one of the two fixed filters, nothing else. */
+    struct sock_fprog filter = {
+        .len = (unsigned short)(sizeof(kFrameFilter) / sizeof(kFrameFilter[0])),
+        .filter = kFrameFilter,
+    };
+    if (strcmp(argv[1], "watch") == 0) {
+        filter.len = (unsigned short)(sizeof(kWatchFilter) / sizeof(kWatchFilter[0]));
+        filter.filter = kWatchFilter;
     }
     const char* name = argv[2];
     if (!valid_interface_name(name)) {
@@ -406,7 +456,7 @@ int main(int argc, char* argv[]) {
         return EXIT_NO_PERMISSION;
     }
 
-    const int fd = open_socket(name);
+    const int fd = open_socket(name, &filter);
     /* A last stop, should the loop below ever be stuck in a write (set
      * before the seccomp filter, which does not allow it). */
     alarm((unsigned int)seconds + 5U);

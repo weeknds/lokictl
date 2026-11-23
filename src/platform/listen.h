@@ -227,8 +227,16 @@ private:
 };
 
 #if !USE_DESKTOP
-// The capture helper, run for one listen (device builds only). All of it is
-// called on the tool runner's thread, never on the UI thread.
+// The helper's two fixed commands: `discover` (ARP, DHCP, mDNS and SSDP,
+// for the Discover page) and `watch` (ARP, DHCP, TCP connection requests to
+// this machine and IPv6 router announcements, for Watch, watch.h).
+enum class CaptureCommand {
+    Discover,
+    Watch,
+};
+
+// The capture helper, run for one listen or one Watch run (device builds
+// only). All of it is called on a runner's thread, never on the UI thread.
 class CaptureProcess {
 public:
     CaptureProcess() = default;
@@ -238,14 +246,18 @@ public:
     CaptureProcess(const CaptureProcess&) = delete;
     CaptureProcess& operator=(const CaptureProcess&) = delete;
 
-    // Runs "lokictl-capture discover <interface_name> <seconds>" with an
-    // empty environment, /dev/null for its standard input and error, no
+    // Runs "lokictl-capture discover <interface_name> <seconds>" (or
+    // "watch" for CaptureCommand::Watch) with an empty environment, /dev/null for its standard input and error, no
     // blocked signals, and its standard output on a pipe whose reading end
     // (fd(), non-blocking, closed on exec) stays here. Returns true, or
     // false with `error` and `reason` set (ToolError::NotAllowed, or
     // ToolError::Failed with a short reason such as "capture helper not
     // installed").
-    bool start(const std::string& interface_name, int32_t seconds, model::ToolError& error, std::string& reason);
+    bool start(const std::string& interface_name,
+               int32_t seconds,
+               model::ToolError& error,
+               std::string& reason,
+               CaptureCommand command = CaptureCommand::Discover);
     // The reading end of the pipe; -1 before start() and after stop().
     int fd() const { return fd_; }
     // Ends the helper: SIGTERM, then SIGKILL when it is still there after

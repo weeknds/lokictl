@@ -75,6 +75,10 @@ security holes (`tests/vuln_checks.cpp`), and exits with 1 when a check
 fails. Given a text, it prints what the list says about it:
 `lokictl_tests "nginx/1.18.0 (Ubuntu)"`. The list itself is rebuilt with
 `python3 scripts/vulndb/build.py`; see [checks.md](checks.md).
+`build/darwin-arm64/Debug/lokictl_watch_tests` (also run by `ctest`)
+replays made-up frames through Watch's alert detector
+(`tests/watch_alerts.cpp`): one of each alert kind, and ordinary traffic
+that must raise none.
 
 ## Screenshots without a window
 

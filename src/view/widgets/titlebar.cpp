@@ -26,6 +26,9 @@ namespace {
 constexpr int32_t kIconWidth    = 18;
 constexpr int32_t kPercentWidth = 40;
 constexpr int32_t kTimeWidth    = 42;
+// The WATCH tag starts right of the app name (its ink ends by x 76 in every
+// theme), clear of Remote view's tag (x 3 to 84).
+constexpr int32_t kWatchTagLeft = 88;
 
 // The Wi-Fi icon's steps, by received signal in dBm.
 constexpr int32_t kSignalHighDbm   = -60;
@@ -157,8 +160,31 @@ void TitleBar::build() {
     time_label_ = lv_label_create(status);
     configure_label(time_label_, theme, status_font, kTimeWidth);
 
-    // LVGL calls the observer once right away, which shows the values.
+    // Outlined in the accent colour, like a selection in themes that do not
+    // fill theirs.
+    watch_tag_ = lv_label_create(core_obj_);
+    lv_obj_remove_style_all(watch_tag_);
+    view::style::text(watch_tag_, theme, view::FontRole::Small, theme.colors.accent);
+    lv_label_set_text(watch_tag_, view::style::soft_key_text(theme, "Watch").c_str());
+    lv_obj_set_style_border_color(watch_tag_, theme.colors.accent, 0);
+    lv_obj_set_style_border_width(watch_tag_, std::max<int32_t>(theme.metrics.border_width, 1), 0);
+    lv_obj_set_style_border_opa(watch_tag_, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(watch_tag_, theme.metrics.radius, 0);
+    lv_obj_set_style_pad_hor(watch_tag_, 3, 0);
+    lv_obj_set_style_pad_ver(watch_tag_, 1, 0);
+    lv_obj_align(watch_tag_, LV_ALIGN_LEFT_MID, kWatchTagLeft, 0);
+
+    // LVGL calls each observer once right away, which shows the values.
     lv_subject_add_observer_obj(view_model_.home_data_subject(), data_observer, core_obj_, this);
+    lv_subject_add_observer_obj(view_model_.watch_subject(), watch_observer, core_obj_, this);
+}
+
+void TitleBar::watch_observer(lv_observer_t* observer, lv_subject_t* /*subject*/) {
+    auto* title_bar = static_cast<TitleBar*>(lv_observer_get_user_data(observer));
+    if (title_bar && title_bar->watch_tag_) {
+        set_visible(title_bar->watch_tag_,
+                    title_bar->view_model_.watch().run.state == model::ToolState::Running);
+    }
 }
 
 void TitleBar::refresh() {

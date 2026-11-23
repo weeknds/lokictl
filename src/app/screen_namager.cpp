@@ -16,6 +16,7 @@
 #include "logger.h"
 #include "devices_screen.h"
 #include "discover_screen.h"
+#include "watch_screen.h"
 #include "hotspot_screen.h"
 #include "map_screen.h"
 #include "modes_screen.h"
@@ -158,6 +159,14 @@ bool ScreenManager::show_discover_screen() {
         return false;
     }
     page_loaded(model::AppPage::Discover);
+    return true;
+}
+
+bool ScreenManager::show_watch_screen() {
+    if (!load_screen(std::make_unique<screen::WatchScreen>(view_model_, assets_, theme_engine_))) {
+        return false;
+    }
+    page_loaded(model::AppPage::Watch);
     return true;
 }
 
@@ -309,6 +318,10 @@ bool ScreenManager::show_page(model::AppPage page) {
 
     if (screen::DiscoverScreen::handles(page)) {
         return show_discover_screen();
+    }
+
+    if (screen::WatchScreen::handles(page)) {
+        return show_watch_screen();
     }
 
     if (screen::MapScreen::handles(page)) {

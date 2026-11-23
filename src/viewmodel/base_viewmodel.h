@@ -9,6 +9,7 @@
 #include "subjects.h"
 #include "base_model.h"
 #include "tool_data.h"
+#include "watch_data.h"
 
 #include "lvgl.h"
 
@@ -360,6 +361,39 @@ public:
     // Stores `row` (0 or more); nothing is written when it stays the same.
     void set_discover_scroll(int32_t row);
 
+    // The Watch page (Tools key 8, or `watch`). Watch runs on its own
+    // (app::WatchController), next to any tool, and comes back in watch().
+    // Puts the selection on the newest alert and closes the detail, then
+    // opens the page (see open_page()).
+    bool open_watch();
+    // What Watch shows: its run and the known devices. Only ever set on the
+    // UI thread, by app::WatchController. set_watch() returns false and
+    // tells nobody when `data` equals what is held; otherwise it stores it
+    // and watch_subject() counts one more change.
+    const model::WatchData& watch() const;
+    bool set_watch(const model::WatchData& data);
+    lv_subject_t* watch_subject();
+    // Asks to start Watch on the uplink, to stop it, or to mark the device
+    // with the hardware address `hardware` as known. The view model only
+    // passes the request on: app::WatchController carries it out. Counts
+    // every request; requested_watch() and requested_watch_hardware() say
+    // what was asked.
+    enum class WatchRequest { Start, Stop, MarkKnown };
+    void request_watch(WatchRequest request, const std::string& hardware = {});
+    lv_subject_t* watch_request_subject();
+    WatchRequest requested_watch() const;
+    const std::string& requested_watch_hardware() const;
+    // The selected alert (0 is the newest); the page clamps it to the
+    // alerts there are.
+    lv_subject_t* watch_selection_subject();
+    int32_t watch_selection() const;
+    // Stores `row` (0 or more); nothing is written when it stays the same.
+    void set_watch_selection(int32_t row);
+    // True while the selected alert's detail is shown.
+    lv_subject_t* watch_detail_subject();
+    bool watch_detail() const;
+    void set_watch_detail(bool open);
+
     // The Map page (Discover key 5).
     // Puts the selection back on the router and empties the slots, then
     // opens the page (see open_page()).
@@ -481,6 +515,13 @@ private:
     reactive::IntSubject wifi_scroll_subject_;
     reactive::IntSubject wifi_scan_request_subject_;
     reactive::IntSubject discover_scroll_subject_;
+    model::WatchData watch_;
+    reactive::IntSubject watch_subject_;
+    reactive::IntSubject watch_request_subject_;
+    WatchRequest requested_watch_{WatchRequest::Start};
+    std::string requested_watch_hardware_;
+    reactive::IntSubject watch_selection_subject_;
+    reactive::BoolSubject watch_detail_subject_;
     reactive::IntSubject map_selection_subject_;
     std::array<std::string, kMapSlots> map_slots_;
     reactive::IntSubject home_selection_subject_;

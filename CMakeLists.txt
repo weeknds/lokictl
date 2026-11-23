@@ -798,7 +798,8 @@ target_link_libraries(${PROJECT_NAME}
 )
 
 # Checks of the service and version reading and of the list of known
-# security holes (tests/vuln_checks.cpp), on the Mac only:
+# security holes (tests/vuln_checks.cpp), and of Watch's alerts, on the Mac
+# only:
 # build/darwin-arm64/Debug/lokictl_tests, or ctest.
 if(USE_DESKTOP)
     add_executable(${PROJECT_NAME}_tests tests/vuln_checks.cpp src/platform/dns_message.cpp)
@@ -810,6 +811,19 @@ if(USE_DESKTOP)
     )
     enable_testing()
     add_test(NAME vuln_checks COMMAND ${PROJECT_NAME}_tests)
+
+    # Watch's alerts from made-up frames (tests/watch_alerts.cpp):
+    # build/darwin-arm64/Debug/lokictl_watch_tests, or ctest.
+    add_executable(${PROJECT_NAME}_watch_tests
+        tests/watch_alerts.cpp
+        src/platform/watch_detector.cpp
+        src/platform/listen.cpp
+        src/platform/dns_message.cpp
+    )
+    target_include_directories(${PROJECT_NAME}_watch_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/platform)
+    target_link_libraries(${PROJECT_NAME}_watch_tests PRIVATE ${PROJECT_NAME}_model)
+    target_compile_definitions(${PROJECT_NAME}_watch_tests PRIVATE USE_DESKTOP=1)
+    add_test(NAME watch_alerts COMMAND ${PROJECT_NAME}_watch_tests)
 endif()
 
 # Package deb

@@ -106,6 +106,10 @@ public:
     // Wi-Fi adapter connected: wlan1" or "USB Wi-Fi adapter removed: wlan1".
     void show_usb_wifi(const std::string& interface_name, bool connected);
 
+    // The message for a Watch alert: "Watch: Scan on you", or "Watch: 3 new
+    // alerts" for several at once.
+    void show_watch_alert(const std::string& text);
+
     // Called first for every key press (step 0). Returning true swallows
     // the key. Empty: no step 0.
     void set_wake_handler(std::function<bool()> handler);

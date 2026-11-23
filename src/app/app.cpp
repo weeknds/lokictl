@@ -30,6 +30,7 @@
 #include "theme_controller.h"
 #include "theme_engine.h"
 #include "tool_controller.h"
+#include "watch_controller.h"
 #include "tool_runner.h"
 
 #include <chrono>
@@ -241,6 +242,20 @@ void save_blocked_devices(const std::string& path, const std::vector<std::string
         LOG_INFO("saved the blocked devices to {}", path);
     } else {
         LOG_WARN("could not save the blocked devices to {}: {}", path, error);
+    }
+}
+
+// Saves Watch's known devices as the known_devices= key of the settings
+// file at `path` (which keeps every other line). A failure to save is
+// logged; the list is still used for this run. No address goes to the log.
+void save_known_devices(const std::string& path, const std::vector<std::string>& addresses) {
+    ApplicationConfig config;
+    config.known_devices = platform::blocked_devices_text(addresses);
+    std::string error;
+    if (save_application_config(path, config, error)) {
+        LOG_INFO("saved the known devices to {}", path);
+    } else {
+        LOG_WARN("could not save the known devices to {}: {}", path, error);
     }
 }
 
@@ -635,6 +650,35 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override,
     ToolController tools(view_model, platform::make_tool_runner(data_source == platform::DataSourceKind::Live,
                                                                 assets.resolve(model::kVulnListFile).string()));
 
+    // Watch (passive alerts) runs on its own, next to the tools: live on
+    // the device, made-up on the Mac. Its known devices are the saved list
+    // on the device; the simulator starts with made-up ones and never
+    // writes them. Stopped right after the main loop, next to the tools.
+    std::vector<std::string> known_devices;
+#if !USE_DESKTOP
+    if (config.known_devices) {
+        std::size_t dropped = 0;
+        known_devices = platform::parse_device_list(*config.known_devices, model::kWatchKnownMax, &dropped);
+        if (dropped > 0) {
+            LOG_WARN("{} entries of known_devices in {} are not device addresses, repeats or too many; "
+                     "they are ignored",
+                     dropped,
+                     loaded_config_path);
+        }
+    }
+#else
+    known_devices = platform::pretend_known_devices();
+#endif
+    const bool live_watch = data_source == platform::DataSourceKind::Live;
+    WatchController watch(view_model, platform::make_watch_runner(live_watch), std::move(known_devices));
+#if !USE_DESKTOP
+    if (live_watch) {
+        watch.set_known_saver([&user_config_path](const std::vector<std::string>& known) {
+            save_known_devices(user_config_path, known);
+        });
+    }
+#endif
+
     ScreenManager screen_manager(view_model, assets, theme_engine);
     screen_manager.start();
 
@@ -677,6 +721,7 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override,
     data.set_usb_wifi_listener([&key_controller](const std::string& interface_name, bool connected) {
         key_controller.show_usb_wifi(interface_name, connected);
     });
+    watch.set_alert_listener([&key_controller](const std::string& text) { key_controller.show_watch_alert(text); });
 
     // Declared after everything its listener uses, so it is destroyed before
     // them. When the user picks a theme in Settings, the theme switches
@@ -707,6 +752,7 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override,
              lv_display_get_vertical_resolution(display));
     data.start();
     tools.start();
+    watch.start();
     while (running && stop_signal == 0
 #if USE_DESKTOP
            && simulator_frame.process_events()
@@ -721,6 +767,8 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override,
     // Then Remote view: the port closes and its thread ends.
     remote.stop();
     tools.stop();
+    watch.stop();
+    watch.set_alert_listener({});
     data.set_block_failure_listener({});
     data.set_usb_wifi_listener({});
     data.stop();

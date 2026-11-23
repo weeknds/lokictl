@@ -46,6 +46,9 @@ bool valid_device_address(const std::string& address);
 // rest the last kMaxBlockedDevices are kept. `dropped`, when given, gets
 // how many entries were left out.
 std::vector<std::string> parse_blocked_devices(const std::string& text, std::size_t* dropped = nullptr);
+// The same for any saved list of devices, keeping the last `max` (Watch's
+// known devices: the known_devices= key).
+std::vector<std::string> parse_device_list(const std::string& text, std::size_t max, std::size_t* dropped = nullptr);
 
 // The list as the blocked_devices= key holds it: "a,b,c" (empty for none).
 std::string blocked_devices_text(const std::vector<std::string>& addresses);

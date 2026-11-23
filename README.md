@@ -145,6 +145,31 @@ how many packets LokiCTL has sent.
   can use another server with a `speed_test_server=` line in the
   `[application]` section of `~/.config/lokictl/lokictl.conf`.
 
+### Watch
+
+`8` on Tools (or the command `watch`) opens Watch. Press `6` and it keeps
+an eye on your network while LokiCTL is open: it only listens, sends
+nothing and runs next to the other tools. A `WATCH` tag shows in the title
+bar, and each alert pops up as a short message on any page:
+
+| Alert | What it means |
+|---|---|
+| New device | A device that isn't on your known list joined. |
+| Fake router? | Someone may be pretending to be your router (ARP spoofing). |
+| Same address x2 | Two devices answer for one address. |
+| Second DHCP | A second device hands out addresses (a fake DHCP server?). |
+| New IPv6 router | An unknown device says it is a router for IPv6. |
+| Scan on you | Someone tried 10 or more ports on the Cardputer within 10 seconds. |
+| ARP flood | More than 50 address questions (ARP) in one second. |
+
+Pick an alert with F/X and press `Enter` or `5` to see what it means.
+`7` marks a new device as known. The first time you use Watch it spends a
+minute learning the devices that are already there, so they don't all
+show up as new. Alerts are kept in memory only (the newest 100); the known
+list (64 devices at most) is saved. Watch can't see Wi-Fi radio tricks
+such as kick-off floods or fake access points, and it never blocks
+anyone.
+
 ### Discover and Map
 
 Discover (`5` on Home) finds the devices on the network the Cardputer is
@@ -231,7 +256,7 @@ and names, up and down (fn+F and fn+X) bring back the last 8 commands, and
 | Command | What it does |
 |---|---|
 | `help` | Lists the commands. |
-| `home`, `map`, `tools`, `discover`, `wifi`, `status`, `settings` | Opens that page. |
+| `home`, `map`, `tools`, `discover`, `watch`, `wifi`, `status`, `settings` | Opens that page. |
 | `theme <name>` | Switches to `instrument`, `constellation` or `terminal`. |
 | `mode <name>` | Switches to `client`, `router`, `share` or `vpn`. |
 | `ping [target]` | Pings a host, or the target that's selected on the Ping page. |
@@ -273,8 +298,9 @@ setuid. The package adds three things so the network features work:
   table (`inet lokictl`, used for blocking and the kill switch) and Share's
   extra interface, `lokiap0`.
 - `lokictl-capture`, a tiny program with one capability, `CAP_NET_RAW`.
-  It only hears ARP, DHCP, mDNS and SSDP, it can't send anything, and it
-  stops when the listen run ends.
+  For Discover it only hears ARP, DHCP, mDNS and SSDP; for Watch only ARP,
+  DHCP, connection requests to the Cardputer and IPv6 router
+  announcements. It can't send anything, and it stops when the run ends.
 
 Only root and the `netdev` group can run the two helpers. Removing the
 package removes all three. [docs/permissions.md](docs/permissions.md) has
@@ -301,8 +327,8 @@ the details and lists every file LokiCTL writes.
   internet. There are no accounts and no analytics. The list of known
   security holes is built in and works offline; it is updated with each
   release.
-- Settings, the hotspot password and saved captures stay on the device,
-  and only your user can read them.
+- Settings, the hotspot password, Watch's known devices and saved
+  captures stay on the device, and only your user can read them.
 
 ## Limits
 

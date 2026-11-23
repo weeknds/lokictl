@@ -22,6 +22,8 @@
 #include "theme_engine.h"
 #include "tool_controller.h"
 #include "tool_runner.h"
+#include "watch.h"
+#include "watch_controller.h"
 
 #include "lvgl.h"
 
@@ -286,6 +288,10 @@ int run_snapshot(const SnapshotRequest& request) {
     // its runs follow the LVGL time, so the same keys give the same picture.
     ToolController tools(view_model, platform::make_tool_runner(false, assets.resolve(model::kVulnListFile).string()));
     tools.start();
+    // Watch too, with the made-up network and its made-up known devices;
+    // nothing is saved.
+    WatchController watch(view_model, platform::make_watch_runner(false), platform::pretend_known_devices());
+    watch.start();
 
     ScreenManager screen_manager(view_model, assets, theme_engine);
     screen_manager.start();
