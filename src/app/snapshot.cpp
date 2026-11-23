@@ -25,6 +25,8 @@
 #include "watch.h"
 #include "trap.h"
 #include "trap_controller.h"
+#include "report_controller.h"
+#include "report_files.h"
 #include "watch_controller.h"
 
 #include "lvgl.h"
@@ -300,6 +302,10 @@ int run_snapshot(const SnapshotRequest& request) {
         add_trap_alerts(watch, fresh);
     });
     trap.start();
+    // Reports only go to a folder named by LOKICTL_REPORT_DIR here, so a
+    // snapshot never writes into the user's own folders.
+    ReportController reports(view_model, platform::report_folder());
+    reports.start();
 
     ScreenManager screen_manager(view_model, assets, theme_engine);
     screen_manager.start();

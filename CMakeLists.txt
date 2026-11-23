@@ -799,8 +799,8 @@ target_link_libraries(${PROJECT_NAME}
 
 # Checks of the service and version reading and of the list of known
 # security holes (tests/vuln_checks.cpp), of Watch's alerts, of the
-# health check's rules, of the trap and of the topology frames, on the Mac
-# only:
+# health check's rules, of the trap, of the topology frames and of reports,
+# on the Mac only:
 # build/darwin-arm64/Debug/lokictl_tests, or ctest.
 if(USE_DESKTOP)
     add_executable(${PROJECT_NAME}_tests tests/vuln_checks.cpp src/platform/dns_message.cpp)
@@ -851,6 +851,18 @@ if(USE_DESKTOP)
     target_compile_options(${PROJECT_NAME}_topology_tests PRIVATE -fsanitize=address,undefined -fno-sanitize-recover=all)
     target_link_options(${PROJECT_NAME}_topology_tests PRIVATE -fsanitize=address,undefined)
     add_test(NAME topology_frames COMMAND ${PROJECT_NAME}_topology_tests)
+
+    # Reports: escaping of every text from the network, and saving, listing
+    # and reading the files (tests/report_checks.cpp), with the address and
+    # undefined-behaviour checkers: build/darwin-arm64/Debug/lokictl_report_tests
+    # [folder], or ctest.
+    add_executable(${PROJECT_NAME}_report_tests tests/report_checks.cpp src/platform/report_files.cpp)
+    target_include_directories(${PROJECT_NAME}_report_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/platform)
+    target_link_libraries(${PROJECT_NAME}_report_tests PRIVATE ${PROJECT_NAME}_model)
+    target_compile_definitions(${PROJECT_NAME}_report_tests PRIVATE USE_DESKTOP=1)
+    target_compile_options(${PROJECT_NAME}_report_tests PRIVATE -fsanitize=address,undefined -fno-sanitize-recover=all)
+    target_link_options(${PROJECT_NAME}_report_tests PRIVATE -fsanitize=address,undefined)
+    add_test(NAME report_checks COMMAND ${PROJECT_NAME}_report_tests)
 endif()
 
 # Package deb

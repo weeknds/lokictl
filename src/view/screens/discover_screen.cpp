@@ -245,7 +245,7 @@ view::widgets::HelpContent DiscoverScreen::help_content() {
     return {"DISCOVER",
             {
                 {"ESC / 4", "Back (listening goes on)"},
-                {"F / X", "Scroll the devices"},
+                {"R", "Save a report for a PC"},
                 {"6", "Listen 5 min, sends none"},
                 {"7", "Save as PCAP, 4 MB at most"},
                 {"8 twice", "Probe your network, sends"},
@@ -428,6 +428,10 @@ bool DiscoverScreen::on_key(uint32_t key) {
             return true;
         case LV_KEY_DOWN:
             scroll(1);
+            return true;
+        case 'r':
+        case 'R':
+            view_model().request_report();
             return true;
         default:
             return false;

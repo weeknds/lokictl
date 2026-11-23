@@ -210,6 +210,7 @@ The commands, read without regard to case:
 | Command | What it does |
 |---|---|
 | `help` | lists the commands in the help panel (badge `COMMANDS`) |
+| `report` | saves a report of what LokiCTL has found (`Report saved: 07:51:30`, or `Report not saved: <why>`; see [permissions.md](permissions.md#reports)) |
 | `theme <name>` | switches the theme: `instrument`, `constellation` or `terminal` |
 | `mode <name>` | switches the mode: `client`, `router`, `share` or `vpn` (see below) |
 | `home`, `map`, `tools`, `discover`, `watch`, `trap`, `health`, `wifi`, `status`, `settings` | open that page, the same way its key does |
@@ -545,6 +546,7 @@ explanation.
 | `6` START / STOP | starts Watch on the uplink or stops it (off without a network) |
 | `7` KNOWN | marks the picked new device as known |
 | `8` TRAP | opens the Trap page |
+| `r` | saves a report (as the command `report`) |
 | `4` BACK or a short ESC | closes the detail, else goes back (Watch goes on) |
 
 The pick and the detail live in the view model (`watch_selection_*`,
@@ -602,6 +604,7 @@ line of facts (`Port 23, remote login`, `Port 53, dnsmasq 2.85, worst
 | `f`/`x` or the arrows up and down | pick a finding |
 | `5` INFO or Enter | opens or closes the detail |
 | `6` CHECK / STOP | the first press shows what will be asked and sends nothing; a second press within 10 s starts the check (only on a private home network; off without a network and while another tool runs); while it runs, stops it |
+| `8` SAVE or `r` | saves a report (as the command `report`); while the confirmation shows, only cancels it |
 | `4` BACK or a short ESC | cancels the confirmation, closes the detail, else goes back (the check goes on) |
 
 Any other key while the confirmation shows only cancels it. The pick and
@@ -811,6 +814,7 @@ line over: `Saving, 4:12 left, 14 KB` while the run lasts, then `Saved
 | `7` SAVE | saves the latest run as a PCAP file: on while one runs and after one that heard something, until it is saved; off while another tool runs |
 | `8` PROBE / STOP | first shows step 2, `STEP 2 OF 3: YOUR ADDRESS`: the Cardputer's IPv4 address and router, what a probe asks (`Asks 10.0.0.1-254, 20 a second`) and, in the warning colour, `Only networks you own or may test. Press 8 again to probe.`; nothing is sent (`Nothing sent yet`). A second `8` starts step 3, Probe (see [data.md](data.md#probing)); any other key, a short ESC, leaving the page or 10 s cancels. While a probe runs it reads STOP. Off without a network and while another tool runs; on a network that is not private, step 2 says so and the second `8` does nothing |
 | `f`/`x` or the arrows up and down | scroll the devices |
+| `r` | saves a report (as the command `report`); while step 2 shows, only cancels it |
 | `4` BACK or a short ESC | goes back; a run goes on |
 
 After a probe the caption reads `STEP 3 OF 3: PROBE`, the list shows the

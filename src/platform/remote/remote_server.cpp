@@ -11,6 +11,7 @@
 #include "remote/remote_http.h"
 #include "remote/remote_keys.h"
 #include "remote/remote_page.h"
+#include "report_files.h"
 
 #include <arpa/inet.h>
 #include <cerrno>
@@ -30,6 +31,9 @@ namespace platform::remote {
 namespace {
 
 constexpr int64_t kRequestTimeoutMs = 2000;
+// A report is sent within this long (a few tens of kilobytes; at most
+// kReportFileMax).
+constexpr int64_t kFileSendTimeoutMs = 10000;
 constexpr int64_t kAddressCheckMs = 2000;
 constexpr int kIdlePollMs = 1000;
 constexpr int kListenBacklog = 4;
@@ -635,6 +639,43 @@ void Server::handle_connection(int fd, int side, const Side& own, Pairing& pairi
         std::string answer = response_head(200, "image/png", png->size(), frame_header);
         answer.append(reinterpret_cast<const char*>(png->data()), png->size());
         send_all(fd, answer, wake_read_, deadline);
+        return;
+    }
+
+    if (request.path == "/reports" || request.path == "/report") {
+        if (request.method != "GET") {
+            send_text(fd, 405, "method not allowed\n", wake_read_, deadline, "Allow: GET\r\n");
+            return;
+        }
+        if (side != paired_side_ || !pairing.check_token(cookie_value(request.cookie, kCookieName), now)) {
+            send_text(fd, 401, "pair first\n", wake_read_, deadline);
+            return;
+        }
+        if (request.path == "/reports") {
+            // Every name is a checked report name: letters, digits, '-' and '.' only.
+            std::string list = "{\"reports\":[";
+            bool first = true;
+            for (const ReportFile& file : list_reports(options_.reports_folder)) {
+                list += first ? "" : ",";
+                list += "{\"name\":\"" + file.name + "\",\"bytes\":" + std::to_string(file.bytes) + "}";
+                first = false;
+            }
+            list += "]}\n";
+            send_body(fd, 200, "application/json", list, wake_read_, deadline);
+            return;
+        }
+        const std::string name = form_value(request.query, "name");
+        std::string content;
+        if (!valid_report_name(name) || !read_report(options_.reports_folder, name, content)) {
+            send_text(fd, 404, "no such report\n", wake_read_, deadline);
+            return;
+        }
+        const bool page = name.size() > 5 && name.compare(name.size() - 5, 5, ".html") == 0;
+        const std::string headers = "Content-Disposition: attachment; filename=\"" + name +
+                                    "\"\r\n"
+                                    "Content-Security-Policy: sandbox; default-src 'none'; style-src 'unsafe-inline'\r\n";
+        send_body(fd, 200, page ? "text/html; charset=utf-8" : "text/csv; charset=utf-8", content, wake_read_,
+                  now_ms() + kFileSendTimeoutMs, headers);
         return;
     }
 

@@ -141,6 +141,19 @@ anywhere; copy the file off the Cardputer yourself, for example with
 `scp`, and delete it when you no longer need it: it holds what your
 network's devices said about themselves.
 
+## Reports
+
+Key 8 (SAVE) on Health, R on Watch and Discover, or the command `report`
+write a report: one web page and a table of the devices (CSV), with the
+same time in their names, for example `lokictl-20261123-075130.html` and
+`lokictl-20261123-075130-devices.csv`. The app writes them with the user's
+own rights to `~/Documents/LokiCTL/reports/`; that folder and `LokiCTL`
+above it are private (0700), and so is each file (0600). A new report
+never writes over an old one. Remote view's page lists them for download
+by the paired browser; nothing else sends them anywhere. Delete them when
+you no longer need them: they hold what your network's devices said about
+themselves.
+
 ## WireGuard files
 
 The VPN mode reads WireGuard client files (`.conf`) from
@@ -165,6 +178,7 @@ it runs. The file never leaves the device.
 - `~/.config/lokictl/wireguard/`, the folder for your WireGuard files (see
   above).
 - `~/.local/share/lokictl/captures/`, only when you save a capture.
+- `~/Documents/LokiCTL/reports/`, only when you save a report.
 - `~/Pictures/Screenshots/`, only when you press fn+J.
 - `/sys/class/backlight/backlight/brightness`: LokiCTL dims the screen
   while you don't use it and puts the old value back when you press a key

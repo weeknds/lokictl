@@ -113,6 +113,10 @@ public:
     // web", or "Trap: 3 connections" for several at once.
     void show_trap_alert(const std::string& text);
 
+    // The message after saving a report: "Report saved: 07:51:30", or
+    // "Report not saved: disk full".
+    void show_report(bool saved, const std::string& text);
+
     // Called first for every key press (step 0). Returning true swallows
     // the key. Empty: no step 0.
     void set_wake_handler(std::function<bool()> handler);

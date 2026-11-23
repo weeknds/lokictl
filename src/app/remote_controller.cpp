@@ -17,6 +17,7 @@
 #include "remote/remote_switch.h"
 #include "remote_mark.h"
 #include "remote_panel.h"
+#include "report_files.h"
 
 #include <cstddef>
 #include <cstdio>
@@ -336,6 +337,7 @@ void RemoteController::switch_on() {
 
     platform::remote::ServerOptions options;
     options.keys = keys_.get();
+    options.reports_folder = platform::report_folder();
     std::unique_ptr<platform::remote::FrameSource> frames;
 #if USE_DESKTOP
     options.loopback_only = true;

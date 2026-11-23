@@ -440,6 +440,13 @@ public:
     bool health_detail() const;
     void set_health_detail(bool open);
 
+    // Reports: asks to save what LokiCTL has found as a report (key 8 on
+    // the Health page, R on the Watch and Discover pages, the command
+    // `report`). The view model only passes the request on:
+    // app::ReportController saves it. Counts every request.
+    void request_report();
+    lv_subject_t* report_request_subject();
+
     // The Map page (Discover key 5).
     // Puts the selection back on the router and empties the slots, then
     // opens the page (see open_page()).
@@ -576,6 +583,7 @@ private:
     reactive::BoolSubject trap_detail_subject_;
     reactive::IntSubject health_selection_subject_;
     reactive::BoolSubject health_detail_subject_;
+    reactive::IntSubject report_request_subject_;
     reactive::IntSubject map_selection_subject_;
     std::array<std::string, kMapSlots> map_slots_;
     reactive::IntSubject home_selection_subject_;

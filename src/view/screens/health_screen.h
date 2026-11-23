@@ -82,6 +82,8 @@ private:
     bool checking() const;
     bool can_check() const;
     void check_or_stop();
+    // Key 8 and R: asks for a report (a waiting confirmation only goes).
+    void save_report();
     void cancel_confirm();
     static void confirm_timer_cb(lv_timer_t* timer);
     void toggle_detail();

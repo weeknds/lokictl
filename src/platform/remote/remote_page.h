@@ -11,9 +11,9 @@
 namespace platform::remote {
 
 // The one web page of Remote view (GET /): a form for the code, then the
-// screen with a key pad laid out like the device, and typing from the
-// computer's keyboard. Everything is in the page itself; it loads nothing
-// from anywhere else.
+// screen with a key pad laid out like the device, typing from the
+// computer's keyboard, and the saved reports as download links.
+// Everything is in the page itself; it loads nothing from anywhere else.
 std::string_view page_html();
 
 // The Content-Security-Policy the page is served with: only its own inline

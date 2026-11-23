@@ -50,6 +50,11 @@ button:disabled{opacity:.5;cursor:default}
 .pad{display:grid;grid-template-columns:repeat(3,52px) 1fr 96px;grid-template-rows:repeat(2,44px);gap:6px;margin-top:14px}
 .pad button{padding:0}
 .note{margin:14px 0 0;font-size:13px;color:var(--dim)}
+.reports{margin-top:20px;padding-top:12px;border-top:1px solid var(--line)}
+.reports h2{margin:0 0 6px;font-size:15px;font-weight:600;color:var(--dim)}
+#reports{list-style:none;margin:8px 0 0;padding:0}
+#reports li{margin:4px 0;overflow-wrap:anywhere}
+a{color:var(--go)}
 </style>
 </head>
 <body>
@@ -79,6 +84,12 @@ button:disabled{opacity:.5;cursor:default}
 <button tabindex="-1" data-k="enter" style="grid-area:2/5">Enter</button>
 </div>
 <p class="note">Typing here types on the Cardputer: letters, digits, Enter, Esc, Backspace, the arrows, F1 for help.</p>
+<section class="reports">
+<h2>Reports</h2>
+<p class="note">Saved on the Cardputer with key 8 on Health, R on Watch or Discover, or the command report. Click one to download it.</p>
+<button type="button" id="refresh">Show saved reports</button>
+<ul id="reports"></ul>
+</section>
 </div>
 <p class="note">Plain HTTP: use Remote view only on a network you trust.</p>
 </main>
@@ -86,6 +97,7 @@ button:disabled{opacity:.5;cursor:default}
 "use strict";
 const $ = (id) => document.getElementById(id);
 const form = $("pair"), code = $("code"), view = $("view"), img = $("screen"), msg = $("msg");
+const list = $("reports");
 const FORM = {"Content-Type": "application/x-www-form-urlencoded"};
 const NAMES = {Escape: "esc", Enter: "enter", Backspace: "backspace", ArrowUp: "up",
   ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right", F1: "help"};
@@ -141,6 +153,43 @@ function showView() {
   say("");
 }
 
+// The saved reports, as download links. Names come from the Cardputer and
+// are only ever set as text.
+async function loadReports() {
+  try {
+    const r = await fetch("/reports", {cache: "no-store", signal: limit()});
+    if (r.status === 401) {
+      showForm(ENDED, true);
+      return;
+    }
+    if (r.status !== 200) {
+      warn("Could not list the reports (answer " + r.status + ").");
+      return;
+    }
+    const data = await r.json();
+    const items = data && Array.isArray(data.reports) ? data.reports : [];
+    list.textContent = "";
+    if (!items.length) {
+      const li = document.createElement("li");
+      li.textContent = "No reports saved yet.";
+      list.append(li);
+      return;
+    }
+    for (const item of items) {
+      const name = String(item.name);
+      const li = document.createElement("li");
+      const a = document.createElement("a");
+      a.href = "/report?name=" + encodeURIComponent(name);
+      a.download = name;
+      a.textContent = name;
+      li.append(a, " (" + Math.max(1, Math.round(Number(item.bytes) / 1024)) + " KB)");
+      list.append(li);
+    }
+  } catch (err) {
+    warn("Could not list the reports.");
+  }
+}
+
 // No timer while the tab is hidden: becoming visible asks at once.
 function schedule(ms) {
   clearTimeout(timer);
@@ -185,7 +234,10 @@ async function poll() {
     } else if (r.status !== 204) {
       next = NORMAL;
     }
-    if (state === "probe") showView();
+    if (state === "probe") {
+      showView();
+      loadReports();
+    }
     setLost(false);
   } catch (err) {
     if (state === "probe") {
@@ -226,6 +278,7 @@ form.addEventListener("submit", async (e) => {
       frame = 0;
       showView();
       poll();
+      loadReports();
     } else if (r.status === 403) {
       say("Wrong code. 5 wrong codes switch Remote view off.", true);
     } else if (r.status === 409) {
@@ -278,6 +331,7 @@ async function pump() {
   sending = false;
 }
 
+$("refresh").addEventListener("click", loadReports);
 view.addEventListener("mousedown", (e) => {
   if (e.target.closest("button")) e.preventDefault();
 });
@@ -287,6 +341,8 @@ view.addEventListener("click", (e) => {
 });
 document.addEventListener("keydown", (e) => {
   if (state !== "live" || e.metaKey || e.isComposing) return;
+  // Enter and space on a report link or the list button act on them here.
+  if ((e.key === "Enter" || e.key === " ") && e.target.closest && e.target.closest("a,#refresh")) return;
   // AltGr (Ctrl+Alt on Windows) and Option still type characters.
   const altGraph = e.getModifierState && e.getModifierState("AltGraph");
   if (e.ctrlKey && !altGraph) return;

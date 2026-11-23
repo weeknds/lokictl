@@ -67,6 +67,9 @@ struct ServerOptions {
     // caller and kept until the server's thread has ended; without it every
     // key gets 400.
     KeyQueue* keys{nullptr};
+    // The folder of saved reports (report_files.h) that GET /reports lists
+    // and GET /report hands out; empty: none (an empty list).
+    std::string reports_folder;
 };
 
 // The Remote view server: a small HTTP/1.1 server on its own thread, never
@@ -86,8 +89,14 @@ struct ServerOptions {
 //   POST /key with k=<name> (key_from_name()) needs an Origin header of
 //   exactly "http://<address>:<port>" (else 403) and the cookie (else 401);
 //   an unknown name gets 400, a full queue or too many keys a second 429
-//   (KeyQueue), an accepted key 204. Other paths get 404, a wrong method
-//   405.
+//   (KeyQueue), an accepted key 204.
+//   GET /reports needs the cookie (else 401) and lists the saved reports
+//   as JSON, {"reports":[{"name":"lokictl-....html","bytes":N},...]}, the
+//   newest first. GET /report?name=<name> needs the cookie too and hands
+//   out that one file as a download (Content-Disposition: attachment),
+//   under a Content-Security-Policy that runs nothing (sandbox); a name
+//   that is not exactly a report's (valid_report_name()) or a file that
+//   can't be read gets 404. Other paths get 404, a wrong method 405.
 // - It ends by itself (see StopReason) when the pairing ends, or when the
 //   address it listens on goes away or changes (checked every 2 s).
 // - The hotspot side (set_hotspot_interface()): while an interface is named,

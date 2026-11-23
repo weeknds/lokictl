@@ -160,7 +160,7 @@ The list shows what it found, the worst first, one line each:
 `Risk Telnet open  router`, `Warn Slow cable link  eth0`. Pick one with
 F/X and press `Enter` or `5` to see what it means and what to do. Use it
 only on networks you own or may test. [docs/checks.md](docs/checks.md)
-lists every check.
+lists every check. `8` saves a report (see [Reports](#reports)).
 
 ### Watch
 
@@ -180,7 +180,8 @@ bar, and each alert pops up as a short message on any page:
 | ARP flood | More than 50 address questions (ARP) in one second. |
 
 Pick an alert with F/X and press `Enter` or `5` to see what it means.
-`7` marks a new device as known. The first time you use Watch it spends a
+`7` marks a new device as known, and `R` saves a report (see
+[Reports](#reports)). The first time you use Watch it spends a
 minute learning the devices that are already there, so they don't all
 show up as new. Alerts are kept in memory only (the newest 100); the known
 list (64 devices at most) is saved. Watch can't see Wi-Fi radio tricks
@@ -225,7 +226,8 @@ on, in up to three steps:
    up too, then asks for their names and kinds.
 
 `7` saves the listen run as a PCAP file in
-`~/.local/share/lokictl/captures/` that you can open in Wireshark.
+`~/.local/share/lokictl/captures/` that you can open in Wireshark, and `R`
+saves a report (see [Reports](#reports)).
 
 Map (`5` on Discover) draws the same devices around your router, with the
 internet above and the hotspot's devices below. Move with F/X/Z/C, and the
@@ -242,6 +244,26 @@ nothing, so they don't show. `8` twice traces the route to the internet
 (the same as Trace to 9.9.9.9); the hops show as dots above the router, and
 `Enter` on the internet lists each one.
 
+### Reports
+
+A report puts what LokiCTL has found so far into one web page you can
+open on a PC: the devices (Discover and the hotspot), the last port scan
+with what each open port said, security holes and old software, the
+health check, Watch's alerts, visits to the trap, the switch you're
+plugged into, the route to the internet and the last speed test. Each
+finding says in plain words what it means and what to do; the official
+number of a hole (its CVE number) links to its page. A section that
+didn't run says so.
+
+Save one with `8` on Health, `R` on Watch or Discover, or the command
+`report`. Each report is two files in `~/Documents/LokiCTL/reports/`:
+`lokictl-<date>-<time>.html` and a table of the devices,
+`lokictl-<date>-<time>-devices.csv`, which opens in a spreadsheet. Only
+your user can read them. To get them onto a PC, open Remote view: its page
+lists the saved reports for download. The page needs nothing from the
+internet, runs no scripts and prints well. It holds what devices on your
+network said about themselves, so treat it as private.
+
 ### Remote view
 
 Remote view shows the Cardputer's screen in a web browser on another
@@ -249,8 +271,9 @@ computer on the same network, and you can press its keys from there. Turn
 it on in Settings. The screen then shows an address and a six-digit code
 that you type into the browser. It's off every time LokiCTL starts, a
 `REMOTE` tag shows while someone is watching, and `7` on its row also lets
-devices on LokiCTL's own hotspot in. It uses plain HTTP, so only use it on
-networks you trust. More in [docs/remote.md](docs/remote.md).
+devices on LokiCTL's own hotspot in. Its page also lists the saved
+reports for download. It uses plain HTTP, so only use it on networks you
+trust. More in [docs/remote.md](docs/remote.md).
 
 ## Modes
 
@@ -305,6 +328,7 @@ and names, up and down (fn+F and fn+X) bring back the last 8 commands, and
 | Command | What it does |
 |---|---|
 | `help` | Lists the commands. |
+| `report` | Saves a report of what LokiCTL has found (see [Reports](#reports)). |
 | `home`, `map`, `tools`, `discover`, `watch`, `trap`, `health`, `wifi`, `status`, `settings` | Opens that page. |
 | `theme <name>` | Switches to `instrument`, `constellation` or `terminal`. |
 | `mode <name>` | Switches to `client`, `router`, `share` or `vpn`. |
@@ -386,8 +410,8 @@ the details and lists every file LokiCTL writes.
   internet. There are no accounts and no analytics. The list of known
   security holes is built in and works offline; it is updated with each
   release.
-- Settings, the hotspot password, Watch's known devices and saved
-  captures stay on the device, and only your user can read them.
+- Settings, the hotspot password, Watch's known devices, saved captures
+  and reports stay on the device, and only your user can read them.
 
 ## Limits
 
@@ -407,8 +431,8 @@ the details and lists every file LokiCTL writes.
 Only scan, probe or capture networks you own or are allowed to test.
 Listening sends nothing, but a probe and a port scan do, and doing that on
 someone else's network can break their rules or the law. Saved captures
-contain what devices on the network said about themselves, so treat them
-as private. Your WireGuard file never leaves the device.
+and reports contain what devices on the network said about themselves, so
+treat them as private. Your WireGuard file never leaves the device.
 
 LokiCTL is an independent project. It is not affiliated with or endorsed
 by M5Stack or Flipper Devices.

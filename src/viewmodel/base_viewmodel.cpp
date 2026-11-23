@@ -72,6 +72,7 @@ BaseViewModel::BaseViewModel()
       trap_detail_subject_(false),
       health_selection_subject_(0),
       health_detail_subject_(false),
+      report_request_subject_(0),
       map_selection_subject_(kMapRouter),
       home_selection_subject_(0),
       home_data_subject_(0),
@@ -760,6 +761,14 @@ bool BaseViewModel::set_trap(const model::TrapRun& run) {
 
 lv_subject_t* BaseViewModel::trap_subject() {
     return trap_subject_.native();
+}
+
+void BaseViewModel::request_report() {
+    bump(report_request_subject_);
+}
+
+lv_subject_t* BaseViewModel::report_request_subject() {
+    return report_request_subject_.native();
 }
 
 void BaseViewModel::request_trap(TrapRequest request) {

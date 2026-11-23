@@ -34,6 +34,7 @@ constexpr uint32_t kBatteryToastDurationMs = 5000;
 constexpr uint32_t kBlockToastDurationMs = 4000;
 constexpr uint32_t kUsbWifiToastDurationMs = 3000;
 constexpr uint32_t kWatchToastDurationMs = 4000;
+constexpr uint32_t kReportToastDurationMs = 3000;
 constexpr const char* kPagePathFull = "Too many pages open: go back first";
 
 bool is_soft_key(uint32_t key) {
@@ -95,6 +96,14 @@ void KeyController::show_watch_alert(const std::string& text) {
 
 void KeyController::show_trap_alert(const std::string& text) {
     toast_->show_highlighted("Trap: ", text, "", view::widgets::ToastTone::Warning, kWatchToastDurationMs);
+}
+
+void KeyController::show_report(bool saved, const std::string& text) {
+    if (saved) {
+        toast_->show_highlighted("Report saved: ", text, "", view::widgets::ToastTone::Default, kReportToastDurationMs);
+    } else {
+        toast_->show("Report not saved: " + text, view::widgets::ToastTone::Error, kReportToastDurationMs);
+    }
 }
 
 void KeyController::show_usb_wifi(const std::string& interface_name, bool connected) {
@@ -366,6 +375,10 @@ void KeyController::run_command_line() {
             return;
         case CommandAction::Tool:
             start_command_tool(result);
+            return;
+        case CommandAction::Report:
+            LOG_INFO("command: report");
+            view_model_.request_report();
             return;
         case CommandAction::None:
         case CommandAction::Error:

@@ -159,7 +159,7 @@ view::widgets::HelpContent WatchScreen::help_content() {
     return {"WATCH",
             {
                 {"ESC / 4", "Back (Watch goes on)"},
-                {"F / X", "Pick an alert"},
+                {"R", "Save a report for a PC"},
                 {"ENTER / 5", "What the alert means"},
                 {"6", "Watch, sends nothing"},
                 {"7", "Mark device as known"},
@@ -268,6 +268,10 @@ bool WatchScreen::on_key(uint32_t key) {
             return true;
         case LV_KEY_ENTER:
             toggle_detail();
+            return true;
+        case 'r':
+        case 'R':
+            view_model().request_report();
             return true;
         default:
             return false;

@@ -183,8 +183,8 @@ view::widgets::HelpContent HealthScreen::help_content() {
             {
                 {"6 twice", "Check network, sends"},
                 {"ENTER / 5", "What it means, the fix"},
-                {"Risk", "Fix this soon"},
-                {"Warn", "Worth a look"},
+                {"8 / R", "Save a report for a PC"},
+                {"Risk/Warn", "Fix soon / worth a look"},
                 {"Info", "Good to know"},
             }};
 }
@@ -206,7 +206,7 @@ view::widgets::SoftKeySet HealthScreen::soft_keys() {
         {"Info", [this] { toggle_detail(); }, false, false},
         {"Check", [this] { check_or_stop(); }, true},
         {},
-        {},
+        {"Save", [this] { save_report(); }},
     }};
 }
 
@@ -338,9 +338,21 @@ bool HealthScreen::on_key(uint32_t key) {
         case LV_KEY_ENTER:
             toggle_detail();
             return true;
+        case 'r':
+        case 'R':
+            save_report();
+            return true;
         default:
             return false;
     }
+}
+
+void HealthScreen::save_report() {
+    if (confirming_) {
+        cancel_confirm();  // like any other key: only cancels
+        return;
+    }
+    view_model().request_report();
 }
 
 void HealthScreen::build_content(lv_obj_t* content) {

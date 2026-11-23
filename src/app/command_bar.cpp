@@ -16,6 +16,7 @@ namespace {
 
 enum class CommandKind {
     Help,
+    Report,
     Theme,
     Mode,
     Page,
@@ -33,6 +34,7 @@ struct CommandSpec {
 // In the order TAB lists them.
 constexpr CommandSpec kCommands[] = {
     {"help", CommandKind::Help, model::AppPage::Home, model::ToolKind::Ping, nullptr},
+    {"report", CommandKind::Report, model::AppPage::Home, model::ToolKind::Ping, nullptr},
     {"theme", CommandKind::Theme, model::AppPage::Home, model::ToolKind::Ping, nullptr},
     {"mode", CommandKind::Mode, model::AppPage::Home, model::ToolKind::Ping, nullptr},
     {"home", CommandKind::Page, model::AppPage::Home, model::ToolKind::Ping, nullptr},
@@ -194,6 +196,7 @@ std::vector<std::string> argument_choices(const CommandSpec& command,
             }
             break;
         case CommandKind::Help:
+        case CommandKind::Report:
         case CommandKind::Page:
             break;
     }
@@ -270,6 +273,12 @@ CommandResult parse_command(std::string_view line, const model::HomeData& home) 
                 return error("Use: help");
             }
             result.action = CommandAction::Help;
+            return result;
+        case CommandKind::Report:
+            if (words.size() != 1) {
+                return error("Use: report");
+            }
+            result.action = CommandAction::Report;
             return result;
         case CommandKind::Theme: {
             if (words.size() != 2) {

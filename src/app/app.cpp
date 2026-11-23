@@ -31,6 +31,8 @@
 #include "theme_engine.h"
 #include "tool_controller.h"
 #include "trap_controller.h"
+#include "report_controller.h"
+#include "report_files.h"
 #include "watch_controller.h"
 #include "tool_runner.h"
 
@@ -683,6 +685,9 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override,
     // made-up on the Mac. Stopped right after the main loop, before Watch
     // and the data controller, so its redirect goes first.
     TrapController trap(view_model, platform::make_trap_runner(live_watch));
+    // Reports: saved into ~/Documents/LokiCTL/reports on the device; the
+    // simulator saves only into a folder named by LOKICTL_REPORT_DIR.
+    ReportController reports(view_model, platform::report_folder());
 
     ScreenManager screen_manager(view_model, assets, theme_engine);
     screen_manager.start();
@@ -727,6 +732,8 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override,
         key_controller.show_usb_wifi(interface_name, connected);
     });
     watch.set_alert_listener([&key_controller](const std::string& text) { key_controller.show_watch_alert(text); });
+    reports.set_listener(
+        [&key_controller](bool saved, const std::string& text) { key_controller.show_report(saved, text); });
     // Each connection to the trap also goes into Watch's log.
     trap.set_hit_listener([&watch, &key_controller](const std::string& message,
                                                     const std::vector<model::TrapHit>& fresh) {
@@ -765,6 +772,7 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override,
     tools.start();
     watch.start();
     trap.start();
+    reports.start();
     while (running && stop_signal == 0
 #if USE_DESKTOP
            && simulator_frame.process_events()
@@ -778,6 +786,8 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override,
     power.stop();
     // Then Remote view: the port closes and its thread ends.
     remote.stop();
+    reports.stop();
+    reports.set_listener({});
     tools.stop();
     trap.stop();
     trap.set_hit_listener({});

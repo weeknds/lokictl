@@ -90,6 +90,20 @@ built with the address and undefined-behaviour checkers) reads made-up
 LLDP and CDP frames: whole, cut short at every byte, with fields running
 past the end, hostile texts and random bytes, plus the Map's router, port
 and network words (`tests/topology_frames.cpp`).
+`build/darwin-arm64/Debug/lokictl_report_tests` (also run by `ctest`,
+with the same checkers) builds a report from made-up values with hostile
+texts in every field that comes from the network (`<script>`, quotes,
+broken UTF-8, a spreadsheet formula) and checks that the page and the
+devices table only ever show them as text, that the page loads and runs
+nothing and links only to https pages, and that saving, listing and
+reading keep to the reports folder with the right modes
+(`tests/report_checks.cpp`). Given a folder, it also leaves the page made
+from those values there (`report-hostile.html`) to open in a browser. The
+simulator and snapshots save reports only when `LOKICTL_REPORT_DIR` names a
+folder, for example
+`LOKICTL_REPORT_DIR=$PWD/build/reports lokictl --snapshot out.png --page
+health --keys 6,6,data,data,r --settle-ms 9000` saves one from the made-up
+health check.
 
 ## Screenshots without a window
 

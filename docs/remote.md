@@ -87,6 +87,13 @@ stays on the page, dimmed, under the message
 every 3 seconds. When Remote view ended and was switched on again,
 the page asks for the new code.
 
+### Reports
+
+Under the key pad, **Reports** lists the reports saved on the Cardputer
+(see the README), the newest first, as download links. The list is read
+when the page shows; **Show saved reports** reads it again. A report is
+handed out as a download, never shown as part of this page.
+
 ### From the command line
 
 `curl` can do the same (replace the address and code). A key needs the
@@ -96,6 +103,8 @@ the page asks for the new code.
 curl -c jar.txt -d code=482913 http://10.0.0.12:8780/pair
 curl -b jar.txt -o screen.png http://10.0.0.12:8780/screen.png
 curl -b jar.txt -H 'Origin: http://10.0.0.12:8780' -d k=c54 http://10.0.0.12:8780/key
+curl -b jar.txt http://10.0.0.12:8780/reports
+curl -b jar.txt -O -J 'http://10.0.0.12:8780/report?name=lokictl-20261123-075130.html'
 ```
 
 ## The REMOTE tag
@@ -175,6 +184,14 @@ nothing else on the device.
 - **A locked-down page.** The page loads nothing from anywhere else. Its
   `Content-Security-Policy` allows only its own script and style, pictures
   from the server's answers and requests to the server itself.
+- **Reports by name only.** A report is read only by a name exactly like
+  the ones LokiCTL makes (`lokictl-<date>-<time>.html` or
+  `...-devices.csv`), only from the reports folder, never through a link
+  and at most 4 MB; anything else gets 404. It needs the session cookie,
+  is sent as a download (`Content-Disposition: attachment`) and with a
+  `Content-Security-Policy` of `sandbox`, so even when opened it runs
+  nothing and can't reach this page. Its own page forbids scripts too, and
+  every text from the network in it is escaped.
 - **Small, strict requests.** One request per connection, a request head of
   at most 2 KB, a body of at most 64 bytes and 2 seconds to send them. The
   server runs on its own thread, so the device's screen never waits for it.
@@ -198,6 +215,8 @@ form too; the code from the Cardputer's screen still guards it.
 | `POST /pair` with the form body `code=NNNNNN` | `200` and the session cookie; `403` for a wrong code; `409` while a browser is paired |
 | `GET /screen.png?since=N` with the cookie | `204` while frame N is still the current one, otherwise `200` with the screen as a 320x170 PNG and `X-Frame: M`, the number of that frame; `401` without the cookie |
 | `POST /key` with the form body `k=<name>`, the cookie and `Origin: http://<address>:8780` | `204` when the key was taken; `400` for an unknown name; `401` without the cookie; `403` without that `Origin`; `429` when 16 keys wait or 20 came in the last second |
+| `GET /reports` with the cookie | `200` with the saved reports as JSON, the newest first, at most 40: `{"reports":[{"name":"lokictl-20261123-075130.html","bytes":21000},...]}`; `401` without the cookie |
+| `GET /report?name=<name>` with the cookie | `200` with that file as a download (`text/html` or `text/csv`); `404` for a name that is not a report's or a file that can't be read; `401` without the cookie |
 | anything else | `404` for another path, `405` for another method |
 
 Key names: `c32` to `c126` for a printable ASCII character by its code
@@ -231,6 +250,14 @@ code.
 
 The simulator's pictures, like the device's, show what lies over the page:
 help, messages, the panel and the `REMOTE` tag.
+
+The simulator lists and saves reports only when `LOKICTL_REPORT_DIR` names
+a folder (an absolute path), so it never writes into your own Documents
+folder:
+
+```sh
+LOKICTL_REMOTE=on LOKICTL_REPORT_DIR=$PWD/build/reports build/darwin-arm64/Debug/lokictl
+```
 
 The simulator never opens a hotspot address: key 7 changes the row there,
 but the server stays on `127.0.0.1` only.

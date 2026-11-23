@@ -35,6 +35,7 @@ enum class CommandAction {
     OpenPage, // open `page`
     Mode,     // switch to `mode` the way the Modes page does
     Tool,     // start `tool` on its page, on `target` when there is one
+    Report,   // save a report (BaseViewModel::request_report())
     Error,    // keep the bar open and show `message`
 };
 
@@ -48,8 +49,8 @@ struct CommandResult {
     std::string message;
 };
 
-// Reads one line: `help`, `theme <name>`, `mode <name>` (client, router or
-// share), a page name (`home`, `map`, `tools`, `discover`, `wifi`,
+// Reads one line: `help`, `report`, `theme <name>`, `mode <name>` (client,
+// router or share), a page name (`home`, `map`, `tools`, `discover`, `wifi`,
 // `status`, `settings`), or a tool: `ping`, `dns`, `trace` and `ports` with
 // an optional target, `scan` (Listen), `probe` and `speed`. Words are
 // separated by spaces and read without regard to case. As the target of
