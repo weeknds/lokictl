@@ -39,4 +39,17 @@ lv_subject_t* switch_request_subject();
 // Safe to call from key and click callbacks: it only counts the request.
 void request_switch();
 
+// Whether devices on LokiCTL's own hotspot may use Remote view too: 1 while
+// they may, else 0. Only app::RemoteController sets it; it is 0 whenever
+// Remote view is off, and never saved.
+lv_subject_t* hotspot_subject();
+bool hotspot_allowed();
+void set_hotspot_allowed(bool allowed);
+
+// Counts the requests to allow or stop allowing hotspot devices, like
+// switch_request_subject(). The controller only takes them while Remote
+// view is on.
+lv_subject_t* hotspot_request_subject();
+void request_hotspot();
+
 } // namespace platform::remote

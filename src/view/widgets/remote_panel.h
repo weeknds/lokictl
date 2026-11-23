@@ -23,6 +23,7 @@ namespace view::widgets {
 //
 //   REMOTE VIEW                    1:52 left
 //        Open http://10.0.0.12:8780
+//          or http://10.42.0.1:8780     (only while the hotspot side is open)
 //               482 913
 //
 // It can also show a short message instead (why Remote view could not
@@ -35,9 +36,12 @@ public:
 
     void build() override;
     // Shows `url` and the six-digit `code` (drawn as "482 913") with the
-    // code's time left. Calling it again with the same values redraws
-    // nothing.
-    void show_code(const std::string& url, const std::string& code, int32_t seconds_left);
+    // code's time left, and `hotspot_url` on a line of its own when it is
+    // not empty. Calling it again with the same values redraws nothing.
+    void show_code(const std::string& url,
+                   const std::string& hotspot_url,
+                   const std::string& code,
+                   int32_t seconds_left);
     // Shows `message` in place of the address and the code.
     void show_message(const std::string& message);
     void hide();
@@ -54,6 +58,9 @@ private:
     lv_obj_t* address_row_{nullptr};
     lv_obj_t* open_{nullptr};
     lv_obj_t* url_{nullptr};
+    lv_obj_t* hotspot_row_{nullptr};
+    lv_obj_t* or_{nullptr};
+    lv_obj_t* hotspot_url_{nullptr};
     lv_obj_t* code_{nullptr};
     lv_obj_t* message_{nullptr};
 };

@@ -687,17 +687,21 @@ opens the key test page.
 `settings` is the Settings page, which key 6 (`SETUP`) on the home page
 opens. It holds the theme picker (one row per theme, with the theme's
 name, four small squares in its colours and a tick on the theme that is
-active) and, below it, the row "Dim when idle" with `on` or `off` (see
-[Battery care](data.md#battery-care)).
+active), below it the row "Dim when idle" with `on` or `off` (see
+[Battery care](data.md#battery-care)) and last the row "Remote view" (see
+[Remote view](#remote-view) below).
 
 | Key | What it does |
 |---|---|
 | `f`/`x` or up/down | move the highlight; it stops at the first and the last row |
 | `Enter` or `6` USE | switches to the highlighted theme and saves it; `USE` is switched off while the highlight is on the active theme, and picking that theme does nothing |
 | `Enter` or `6` OFF / ON | on the "Dim when idle" row: switches dimming off or on and saves it |
+| `Enter` or `6` ON / OFF | on the "Remote view" row: switches Remote view on or off (never saved) |
+| `7` +AP / -AP | on the "Remote view" row, while it is on: lets devices on LokiCTL's own hotspot in too, or stops that; dimmed while Remote view is off |
 | `4` BACK or a short ESC | goes back to the home page |
 
-Left and right and the keys 5, 7 and 8 do nothing here. The highlight starts
+Left and right and the keys 5 and 8 do nothing here, and key 7 does
+nothing on the other rows. The highlight starts
 on the active theme each time the page is opened, and a theme switch leaves
 it where it was (see
 [Keep a page's state in the view model](#keep-a-pages-state-in-the-view-model)).
@@ -708,6 +712,36 @@ a moment later, after the key has been handled. The switch builds the
 Settings page again in the new theme, so the page never deletes itself.
 [Switching while the app runs](themes.md#switching-while-the-app-runs) in
 themes.md describes each step.
+
+## Remote view
+
+Remote view shows the screen in a web browser on another computer and
+takes keys from there; [remote.md](remote.md) describes it in full, with
+its security model. It is not a page: it lives in its own module
+(`src/platform/remote/`, `app::RemoteController`) and shows on the
+Settings page's last row, a panel and a tag on LVGL's top layer.
+
+- **The row** reads `off`, `on` (the panel shows the address and a one-time
+  code), `viewed` (a browser is paired), and `on + hotspot` or
+  `viewed + hotspot` while devices on LokiCTL's own hotspot may use it too.
+  Every start reads `off`; nothing about it is saved.
+- **Keys 6 and 7 only ask.** Key 6 (or Enter) calls
+  `platform::remote::request_switch()` and key 7 calls
+  `request_hotspot()`; the controller acts a moment later, outside the key
+  callback, the same way theme switches are deferred. Key 7 only works
+  while Remote view is on, and switching off always clears the hotspot
+  choice.
+- **Keys from the browser** take the same path as a key pressed on the
+  Cardputer (see [The order in which a key is handled](#the-order-in-which-a-key-is-handled)):
+  the controller presses one waiting key per 30 ms timer tick through
+  `platform::inject_key()`, press and release together. So the wake-up
+  rule, help, the soft keys, the F/X/Z/C arrows and typing mode all apply,
+  and no browser key is ever a long press: a held ESC and fn+J stay on the
+  Cardputer.
+- **The `REMOTE` tag** in the top-left corner shows on every page while a
+  browser is paired. Pages need not leave room for it: it covers only the
+  app name (or the home page's first pane title) and leaves the clock and
+  the battery free.
 
 ## Adding a page
 

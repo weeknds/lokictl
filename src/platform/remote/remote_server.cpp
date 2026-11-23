@@ -7,6 +7,7 @@
 #include "remote/remote_server.h"
 
 #include "network.h"
+#include "remote/remote_addresses.h"
 #include "remote/remote_http.h"
 #include "remote/remote_keys.h"
 #include "remote/remote_page.h"
@@ -15,7 +16,6 @@
 #include <cerrno>
 #include <chrono>
 #include <fcntl.h>
-#include <ifaddrs.h>
 #include <netinet/in.h>
 #include <poll.h>
 #include <sys/socket.h>
@@ -67,20 +67,43 @@ void no_sigpipe(int fd) {
 #endif
 }
 
-// 10/8, 172.16/12 and 192.168/16.
-bool private_address(uint32_t address) {
-    return (address & 0xFF000000U) == 0x0A000000U || (address & 0xFFF00000U) == 0xAC100000U ||
-           (address & 0xFFFF0000U) == 0xC0A80000U;
+// Opens a listening socket on `address` (host byte order) and `port`.
+// Returns the socket, or -1 with `error` set to the errno of the step that
+// failed.
+int open_listener(uint32_t address, uint16_t port, int& error) {
+#if defined(__linux__)
+    const int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
+#else
+    const int fd = ::socket(AF_INET, SOCK_STREAM, 0);
+#endif
+    if (fd < 0) {
+        error = errno;
+        return -1;
+    }
+    set_cloexec_nonblocking(fd);
+    int on = 1;
+    ::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
+
+    sockaddr_in bind_address{};
+    bind_address.sin_family = AF_INET;
+    bind_address.sin_port = htons(port);
+    bind_address.sin_addr.s_addr = htonl(address);
+    // With SO_REUSEADDR a clash with another listener can also show up at
+    // listen().
+    if (::bind(fd, reinterpret_cast<const sockaddr*>(&bind_address), sizeof(bind_address)) != 0 ||
+        ::listen(fd, kListenBacklog) != 0) {
+        error = errno;
+        ::close(fd);
+        return -1;
+    }
+    return fd;
 }
 
-std::string address_text(uint32_t address) {
-    in_addr value{};
-    value.s_addr = htonl(address);
-    char text[INET_ADDRSTRLEN] = {};
-    if (!::inet_ntop(AF_INET, &value, text, sizeof(text))) {
-        return {};
+void close_side(int& fd) {
+    if (fd >= 0) {
+        ::close(fd);
+        fd = -1;
     }
-    return text;
 }
 
 enum class Wait { Ready, Timeout, Stop };
@@ -224,14 +247,25 @@ ServerStatus Server::status() const {
     return status_;
 }
 
+void Server::set_hotspot_interface(const std::string& interface_name) {
+    std::lock_guard<std::mutex> lock(hotspot_mutex_);
+    hotspot_interface_ = interface_name;
+}
+
 void Server::finish(StopReason reason) {
     {
         std::lock_guard<std::mutex> lock(status_mutex_);
         status_.phase = ServerPhase::Stopped;
         status_.reason = reason;
         status_.code.clear();
+        status_.hotspot_url.clear();
     }
     finished_.store(true);
+}
+
+void Server::publish_hotspot_url(const std::string& url) {
+    std::lock_guard<std::mutex> lock(status_mutex_);
+    status_.hotspot_url = url;
 }
 
 void Server::publish(const Pairing& pairing) {
@@ -243,12 +277,11 @@ void Server::publish(const Pairing& pairing) {
     }
 }
 
-StopReason Server::find_address(Address& address) const {
+StopReason Server::find_address(InterfaceAddress& address) const {
     if (options_.loopback_only) {
+        address.interface_name = "lo";
         address.address = kLoopback;
         address.netmask = 0xFFFFFFFFU;
-        address.text = "127.0.0.1";
-        address.interface_name = "lo";
         return StopReason::None;
     }
 
@@ -256,96 +289,86 @@ StopReason Server::find_address(Address& address) const {
     if (reading.interface_name.empty() || reading.address.empty()) {
         return StopReason::NoNetwork;
     }
-
-    ifaddrs* list = nullptr;
-    if (::getifaddrs(&list) != 0) {
-        return StopReason::NoNetwork;
-    }
-    StopReason result = StopReason::NoNetwork;
-    for (const ifaddrs* entry = list; entry; entry = entry->ifa_next) {
-        if (!entry->ifa_addr || !entry->ifa_netmask || entry->ifa_addr->sa_family != AF_INET ||
-            !entry->ifa_name || reading.interface_name != entry->ifa_name) {
+    for (const InterfaceAddress& entry : system_addresses()) {
+        if (entry.interface_name != reading.interface_name || address_text(entry.address) != reading.address) {
             continue;
         }
-        sockaddr_in own{};
-        sockaddr_in mask{};
-        std::memcpy(&own, entry->ifa_addr, sizeof(own));
-        std::memcpy(&mask, entry->ifa_netmask, sizeof(mask));
-        const uint32_t value = ntohl(own.sin_addr.s_addr);
-        if (address_text(value) != reading.address) {
-            continue;
+        if (!private_address(entry.address)) {
+            return StopReason::NotPrivate;
         }
-        if (!private_address(value)) {
-            result = StopReason::NotPrivate;
-            break;
-        }
-        address.address = value;
-        address.netmask = ntohl(mask.sin_addr.s_addr);
-        address.text = reading.address;
-        address.interface_name = reading.interface_name;
-        result = StopReason::None;
-        break;
+        address = entry;
+        return StopReason::None;
     }
-    ::freeifaddrs(list);
-    return result;
+    return StopReason::NoNetwork;
 }
 
 void Server::run() {
-    Address address;
-    const StopReason found = find_address(address);
+    Side sides[kSideCount];
+    const StopReason found = find_address(sides[kUplinkSide].address);
     if (found != StopReason::None) {
         finish(found);
         return;
     }
 
-#if defined(__linux__)
-    int listen_fd = ::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
-#else
-    int listen_fd = ::socket(AF_INET, SOCK_STREAM, 0);
-#endif
-    if (listen_fd < 0) {
-        finish(StopReason::StartFailed);
-        return;
-    }
-    set_cloexec_nonblocking(listen_fd);
-    int on = 1;
-    ::setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
-
-    sockaddr_in bind_address{};
-    bind_address.sin_family = AF_INET;
-    bind_address.sin_port = htons(options_.port);
-    bind_address.sin_addr.s_addr = htonl(address.address);
-    if (::bind(listen_fd, reinterpret_cast<const sockaddr*>(&bind_address), sizeof(bind_address)) != 0) {
-        const int error = errno;
-        ::close(listen_fd);
+    int error = 0;
+    sides[kUplinkSide].fd = open_listener(sides[kUplinkSide].address.address, options_.port, error);
+    if (sides[kUplinkSide].fd < 0) {
         finish(error == EADDRINUSE      ? StopReason::PortBusy
                : error == EADDRNOTAVAIL ? StopReason::NoNetwork
                                         : StopReason::StartFailed);
         return;
     }
-    // With SO_REUSEADDR a clash with another listener can also show up here.
-    if (::listen(listen_fd, kListenBacklog) != 0) {
-        const int error = errno;
-        ::close(listen_fd);
-        finish(error == EADDRINUSE ? StopReason::PortBusy : StopReason::StartFailed);
-        return;
-    }
+    sides[kUplinkSide].host = address_text(sides[kUplinkSide].address.address) + ":" + std::to_string(options_.port);
 
-    const StopReason reason = serve(address, listen_fd);
-    ::close(listen_fd);
+    const StopReason reason = serve(sides);
+    for (Side& side : sides) {
+        close_side(side.fd);
+    }
     finish(reason);
 }
 
-StopReason Server::serve(const Address& address, int listen_fd) {
+bool Server::update_hotspot_side(Side (&sides)[kSideCount], const std::string& wanted, const Pairing& pairing) {
+    InterfaceAddress pick;
+    const bool found = !wanted.empty() && pick_hotspot_address(system_addresses(), wanted, sides[kUplinkSide].address, pick);
+
+    Side& hotspot = sides[kHotspotSide];
+    if (hotspot.fd >= 0) {
+        if (found && pick.interface_name == hotspot.address.interface_name && pick.address == hotspot.address.address &&
+            pick.netmask == hotspot.address.netmask) {
+            return true; // open where it should be
+        }
+        close_side(hotspot.fd);
+        hotspot.host.clear();
+        publish_hotspot_url({});
+        if (paired_side_ == kHotspotSide && pairing.paired()) {
+            return false;
+        }
+    }
+    if (!found) {
+        return true;
+    }
+    int error = 0;
+    hotspot.fd = open_listener(pick.address, options_.port, error);
+    if (hotspot.fd < 0) {
+        return true; // tried again at the next check
+    }
+    hotspot.address = pick;
+    hotspot.host = address_text(pick.address) + ":" + std::to_string(options_.port);
+    publish_hotspot_url("http://" + hotspot.host);
+    return true;
+}
+
+StopReason Server::serve(Side (&sides)[kSideCount]) {
     Pairing pairing(now_ms());
     if (pairing.ended() != Pairing::End::None) {
         return StopReason::StartFailed;
     }
-    expected_host_ = address.text + ":" + std::to_string(options_.port);
+    paired_side_ = -1;
     {
         std::lock_guard<std::mutex> lock(status_mutex_);
         status_.phase = ServerPhase::Listening;
-        status_.url = "http://" + expected_host_;
+        status_.url = "http://" + sides[kUplinkSide].host;
+        status_.hotspot_url.clear();
         status_.code = pairing.code();
         status_.code_deadline_ms = pairing.code_deadline_ms();
         status_.wrong_codes = 0;
@@ -353,6 +376,8 @@ StopReason Server::serve(const Address& address, int listen_fd) {
 
     FrameCache frames(*frames_);
     int64_t next_address_check = now_ms() + kAddressCheckMs;
+    int64_t next_hotspot_check = 0;
+    std::string hotspot_seen;
     for (;;) {
         if (stop_.load()) {
             return StopReason::Asked;
@@ -371,53 +396,89 @@ StopReason Server::serve(const Address& address, int listen_fd) {
                 return StopReason::StartFailed;
         }
         if (!options_.loopback_only && now >= next_address_check) {
-            Address current;
-            if (find_address(current) != StopReason::None || current.address != address.address ||
-                current.netmask != address.netmask || current.interface_name != address.interface_name) {
+            InterfaceAddress current;
+            const InterfaceAddress& own = sides[kUplinkSide].address;
+            if (find_address(current) != StopReason::None || current.address != own.address ||
+                current.netmask != own.netmask || current.interface_name != own.interface_name) {
                 return StopReason::AddressChanged;
             }
             next_address_check = now + kAddressCheckMs;
         }
+        if (!options_.loopback_only) {
+            std::string wanted;
+            {
+                std::lock_guard<std::mutex> lock(hotspot_mutex_);
+                wanted = hotspot_interface_;
+            }
+            // Every 2 s while a hotspot interface is named or the side is
+            // open, and at once when the name changed.
+            const bool check_due = (!wanted.empty() || sides[kHotspotSide].fd >= 0) && now >= next_hotspot_check;
+            if (wanted != hotspot_seen || check_due) {
+                hotspot_seen = wanted;
+                next_hotspot_check = now + kAddressCheckMs;
+                if (!update_hotspot_side(sides, wanted, pairing)) {
+                    return StopReason::HotspotClosed;
+                }
+            }
+        }
 
-        pollfd fds[2] = {{listen_fd, POLLIN, 0}, {wake_read_, POLLIN, 0}};
-        const int ready = ::poll(fds, 2, kIdlePollMs);
+        pollfd fds[kSideCount + 1] = {};
+        int side_of[kSideCount + 1] = {};
+        nfds_t count = 0;
+        for (int side = 0; side < kSideCount; ++side) {
+            if (sides[side].fd >= 0) {
+                fds[count] = {sides[side].fd, POLLIN, 0};
+                side_of[count] = side;
+                ++count;
+            }
+        }
+        const nfds_t wake_index = count;
+        fds[count++] = {wake_read_, POLLIN, 0};
+        const int ready = ::poll(fds, count, kIdlePollMs);
         if (ready < 0 && errno != EINTR) {
             return StopReason::StartFailed;
         }
-        if (ready <= 0 || fds[1].revents != 0) {
+        if (ready <= 0 || fds[wake_index].revents != 0) {
             continue;
         }
 
-        sockaddr_in peer{};
-        socklen_t peer_size = sizeof(peer);
+        for (nfds_t index = 0; index < wake_index; ++index) {
+            if (fds[index].revents == 0) {
+                continue;
+            }
+            const int side = side_of[index];
+            const Side& own = sides[side];
+            sockaddr_in peer{};
+            socklen_t peer_size = sizeof(peer);
 #if defined(__linux__)
-        const int fd = ::accept4(listen_fd, reinterpret_cast<sockaddr*>(&peer), &peer_size, SOCK_CLOEXEC | SOCK_NONBLOCK);
+            const int fd = ::accept4(own.fd, reinterpret_cast<sockaddr*>(&peer), &peer_size, SOCK_CLOEXEC | SOCK_NONBLOCK);
 #else
-        const int fd = ::accept(listen_fd, reinterpret_cast<sockaddr*>(&peer), &peer_size);
+            const int fd = ::accept(own.fd, reinterpret_cast<sockaddr*>(&peer), &peer_size);
 #endif
-        if (fd < 0) {
-            continue;
-        }
-        set_cloexec_nonblocking(fd);
-        no_sigpipe(fd);
+            if (fd < 0) {
+                continue;
+            }
+            set_cloexec_nonblocking(fd);
+            no_sigpipe(fd);
 
-        // Only peers on the same network as the address: Linux also takes
-        // packets for this address that arrive on another interface (the
-        // hotspot side), so the bind alone does not keep them out.
-        const uint32_t peer_address = ntohl(peer.sin_addr.s_addr);
-        const bool allowed = peer.sin_family == AF_INET &&
-                             (options_.loopback_only
-                                  ? peer_address == kLoopback
-                                  : (peer_address & address.netmask) == (address.address & address.netmask));
-        if (allowed) {
-            handle_connection(fd, pairing, frames);
-            publish(pairing);
+            // Only peers on the same network as this side's address: Linux
+            // also takes packets for an address that arrive on another
+            // interface (the hotspot side for the uplink's address, and the
+            // other way round), so the bind alone does not keep them out.
+            const uint32_t peer_address = ntohl(peer.sin_addr.s_addr);
+            const bool allowed = peer.sin_family == AF_INET &&
+                                 (options_.loopback_only ? peer_address == kLoopback
+                                                         : in_subnet(peer_address, own.address));
+            if (allowed) {
+                handle_connection(fd, side, own, pairing, frames);
+                publish(pairing);
+            }
+            ::close(fd);
         }
-        ::close(fd);
     }
 }
 
-void Server::handle_connection(int fd, Pairing& pairing, FrameCache& frames) {
+void Server::handle_connection(int fd, int side, const Side& own, Pairing& pairing, FrameCache& frames) {
     const int64_t deadline = now_ms() + kRequestTimeoutMs;
 
     // Read the head, then the body, never more than both limits together.
@@ -469,7 +530,7 @@ void Server::handle_connection(int fd, Pairing& pairing, FrameCache& frames) {
     const std::string_view body = std::string_view(data).substr(head_size, request.content_length);
     const int64_t now = now_ms();
 
-    if (request.host != expected_host_) {
+    if (request.host != own.host) {
         send_text(fd, 421, "wrong host\n", wake_read_, deadline);
         return;
     }
@@ -493,11 +554,11 @@ void Server::handle_connection(int fd, Pairing& pairing, FrameCache& frames) {
         // Only the page itself may send keys: the browser names the page's
         // origin. Checked before the cookie, so a refused request is no
         // sign of life.
-        if (request.origin != "http://" + expected_host_) {
+        if (request.origin != "http://" + own.host) {
             send_text(fd, 403, "wrong origin\n", wake_read_, deadline);
             return;
         }
-        if (!pairing.check_token(cookie_value(request.cookie, kCookieName), now)) {
+        if (side != paired_side_ || !pairing.check_token(cookie_value(request.cookie, kCookieName), now)) {
             send_text(fd, 401, "pair first\n", wake_read_, deadline);
             return;
         }
@@ -525,6 +586,7 @@ void Server::handle_connection(int fd, Pairing& pairing, FrameCache& frames) {
         const Pairing::Attempt attempt = found ? pairing.try_code(code, now, token) : pairing.count_wrong(now);
         switch (attempt) {
             case Pairing::Attempt::Paired: {
+                paired_side_ = side;
                 const std::string cookie = std::string("Set-Cookie: ") + kCookieName + "=" + token +
                                            "; HttpOnly; SameSite=Strict; Path=/\r\n";
                 send_text(fd, 200, "paired\n", wake_read_, deadline, cookie);
@@ -546,7 +608,7 @@ void Server::handle_connection(int fd, Pairing& pairing, FrameCache& frames) {
             send_text(fd, 405, "method not allowed\n", wake_read_, deadline, "Allow: GET\r\n");
             return;
         }
-        if (!pairing.check_token(cookie_value(request.cookie, kCookieName), now)) {
+        if (side != paired_side_ || !pairing.check_token(cookie_value(request.cookie, kCookieName), now)) {
             send_text(fd, 401, "pair first\n", wake_read_, deadline);
             return;
         }

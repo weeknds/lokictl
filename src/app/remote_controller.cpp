@@ -6,8 +6,10 @@
 
 #include "remote_controller.h"
 
+#include "base_viewmodel.h"
 #include "linux_input.h"
 #include "logger.h"
+#include "mode_switch.h"
 #include "remote/remote_frames.h"
 #include "remote/remote_keys.h"
 #include "remote/remote_pairing.h"
@@ -73,6 +75,8 @@ const char* stop_text(StopReason reason) {
             return "no request from the browser for 10 minutes";
         case StopReason::AddressChanged:
             return "the address went away or changed";
+        case StopReason::HotspotClosed:
+            return "the hotspot side closed";
     }
     return "switched off";
 }
@@ -118,8 +122,9 @@ void blend_over(lv_draw_buf_t* base, const lv_draw_buf_t* top) {
 
 } // namespace
 
-RemoteController::RemoteController(view::ThemeEngine& theme_engine)
-    : panel_(std::make_unique<view::widgets::RemotePanel>(lv_layer_top(), theme_engine)),
+RemoteController::RemoteController(view::ThemeEngine& theme_engine, const viewmodel::BaseViewModel& view_model)
+    : view_model_(view_model),
+      panel_(std::make_unique<view::widgets::RemotePanel>(lv_layer_top(), theme_engine)),
       mark_(std::make_unique<view::widgets::RemoteMark>(lv_layer_top(), theme_engine)),
       keys_(std::make_unique<platform::remote::KeyQueue>()) {
     panel_->build();
@@ -130,6 +135,9 @@ RemoteController::RemoteController(view::ThemeEngine& theme_engine)
     // first makes that call a no-op.
     requests_seen_ = lv_subject_get_int(requests);
     request_observer_ = lv_subject_add_observer(requests, request_cb, this);
+    lv_subject_t* hotspot_requests = platform::remote::hotspot_request_subject();
+    hotspot_requests_seen_ = lv_subject_get_int(hotspot_requests);
+    hotspot_observer_ = lv_subject_add_observer(hotspot_requests, hotspot_request_cb, this);
 
     timer_ = lv_timer_create(timer_cb, kTimerPeriodMs, this);
     if (timer_) {
@@ -140,6 +148,7 @@ RemoteController::RemoteController(view::ThemeEngine& theme_engine)
         lv_timer_pause(key_timer_);
     }
     platform::remote::set_view_state(ViewState::Off);
+    platform::remote::set_hotspot_allowed(false);
 
 #if USE_DESKTOP
     const char* value = std::getenv(kRemoteVariable);
@@ -165,6 +174,10 @@ void RemoteController::stop() {
     if (request_observer_) {
         lv_observer_remove(request_observer_);
         request_observer_ = nullptr;
+    }
+    if (hotspot_observer_) {
+        lv_observer_remove(hotspot_observer_);
+        hotspot_observer_ = nullptr;
     }
     if (timer_) {
         lv_timer_delete(timer_);
@@ -194,6 +207,7 @@ void RemoteController::stop() {
 
     panel_.reset();
     mark_.reset();
+    set_hotspot(false, false);
     platform::remote::set_view_state(ViewState::Off);
 }
 
@@ -208,14 +222,32 @@ void RemoteController::request_cb(lv_observer_t* observer, lv_subject_t* subject
     }
     controller->requests_pending_ += count - controller->requests_seen_;
     controller->requests_seen_ = count;
+    controller->schedule_apply();
+}
 
+void RemoteController::hotspot_request_cb(lv_observer_t* observer, lv_subject_t* subject) {
+    auto* controller = static_cast<RemoteController*>(lv_observer_get_user_data(observer));
+    if (!controller || controller->stopped_) {
+        return;
+    }
+    const int32_t count = lv_subject_get_int(subject);
+    if (count == controller->hotspot_requests_seen_) {
+        return;
+    }
+    controller->hotspot_requests_pending_ += count - controller->hotspot_requests_seen_;
+    controller->hotspot_requests_seen_ = count;
+    controller->schedule_apply();
+}
+
+void RemoteController::schedule_apply() {
     // The request arrives inside a key callback; the switch runs a moment
     // later from lv_timer_handler(), like a theme switch.
-    if (!controller->apply_scheduled_) {
-        controller->apply_scheduled_ = lv_async_call(apply_requests_async, controller) == LV_RESULT_OK;
-        if (!controller->apply_scheduled_) {
+    if (!apply_scheduled_) {
+        apply_scheduled_ = lv_async_call(apply_requests_async, this) == LV_RESULT_OK;
+        if (!apply_scheduled_) {
             LOG_ERROR("remote view: could not schedule the switch");
-            controller->requests_pending_ = 0;
+            requests_pending_ = 0;
+            hotspot_requests_pending_ = 0;
         }
     }
 }
@@ -231,15 +263,58 @@ void RemoteController::apply_requests() {
     apply_scheduled_ = false;
     // Two presses before the switch ran cancel each other out.
     const bool toggle = requests_pending_ % 2 != 0;
+    const bool toggle_hotspot = hotspot_requests_pending_ % 2 != 0;
     requests_pending_ = 0;
-    if (!toggle || stopped_) {
+    hotspot_requests_pending_ = 0;
+    if (stopped_) {
         return;
     }
-    if (server_) {
-        switch_off();
-    } else {
-        switch_on();
+    if (toggle) {
+        if (server_) {
+            switch_off();
+        } else {
+            switch_on();
+        }
     }
+    // Hotspot devices can only be allowed while Remote view is on.
+    if (toggle_hotspot && server_) {
+        set_hotspot(!hotspot_allowed_, true);
+        resume_timer();
+    }
+}
+
+void RemoteController::set_hotspot(bool allowed, bool log) {
+    if (allowed == hotspot_allowed_) {
+        return;
+    }
+    hotspot_allowed_ = allowed;
+    platform::remote::set_hotspot_allowed(allowed);
+    if (!allowed && server_) {
+        server_->set_hotspot_interface({});
+    }
+    if (log) {
+        LOG_INFO("remote view: hotspot devices {}", allowed ? "allowed" : "not allowed");
+    }
+}
+
+std::string RemoteController::hotspot_interface() const {
+    if (!hotspot_allowed_) {
+        return {};
+    }
+    const model::HomeData& home = view_model_.home();
+    if (home.sample || !home.ap_active) {
+        return {};
+    }
+    switch (home.mode) {
+        case model::NetMode::Router:
+            return platform::kHotspotInterface;
+        case model::NetMode::Share:
+            return platform::kShareInterface;
+        case model::NetMode::Client:
+        case model::NetMode::Vpn:
+            break;
+    }
+    return {};
 }
 
 void RemoteController::switch_on() {
@@ -256,6 +331,8 @@ void RemoteController::switch_on() {
     }
     message_shown_ = false;
     keys_->clear();
+    set_hotspot(false, false);
+    hotspot_open_seen_ = false;
 
     platform::remote::ServerOptions options;
     options.keys = keys_.get();
@@ -288,6 +365,8 @@ void RemoteController::switch_off() {
     retiring_ = std::move(server_);
     hand_off_ = nullptr;
     run_key_timer(false);
+    set_hotspot(false, false);
+    hotspot_open_seen_ = false;
     if (panel_) {
         panel_->hide();
     }
@@ -362,7 +441,13 @@ void RemoteController::poll() {
     }
 
     if (server_) {
+        server_->set_hotspot_interface(hotspot_interface());
         const ServerStatus status = server_->status();
+        const bool hotspot_open = !status.hotspot_url.empty();
+        if (hotspot_open != hotspot_open_seen_ && status.phase != ServerPhase::Stopped) {
+            hotspot_open_seen_ = hotspot_open;
+            LOG_INFO("remote view: hotspot side {}", hotspot_open ? "open" : "closed");
+        }
         if (status.wrong_codes > wrong_codes_seen_) {
             wrong_codes_seen_ = status.wrong_codes;
             LOG_INFO("remote view: wrong code ({} of {})",
@@ -386,7 +471,10 @@ void RemoteController::poll() {
                 }
                 const int64_t left_ms = status.code_deadline_ms - Server::now_ms();
                 if (panel_) {
-                    panel_->show_code(status.url, status.code, static_cast<int32_t>((left_ms + 999) / 1000));
+                    panel_->show_code(status.url,
+                                      status.hotspot_url,
+                                      status.code,
+                                      static_cast<int32_t>((left_ms + 999) / 1000));
                 }
                 if (mark_) {
                     mark_->hide();
@@ -429,6 +517,8 @@ void RemoteController::poll() {
                 hand_off_ = nullptr;
                 server_.reset();
                 run_key_timer(false);
+                set_hotspot(false, false);
+                hotspot_open_seen_ = false;
                 platform::remote::set_view_state(ViewState::Off);
                 break;
             }

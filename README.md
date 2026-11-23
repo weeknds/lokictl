@@ -28,6 +28,13 @@ CardputerZero. From your computer, `scripts/device.sh` installs and starts it
 on the device, saves what the device's screen shows, presses keys on the
 device and reports memory and CPU use (see [Run on a device](#run-on-a-device)).
 
+**Remote view** shows the Cardputer's screen in a web browser on another
+computer on the same network and takes key presses from there. It is off at
+every start; you switch it on on the Settings page, and the browser needs a
+one-time code from the Cardputer's screen. Devices on LokiCTL's own hotspot
+can be let in too, each time, with one more key. How it works and how it is
+kept private: [docs/remote.md](docs/remote.md).
+
 ## Build and run the simulator (macOS)
 
 You need the Xcode command-line tools (`xcode-select --install`), CMake 3.31 or
@@ -195,8 +202,8 @@ The app has 26 pages. `--list-pages` prints them in this order:
 
 - `home`, the home page, where the app starts (see
   [docs/home.md](docs/home.md));
-- `settings`, the Settings page with the theme picker and the "Dim when
-  idle" switch, which the home page opens;
+- `settings`, the Settings page with the theme picker, the "Dim when
+  idle" switch and the "Remote view" row, which the home page opens;
 - `status`, the Status page with every detail (ports, DNS, battery,
   device), which the home page's key 8 opens (see
   [docs/navigation.md](docs/navigation.md#the-status-page));

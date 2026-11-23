@@ -60,24 +60,30 @@ const char* dimming_text(bool on) {
 }
 
 // The Remote view row's name, and its value for each state: "on" while the
-// Cardputer shows the code, "viewed" while a browser is paired. It is never
-// saved, so every start reads "off".
+// Cardputer shows the code, "viewed" while a browser is paired, each with
+// " + hotspot" while hotspot devices may use it too. It is never saved, so
+// every start reads "off".
 constexpr const char* kRemoteRowName = "Remote view";
 
-const char* remote_text(platform::remote::ViewState state) {
+const char* remote_text(platform::remote::ViewState state, bool hotspot) {
     switch (state) {
         case platform::remote::ViewState::Waiting:
-            return "on";
+            return hotspot ? "on + hotspot" : "on";
         case platform::remote::ViewState::Viewed:
-            return "viewed";
+            return hotspot ? "viewed + hotspot" : "viewed";
         case platform::remote::ViewState::Off:
             break;
     }
     return "off";
 }
 
-// Index 2 of the soft-key set is key 6.
+const char* remote_text() {
+    return remote_text(platform::remote::view_state(), platform::remote::hotspot_allowed());
+}
+
+// Index 2 of the soft-key set is key 6, index 3 key 7.
 constexpr std::size_t kUseKeyIndex = 2;
+constexpr std::size_t kHotspotKeyIndex = 3;
 
 lv_obj_t* plain_object(lv_obj_t* parent) {
     auto* obj = lv_obj_create(parent);
@@ -128,6 +134,20 @@ view::widgets::SoftKey switch_key(viewmodel::BaseViewModel& view_model) {
 view::widgets::SoftKey remote_key() {
     return {platform::remote::view_state() == platform::remote::ViewState::Off ? "On" : "Off",
             [] { platform::remote::request_switch(); }};
+}
+
+// Key 7 while the highlight is on the Remote view row: "+AP" allows devices
+// on LokiCTL's own hotspot too, "-AP" stops that. It only works while
+// Remote view is on (dimmed while off) and only asks, like key 6. Other
+// rows leave key 7 unused.
+view::widgets::SoftKey hotspot_key(int32_t selected) {
+    if (selected != kRemoteRow) {
+        return {};
+    }
+    return {platform::remote::hotspot_allowed() ? "-AP" : "+AP",
+            [] { platform::remote::request_hotspot(); },
+            false,
+            platform::remote::view_state() != platform::remote::ViewState::Off};
 }
 
 // Key 6 for the highlighted row.
@@ -202,7 +222,7 @@ view::widgets::SoftKeySet SettingsScreen::soft_keys() {
         back_key(view_model),
         {},
         row_key(view_model, selected_row(), active_row()),
-        {},
+        hotspot_key(selected_row()),
         {},
     }};
 }
@@ -246,6 +266,7 @@ view::widgets::HelpContent SettingsScreen::help() const {
                 {"F / X", "Up / down"},
                 {"ENTER / 6", "Use or switch"},
                 {"REMOTE", "Screen in a web browser"},
+                {"7", "Hotspot devices too"},
             }};
 }
 
@@ -296,25 +317,26 @@ void SettingsScreen::build_content(lv_obj_t* content) {
     lv_obj_set_size(remote_row, LV_PCT(100), kRowHeight);
     auto* remote_name = plain_label(remote_row, kRemoteRowName);
     lv_obj_align(remote_name, LV_ALIGN_LEFT_MID, theme.metrics.space_sm, 0);
-    auto* remote_value = plain_label(remote_row, remote_text(platform::remote::view_state()));
+    auto* remote_value = plain_label(remote_row, remote_text());
     lv_obj_align(remote_value, LV_ALIGN_RIGHT_MID, -theme.metrics.space_sm, 0);
-    lv_subject_add_observer_obj(
-        platform::remote::state_subject(),
-        [](lv_observer_t* observer, lv_subject_t* /*subject*/) {
-            auto* value = lv_observer_get_target_obj(observer);
-            auto* screen = static_cast<SettingsScreen*>(lv_observer_get_user_data(observer));
-            if (!value || !screen) {
-                return;
-            }
-            lv_label_set_text(value, remote_text(platform::remote::view_state()));
-            // Key 6 reads On or Off on the Remote view row.
-            auto* bar = screen->soft_key_bar();
-            if (bar && screen->selected_row() == kRemoteRow) {
-                bar->set_key(kUseKeyIndex, remote_key());
-            }
-        },
-        remote_value,
-        this);
+    // The value follows both of the module's subjects (the state and the
+    // hotspot choice); keys 6 and 7 follow them while the highlight is on
+    // this row. The observers are bound to the value's label.
+    const lv_observer_cb_t remote_observer = [](lv_observer_t* observer, lv_subject_t* /*subject*/) {
+        auto* value = lv_observer_get_target_obj(observer);
+        auto* screen = static_cast<SettingsScreen*>(lv_observer_get_user_data(observer));
+        if (!value || !screen) {
+            return;
+        }
+        lv_label_set_text(value, remote_text());
+        auto* bar = screen->soft_key_bar();
+        if (bar && screen->selected_row() == kRemoteRow) {
+            bar->set_key(kUseKeyIndex, remote_key());
+            bar->set_key(kHotspotKeyIndex, hotspot_key(kRemoteRow));
+        }
+    };
+    lv_subject_add_observer_obj(platform::remote::state_subject(), remote_observer, remote_value, this);
+    lv_subject_add_observer_obj(platform::remote::hotspot_subject(), remote_observer, remote_value, this);
 
     // Added last: LVGL calls the observer once right away, which styles the
     // rows and key 6 for the current state.
@@ -341,6 +363,7 @@ void SettingsScreen::selection_observer(lv_observer_t* observer, lv_subject_t* /
 
     if (auto* bar = screen->soft_key_bar()) {
         bar->set_key(kUseKeyIndex, row_key(screen->view_model(), selected, screen->active_row()));
+        bar->set_key(kHotspotKeyIndex, hotspot_key(selected));
     }
 }
 

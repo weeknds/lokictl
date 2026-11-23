@@ -26,7 +26,32 @@ time, on the Settings page.
    stops it too.
 
 The row reads `off`, `on` (waiting for the code) or `viewed` (a browser is
-paired).
+paired), and `on + hotspot` or `viewed + hotspot` while devices on the
+Cardputer's own hotspot may use it too (see below).
+
+## Devices on the Cardputer's hotspot
+
+Normally only computers on the network the Cardputer uses for the internet
+can open Remote view; devices that joined the Cardputer's own hotspot (in
+the Router or Share mode) are kept out. To let them in for this session:
+
+1. Switch Remote view on as above.
+2. On the Remote view row, press key **7** (`+AP`). The row reads
+   `on + hotspot`.
+3. While LokiCTL's hotspot runs, the panel shows a second address, for
+   example `or http://10.42.0.1:8780`. Open that one on the device that
+   joined the hotspot and type the code.
+
+Key **7** (`-AP`) stops letting hotspot devices in. The choice is only
+possible while Remote view is on, it is cleared whenever Remote view goes
+off, and it is never saved. It changes no network setting: it only decides
+whether Remote view also listens on the hotspot's address.
+
+When the hotspot starts after you pressed 7, the second address appears
+within a few seconds; when it stops, that address goes away and Remote view
+goes on for the other network. If the browser paired through the hotspot
+address and that address goes away (the hotspot stopped, or you pressed
+`-AP`), Remote view switches itself off.
 
 ## The page
 
@@ -96,6 +121,8 @@ The port closes, the session is forgotten and the row reads `off` when:
   view too);
 - the network address went away or changed (a cable pulled, another
   network joined);
+- the browser paired through the hotspot address and that address went
+  away (the hotspot stopped, or `-AP` was pressed);
 - the app quits.
 
 A new code always needs a key press on the Cardputer itself.
@@ -113,12 +140,22 @@ nothing else on the device.
 - **Off by default.** Nothing listens until you switch it on, and it never
   stays on across a restart.
 - **Your local network only.** The server listens on port 8780 of one
-  address only: the private IPv4 address (10.x, 172.16-31.x or 192.168.x) of
+  address: the private IPv4 address (10.x, 172.16-31.x or 192.168.x) of
   the network the Cardputer uses for the internet. It never listens on all
   addresses. A connection from any computer outside that network's address
-  range is closed at once, before anything is read; this also keeps out the
-  devices on the Cardputer's own hotspot. Remote view does not start on a
-  public address.
+  range is closed at once, before anything is read; unless you let them in
+  (next point), this also keeps out the devices on the Cardputer's own
+  hotspot. Remote view does not start on a public address.
+- **The hotspot only when you ask.** After key 7 (`+AP`), and only while
+  LokiCTL's own hotspot runs (Router or Share, as NetworkManager reports
+  it), the server also listens on the hotspot's address. That address must
+  be private, on the hotspot's own interface (never the uplink's), and its
+  range must not overlap the other network's. Each address keeps its own
+  rules: it takes connections only from its own network's range and
+  requests only with its own address in `Host` and `Origin`, and the
+  session belongs to the address it was paired on (the same cookie sent to
+  the other address gets 401). Both addresses share one code, one paired
+  browser and the 5-wrong-codes limit.
 - **A code shown only on the device.** Pairing needs the six-digit code from
   the Cardputer's screen. It comes from the kernel's random source, works
   once and lasts 2 minutes; 5 wrong codes switch Remote view off.
@@ -150,6 +187,8 @@ Remote view uses **plain HTTP**, not HTTPS. Someone who can read the traffic
 on your network (an open Wi-Fi network, or a device on it that captures
 traffic) could see the pictures and copy the session cookie while it is
 valid. Use it on networks you trust, and switch it off when you are done.
+With `+AP`, everyone who knows the hotspot's password can reach the code
+form too; the code from the Cardputer's screen still guards it.
 
 ## Endpoints
 
@@ -192,3 +231,6 @@ code.
 
 The simulator's pictures, like the device's, show what lies over the page:
 help, messages, the panel and the `REMOTE` tag.
+
+The simulator never opens a hotspot address: key 7 changes the row there,
+but the server stays on `127.0.0.1` only.

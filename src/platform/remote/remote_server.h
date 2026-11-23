@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include "remote/remote_addresses.h"
 #include "remote/remote_frames.h"
 #include "remote/remote_keys.h"
 #include "remote/remote_pairing.h"
@@ -40,6 +41,7 @@ enum class StopReason {
     WrongCodes,     // too many wrong codes
     ViewerIdle,     // the paired browser sent nothing for too long
     AddressChanged, // the address went away or changed
+    HotspotClosed,  // the hotspot side closed while the browser paired through it
 };
 
 // What the UI thread may know about the server. The code is only for the
@@ -48,6 +50,7 @@ struct ServerStatus {
     ServerPhase phase{ServerPhase::Starting};
     StopReason reason{StopReason::None};
     std::string url;               // "http://<address>:8780" once listening
+    std::string hotspot_url;       // the same for the hotspot side while it is open, else empty
     std::string code;              // empty once paired
     int64_t code_deadline_ms{0};   // on the steady clock (Server::now_ms())
     int wrong_codes{0};
@@ -87,6 +90,16 @@ struct ServerOptions {
 //   405.
 // - It ends by itself (see StopReason) when the pairing ends, or when the
 //   address it listens on goes away or changes (checked every 2 s).
+// - The hotspot side (set_hotspot_interface()): while an interface is named,
+//   a second listener on that interface's address (pick_hotspot_address()),
+//   same port, accepts peers from that interface's subnet only. Each side
+//   checks the peer, Host and Origin against its own address; the pairing
+//   belongs to the side it was made on, and a cookie sent to the other side
+//   gets 401. The side opens and closes with the 2 s check, and within
+//   about a second of a change of the name, without stopping the server;
+//   when it closes while the browser paired through it, the server ends
+//   (HotspotClosed). A port that can't be opened there only leaves that
+//   side closed. The desktop simulator (loopback_only) never opens it.
 //
 // request_stop() never blocks: the thread sees it within a few
 // milliseconds (it waits on a pipe next to its sockets) and closes the
@@ -112,22 +125,36 @@ public:
 
     ServerStatus status() const;
 
+    // The interface of LokiCTL's own hotspot while hotspot devices may use
+    // Remote view; empty (the start) for none. Safe from any thread; the
+    // server's thread acts on it within about a second.
+    void set_hotspot_interface(const std::string& interface_name);
+
     // The steady clock in milliseconds, as the status uses it.
     static int64_t now_ms();
 
 private:
-    struct Address {
-        uint32_t address{0}; // host byte order
-        uint32_t netmask{0}; // host byte order
-        std::string text;
-        std::string interface_name;
+    // One listening address: the uplink's (side 0) or the hotspot's
+    // (side 1).
+    struct Side {
+        int fd{-1};
+        InterfaceAddress address;
+        std::string host; // "<address>:<port>": what Host must say
     };
+    static constexpr int kUplinkSide = 0;
+    static constexpr int kHotspotSide = 1;
+    static constexpr int kSideCount = 2;
 
     void run();
-    StopReason serve(const Address& address, int listen_fd);
-    StopReason find_address(Address& address) const;
-    void handle_connection(int fd, Pairing& pairing, FrameCache& frames);
+    StopReason serve(Side (&sides)[kSideCount]);
+    StopReason find_address(InterfaceAddress& address) const;
+    // Opens, moves or closes the hotspot side for the interface `wanted`
+    // (empty: none). Returns false when it closed while the browser paired
+    // through it.
+    bool update_hotspot_side(Side (&sides)[kSideCount], const std::string& wanted, const Pairing& pairing);
+    void handle_connection(int fd, int side, const Side& own, Pairing& pairing, FrameCache& frames);
     void publish(const Pairing& pairing);
+    void publish_hotspot_url(const std::string& url);
     void finish(StopReason reason);
 
     ServerOptions options_;
@@ -137,7 +164,11 @@ private:
     std::atomic<bool> finished_{false};
     int wake_read_{-1};
     int wake_write_{-1};
-    std::string expected_host_;
+    // The side the browser paired through; -1 while none. Server thread only.
+    int paired_side_{-1};
+
+    mutable std::mutex hotspot_mutex_;
+    std::string hotspot_interface_;
 
     mutable std::mutex status_mutex_;
     ServerStatus status_;

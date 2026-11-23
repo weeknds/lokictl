@@ -94,6 +94,17 @@ void RemotePanel::build() {
     lv_label_set_text(open_, "Open");
     url_ = plain_label(address_row_);
 
+    // The hotspot side's address, under the first one; hidden while that
+    // side is closed.
+    hotspot_row_ = plain_object(core_obj_);
+    lv_obj_set_size(hotspot_row_, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(hotspot_row_, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(hotspot_row_, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    or_ = plain_label(hotspot_row_);
+    lv_label_set_text(or_, "or");
+    hotspot_url_ = plain_label(hotspot_row_);
+    lv_obj_add_flag(hotspot_row_, LV_OBJ_FLAG_HIDDEN);
+
     code_ = plain_label(core_obj_);
 
     message_ = plain_label(core_obj_);
@@ -107,7 +118,10 @@ void RemotePanel::build() {
     hide();
 }
 
-void RemotePanel::show_code(const std::string& url, const std::string& code, int32_t seconds_left) {
+void RemotePanel::show_code(const std::string& url,
+                            const std::string& hotspot_url,
+                            const std::string& code,
+                            int32_t seconds_left) {
     if (!core_obj_) {
         build();
     }
@@ -127,9 +141,11 @@ void RemotePanel::show_code(const std::string& url, const std::string& code, int
 
     set_text(time_left_, time_text);
     set_text(url_, url.c_str());
+    set_text(hotspot_url_, hotspot_url.c_str());
     set_text(code_, spaced_code(code).c_str());
     set_hidden(time_left_, false);
     set_hidden(address_row_, false);
+    set_hidden(hotspot_row_, hotspot_url.empty());
     set_hidden(code_, false);
     set_hidden(message_, true);
     if (lv_obj_has_flag(core_obj_, LV_OBJ_FLAG_HIDDEN)) {
@@ -149,6 +165,7 @@ void RemotePanel::show_message(const std::string& message) {
     set_text(message_, message.c_str());
     set_hidden(time_left_, true);
     set_hidden(address_row_, true);
+    set_hidden(hotspot_row_, true);
     set_hidden(code_, true);
     set_hidden(message_, false);
     if (lv_obj_has_flag(core_obj_, LV_OBJ_FLAG_HIDDEN)) {
@@ -186,6 +203,9 @@ void RemotePanel::apply_theme() {
     lv_obj_set_style_pad_column(address_row_, metrics.space_sm, 0);
     view::style::text(open_, theme, view::FontRole::Body);
     view::style::text(url_, theme, view::FontRole::Mono, colors.accent2);
+    lv_obj_set_style_pad_column(hotspot_row_, metrics.space_sm, 0);
+    view::style::text(or_, theme, view::FontRole::Body);
+    view::style::text(hotspot_url_, theme, view::FontRole::Mono, colors.accent2);
 
     view::style::text(code_, theme, view::FontRole::Display, colors.accent);
     view::style::text(message_, theme, view::FontRole::Body, colors.warning);

@@ -10,9 +10,14 @@
 
 #include <cstdint>
 #include <memory>
+#include <string>
 
 namespace view {
 class ThemeEngine;
+}
+
+namespace viewmodel {
+class BaseViewModel;
 }
 
 namespace view::widgets {
@@ -56,17 +61,29 @@ namespace app {
 // blended over it, from its timer. Desktop builds only: LOKICTL_REMOTE=on
 // switches Remote view on at start and prints the code to standard error.
 //
+// Hotspot devices: while Remote view is on, the module's hotspot requests
+// (platform::remote::request_hotspot(), key 7 on the Settings row) allow or
+// stop allowing devices on LokiCTL's own hotspot. The choice is cleared at
+// every off and never saved. While it holds, this controller names the
+// hotspot's interface to the server from the live mode in the view model
+// (Router: the built-in Wi-Fi, Share: the Share interface; none with
+// made-up data or without an access point), and the server checks it
+// against the system's interfaces before it opens the hotspot side. The
+// panel then also shows the hotspot side's address.
+//
 // Log lines (states and counts only, never the code, the session, an
 // address or a key): "remote view: on, port 8780", "remote view: paired", "remote
 // view: wrong code (<n> of 5)" (the latest count each time the timer looks),
-// "remote view: off (<why>)" and "remote view: could not start (<why>)";
-// desktop builds also log "remote view: switched on by LOKICTL_REMOTE; the
-// code goes to standard error".
+// "remote view: hotspot devices allowed" or "... not allowed", "remote view:
+// hotspot side open" or "... closed", "remote view: off (<why>)" and
+// "remote view: could not start (<why>)"; desktop builds also log "remote
+// view: switched on by LOKICTL_REMOTE; the code goes to standard error".
 //
-// Create it after the ThemeEngine and destroy it before.
+// Create it after the ThemeEngine and the view model, and destroy it
+// before them.
 class RemoteController {
 public:
-    explicit RemoteController(view::ThemeEngine& theme_engine);
+    RemoteController(view::ThemeEngine& theme_engine, const viewmodel::BaseViewModel& view_model);
     // Calls stop().
     ~RemoteController();
 
@@ -80,11 +97,19 @@ public:
 
 private:
     static void request_cb(lv_observer_t* observer, lv_subject_t* subject);
+    static void hotspot_request_cb(lv_observer_t* observer, lv_subject_t* subject);
     static void apply_requests_async(void* user_data);
     static void timer_cb(lv_timer_t* timer);
     static void key_timer_cb(lv_timer_t* timer);
 
+    void schedule_apply();
     void apply_requests();
+    // Allows or stops allowing hotspot devices; logs a change only when
+    // `log` is true (a key press, not a switch off).
+    void set_hotspot(bool allowed, bool log);
+    // The interface of LokiCTL's own hotspot, from the live mode; empty
+    // when no hotspot runs or the data is made up.
+    std::string hotspot_interface() const;
     void switch_on();
     void switch_off();
     void poll();
@@ -95,6 +120,7 @@ private:
     void run_key_timer(bool run);
     void press_waiting_key();
 
+    const viewmodel::BaseViewModel& view_model_;
     std::unique_ptr<view::widgets::RemotePanel> panel_;
     std::unique_ptr<view::widgets::RemoteMark> mark_;
     // Declared before the servers: their threads may use it until they end.
@@ -103,11 +129,16 @@ private:
     std::unique_ptr<platform::remote::Server> retiring_; // told to stop, not yet ended
     platform::remote::HandOffSource* hand_off_{nullptr}; // owned by server_ (desktop)
     lv_observer_t* request_observer_{nullptr};
+    lv_observer_t* hotspot_observer_{nullptr};
     lv_timer_t* timer_{nullptr};
     lv_timer_t* key_timer_{nullptr};
     bool key_timer_running_{false};
     int32_t requests_seen_{0};
     int32_t requests_pending_{0}; // switch requests not yet applied
+    int32_t hotspot_requests_seen_{0};
+    int32_t hotspot_requests_pending_{0}; // hotspot requests not yet applied
+    bool hotspot_allowed_{false};
+    bool hotspot_open_seen_{false};
     bool apply_scheduled_{false};
     int wrong_codes_seen_{0};
     bool listening_seen_{false};
