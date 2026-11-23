@@ -30,6 +30,7 @@ class Toast;
 namespace app {
 
 class ScreenManager;
+struct CommandResult;
 
 // Decides what every key does, the same way in the simulator, on the device
 // and in snapshot runs with --keys. platform/linux_input only reads the keys
@@ -47,7 +48,9 @@ class ScreenManager;
 //  4. While the command bar is open, it takes every key: printable
 //     characters type (keys 4-8 are digits, F/X/Z/C letters), Backspace
 //     deletes, Enter runs the line (see command_bar.h), ESC closes the bar
-//     at once, and a TAB let go before 700 ms completes the command.
+//     at once, and a TAB let go before 700 ms completes the command. A
+//     tool command opens the tool's page, which then starts as its own key
+//     would (a first press: Ports and Probe still ask first).
 //  5. ESC: on the first page (nothing below it, and not typing) it shows
 //     "Hold ESC to exit" while held and quits after 700 ms. Otherwise a
 //     short ESC (let go before 700 ms) first goes to the page, which may use
@@ -114,6 +117,12 @@ private:
     void complete_command_line();
     void run_command_line();
     void open_command_page(model::AppPage page);
+    // A tool command. open_tool_page() opens its page unless it is shown
+    // (false when the page path is full); start_command_tool() then sets
+    // the typed target, if any, and asks the page to start
+    // (BaseViewModel::request_tool_start()).
+    bool open_tool_page(const CommandResult& result);
+    void start_command_tool(const CommandResult& result);
     // Follows ESC (or TAB in the command bar) from its press to its release.
     // `armed`: holding it quits the app.
     void track(uint32_t key, bool armed);

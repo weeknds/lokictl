@@ -15,6 +15,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <string>
 
 namespace viewmodel {
@@ -226,7 +227,8 @@ public:
     // The target each tool uses, as its place in the page's list of
     // targets (the presets, then the typed target); starts at 0. The page
     // shows it clamped to the list, which can change (the router comes and
-    // goes).
+    // goes). kToolTargetTyped picks the typed target, which is always last.
+    static constexpr int32_t kToolTargetTyped = std::numeric_limits<int32_t>::max();
     int32_t tool_target(model::ToolKind kind) const;
     void set_tool_target(model::ToolKind kind, int32_t index);
     // The target typed for each tool; empty while none was typed.
@@ -256,6 +258,17 @@ public:
     bool requested_tool_stop() const;
     model::ToolKind requested_tool() const;
     const std::string& requested_tool_target() const;
+    // The command bar's way to start a tool: after opening its page, it asks
+    // here, and the page (the Ping, DNS, Trace or Ports page, or Discover
+    // for Listen and Probe) takes the request once with take_tool_start()
+    // and does what its own key's first press does. tool_start_subject()
+    // counts every request. A page change (open_page(), go_back(),
+    // show_page()) drops a request not taken yet.
+    void request_tool_start(model::ToolKind kind);
+    // True once for a request of `kind`, which is then forgotten; false
+    // (and the request kept) when none waits or it is for another kind.
+    bool take_tool_start(model::ToolKind kind);
+    lv_subject_t* tool_start_subject();
     // The latest run of each tool and the Sent count. Only ever set on the
     // UI thread, by app::ToolController. set_tools() returns false and tells
     // nobody when `data` equals what is held; otherwise it stores it and
@@ -406,6 +419,9 @@ private:
     bool requested_capture_save_{false};
     model::ToolKind requested_tool_{model::ToolKind::Ping};
     std::string requested_tool_target_;
+    reactive::IntSubject tool_start_subject_;
+    bool tool_start_waiting_{false};
+    model::ToolKind tool_start_kind_{model::ToolKind::Ping};
     model::ToolsData tools_;
     reactive::IntSubject tools_subject_;
     reactive::IntSubject trace_scroll_subject_;

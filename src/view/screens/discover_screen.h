@@ -56,6 +56,10 @@ namespace screen {
 // or kConfirmMs cancels the confirmation, which nothing remembers); up and
 // down (F/X) scroll the devices.
 //
+// The command bar's `scan` and `probe` open the page and press 6 or 8 once
+// for it (BaseViewModel::request_tool_start()); a confirmation already
+// waiting is cancelled first, so a probe still needs a second 8.
+//
 // The first device shown lives in the view model (discover_scroll_*), so it
 // is kept across a theme switch.
 class DiscoverScreen : public BaseScreen {
@@ -122,6 +126,10 @@ private:
     std::string probe_address() const;
     // Cancels the confirmation, if one waits.
     void cancel_confirm();
+    // The command bar asked for Listen or Probe
+    // (BaseViewModel::take_tool_start()): does what the first 6 or 8 does.
+    void start_from_command(model::ToolKind kind);
+    static void start_cb(lv_observer_t* observer, lv_subject_t* subject);
     static void confirm_timer_cb(lv_timer_t* timer);
     void scroll(int32_t delta);
     // The first device shown, from the view model's scroll, clamped.

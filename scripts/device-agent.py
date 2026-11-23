@@ -76,7 +76,7 @@ KEY_CODES = {
     "tab": 15,
     "enter": 28,
     "space": 57,
-    "dot": 52,  # KEY_DOT
+    "dot": 91,  # what the keyboard sends for sym+B (KEY_HIRAGANA in the kernel's names)
     "colon": 80,  # what the keyboard sends for sym+S (KEY_KP2 in the kernel's names)
     "screenshot": 99,  # KEY_SYSRQ, what the keyboard sends for fn+J
     "up": 103,

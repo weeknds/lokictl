@@ -549,6 +549,8 @@ void ToolScreen::build_content(lv_obj_t* content) {
     if (kind_ == model::ToolKind::Trace) {
         lv_subject_add_observer_obj(view_model().trace_scroll_subject(), observer_cb, content, this);
     }
+    // Last, so a start the command bar asked for finds the page built.
+    lv_subject_add_observer_obj(view_model().tool_start_subject(), start_cb, content, this);
 }
 
 void ToolScreen::build_ping_results(lv_obj_t* panel) {
@@ -1087,6 +1089,23 @@ void ToolScreen::refresh() {
             break;  // the Discover page's, never a tool page's
     }
     refresh_status();
+}
+
+void ToolScreen::start_from_command() {
+    // Always a first press: a confirmation already waiting is dropped, so a
+    // command never gives the second 6, and a running tool is never stopped.
+    cancel_confirm();
+    if (view_model().tool_typing() || any_running()) {
+        return;
+    }
+    run_or_stop();
+}
+
+void ToolScreen::start_cb(lv_observer_t* observer, lv_subject_t* /*subject*/) {
+    auto* screen = static_cast<ToolScreen*>(lv_observer_get_user_data(observer));
+    if (screen && screen->view_model().take_tool_start(screen->kind_)) {
+        screen->start_from_command();
+    }
 }
 
 void ToolScreen::observer_cb(lv_observer_t* observer, lv_subject_t* /*subject*/) {

@@ -287,6 +287,17 @@ void KeyController::run_command_line() {
         command_bar_->set_message(result.message, view::widgets::CommandBarTone::Error);
         return;
     }
+    if (result.action == CommandAction::Tool) {
+        // Refused as the pages refuse it; the bar stays open and says why.
+        std::string refusal = tool_command_refusal(result.tool, view_model_.tools(), view_model_.home());
+        if (refusal.empty() && !open_tool_page(result)) {
+            refusal = "Too many pages open: go back first";
+        }
+        if (!refusal.empty()) {
+            command_bar_->set_message(refusal, view::widgets::CommandBarTone::Error);
+            return;
+        }
+    }
 
     close_command_bar();
     switch (result.action) {
@@ -311,6 +322,9 @@ void KeyController::run_command_line() {
         }
         case CommandAction::OpenPage:
             open_command_page(result.page);
+            return;
+        case CommandAction::Tool:
+            start_command_tool(result);
             return;
         case CommandAction::None:
         case CommandAction::Error:
@@ -345,6 +359,24 @@ void KeyController::open_command_page(model::AppPage page) {
             view_model_.open_page(page);
             return;
     }
+}
+
+bool KeyController::open_tool_page(const CommandResult& result) {
+    // Nothing to open when the page is shown already.
+    return view_model_.current_page() == result.page || view_model_.open_tool(result.tool);
+}
+
+void KeyController::start_command_tool(const CommandResult& result) {
+    // The command only: targets, like everything else from the user's
+    // network, stay out of the log.
+    LOG_INFO("command: {}", result.tool == model::ToolKind::Listen ? "scan" : model::tool_name(result.tool));
+    if (!result.target.empty()) {
+        view_model_.set_tool_typed_target(result.tool, result.target);
+        view_model_.set_tool_target(result.tool, viewmodel::BaseViewModel::kToolTargetTyped);
+    }
+    // The page (shown now, or built later from the request above) takes it
+    // and does its own key's first press.
+    view_model_.request_tool_start(result.tool);
 }
 
 void KeyController::track(uint32_t key, bool armed) {

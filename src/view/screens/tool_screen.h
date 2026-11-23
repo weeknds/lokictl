@@ -62,6 +62,10 @@ namespace screen {
 // keeps a valid target (model::valid_tool_target()) and selects it, Enter
 // on an empty text drops the typed target, and a short ESC cancels.
 //
+// The command bar's `ping`, `dns`, `trace` and `ports` open the page and
+// press 6 once for it (BaseViewModel::request_tool_start()); a confirmation
+// already waiting is cancelled first, so Ports still needs a second 6.
+//
 // The target choice, the typed target, typing, the runs and the Trace
 // page's scroll live in the view model, so they are kept when the page is
 // left and across a theme switch.
@@ -140,6 +144,10 @@ private:
     void run_or_stop();
     // Ports: cancels the confirmation, if one waits, and draws the page.
     void cancel_confirm();
+    // The command bar asked for this tool (BaseViewModel::take_tool_start()):
+    // does what the first 6 does.
+    void start_from_command();
+    static void start_cb(lv_observer_t* observer, lv_subject_t* subject);
     static void confirm_timer_cb(lv_timer_t* timer);
     bool type_key(uint32_t key);
 

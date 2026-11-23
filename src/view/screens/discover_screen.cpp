@@ -546,6 +546,8 @@ void DiscoverScreen::build_content(lv_obj_t* content) {
     lv_subject_add_observer_obj(view_model().discover_scroll_subject(), observer_cb, content, this);
     // The uplink comes and goes with the network.
     lv_subject_add_observer_obj(view_model().home_data_subject(), observer_cb, content, this);
+    // Last, so a start the command bar asked for finds the page built.
+    lv_subject_add_observer_obj(view_model().tool_start_subject(), start_cb, content, this);
 }
 
 void DiscoverScreen::set_entry_hidden(Entry& entry, bool hidden) {
@@ -751,6 +753,33 @@ void DiscoverScreen::refresh() {
     // started, or the network went away).
     if (confirming_ && probe_key != 1) {
         cancel_confirm();
+    }
+}
+
+void DiscoverScreen::start_from_command(model::ToolKind kind) {
+    // Always a first press: a confirmation already waiting is dropped, so a
+    // command never gives the second 8, and a running tool is never stopped.
+    cancel_confirm();
+    if (model::tool_running(view_model().tools())) {
+        return;
+    }
+    if (kind == model::ToolKind::Probe) {
+        probe_or_stop();
+    } else {
+        listen_or_stop();
+    }
+}
+
+void DiscoverScreen::start_cb(lv_observer_t* observer, lv_subject_t* /*subject*/) {
+    auto* screen = static_cast<DiscoverScreen*>(lv_observer_get_user_data(observer));
+    if (!screen) {
+        return;
+    }
+    for (const model::ToolKind kind : {model::ToolKind::Listen, model::ToolKind::Probe}) {
+        if (screen->view_model().take_tool_start(kind)) {
+            screen->start_from_command(kind);
+            return;
+        }
     }
 }
 

@@ -52,6 +52,7 @@ BaseViewModel::BaseViewModel()
       tool_target_subject_(0),
       tool_typing_subject_(false),
       tool_request_subject_(0),
+      tool_start_subject_(0),
       tools_subject_(0),
       trace_scroll_subject_(kTraceFollow),
       wifi_scroll_subject_(0),
@@ -100,6 +101,7 @@ std::size_t BaseViewModel::page_depth() const {
 }
 
 void BaseViewModel::show_page(model::AppPage page) {
+    tool_start_waiting_ = false;
     model_.reset_pages(page);
     publish_all();
 }
@@ -108,6 +110,7 @@ bool BaseViewModel::open_page(model::AppPage page) {
     if (!model_.open_page(page)) {
         return false;
     }
+    tool_start_waiting_ = false;
     publish_all();
     return true;
 }
@@ -116,6 +119,7 @@ bool BaseViewModel::go_back() {
     if (!model_.go_back()) {
         return false;
     }
+    tool_start_waiting_ = false;
     publish_all();
     return true;
 }
@@ -466,6 +470,25 @@ bool BaseViewModel::requested_capture_save() const {
 
 lv_subject_t* BaseViewModel::tool_request_subject() {
     return tool_request_subject_.native();
+}
+
+void BaseViewModel::request_tool_start(model::ToolKind kind) {
+    // Stored first: the page that takes it may be listening already.
+    tool_start_waiting_ = true;
+    tool_start_kind_ = kind;
+    bump(tool_start_subject_);
+}
+
+bool BaseViewModel::take_tool_start(model::ToolKind kind) {
+    if (!tool_start_waiting_ || tool_start_kind_ != kind) {
+        return false;
+    }
+    tool_start_waiting_ = false;
+    return true;
+}
+
+lv_subject_t* BaseViewModel::tool_start_subject() {
+    return tool_start_subject_.native();
 }
 
 bool BaseViewModel::requested_tool_stop() const {

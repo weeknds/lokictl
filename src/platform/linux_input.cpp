@@ -137,10 +137,10 @@ void key_event_cb(lv_event_t* event) {
 // fn+J as SysRq and fn+H as Help, and each sym symbol as a code of its own,
 // which M5's console keymap (tca8418_keypad_m5stack_keymap.map) names. Those
 // codes keep the kernel's names, which don't match the symbols: sym+S, the
-// colon, is code 80 (KEY_KP2), and KEY_DOT is what sym+8 (the asterisk)
-// sends, while the dot itself (sym+B) is code 91, not mapped yet. TAB arrives
-// as LV_KEY_NEXT, the same as in the simulator. Keys not listed here are
-// ignored.
+// colon, is code 80 (KEY_KP2), and sym+B, the dot, is code 91
+// (KEY_HIRAGANA). KEY_DOT is what sym+8 (the asterisk) sends, so it is not
+// a dot here. TAB arrives as LV_KEY_NEXT, the same as in the simulator.
+// Keys not listed here are ignored.
 uint32_t map_evdev_key(uint16_t code) {
     switch (code) {
         case KEY_ESC:
@@ -149,6 +149,8 @@ uint32_t map_evdev_key(uint16_t code) {
             return LV_KEY_NEXT;
         case KEY_KP2: // sym+S
             return ':';
+        case KEY_HIRAGANA: // sym+B
+            return '.';
         case KEY_UP:
             return LV_KEY_UP;
         case KEY_DOWN:
@@ -164,8 +166,6 @@ uint32_t map_evdev_key(uint16_t code) {
             return LV_KEY_BACKSPACE;
         case KEY_SPACE:
             return ' ';
-        case KEY_DOT:
-            return '.';
         case KEY_SYSRQ:
             return kKeyPrintScreen;
         case KEY_HELP:

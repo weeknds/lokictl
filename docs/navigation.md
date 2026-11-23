@@ -463,8 +463,9 @@ place, letters, digits and `.` are added (at most 63), Backspace takes one
 away, Enter keeps a valid target and selects it (Enter on an empty text
 drops the typed one), and a short ESC cancels. A valid target has no dot at
 either end and no two in a row; digits and dots only must be an IPv4
-address, which DNS refuses (it needs a name). The keyboard sends `.` as a
-key of its own (`KEY_DOT`); `--keys` and the device kit call it `dot`.
+address, which DNS refuses (it needs a name). The keyboard sends `.`
+(sym+B) as code 91, which the kernel calls `KEY_HIRAGANA`; `--keys` and the
+device kit call it `dot`.
 
 The target choice, the typed target, the draft, the runs and the Trace
 page's scroll (`trace_scroll_*`) live in the view model, so they survive
