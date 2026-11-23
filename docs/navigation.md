@@ -413,17 +413,17 @@ The help panel shows the badge `DEVICES` and four rows.
 ## The Tools page
 
 `tools` (home key 7) lists the tools in two columns: Ping, DNS and Trace on
-the left, Wi-Fi, Ports and Speed on the right. Ping, DNS, Trace and Wi-Fi
-open a page so far; the others are muted with `coming`. Next to Ping, DNS
-and Trace a tag tells how the latest run stands (`running`, the average
-time, `3 found`, `7 hops`, `not reached`).
+the left, Wi-Fi, Ports and Speed on the right. All but Speed open a page
+so far; Speed is muted with `coming`. Next to Ping, DNS, Trace and Ports a
+tag tells how the latest run stands (`running`, the average time, `3
+found`, `7 hops`, `not reached`, `3 open`).
 The status line says what the highlighted tool does, with `SENT N` at its
 right: every packet LokiCTL has sent in this run of the app (see
 [data.md](data.md#the-tools)).
 
 | Key | What it does |
 |---|---|
-| `f`/`x` or the arrows up and down | move through Ping, DNS, Trace and Wi-Fi |
+| `f`/`x` or the arrows up and down | move through Ping, DNS, Trace, Wi-Fi and Ports |
 | `6` OPEN or Enter | opens the highlighted tool |
 | `4` BACK or a short ESC | goes back |
 
@@ -470,6 +470,37 @@ The target choice, the typed target, the draft, the runs and the Trace
 page's scroll (`trace_scroll_*`) live in the view model, so they survive
 leaving the page and a theme switch. The help panel shows the badge
 `PING`, `DNS` or `TRACE` and five rows.
+
+## The Ports page
+
+`ports` (the Tools page's Ports row) uses the same screen class and the
+same target row, typing and status line as the Ping page. It checks one
+device for open TCP ports from a fixed list of 50 common ones (see
+[data.md](data.md#port-scan)) and shows the open ones with their services,
+several to a line (`22 ssh   80 http   443 https`, `+2` beyond three
+lines), then `3 open · 45 closed · 2 no answer`. The status line says
+`Scanning 20 of 50`, `Scanned 50, 3 open`, `Scan stopped at 20 of 50` or
+why it failed (`Not on the Cardputer's networks`). A finished scan shows
+only while its target is the selected one; another target shows the page
+as before any scan, so one device's ports never stand under another's
+address.
+
+Targets, stepped with `z`/`c`: the router (`ROUTER`), the Cardputer's own
+uplink address (`THIS DEVICE`), the devices of the Discover list and the
+hotspot's connected devices (their name, or `DEVICE`), then the typed one.
+Only private IPv4 addresses are taken (10/8, 172.16/12, 192.168/16, and
+link-local 169.254/16): the typing panel takes digits and `.` only, and
+refuses anything else; names are never looked up.
+
+| Key | What it does |
+|---|---|
+| `6` SCAN or Enter | first shows what will be asked (`Asks 50 common ports, 10 a second`) and, in the warning colour, `Only devices you own or may test. Press 6 again to scan.`; nothing is sent (`Nothing sent yet`). A second `6` or Enter scans that target; any other key, a short ESC, leaving the page, another tool starting, the target changing or 10 s cancels. While a scan runs it reads STOP |
+| `z`/`c` or the arrows left and right | step through the targets |
+| `5` EDIT | types an address |
+| `4` BACK or a short ESC | goes back; a scan goes on |
+
+The confirmation lives in the page only, so nothing remembers it. The help
+panel shows the badge `PORTS` and five rows, one of them `6 twice`.
 
 ## The Wi-Fi page
 

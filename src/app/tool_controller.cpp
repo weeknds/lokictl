@@ -117,7 +117,8 @@ void ToolController::handle_request() {
         LOG_INFO("tools: listen capture save asked");
     } else if (view_model_.requested_tool_stop()) {
         for (const model::ToolKind kind : {model::ToolKind::Ping, model::ToolKind::Dns, model::ToolKind::Trace,
-                                           model::ToolKind::Listen, model::ToolKind::Probe}) {
+                                           model::ToolKind::Listen, model::ToolKind::Probe,
+                                           model::ToolKind::Ports}) {
             if (model::tool_state(data_, kind) == model::ToolState::Running) {
                 runner_->stop();
                 LOG_INFO("tools: {} stopped by the user", model::tool_name(kind));
@@ -211,6 +212,17 @@ void ToolController::log_change(const model::ToolsData& next) const {
                      probe.devices.size());
         } else if (probe.state == model::ToolState::Failed) {
             LOG_INFO("tools: probe failed: {}", why(probe.error, probe.reason));
+        }
+    }
+    // Attempt counts only: never the target, a port or how many were open.
+    const model::PortRun& ports = next.ports;
+    if (ports.state != data_.ports.state) {
+        if (ports.state == model::ToolState::Done) {
+            LOG_INFO("tools: ports done, asked: {}", ports.asked);
+        } else if (ports.state == model::ToolState::Stopped) {
+            LOG_INFO("tools: ports ended, asked: {} of {}", ports.asked, ports.total);
+        } else if (ports.state == model::ToolState::Failed) {
+            LOG_INFO("tools: ports failed: {}", why(ports.error, ports.reason));
         }
     }
     // Sizes only: never the file's path.

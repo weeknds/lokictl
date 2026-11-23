@@ -663,6 +663,8 @@ void DiscoverScreen::refresh_status() {
             status = {"Ping is running", tools::kToneMuted};
         } else if (data.dns.state == model::ToolState::Running) {
             status = {"DNS lookup is running", tools::kToneMuted};
+        } else if (data.ports.state == model::ToolState::Running) {
+            status = {"Port scan is running", tools::kToneMuted};
         } else {
             status = {"Trace is running", tools::kToneMuted};
         }

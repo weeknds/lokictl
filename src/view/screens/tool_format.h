@@ -10,8 +10,9 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
-// Texts shared by the Tools, Ping, DNS and Trace pages.
+// Texts shared by the Tools, Ping, DNS, Trace and Ports pages.
 namespace screen::tools {
 
 // The colours a text of these pages can take.
@@ -53,15 +54,23 @@ struct TraceRow {
 };
 TraceRow trace_row(const model::TraceHop& hop, bool running);
 
-// The status line of the Ping, DNS and Trace pages for their latest run.
+// The status line of the Ping, DNS, Trace and Ports pages for their latest
+// run.
 ToneText ping_status(const model::PingRun& run);
 ToneText dns_status(const model::DnsRun& run);
 ToneText trace_status(const model::TraceRun& run);
+ToneText ports_status(const model::PortRun& run);
+
+// The Ports page: each open port with its service ("22 ssh"), ascending,
+// and "3 open · 45 closed · 2 no answer" (empty before the first answer).
+std::vector<std::string> open_port_items(const model::PortRun& run);
+std::string ports_counts_text(const model::PortRun& run);
 
 // The short state on the Tools page next to each tool: "running", the
 // last result, or nothing.
 ToneText ping_tag(const model::PingRun& run);
 ToneText dns_tag(const model::DnsRun& run);
 ToneText trace_tag(const model::TraceRun& run);
+ToneText ports_tag(const model::PortRun& run);
 
 } // namespace screen::tools

@@ -682,8 +682,9 @@ so `--keys 8` on the Devices page pictures a blocked device.
 
 ## The tools
 
-The Ping, DNS and Trace pages, and listening on the Discover page (see
-[Listening](#listening)), run their tools away from the UI thread.
+The Ping, DNS, Trace and Ports pages, and listening and probing on the
+Discover page (see [Listening](#listening)), run their tools away from the
+UI thread.
 `app::ToolController` hands the pages' requests to a
 `platform::ToolRunner` and, from an LVGL timer every 250 ms, gives the
 latest runs to the view model (`tools()`, `tools_subject()`) with the Sent
@@ -746,15 +747,17 @@ question (a trace's PTR questions too), retries included.
 The pretend runner counts the packets it pretends to send. Later tools add
 to the same count with `platform::count_sent()`. Listening adds nothing.
 
-Log lines: `tools: <ping|dns|trace|listen> started`, `tools:
-<ping|dns|trace|listen> stopped by the user`, `tools: ping done, 9/10
+Log lines: `tools: <ping|dns|trace|listen|probe|ports> started`, `tools:
+<ping|dns|trace|listen|probe|ports> stopped by the user`, `tools: ping done, 9/10
 replies`, `tools: ping failed: <why>`, `tools: dns done, <n> addresses`,
 `tools: dns failed: <why>`, `tools: trace done, reached in <n> hops` (or
 `unreachable at hop <n>`, `not reached in <n> hops`), `tools: trace failed:
 <why>`, `tools: listen done, devices heard: <n>, frames: <f>`, `tools:
-listen ended, devices heard: <n>`, `tools: listen failed: <why>` (never a
-target, an address, a hardware address or a name), and `tools: runner
-stopped` when a run was cut short by quitting.
+listen ended, devices heard: <n>`, `tools: listen failed: <why>`, `tools: ports
+done, asked: <n>`, `tools: ports ended, asked: <n> of <t>`, `tools: ports
+failed: <why>` (never a target, an address, a hardware address, a name or a
+port result), and `tools: runner stopped` when a run was cut short by
+quitting.
 
 ### Listening
 
@@ -874,6 +877,40 @@ twice), for that run only.
   server and a camera that never speak up while listening, through a
   made-up neighbour table and made-up mDNS and SSDP replies read by the
   same code.
+
+### Port scan
+
+The Ports page (`model::ToolKind::Ports`, its run in `tools().ports`,
+`model::PortRun`) checks one device's TCP ports, and sends. It starts only
+after the page's confirmation (key 6 twice), for that target only.
+
+- **The target** is an IPv4 address, never a name, on a private network
+  (10/8, 172.16/12, 192.168/16) or a link-local one (169.254/16):
+  `model::port_scan_address()`, checked by the page, by
+  `app::ToolController` and on the runner's thread, which also needs it
+  inside the subnet of one of the Cardputer's own interfaces
+  (`platform::read_own_networks()` and `platform::port_scan_allowed()` in
+  `platform/port_scan.*`, from `getifaddrs()`), and not that subnet's
+  network or broadcast address. Anything else fails with a short reason and
+  sends nothing.
+- **The scan:** one unprivileged non-blocking TCP `connect()` per port of
+  `model::common_ports()` (50 well-known ports, ascending), one new attempt
+  every 100 ms, at most 8 waiting, each for 1 s. A connection that is made
+  means open and is closed at once (nothing is read or written); a refusal
+  means closed; nothing in 1 s means no answer. When the system refuses an
+  attempt itself (no route, the host known to be unreachable, not allowed)
+  the run ends with the reason. Every socket is closed when the run ends,
+  is stopped or fails.
+- **Sent** counts one per attempt the system takes (its handshake packets
+  and retries are not counted, like ARP for a probe). The log gets attempt
+  counts only: never the target, a port or how many were open.
+- **The pretend runner** (`platform::pretend_port_scan()`) times the same
+  attempts on the examples' networks (10.0.0.0/24, 10.42.0.0/24,
+  10.20.30.0/24). The router (.1) has DNS, HTTP, HTTPS and UPnP open and
+  two silent ports, the Cardputer itself SSH, and any other device one of
+  three made-up sets; other addresses fail as not on the Cardputer's
+  networks. So `--keys 6,6 --settle-ms 1500` on `ports` shows a scan under
+  way and `--keys 6,6 --settle-ms 6000` its end.
 
 ## The Wi-Fi list
 

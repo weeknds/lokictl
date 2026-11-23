@@ -377,6 +377,8 @@ bool BaseViewModel::open_tool(model::ToolKind kind) {
             return open_page(model::AppPage::Dns);
         case model::ToolKind::Trace:
             return open_page(model::AppPage::Trace);
+        case model::ToolKind::Ports:
+            return open_page(model::AppPage::Ports);
         case model::ToolKind::Listen:
         case model::ToolKind::Probe:
             return open_discover();

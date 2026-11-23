@@ -22,6 +22,7 @@ const std::vector<PageInfo>& page_registry() {
         {"ping", model::AppPage::Ping},
         {"dns", model::AppPage::Dns},
         {"trace", model::AppPage::Trace},
+        {"ports", model::AppPage::Ports},
         {"wifi", model::AppPage::Wifi},
         {"discover", model::AppPage::Discover},
         // The two demo pages are kept for navigation and key tests. Like the

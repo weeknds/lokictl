@@ -244,4 +244,66 @@ ToneText dns_tag(const model::DnsRun& run) {
     return {};
 }
 
+std::vector<std::string> open_port_items(const model::PortRun& run) {
+    std::vector<std::string> items;
+    items.reserve(run.open.size());
+    for (const uint16_t port : run.open) {
+        const char* service = model::port_service(port);
+        items.push_back(std::to_string(port) + (service[0] != '\0' ? std::string(" ") + service : std::string()));
+    }
+    return items;
+}
+
+std::string ports_counts_text(const model::PortRun& run) {
+    const int32_t answered = static_cast<int32_t>(run.open.size()) + run.closed + run.silent;
+    if (answered == 0) {
+        return {};
+    }
+    return std::to_string(run.open.size()) + " open · " + std::to_string(run.closed) + " closed · " +
+           std::to_string(run.silent) + " no answer";
+}
+
+ToneText ports_status(const model::PortRun& run) {
+    const std::string progress = std::to_string(run.asked) + " of " + std::to_string(run.total);
+    switch (run.state) {
+        case model::ToolState::Idle:
+            return {std::to_string(model::common_ports().size()) + " common ports of one device", kToneMuted};
+        case model::ToolState::Running:
+            return {run.total > 0 ? "Scanning " + progress : std::string("Scanning"), kToneAccent};
+        case model::ToolState::Done:
+            return {"Scanned " + std::to_string(run.asked) + ", " + std::to_string(run.open.size()) + " open",
+                    run.open.empty() ? kToneMuted : kToneSuccess};
+        case model::ToolState::Stopped:
+            return {"Scan stopped at " + progress, kToneMuted};
+        case model::ToolState::Failed:
+            if (run.error == model::ToolError::BadTarget) {
+                return {"Not a private address", kToneError};
+            }
+            if (!run.reason.empty()) {
+                std::string text = run.reason;
+                if (text[0] >= 'a' && text[0] <= 'z') {
+                    text[0] = static_cast<char>(text[0] - 'a' + 'A');
+                }
+                return {text, kToneError};
+            }
+            return error_status(run.error, run.reason);
+    }
+    return {};
+}
+
+ToneText ports_tag(const model::PortRun& run) {
+    switch (run.state) {
+        case model::ToolState::Running:
+            return {"running", kToneAccent};
+        case model::ToolState::Done:
+            return {std::to_string(run.open.size()) + " open", kToneMuted};
+        case model::ToolState::Failed:
+            return {"failed", kToneWarning};
+        case model::ToolState::Idle:
+        case model::ToolState::Stopped:
+            break;
+    }
+    return {};
+}
+
 } // namespace screen::tools

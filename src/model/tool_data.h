@@ -14,20 +14,21 @@
 
 namespace model {
 
-// The tools that can run (the Ping, DNS and Trace pages, and listening and
-// probing on the Discover page). Only one runs at a time.
+// The tools that can run (the Ping, DNS, Trace and Ports pages, and
+// listening and probing on the Discover page). Only one runs at a time.
 enum class ToolKind : int32_t {
     Ping   = 0,
     Dns    = 1,
     Trace  = 2,
     Listen = 3,
     Probe  = 4,
+    Ports  = 5,
 };
 
 // How many kinds there are, for tables indexed by ToolKind.
-constexpr std::size_t kToolKindCount = 5;
+constexpr std::size_t kToolKindCount = 6;
 
-const char* tool_name(ToolKind kind); // "ping", "dns", "trace", "listen", "probe"
+const char* tool_name(ToolKind kind); // "ping", "dns", "trace", "listen", "probe", "ports"
 
 // Where a tool's latest run stands.
 enum class ToolState : int32_t {
@@ -232,6 +233,41 @@ struct ProbeRun {
 bool operator==(const ProbeRun& left, const ProbeRun& right);
 bool operator!=(const ProbeRun& left, const ProbeRun& right);
 
+// The port scan: one device's TCP ports from a fixed list of common ones
+// (common_ports()), one new connection attempt every kPortIntervalMs, at
+// most kPortsWaiting waiting at once, each given kPortTimeoutMs.
+constexpr int32_t kPortIntervalMs = 100;
+constexpr int32_t kPortsWaiting = 8;
+constexpr int32_t kPortTimeoutMs = 1000;
+
+// One port of the scan's list and the service usually found on it.
+struct CommonPort {
+    uint16_t port;
+    const char* service;  // short, for example "ssh"
+};
+
+// The ports a scan asks, ascending (50 of them).
+const std::vector<CommonPort>& common_ports();
+// The service of `port` in common_ports(); "" for a port not in it.
+const char* port_service(uint16_t port);
+
+// The latest port scan of the Ports page. Every connection attempt the
+// system takes counts in the Sent count.
+struct PortRun {
+    ToolState state{ToolState::Idle};
+    ToolError error{ToolError::None};
+    std::string reason;          // with ToolError::Failed ("not on the Cardputer's networks")
+    std::string target;          // the IPv4 address scanned
+    int32_t total{0};            // ports to ask
+    int32_t asked{0};            // attempts made so far
+    int32_t closed{0};           // ports that refused
+    int32_t silent{0};           // ports that did not answer in kPortTimeoutMs
+    std::vector<uint16_t> open;  // ports that took the connection, ascending
+};
+
+bool operator==(const PortRun& left, const PortRun& right);
+bool operator!=(const PortRun& left, const PortRun& right);
+
 // What the tools show: the latest run of each, which of the Discover
 // page's two kinds started last, and the app-wide count of packets LokiCTL
 // has sent in this run of the app.
@@ -241,6 +277,7 @@ struct ToolsData {
     TraceRun trace;
     ListenRun listen;
     ProbeRun probe;
+    PortRun ports;
     ToolKind latest{ToolKind::Listen};  // Listen or Probe: the Discover run started last
     uint64_t sent{0};
 };
@@ -271,12 +308,20 @@ std::vector<DiscoverDevice> discover_devices(const ListenRun& listen, const Prob
 // characters, only a-z, 0-9 and '.', no empty label (no dot at either end,
 // no two dots in a row). A text of digits and dots only must be an IPv4
 // address (four numbers of 0-255). For DNS a name is needed, so an IPv4
-// address is refused there; Ping and Trace take both. The listen and probe
-// tools' target is an interface, checked with valid_interface_name() instead.
+// address is refused there; Ping and Trace take both. The port scan takes
+// only an IPv4 address that port_scan_address() allows. The listen and
+// probe tools' target is an interface, checked with valid_interface_name()
+// instead.
 bool valid_tool_target(ToolKind kind, std::string_view text);
 
 // Whether `text` is an IPv4 address in dotted form ("192.0.2.1").
 bool is_ipv4_text(std::string_view text);
+
+// Whether the port scan may ask `text`: an IPv4 address in dotted form on a
+// private network (10/8, 172.16/12, 192.168/16) or a link-local one
+// (169.254/16). The runner also needs it on one of the Cardputer's own
+// networks.
+bool port_scan_address(std::string_view text);
 
 // Whether `text` may be handed to the capture helper as an interface name:
 // 1 to kInterfaceNameMax characters of a-z, A-Z, 0-9, '.', '_' and '-', and

@@ -44,6 +44,8 @@ const char* tool_name(ToolKind kind) {
             return "listen";
         case ToolKind::Probe:
             return "probe";
+        case ToolKind::Ports:
+            return "ports";
     }
     return "ping";
 }
@@ -129,10 +131,45 @@ bool operator!=(const ProbeRun& left, const ProbeRun& right) {
     return !(left == right);
 }
 
+const std::vector<CommonPort>& common_ports() {
+    static const std::vector<CommonPort> ports{
+        {21, "ftp"},         {22, "ssh"},        {23, "telnet"},     {25, "smtp"},        {53, "dns"},
+        {80, "http"},        {110, "pop3"},      {111, "rpcbind"},   {135, "msrpc"},      {139, "netbios"},
+        {143, "imap"},       {443, "https"},     {445, "smb"},       {465, "smtps"},      {515, "lpd"},
+        {548, "afp"},        {554, "rtsp"},      {587, "submission"}, {631, "ipp"},       {853, "dns-tls"},
+        {873, "rsync"},      {993, "imaps"},     {995, "pop3s"},     {1080, "socks"},     {1883, "mqtt"},
+        {1900, "upnp"},      {2049, "nfs"},      {3000, "web"},      {3306, "mysql"},     {3389, "rdp"},
+        {5000, "web"},       {5432, "postgres"}, {5555, "adb"},      {5900, "vnc"},       {6379, "redis"},
+        {7000, "airplay"},   {7547, "tr-069"},   {8000, "http-alt"}, {8008, "http-alt"},  {8009, "cast"},
+        {8080, "http-proxy"}, {8123, "hass"},    {8443, "https-alt"}, {8883, "mqtts"},    {8888, "http-alt"},
+        {9100, "jetdirect"}, {10000, "webmin"},  {32400, "plex"},    {49152, "upnp"},     {62078, "iphone-sync"},
+    };
+    return ports;
+}
+
+const char* port_service(uint16_t port) {
+    for (const CommonPort& entry : common_ports()) {
+        if (entry.port == port) {
+            return entry.service;
+        }
+    }
+    return "";
+}
+
+bool operator==(const PortRun& left, const PortRun& right) {
+    return left.state == right.state && left.error == right.error && left.reason == right.reason &&
+           left.target == right.target && left.total == right.total && left.asked == right.asked &&
+           left.closed == right.closed && left.silent == right.silent && left.open == right.open;
+}
+
+bool operator!=(const PortRun& left, const PortRun& right) {
+    return !(left == right);
+}
+
 bool operator==(const ToolsData& left, const ToolsData& right) {
     return left.ping == right.ping && left.dns == right.dns && left.trace == right.trace &&
-           left.listen == right.listen && left.probe == right.probe && left.latest == right.latest &&
-           left.sent == right.sent;
+           left.listen == right.listen && left.probe == right.probe && left.ports == right.ports &&
+           left.latest == right.latest && left.sent == right.sent;
 }
 
 bool operator!=(const ToolsData& left, const ToolsData& right) {
@@ -142,7 +179,7 @@ bool operator!=(const ToolsData& left, const ToolsData& right) {
 bool tool_running(const ToolsData& data) {
     return data.ping.state == ToolState::Running || data.dns.state == ToolState::Running ||
            data.trace.state == ToolState::Running || data.listen.state == ToolState::Running ||
-           data.probe.state == ToolState::Running;
+           data.probe.state == ToolState::Running || data.ports.state == ToolState::Running;
 }
 
 ToolState tool_state(const ToolsData& data, ToolKind kind) {
@@ -157,6 +194,8 @@ ToolState tool_state(const ToolsData& data, ToolKind kind) {
             return data.listen.state;
         case ToolKind::Probe:
             return data.probe.state;
+        case ToolKind::Ports:
+            return data.ports.state;
     }
     return ToolState::Idle;
 }
@@ -237,6 +276,17 @@ bool is_ipv4_text(std::string_view text) {
     return parts == 4;
 }
 
+bool port_scan_address(std::string_view text) {
+    if (!is_ipv4_text(text)) {
+        return false;
+    }
+    const uint32_t address = address_number(std::string(text));
+    const uint32_t first = address >> 24;
+    const uint32_t second = (address >> 16) & 0xFF;
+    return first == 10 || (first == 172 && second >= 16 && second <= 31) || (first == 192 && second == 168) ||
+           (first == 169 && second == 254);
+}
+
 bool valid_interface_name(std::string_view text) {
     if (text.empty() || text.size() > kInterfaceNameMax || text == "." || text == "..") {
         return false;
@@ -255,6 +305,9 @@ bool valid_interface_name(std::string_view text) {
 bool valid_tool_target(ToolKind kind, std::string_view text) {
     if (kind == ToolKind::Listen || kind == ToolKind::Probe) {
         return valid_interface_name(text);
+    }
+    if (kind == ToolKind::Ports) {
+        return port_scan_address(text);
     }
     if (text.empty() || text.size() > kToolTargetMax) {
         return false;

@@ -198,7 +198,7 @@ public:
     const std::string& hotspot_draft() const;
     void set_hotspot_draft(const std::string& draft);
 
-    // The Tools page and its Ping, DNS and Trace pages.
+    // The Tools page and its Ping, DNS, Trace and Ports pages.
     // The highlighted row of the Tools page; starts at 0. The page shows it
     // clamped to the rows that can be opened.
     lv_subject_t* tools_selection_subject();

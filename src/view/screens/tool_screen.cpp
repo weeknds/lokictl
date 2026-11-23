@@ -140,15 +140,34 @@ ToolScreen::ToolScreen(viewmodel::BaseViewModel& view_model,
     : BaseScreen(view_model, assets, theme_engine),
       kind_(page == model::AppPage::Dns     ? model::ToolKind::Dns
             : page == model::AppPage::Trace ? model::ToolKind::Trace
+            : page == model::AppPage::Ports ? model::ToolKind::Ports
                                             : model::ToolKind::Ping) {
     init();
 }
 
+ToolScreen::~ToolScreen() {
+    if (confirm_timer_) {
+        lv_timer_delete(confirm_timer_);
+        confirm_timer_ = nullptr;
+    }
+}
+
 bool ToolScreen::handles(model::AppPage page) {
-    return page == model::AppPage::Ping || page == model::AppPage::Dns || page == model::AppPage::Trace;
+    return page == model::AppPage::Ping || page == model::AppPage::Dns || page == model::AppPage::Trace ||
+           page == model::AppPage::Ports;
 }
 
 view::widgets::HelpContent ToolScreen::help_content(model::ToolKind kind) {
+    if (kind == model::ToolKind::Ports) {
+        return {"PORTS",
+                {
+                    {"ESC / 4", "Back (a scan goes on)"},
+                    {"Z / C", "Previous / next target"},
+                    {"5", "Type a target (ENTER keeps)"},
+                    {"6 twice", "Scan 50 ports, sends"},
+                    {"Sent", "Packets LokiCTL sent"},
+                }};
+    }
     if (kind == model::ToolKind::Trace) {
         return {"TRACE",
                 {
@@ -180,7 +199,7 @@ view::widgets::SoftKeySet ToolScreen::soft_keys() {
     return {{
         {"Back", [&view_model] { view_model.go_back(); }},
         {"Edit", [this] { start_edit(); }},
-        {"Run", [this] { run_or_stop(); }, true},
+        {kind_ == model::ToolKind::Ports ? "Scan" : "Run", [this] { run_or_stop(); }, true},
         {},
         {},
     }};
@@ -188,22 +207,59 @@ view::widgets::SoftKeySet ToolScreen::soft_keys() {
 
 std::vector<ToolScreen::Target> ToolScreen::targets() const {
     std::vector<Target> list;
-    if (kind_ != model::ToolKind::Dns) {
+    if (kind_ == model::ToolKind::Ports) {
+        list = ports_targets();
+    } else if (kind_ != model::ToolKind::Dns) {
         const std::string& router = view_model().home().gateway_address;
         if (model::is_ipv4_text(router)) {
-            list.push_back({router, true});
+            list.push_back({router, "router"});
         }
         for (const char* preset : kPingPresets) {
-            list.push_back({preset, false});
+            list.push_back({preset, ""});
         }
     } else {
         for (const char* preset : kDnsPresets) {
-            list.push_back({preset, false});
+            list.push_back({preset, ""});
         }
     }
     const std::string& typed = view_model().tool_typed_target(kind_);
     if (!typed.empty()) {
-        list.push_back({typed, false});
+        list.push_back({typed, ""});
+    }
+    return list;
+}
+
+std::vector<ToolScreen::Target> ToolScreen::ports_targets() const {
+    const model::HomeData& home = view_model().home();
+    std::vector<Target> list;
+    const auto add = [&list](const std::string& address, std::string caption) {
+        if (!model::port_scan_address(address)) {
+            return;
+        }
+        for (const Target& known : list) {
+            if (known.text == address) {
+                return;
+            }
+        }
+        // A long name would leave no room for the address.
+        constexpr std::size_t kCaptionMax = 12;
+        if (caption.size() > kCaptionMax) {
+            caption = caption.substr(0, kCaptionMax - 1) + "…";
+        }
+        list.push_back({address, caption});
+    };
+    add(home.gateway_address, "router");
+    add(home.uplink_address, "this device");
+    const model::ToolsData& data = view_model().tools();
+    for (const model::DiscoverDevice& entry : model::discover_devices(data.listen, data.probe)) {
+        const model::HeardDevice& device = entry.device;
+        if (!device.own_port.empty()) {
+            continue;  // one of the Cardputer's own ports
+        }
+        add(device.address, !device.name.empty() ? device.name : !device.kind.empty() ? device.kind : "device");
+    }
+    for (const model::HomeClient& client : home.clients) {
+        add(client.address, client.name.empty() ? std::string("device") : client.name);
     }
     return list;
 }
@@ -211,6 +267,14 @@ std::vector<ToolScreen::Target> ToolScreen::targets() const {
 int32_t ToolScreen::target_index(const std::vector<Target>& list) const {
     return std::clamp<int32_t>(view_model().tool_target(kind_), 0, std::max<int32_t>(
                                                                         static_cast<int32_t>(list.size()) - 1, 0));
+}
+
+std::string ToolScreen::selected_target() const {
+    const std::vector<Target> list = targets();
+    if (list.empty()) {
+        return {};
+    }
+    return list[static_cast<std::size_t>(target_index(list))].text;
 }
 
 bool ToolScreen::this_running() const {
@@ -235,6 +299,10 @@ void ToolScreen::step_target(int32_t delta) {
 }
 
 void ToolScreen::start_edit() {
+    if (confirming_) {
+        cancel_confirm();  // like any other key: only cancels
+        return;
+    }
     if (this_running() || view_model().tool_typing()) {
         return;
     }
@@ -258,10 +326,50 @@ void ToolScreen::run_or_stop() {
     if (list.empty()) {
         return;
     }
+    const std::string& target = list[static_cast<std::size_t>(target_index(list))].text;
+    if (kind_ == model::ToolKind::Ports) {
+        if (!confirming_ || target != confirm_target_) {
+            // The first 6: what would be asked; nothing is sent.
+            if (!model::valid_tool_target(kind_, target)) {
+                return;
+            }
+            confirming_ = true;
+            confirm_target_ = target;
+            if (!confirm_timer_) {
+                confirm_timer_ = lv_timer_create(confirm_timer_cb, kConfirmMs, this);
+            }
+            refresh();
+            return;
+        }
+        // The second 6: the confirmation, given for this scan only.
+        const std::string confirmed = confirm_target_;
+        cancel_confirm();
+        view_model().request_tool_run(kind_, confirmed);
+        return;
+    }
     if (kind_ == model::ToolKind::Trace) {
         view_model().set_trace_scroll(viewmodel::BaseViewModel::kTraceFollow);
     }
-    view_model().request_tool_run(kind_, list[static_cast<std::size_t>(target_index(list))].text);
+    view_model().request_tool_run(kind_, target);
+}
+
+void ToolScreen::cancel_confirm() {
+    if (confirm_timer_) {
+        lv_timer_delete(confirm_timer_);
+        confirm_timer_ = nullptr;
+    }
+    if (confirming_) {
+        confirming_ = false;
+        confirm_target_.clear();
+        refresh();
+    }
+}
+
+void ToolScreen::confirm_timer_cb(lv_timer_t* timer) {
+    auto* screen = static_cast<ToolScreen*>(lv_timer_get_user_data(timer));
+    if (screen) {
+        screen->cancel_confirm();
+    }
 }
 
 int32_t ToolScreen::first_hop_row() const {
@@ -286,6 +394,14 @@ bool ToolScreen::text_entry() const {
 bool ToolScreen::on_key(uint32_t key) {
     if (view_model().tool_typing()) {
         return type_key(key);
+    }
+    if (confirming_) {
+        if (key == LV_KEY_ENTER) {
+            run_or_stop();  // the second press
+        } else {
+            cancel_confirm();  // any other key only cancels
+        }
+        return true;
     }
     switch (key) {
         case LV_KEY_LEFT:
@@ -343,8 +459,8 @@ bool ToolScreen::type_key(uint32_t key) {
         if (key >= 'A' && key <= 'Z') {
             key = key - 'A' + 'a';
         }
-        if (!target_character(key)) {
-            return true;
+        if (!target_character(key) || (kind_ == model::ToolKind::Ports && key >= 'a' && key <= 'z')) {
+            return true;  // the Ports page takes an address only
         }
         if (draft.size() < model::kToolTargetMax) {
             draft += static_cast<char>(key);
@@ -358,6 +474,10 @@ bool ToolScreen::type_key(uint32_t key) {
 
 // A short ESC cancels typing; otherwise the app goes back, and a run goes on.
 bool ToolScreen::on_back() {
+    if (confirming_) {
+        cancel_confirm();
+        return true;
+    }
     if (view_model().tool_typing()) {
         draft_invalid_ = false;
         view_model().set_tool_typing(false);
@@ -396,6 +516,9 @@ void ToolScreen::build_content(lv_obj_t* content) {
             break;
         case model::ToolKind::Trace:
             build_trace_results(main_panel_);
+            break;
+        case model::ToolKind::Ports:
+            build_ports_results(main_panel_);
             break;
         case model::ToolKind::Listen:
         case model::ToolKind::Probe:
@@ -483,6 +606,20 @@ void ToolScreen::build_dns_results(lv_obj_t* panel) {
     lv_obj_set_pos(server_, kSideMargin, top + 1);
 }
 
+// The open ports use the DNS page's lines and summary; the confirmation
+// stands under the first line.
+void ToolScreen::build_ports_results(lv_obj_t* panel) {
+    build_dns_results(panel);
+    const auto& theme = this->theme();
+    const lv_font_t* mono = theme.font(view::FontRole::Mono);
+    confirm_ = plain_label(panel, "");
+    view::style::text(confirm_, theme, view::FontRole::Mono, theme.colors.warning);
+    lv_obj_set_width(confirm_, kWidth);
+    lv_label_set_long_mode(confirm_, LV_LABEL_LONG_WRAP);
+    lv_obj_set_pos(confirm_, kSideMargin, kTargetTop + 2 * lv_font_get_line_height(mono) + kResultsGap);
+    lv_obj_add_flag(confirm_, LV_OBJ_FLAG_HIDDEN);
+}
+
 void ToolScreen::build_trace_results(lv_obj_t* panel) {
     const auto& theme = this->theme();
     const lv_font_t* small = theme.font(view::FontRole::Small);
@@ -561,6 +698,7 @@ void ToolScreen::build_typing_panel(lv_obj_t* content) {
 
     auto* title = plain_label(column, kind_ == model::ToolKind::Dns     ? "Name to look up"
                                       : kind_ == model::ToolKind::Trace ? "Host to trace"
+                                      : kind_ == model::ToolKind::Ports ? "Address to scan"
                                                                         : "Host to ping");
     view::style::text(title, theme, view::FontRole::Strong);
     auto* box = plain_object(column);
@@ -602,7 +740,8 @@ void ToolScreen::refresh_keys() {
     auto& view_model = this->view_model();
     bar->set_key(0, {"Back", [&view_model] { view_model.go_back(); }, false, keys != 3});
     bar->set_key(1, {"Edit", [this] { start_edit(); }, false, keys == 0 || keys == 2});
-    bar->set_key(2, {keys == 1 ? "Stop" : "Run", [this] { run_or_stop(); }, true, keys == 0 || keys == 1});
+    const char* run = kind_ == model::ToolKind::Ports ? "Scan" : "Run";
+    bar->set_key(2, {keys == 1 ? "Stop" : run, [this] { run_or_stop(); }, true, keys == 0 || keys == 1});
 }
 
 void ToolScreen::refresh_target() {
@@ -622,11 +761,21 @@ void ToolScreen::refresh_target() {
             case model::ToolKind::Trace:
                 value = data.trace.target;
                 break;
+            case model::ToolKind::Ports:
+                value = data.ports.target;
+                break;
             case model::ToolKind::Listen:
             case model::ToolKind::Probe:
                 break;  // the Discover page's, never a tool page's
         }
-        if (kind_ != model::ToolKind::Dns && value == view_model().home().gateway_address) {
+        if (kind_ == model::ToolKind::Ports) {
+            for (const Target& target : ports_targets()) {
+                if (target.text == value) {
+                    caption = target.caption;
+                    break;
+                }
+            }
+        } else if (kind_ != model::ToolKind::Dns && value == view_model().home().gateway_address) {
             caption = "router";
         }
     } else {
@@ -635,8 +784,8 @@ void ToolScreen::refresh_target() {
             const int32_t index = target_index(list);
             const Target& target = list[static_cast<std::size_t>(index)];
             value = target.text;
-            if (target.router) {
-                caption = "router";
+            if (!target.caption.empty()) {
+                caption = target.caption;
             }
             place = "‹ " + std::to_string(index + 1) + "/" + std::to_string(list.size()) + " ›";
         }
@@ -755,6 +904,48 @@ void ToolScreen::refresh_trace() {
     }
 }
 
+bool ToolScreen::ports_result_shown() const {
+    const model::PortRun& run = view_model().tools().ports;
+    return run.state == model::ToolState::Running ||
+           (run.state != model::ToolState::Idle && run.target == selected_target());
+}
+
+void ToolScreen::refresh_ports() {
+    const auto& theme = this->theme();
+    const model::PortRun& run = view_model().tools().ports;
+    std::vector<std::string> lines;
+    std::string confirm;
+    std::string counts;
+    int32_t tone = tools::kToneText;
+    if (confirming_) {
+        lines.push_back("Asks " + std::to_string(model::common_ports().size()) + " common ports, " +
+                        std::to_string(1000 / model::kPortIntervalMs) + " a second");
+        confirm = "Only devices you own or may test.\nPress 6 again to scan.";
+    } else if (!ports_result_shown()) {
+        lines.push_back("Results show here");
+        tone = tools::kToneMuted;
+    } else {
+        lines = pack_lines(tools::open_port_items(run), theme.font(view::FontRole::Mono), kWidth, kAddressLines);
+        if (lines.empty() && run.state != model::ToolState::Failed) {
+            lines.push_back(run.state == model::ToolState::Running ? "None open yet" : "No open ports");
+            tone = tools::kToneMuted;
+        }
+        counts = tools::ports_counts_text(run);
+    }
+    for (std::size_t line = 0; line < kAddressLines; ++line) {
+        set_text_if_changed(lines_[line], lines_shown_[line], line < lines.size() ? lines[line] : std::string());
+    }
+    if (tone != lines_tone_) {
+        for (lv_obj_t* label : lines_) {
+            lv_obj_set_style_text_color(label, tone_color(theme, tone), 0);
+        }
+        lines_tone_ = tone;
+    }
+    set_hidden(confirm_, confirm.empty());
+    set_text_if_changed(confirm_, confirm_shown_, confirm);
+    set_text_if_changed(server_, server_shown_, counts);
+}
+
 void ToolScreen::refresh_status() {
     const auto& theme = this->theme();
     const model::ToolsData& data = view_model().tools();
@@ -769,11 +960,16 @@ void ToolScreen::refresh_status() {
         case model::ToolKind::Trace:
             status = tools::trace_status(data.trace);
             break;
+        case model::ToolKind::Ports:
+            status = tools::ports_status(ports_result_shown() ? data.ports : model::PortRun{});
+            break;
         case model::ToolKind::Listen:
         case model::ToolKind::Probe:
             break;  // the Discover page's, never a tool page's
     }
-    if (!this_running() && any_running()) {
+    if (confirming_) {
+        status = {"Nothing sent yet", tools::kToneMuted};
+    } else if (!this_running() && any_running()) {
         if (data.ping.state == model::ToolState::Running) {
             status = {"Ping is running", tools::kToneMuted};
         } else if (data.dns.state == model::ToolState::Running) {
@@ -782,6 +978,8 @@ void ToolScreen::refresh_status() {
             status = {"Discover is listening", tools::kToneMuted};
         } else if (data.probe.state == model::ToolState::Running) {
             status = {"Discover is probing", tools::kToneMuted};
+        } else if (data.ports.state == model::ToolState::Running) {
+            status = {"Port scan is running", tools::kToneMuted};
         } else {
             status = {"Trace is running", tools::kToneMuted};
         }
@@ -821,7 +1019,16 @@ void ToolScreen::refresh_typing() {
                             " · ENTER keeps · ESC cancels");
     std::string note;
     int32_t tone = tools::kToneMuted;
-    if (draft_invalid_) {
+    if (kind_ == model::ToolKind::Ports) {
+        if (draft_invalid_) {
+            tone = tools::kToneError;
+            note = "Only private addresses: 10.x, 172.16-31.x, 192.168.x or 169.254.x";
+        } else if (draft.empty() && !view_model().tool_typed_target(kind_).empty()) {
+            note = "Empty: ENTER drops the typed target";
+        } else {
+            note = "A private IPv4 address on your own network";
+        }
+    } else if (draft_invalid_) {
         tone = tools::kToneError;
         if (kind_ == model::ToolKind::Dns && model::valid_tool_target(model::ToolKind::Ping, draft)) {
             note = "Type a name, not an address";
@@ -846,6 +1053,16 @@ void ToolScreen::refresh() {
         set_hidden(typing_panel_, !typing);
         shown_typing_ = typing ? 1 : 0;
     }
+    // A confirmation goes when its target is no longer the selected one, or
+    // a tool runs.
+    if (confirming_ && (typing || any_running() || selected_target() != confirm_target_)) {
+        if (confirm_timer_) {
+            lv_timer_delete(confirm_timer_);
+            confirm_timer_ = nullptr;
+        }
+        confirming_ = false;
+        confirm_target_.clear();
+    }
     refresh_keys();
     if (typing) {
         refresh_typing();
@@ -861,6 +1078,9 @@ void ToolScreen::refresh() {
             break;
         case model::ToolKind::Trace:
             refresh_trace();
+            break;
+        case model::ToolKind::Ports:
+            refresh_ports();
             break;
         case model::ToolKind::Listen:
         case model::ToolKind::Probe:

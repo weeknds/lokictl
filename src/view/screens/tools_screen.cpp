@@ -47,7 +47,7 @@ constexpr ToolInfo kTools[] = {
     {"DNS", "The addresses of a name"},
     {"Trace", "The route, hop by hop"},
     {"Wi-Fi", "Nearby Wi-Fi networks"},
-    {"Ports", ""},
+    {"Ports", "Open ports of one device"},
     {"Speed", ""},
 };
 
@@ -125,20 +125,23 @@ int32_t ToolsScreen::selected_row() const {
     return std::clamp<int32_t>(view_model().tools_selection(), 0, kOpenableRows - 1);
 }
 
-// Listening and probing, the last tool kinds, belong to the Discover page
-// and have no row here.
-static_assert(static_cast<int32_t>(model::ToolKind::Trace) == ToolsScreen::kWifiRow - 1 &&
-                  static_cast<int32_t>(model::ToolKind::Listen) == ToolsScreen::kWifiRow &&
-                  static_cast<int32_t>(model::ToolKind::Probe) == ToolsScreen::kWifiRow + 1 &&
-                  model::kToolKindCount == static_cast<std::size_t>(ToolsScreen::kWifiRow) + 2 &&
-                  ToolsScreen::kWifiRow == ToolsScreen::kOpenableRows - 1,
-              "the openable rows are the tools, in the order of model::ToolKind, then Wi-Fi");
+// The rows before Wi-Fi follow model::ToolKind: Ping, DNS, Trace. Listening
+// and probing belong to the Discover page and have no row here; the Ports
+// row is mapped by name.
+static_assert(static_cast<int32_t>(model::ToolKind::Ping) == 0 && static_cast<int32_t>(model::ToolKind::Dns) == 1 &&
+                  static_cast<int32_t>(model::ToolKind::Trace) == ToolsScreen::kWifiRow - 1 &&
+                  ToolsScreen::kPortsRow == ToolsScreen::kWifiRow + 1 &&
+                  ToolsScreen::kPortsRow == ToolsScreen::kOpenableRows - 1,
+              "the openable rows are Ping, DNS and Trace in the order of model::ToolKind, then Wi-Fi and Ports");
 
 void ToolsScreen::open_selected() {
-    // The rows before Wi-Fi follow model::ToolKind: Ping, DNS, Trace.
     const int32_t row = selected_row();
     if (row == kWifiRow) {
         view_model().open_wifi();
+        return;
+    }
+    if (row == kPortsRow) {
+        view_model().open_tool(model::ToolKind::Ports);
         return;
     }
     view_model().open_tool(static_cast<model::ToolKind>(row));
@@ -226,7 +229,8 @@ void ToolsScreen::refresh() {
 
     // Wi-Fi has no tag: its list is only read while its page is open.
     const tools::ToneText tags[kOpenableRows] = {tools::ping_tag(data.ping), tools::dns_tag(data.dns),
-                                                 tools::trace_tag(data.trace), tools::ToneText{}};
+                                                 tools::trace_tag(data.trace), tools::ToneText{},
+                                                 tools::ports_tag(data.ports)};
     for (int32_t index = 0; index < kOpenableRows; ++index) {
         Cell& cell = cells_[static_cast<std::size_t>(index)];
         const tools::ToneText& tag = tags[index];

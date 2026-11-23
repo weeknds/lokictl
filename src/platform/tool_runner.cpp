@@ -7,6 +7,7 @@
 #include "tool_runner.h"
 
 #include "listen.h"
+#include "port_scan.h"
 #include "probe.h"
 #include "sent_counter.h"
 
@@ -206,6 +207,9 @@ public:
             case model::ToolKind::Probe:
                 latest_.probe.state = model::ToolState::Stopped;
                 break;
+            case model::ToolKind::Ports:
+                latest_.ports.state = model::ToolState::Stopped;
+                break;
         }
         fresh_ = true;
     }
@@ -243,6 +247,7 @@ public:
         data.trace = latest_.trace;
         data.listen = latest_.listen;
         data.probe = latest_.probe;
+        data.ports = latest_.ports;
         data.latest = latest_.latest;
         fresh_ = false;
         return true;
@@ -278,6 +283,9 @@ private:
                 break;
             case model::ToolKind::Probe:
                 keep(pretend_probe(elapsed, job_.target, sent, done), latest_.probe);
+                break;
+            case model::ToolKind::Ports:
+                keep(pretend_port_scan(elapsed, job_.target, sent, done), latest_.ports);
                 break;
         }
         if (sent > counted_) {
@@ -929,6 +937,12 @@ public:
                     latest_.probe.state = model::ToolState::Running;
                     latest_.probe.interface_name = job.target;
                     break;
+                case model::ToolKind::Ports:
+                    latest_.ports = model::PortRun{};
+                    latest_.ports.state = model::ToolState::Running;
+                    latest_.ports.target = job.target;
+                    latest_.ports.total = static_cast<int32_t>(model::common_ports().size());
+                    break;
             }
             if (job.kind == model::ToolKind::Listen || job.kind == model::ToolKind::Probe) {
                 latest_.latest = job.kind;
@@ -969,6 +983,7 @@ public:
         data.trace = latest_.trace;
         data.listen = latest_.listen;
         data.probe = latest_.probe;
+        data.ports = latest_.ports;
         data.latest = latest_.latest;
         fresh_ = false;
         return true;
@@ -1055,6 +1070,9 @@ private:
                     case model::ToolKind::Probe:
                         run_probe(job.target);
                         break;
+                    case model::ToolKind::Ports:
+                        run_ports(job.target);
+                        break;
                 }
             } catch (...) {
                 // Nothing in a job should throw; if something does (no
@@ -1075,6 +1093,9 @@ private:
                         break;
                     case model::ToolKind::Probe:
                         fail_internal(latest_.probe);
+                        break;
+                    case model::ToolKind::Ports:
+                        fail_internal(latest_.ports);
                         break;
                 }
                 fresh_ = true;
@@ -1108,6 +1129,9 @@ private:
                 break;
             case model::ToolKind::Probe:
                 latest_.probe.state = model::ToolState::Stopped;
+                break;
+            case model::ToolKind::Ports:
+                latest_.ports.state = model::ToolState::Stopped;
                 break;
         }
         fresh_ = true;
@@ -1153,6 +1177,14 @@ private:
         std::lock_guard<std::mutex> lock(mutex_);
         if (run != latest_.probe) {
             latest_.probe = run;
+            fresh_ = true;
+        }
+    }
+
+    void publish(const model::PortRun& run) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (run != latest_.ports) {
+            latest_.ports = run;
             fresh_ = true;
         }
     }
@@ -2016,6 +2048,177 @@ private:
         }
         ::close(fd);
         return stopped;
+    }
+
+    // Scans the TCP ports of model::common_ports() on `target`, an IPv4
+    // address that model::port_scan_address() allows and that lies on one
+    // of the Cardputer's own networks (checked here again, before anything
+    // is sent). Each port gets one unprivileged non-blocking connect(): one
+    // new attempt every model::kPortIntervalMs, at most model::kPortsWaiting
+    // waiting, each for model::kPortTimeoutMs. A connection that is made is
+    // closed at once; nothing is ever read or written. Each attempt the
+    // system takes is counted with count_sent(). Every socket is closed on
+    // the way out, whatever ends the run.
+    void run_ports(const std::string& target) {
+        const std::vector<model::CommonPort>& ports = model::common_ports();
+        model::PortRun run;
+        run.state = model::ToolState::Running;
+        run.target = target;
+        run.total = static_cast<int32_t>(ports.size());
+        publish(run);
+
+        in_addr address{};
+        if (!model::port_scan_address(target) || inet_pton(AF_INET, target.c_str(), &address) != 1) {
+            run.state = model::ToolState::Failed;
+            run.error = model::ToolError::BadTarget;
+            publish(run);
+            return;
+        }
+        if (!port_scan_allowed(ntohl(address.s_addr), read_own_networks(), run.reason)) {
+            run.state = model::ToolState::Failed;
+            run.error = model::ToolError::Failed;
+            publish(run);
+            return;
+        }
+
+        struct Attempt {
+            int fd;
+            uint16_t port;
+            Clock::time_point deadline;
+        };
+        // The attempts waiting for an answer. Whatever ends the run (also
+        // an exception), their sockets are closed.
+        struct Waiting {
+            std::vector<Attempt> list;
+            ~Waiting() {
+                for (const Attempt& attempt : list) {
+                    ::close(attempt.fd);
+                }
+            }
+        } held;
+        std::vector<Attempt>& waiting = held.list;
+        waiting.reserve(static_cast<std::size_t>(model::kPortsWaiting));
+        const auto close_all = [&waiting] {
+            for (const Attempt& attempt : waiting) {
+                ::close(attempt.fd);
+            }
+            waiting.clear();
+        };
+        const auto note_open = [&run](uint16_t port) {
+            run.open.insert(std::upper_bound(run.open.begin(), run.open.end(), port), port);
+        };
+        const auto fail = [&](const std::string& reason) {
+            close_all();
+            run.state = model::ToolState::Failed;
+            run.error = model::ToolError::Failed;
+            run.reason = reason;
+            publish(run);
+        };
+
+        const auto interval = std::chrono::milliseconds(model::kPortIntervalMs);
+        const auto timeout = std::chrono::milliseconds(model::kPortTimeoutMs);
+        std::size_t next = 0;
+        Clock::time_point next_send = Clock::now();
+        std::vector<pollfd> entries;
+        entries.reserve(static_cast<std::size_t>(model::kPortsWaiting));
+        while (true) {
+            if (stopping()) {
+                close_all();
+                run.state = model::ToolState::Stopped;
+                publish(run);
+                return;
+            }
+            Clock::time_point now = Clock::now();
+            if (next < ports.size() && waiting.size() < static_cast<std::size_t>(model::kPortsWaiting) &&
+                now >= next_send) {
+                const uint16_t port = ports[next].port;
+                ++next;
+                run.asked = static_cast<int32_t>(next);
+                next_send += interval;
+                if (next_send < now) {
+                    next_send = now + interval;  // never a burst after a stall
+                }
+                const int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+                if (fd < 0) {
+                    fail(error_text(errno));
+                    return;
+                }
+                sockaddr_in to{};
+                to.sin_family = AF_INET;
+                to.sin_addr = address;
+                to.sin_port = htons(port);
+                const int result = ::connect(fd, reinterpret_cast<const sockaddr*>(&to), sizeof(to));
+                const int number = result == 0 ? 0 : errno;
+                if (result == 0) {
+                    count_sent();
+                    note_open(port);
+                    ::close(fd);
+                } else if (number == EINPROGRESS) {
+                    count_sent();
+                    waiting.push_back({fd, port, now + timeout});
+                } else if (number == ECONNREFUSED) {
+                    count_sent();
+                    ++run.closed;
+                    ::close(fd);
+                } else {
+                    // The system refused the attempt itself (no route, the
+                    // host known unreachable, not allowed): the others
+                    // would fare the same.
+                    ::close(fd);
+                    fail(number == EHOSTUNREACH ? std::string("no answer from that address") : error_text(number));
+                    return;
+                }
+            }
+
+            if (next >= ports.size() && waiting.empty()) {
+                break;
+            }
+
+            // Waits for an answer, the next attempt or the first deadline,
+            // at most kWaitSliceMs.
+            Clock::time_point wake = now + std::chrono::milliseconds(kWaitSliceMs);
+            if (next < ports.size() && waiting.size() < static_cast<std::size_t>(model::kPortsWaiting)) {
+                wake = std::min(wake, next_send);
+            }
+            entries.clear();
+            for (const Attempt& attempt : waiting) {
+                entries.push_back({attempt.fd, POLLOUT, 0});
+                wake = std::min(wake, attempt.deadline);
+            }
+            const int ready = ::poll(entries.empty() ? nullptr : entries.data(), static_cast<nfds_t>(entries.size()),
+                                     wait_slice(now, wake));
+            now = Clock::now();
+            std::vector<Attempt> still;
+            still.reserve(waiting.size());
+            for (std::size_t index = 0; index < waiting.size(); ++index) {
+                const Attempt& attempt = waiting[index];
+                const short events = ready > 0 ? entries[index].revents : 0;
+                if ((events & (POLLOUT | POLLERR | POLLHUP)) != 0) {
+                    int error = 0;
+                    socklen_t length = sizeof(error);
+                    if (::getsockopt(attempt.fd, SOL_SOCKET, SO_ERROR, &error, &length) != 0) {
+                        error = errno;
+                    }
+                    if (error == 0) {
+                        note_open(attempt.port);
+                    } else if (error == ECONNREFUSED) {
+                        ++run.closed;
+                    } else {
+                        ++run.silent;  // unreachable, timed out by the system, or anything else
+                    }
+                    ::close(attempt.fd);
+                } else if (now >= attempt.deadline) {
+                    ++run.silent;
+                    ::close(attempt.fd);
+                } else {
+                    still.push_back(attempt);
+                }
+            }
+            waiting.swap(still);
+            publish(run);
+        }
+        run.state = model::ToolState::Done;
+        publish(run);
     }
 
     // Listens on `interface_name` for model::kListenSeconds through the
