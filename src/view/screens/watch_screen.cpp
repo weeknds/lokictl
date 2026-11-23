@@ -10,6 +10,7 @@
 #include "style.h"
 #include "theme.h"
 #include "tool_format.h"
+#include "trap_data.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -128,6 +129,11 @@ std::string fact_text(const model::WatchAlert& alert, bool known) {
             return "Tried " + std::to_string(alert.count) + " ports";
         case model::WatchAlertKind::ArpFlood:
             return std::to_string(alert.count) + " ARP frames in 1 s";
+        case model::WatchAlertKind::Trap: {
+            const model::TrapService* service = model::trap_service(static_cast<uint16_t>(alert.count));
+            return std::string("Tried ") + (service ? service->word : "a port") + ", port " +
+                   std::to_string(alert.count);
+        }
     }
     return {};
 }
@@ -178,7 +184,7 @@ view::widgets::SoftKeySet WatchScreen::soft_keys() {
         {"Info", [this] { toggle_detail(); }, false, false},
         {"Start", [this] { watch_or_stop(); }, true},
         {"Known", [this] { mark_known(); }, false, false},
-        {},
+        {"Trap", [&view_model] { view_model.open_trap(); }},
     }};
 }
 

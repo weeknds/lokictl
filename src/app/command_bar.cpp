@@ -40,6 +40,7 @@ constexpr CommandSpec kCommands[] = {
     {"tools", CommandKind::Page, model::AppPage::Tools, model::ToolKind::Ping, nullptr},
     {"discover", CommandKind::Page, model::AppPage::Discover, model::ToolKind::Ping, nullptr},
     {"watch", CommandKind::Page, model::AppPage::Watch, model::ToolKind::Ping, nullptr},
+    {"trap", CommandKind::Page, model::AppPage::Trap, model::ToolKind::Ping, nullptr},
     {"health", CommandKind::Page, model::AppPage::Health, model::ToolKind::Ping, nullptr},
     {"wifi", CommandKind::Page, model::AppPage::Wifi, model::ToolKind::Ping, nullptr},
     {"status", CommandKind::Page, model::AppPage::Status, model::ToolKind::Ping, nullptr},

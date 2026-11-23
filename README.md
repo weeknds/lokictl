@@ -187,6 +187,28 @@ list (64 devices at most) is saved. Watch can't see Wi-Fi radio tricks
 such as kick-off floods or fake access points, and it never blocks
 anyone.
 
+### Trap
+
+A trap (a honeypot) is bait: fake services that nobody has a reason to
+use. `8` on Watch (or the command `trap`) opens it, and `6` sets it. The
+Cardputer then pretends to offer file transfer (port 21), remote login
+(23), web pages (80 and 8080), file sharing (445) and remote desktop
+(3389). Anyone who connects is shown at once as `13:05 192.0.2.7 tried
+web`, pops up as a short message on any page and goes into Watch's list
+too. That is a strong sign the device is looking for weak spots on your
+network. `Enter` or `5` shows who it was and the first bytes it sent.
+
+The trap never runs anything it is sent. Each visitor gets a harmless
+greeting (a login prompt or a plain web page), is read for at most
+5 seconds and 512 bytes, and is cut off. At most 20 visits a minute are
+logged (5 per device); more are closed at once. A port that something on
+the Cardputer already uses is left alone, so the real SSH and Remote view
+keep working. The low ports (21, 23, 80, 445) need the firewall helper
+(see Permissions); without it only 3389 and 8080 open. The trap is off
+every time LokiCTL starts and goes when it quits, and a `TRAP` tag shows
+in the title bar while it is set. It answers anyone on the networks the
+Cardputer is on, so use it only on networks you own or may test.
+
 ### Discover and Map
 
 Discover (`5` on Home) finds the devices on the network the Cardputer is
@@ -273,7 +295,7 @@ and names, up and down (fn+F and fn+X) bring back the last 8 commands, and
 | Command | What it does |
 |---|---|
 | `help` | Lists the commands. |
-| `home`, `map`, `tools`, `discover`, `watch`, `health`, `wifi`, `status`, `settings` | Opens that page. |
+| `home`, `map`, `tools`, `discover`, `watch`, `trap`, `health`, `wifi`, `status`, `settings` | Opens that page. |
 | `theme <name>` | Switches to `instrument`, `constellation` or `terminal`. |
 | `mode <name>` | Switches to `client`, `router`, `share` or `vpn`. |
 | `ping [target]` | Pings a host, or the target that's selected on the Ping page. |
@@ -311,9 +333,9 @@ setuid. The package adds three things so the network features work:
   a WPA-protected hotspot. polkit can't tell programs apart, so every
   program a `netdev` member runs gets these rights, not only LokiCTL.
 - `lokictl-helper`, a tiny program with one capability, `CAP_NET_ADMIN`.
-  It runs eight fixed commands and only touches LokiCTL's own firewall
-  table (`inet lokictl`, used for blocking and the kill switch) and Share's
-  extra interface, `lokiap0`.
+  It runs ten fixed commands and only touches LokiCTL's own firewall
+  table (`inet lokictl`, used for blocking, the kill switch and the trap's
+  low ports) and Share's extra interface, `lokiap0`.
 - `lokictl-capture`, a tiny program with one capability, `CAP_NET_RAW`.
   For Discover it only hears ARP, DHCP, mDNS and SSDP; for Watch only ARP,
   DHCP, connection requests to the Cardputer and IPv6 router
@@ -340,6 +362,8 @@ the details and lists every file LokiCTL writes.
 | Look-alike network | A network nearby that uses your Wi-Fi's name with weaker security. It may be a trap to catch devices. |
 | UPnP | A router feature that lets apps and devices open ports to the internet by themselves. |
 | Sent | How many packets LokiCTL has sent since it started. |
+| Trap | Fake services that catch whoever connects to them (a honeypot). |
+| `Caught` | How many times someone connected to the trap. |
 
 ## Data use
 

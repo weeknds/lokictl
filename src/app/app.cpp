@@ -30,6 +30,7 @@
 #include "theme_controller.h"
 #include "theme_engine.h"
 #include "tool_controller.h"
+#include "trap_controller.h"
 #include "watch_controller.h"
 #include "tool_runner.h"
 
@@ -678,6 +679,10 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override,
         });
     }
 #endif
+    // The trap (fake services): off at every start; live on the device,
+    // made-up on the Mac. Stopped right after the main loop, before Watch
+    // and the data controller, so its redirect goes first.
+    TrapController trap(view_model, platform::make_trap_runner(live_watch));
 
     ScreenManager screen_manager(view_model, assets, theme_engine);
     screen_manager.start();
@@ -722,6 +727,12 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override,
         key_controller.show_usb_wifi(interface_name, connected);
     });
     watch.set_alert_listener([&key_controller](const std::string& text) { key_controller.show_watch_alert(text); });
+    // Each connection to the trap also goes into Watch's log.
+    trap.set_hit_listener([&watch, &key_controller](const std::string& message,
+                                                    const std::vector<model::TrapHit>& fresh) {
+        add_trap_alerts(watch, fresh);
+        key_controller.show_trap_alert(message);
+    });
 
     // Declared after everything its listener uses, so it is destroyed before
     // them. When the user picks a theme in Settings, the theme switches
@@ -753,6 +764,7 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override,
     data.start();
     tools.start();
     watch.start();
+    trap.start();
     while (running && stop_signal == 0
 #if USE_DESKTOP
            && simulator_frame.process_events()
@@ -767,6 +779,8 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override,
     // Then Remote view: the port closes and its thread ends.
     remote.stop();
     tools.stop();
+    trap.stop();
+    trap.set_hit_listener({});
     watch.stop();
     watch.set_alert_listener({});
     data.set_block_failure_listener({});

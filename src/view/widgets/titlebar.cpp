@@ -177,14 +177,24 @@ void TitleBar::build() {
     // LVGL calls each observer once right away, which shows the values.
     lv_subject_add_observer_obj(view_model_.home_data_subject(), data_observer, core_obj_, this);
     lv_subject_add_observer_obj(view_model_.watch_subject(), watch_observer, core_obj_, this);
+    lv_subject_add_observer_obj(view_model_.trap_subject(), watch_observer, core_obj_, this);
 }
 
 void TitleBar::watch_observer(lv_observer_t* observer, lv_subject_t* /*subject*/) {
     auto* title_bar = static_cast<TitleBar*>(lv_observer_get_user_data(observer));
-    if (title_bar && title_bar->watch_tag_) {
-        set_visible(title_bar->watch_tag_,
-                    title_bar->view_model_.watch().run.state == model::ToolState::Running);
+    if (!title_bar || !title_bar->watch_tag_) {
+        return;
     }
+    // The trap answers on the network, so its tag comes first.
+    const bool trap = title_bar->view_model_.trap().state == model::ToolState::Running;
+    const bool watch = title_bar->view_model_.watch().run.state == model::ToolState::Running;
+    const int32_t tag = trap ? 2 : (watch ? 1 : 0);
+    if (tag != title_bar->tag_shown_ && tag != 0) {
+        lv_label_set_text(title_bar->watch_tag_,
+                          view::style::soft_key_text(title_bar->theme_engine_.theme(), trap ? "Trap" : "Watch").c_str());
+    }
+    title_bar->tag_shown_ = tag;
+    set_visible(title_bar->watch_tag_, tag != 0);
 }
 
 void TitleBar::refresh() {

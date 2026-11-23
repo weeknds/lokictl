@@ -212,7 +212,7 @@ The commands, read without regard to case:
 | `help` | lists the commands in the help panel (badge `COMMANDS`) |
 | `theme <name>` | switches the theme: `instrument`, `constellation` or `terminal` |
 | `mode <name>` | switches the mode: `client`, `router`, `share` or `vpn` (see below) |
-| `home`, `map`, `tools`, `discover`, `watch`, `health`, `wifi`, `status`, `settings` | open that page, the same way its key does |
+| `home`, `map`, `tools`, `discover`, `watch`, `trap`, `health`, `wifi`, `status`, `settings` | open that page, the same way its key does |
 | `ping`, `dns`, `trace` `[target]` | open the tool's page and run it, on the target when one is given |
 | `ports [address]` | opens the Ports page and asks first, as its key 6 does; nothing is sent until the second 6 |
 | `scan` | starts Discover's passive Listen run |
@@ -544,11 +544,41 @@ explanation.
 | `5` INFO or Enter | opens or closes the detail |
 | `6` START / STOP | starts Watch on the uplink or stops it (off without a network) |
 | `7` KNOWN | marks the picked new device as known |
+| `8` TRAP | opens the Trap page |
 | `4` BACK or a short ESC | closes the detail, else goes back (Watch goes on) |
 
 The pick and the detail live in the view model (`watch_selection_*`,
 `watch_detail_*`). While an alert other than the newest is picked, new
-alerts don't move the pick off it.
+alerts don't move the pick off it. The trap's connections show in this list
+too (`Tried a trap`), with Watch on or off.
+
+## The Trap page
+
+`trap` (Watch key 8, or the command `trap`) shows the trap, a honeypot:
+fake services that catch whoever connects. It runs on its own
+(`app::TrapController`), keeps going when the page is left and ends when
+LokiCTL quits; a `TRAP` tag takes the place of the `WATCH` tag while it is
+set, and each new connection shows as a short message on any page (`Trap:
+192.0.2.7 tried web`, or `Trap: 3 connections`) and in Watch's list.
+
+Under the title bar: the summary row (`Trap On`, `4 caught`), one line per
+connection, newest first (time, address, `tried web`), or, with none yet,
+what the trap is and its ports (`Fake services that catch snoopers`,
+`Ports 21 23 80 445 3389 8080`), and the status line (`On 4:12, 6 fake
+ports`, `On 4:12, 5 of 6 ports`, `On 0:03, 2 of 6 (no helper)`, `Off after
+3:10`, `Off, no port open`). The detail view shows the picked connection:
+what it tried and when, the address and its port, the fake service and its
+port, and what it sent first.
+
+| Key | What it does |
+|---|---|
+| `f`/`x` or the arrows up and down | pick a connection |
+| `5` INFO or Enter | opens or closes the detail |
+| `6` START / STOP | sets the trap or takes it away |
+| `4` BACK or a short ESC | closes the detail, else goes back (the trap stays) |
+
+The pick and the detail live in the view model (`trap_selection_*`,
+`trap_detail_*`).
 
 ## The Health page
 

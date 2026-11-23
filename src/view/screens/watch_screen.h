@@ -34,7 +34,8 @@ namespace screen {
 // goes on); 5 (Info) or Enter opens or closes the detail; 6 (Start / Stop)
 // starts Watch on the uplink or stops it (off without a network); 7
 // (Known) marks the selected new device as known, so it raises no alert
-// again; up and down (F/X) pick an alert.
+// again; 8 (Trap) opens the Trap page, whose connections also show here;
+// up and down (F/X) pick an alert.
 //
 // The selection and the detail live in the view model (watch_selection_*,
 // watch_detail_*), so they are kept across a theme switch. While an alert

@@ -1195,6 +1195,53 @@ controller's message.
   (never an address, a hardware address or a name).
 - `tests/watch_alerts.cpp` (`lokictl_watch_tests`) replays made-up frames
   for each alert kind, and ordinary traffic that must raise none.
+- Alerts from elsewhere (the trap's connections, `WatchController::
+  add_alert()`) join the log in the order they came, show with Watch on or
+  off, and stay when a new Watch run starts.
+
+## The trap
+
+The trap (`model::TrapRun`, in `BaseViewModel::trap()`) is a honeypot:
+fake services on fixed ports (`model::trap_services()`: 21, 23, 80, 445,
+3389 and 8080). `app::TrapController` owns a `platform::TrapRunner`
+(`platform/trap.*`), takes its run four times a second and hands each new
+connection to the key controller's message and to Watch's log. It is off
+at every start and stops when LokiCTL quits, keep mode or not.
+
+- **The live runner** (device builds) has its own thread. It leaves alone
+  every port something on the Cardputer already listens on
+  (`/proc/net/tcp` and `tcp6`), listens on the others (IPv4, as the user;
+  the low ports on 30021, 30023, 30080 and 30445) and runs the firewall
+  helper's `trap-on` (`platform::trap_on()`), which sends the low ports on
+  to those; a low port it did not send on is closed again (`in use`, or
+  `no helper`). Each connection, within 20 a minute in all and 5 per
+  source (`model::TrapLimiter`; more are closed at once and only counted),
+  is logged at once, gets a harmless greeting (FTP `220`, a Telnet
+  `login:` prompt, a plain web page after the request; nothing for file
+  sharing and remote desktop; one packet in Sent each), is read for at
+  most 5 s and 512 bytes and is closed. At most 8 are open at once. Every
+  10 s it checks that nothing else began to listen on a low port it sends
+  on, and runs `trap-on` again without it if something did. A stop closes
+  everything and runs `trap-off`.
+- **The firewall table.** The helper runs one at a time
+  (`platform::run_helper()` holds a lock), and while the trap is set a
+  removal of the whole table (`DeviceBlocker`'s `clear`, when the hotspot
+  stops) sets the redirect up again at once. A trap chain a killed run
+  left behind goes at the next start (`clear`, or `trap-off` when the
+  table is adopted).
+- **The pretend runner** (the Mac and snapshots) adds four made-up
+  connections in the first 6 s and shows 8080 as in use.
+- **What is kept:** the newest 100 connections, in memory only: time,
+  address and port, the fake port, and the first bytes as printable text
+  (`model::trap_shown_text()`: line ends become spaces, other bytes dots,
+  60 characters at most).
+- Log lines (from `app::TrapController`): `trap: set by the user`, `trap:
+  taken away by the user`, `trap: on, ports open: <n>`, `trap: connection
+  to port <p>`, `trap: off, connections: <n>, closed at once: <m>`, `trap:
+  failed: <why>`, `trap: firewall helper: <why>` (never an address or what
+  was sent).
+- `tests/trap_checks.cpp` (`lokictl_trap_tests`) checks the limits, the
+  shown text, the reading of the listening ports and the port map.
 
 ## The Wi-Fi list
 

@@ -66,6 +66,10 @@ BaseViewModel::BaseViewModel()
       watch_request_subject_(0),
       watch_selection_subject_(0),
       watch_detail_subject_(false),
+      trap_subject_(0),
+      trap_request_subject_(0),
+      trap_selection_subject_(0),
+      trap_detail_subject_(false),
       health_selection_subject_(0),
       health_detail_subject_(false),
       map_selection_subject_(kMapRouter),
@@ -732,6 +736,71 @@ bool BaseViewModel::watch_detail() const {
 void BaseViewModel::set_watch_detail(bool open) {
     if (open != watch_detail_subject_.value()) {
         watch_detail_subject_.set(open);
+    }
+}
+
+bool BaseViewModel::open_trap() {
+    set_trap_selection(0);
+    set_trap_detail(false);
+    return open_page(model::AppPage::Trap);
+}
+
+const model::TrapRun& BaseViewModel::trap() const {
+    return trap_;
+}
+
+bool BaseViewModel::set_trap(const model::TrapRun& run) {
+    if (run == trap_) {
+        return false;
+    }
+    trap_ = run;
+    bump(trap_subject_);
+    return true;
+}
+
+lv_subject_t* BaseViewModel::trap_subject() {
+    return trap_subject_.native();
+}
+
+void BaseViewModel::request_trap(TrapRequest request) {
+    requested_trap_ = request;
+    bump(trap_request_subject_);
+}
+
+lv_subject_t* BaseViewModel::trap_request_subject() {
+    return trap_request_subject_.native();
+}
+
+BaseViewModel::TrapRequest BaseViewModel::requested_trap() const {
+    return requested_trap_;
+}
+
+lv_subject_t* BaseViewModel::trap_selection_subject() {
+    return trap_selection_subject_.native();
+}
+
+int32_t BaseViewModel::trap_selection() const {
+    return trap_selection_subject_.value();
+}
+
+void BaseViewModel::set_trap_selection(int32_t row) {
+    const int32_t next = std::max<int32_t>(row, 0);
+    if (next != trap_selection_subject_.value()) {
+        trap_selection_subject_.set(next);
+    }
+}
+
+lv_subject_t* BaseViewModel::trap_detail_subject() {
+    return trap_detail_subject_.native();
+}
+
+bool BaseViewModel::trap_detail() const {
+    return trap_detail_subject_.value();
+}
+
+void BaseViewModel::set_trap_detail(bool open) {
+    if (open != trap_detail_subject_.value()) {
+        trap_detail_subject_.set(open);
     }
 }
 

@@ -798,8 +798,8 @@ target_link_libraries(${PROJECT_NAME}
 )
 
 # Checks of the service and version reading and of the list of known
-# security holes (tests/vuln_checks.cpp), of Watch's alerts and of the
-# health check's rules, on the Mac only:
+# security holes (tests/vuln_checks.cpp), of Watch's alerts, of the
+# health check's rules and of the trap, on the Mac only:
 # build/darwin-arm64/Debug/lokictl_tests, or ctest.
 if(USE_DESKTOP)
     add_executable(${PROJECT_NAME}_tests tests/vuln_checks.cpp src/platform/dns_message.cpp)
@@ -834,6 +834,12 @@ if(USE_DESKTOP)
             VULN_LIST_PATH="${CMAKE_CURRENT_SOURCE_DIR}/assets/data/vulndb.tsv"
     )
     add_test(NAME health_rules COMMAND ${PROJECT_NAME}_health_tests)
+
+    # The trap's limits, shown text and port reading (tests/trap_checks.cpp):
+    # build/darwin-arm64/Debug/lokictl_trap_tests, or ctest.
+    add_executable(${PROJECT_NAME}_trap_tests tests/trap_checks.cpp)
+    target_link_libraries(${PROJECT_NAME}_trap_tests PRIVATE ${PROJECT_NAME}_model)
+    add_test(NAME trap_checks COMMAND ${PROJECT_NAME}_trap_tests)
 endif()
 
 # Package deb

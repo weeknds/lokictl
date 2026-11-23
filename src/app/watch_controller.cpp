@@ -36,6 +36,15 @@ void WatchController::set_known_saver(KnownSaver saver) {
     known_saver_ = std::move(saver);
 }
 
+void WatchController::add_alert(const model::WatchAlert& alert) {
+    others_.insert(others_.begin(), OtherAlert{alert, run_.raised});
+    if (others_.size() > model::kWatchMaxAlerts) {
+        others_.pop_back();
+    }
+    ++others_raised_;
+    publish();
+}
+
 void WatchController::start() {
     if (poll_timer_ || stopped_ || !runner_) {
         return;
@@ -107,6 +116,10 @@ void WatchController::handle_request() {
             }
             run_ = model::WatchRun{};
             learned_taken_ = 0;
+            // The alerts from elsewhere stay, older than the new run's.
+            for (OtherAlert& other : others_) {
+                other.after = 0;
+            }
             LOG_INFO("watch: started");
             break;
         }
@@ -196,6 +209,23 @@ void WatchController::publish() {
     model::WatchData data;
     data.run = run_;
     data.known = known_;
+    if (!others_.empty()) {
+        // Both lists are the newest first; run_'s alert at `index` was
+        // raised as number run_.raised - index.
+        std::vector<model::WatchAlert> merged;
+        std::size_t index = 0;
+        std::size_t other = 0;
+        while (merged.size() < model::kWatchMaxAlerts && (index < run_.alerts.size() || other < others_.size())) {
+            const int32_t number = run_.raised - static_cast<int32_t>(index);
+            if (index < run_.alerts.size() && (other >= others_.size() || number > others_[other].after)) {
+                merged.push_back(run_.alerts[index++]);
+            } else {
+                merged.push_back(others_[other++].alert);
+            }
+        }
+        data.run.alerts = std::move(merged);
+        data.run.raised = run_.raised + others_raised_;
+    }
     view_model_.set_watch(data);
 }
 

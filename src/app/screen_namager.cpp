@@ -17,6 +17,7 @@
 #include "devices_screen.h"
 #include "discover_screen.h"
 #include "health_screen.h"
+#include "trap_screen.h"
 #include "watch_screen.h"
 #include "hotspot_screen.h"
 #include "map_screen.h"
@@ -168,6 +169,14 @@ bool ScreenManager::show_health_screen() {
         return false;
     }
     page_loaded(model::AppPage::Health);
+    return true;
+}
+
+bool ScreenManager::show_trap_screen() {
+    if (!load_screen(std::make_unique<screen::TrapScreen>(view_model_, assets_, theme_engine_))) {
+        return false;
+    }
+    page_loaded(model::AppPage::Trap);
     return true;
 }
 
@@ -331,6 +340,10 @@ bool ScreenManager::show_page(model::AppPage page) {
 
     if (screen::WatchScreen::handles(page)) {
         return show_watch_screen();
+    }
+
+    if (screen::TrapScreen::handles(page)) {
+        return show_trap_screen();
     }
 
     if (screen::HealthScreen::handles(page)) {

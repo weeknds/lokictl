@@ -27,7 +27,9 @@ namespace app {
 // platform::WatchRunner and the list of known devices, carries out the
 // Watch page's requests (BaseViewModel::request_watch()) and, from an LVGL
 // timer four times a second, takes the latest run from the runner and gives
-// it to the view model with the known list. Watch runs next to any tool and
+// it to the view model with the known list. The log it hands over also
+// holds the alerts added from elsewhere (add_alert(): the trap), in the
+// order they came. Watch runs next to any tool and
 // keeps going when its page is left; it ends when LokiCTL quits (there is
 // no background service).
 //
@@ -65,6 +67,11 @@ public:
     // Gets the known list after each change; empty: nothing is saved.
     void set_known_saver(KnownSaver saver);
 
+    // Adds an alert from elsewhere (the trap's connections) to the log, as
+    // the newest. It shows with Watch on or off, stays when a new Watch run
+    // starts, and gives no message (its sender gives its own).
+    void add_alert(const model::WatchAlert& alert);
+
     // Starts following the requests and the timer. Does nothing when it
     // already runs.
     void start();
@@ -94,6 +101,14 @@ private:
     bool stopped_{false};
     model::WatchRun run_;          // the run handed over last
     std::size_t learned_taken_{0}; // how many of run_.learned are in known_
+    // Alerts from elsewhere, the newest first, each with how many of run_'s
+    // alerts were raised before it, so the log shows both in order.
+    struct OtherAlert {
+        model::WatchAlert alert;
+        int32_t after{0};
+    };
+    std::vector<OtherAlert> others_;
+    int32_t others_raised_{0};
 };
 
 } // namespace app

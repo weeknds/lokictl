@@ -34,26 +34,28 @@ LokiCTL**. Removing the package removes the rule. Router also needs
 
 ## lokictl-helper (CAP_NET_ADMIN)
 
-Blocking a device, Share's second Wi-Fi interface and the VPN gateway's
-kill switch need one right the app itself does not have: network
-administration. The package installs a small helper program for that,
+Blocking a device, Share's second Wi-Fi interface, the VPN gateway's
+kill switch and the trap's low ports need one right the app itself does not
+have: network administration. The package installs a small helper program for that,
 `/usr/libexec/lokictl/lokictl-helper` (source: `src/helper/lokictl_helper.c`).
 It is not setuid; the package's install script gives it the single Linux
 capability `CAP_NET_ADMIN` (with `setcap`, from `libcap2-bin`) and lets only
 root and the `netdev` group run it (owner `root:netdev`, mode 0750).
 
-It does one of eight fixed commands and exits:
+It does one of ten fixed commands and exits:
 
 | Command | What it does |
 |---|---|
 | `block MAC...` | blocks these devices on the hotspot |
 | `unblock MAC...` | lets them through again |
-| `list` | prints the kill switch state and the blocked devices |
+| `list` | prints the kill switch state, whether the trap is set, and the blocked devices |
 | `clear` | removes LokiCTL's firewall table |
 | `ap-add` | adds Share's interface, `lokiap0` |
 | `ap-del` | removes it |
 | `kill-on` | arms the VPN gateway's kill switch |
 | `kill-off` | disarms it |
+| `trap-on` | sends the trap's low ports on to the ports LokiCTL listens on |
+| `trap-off` | stops that |
 
 It only ever changes its own nftables table, `inet lokictl`: a set of
 blocked hardware addresses with two rules that drop what such a device
@@ -65,12 +67,29 @@ would send outside the tunnel. No other table is touched and the rule set is
 never flushed. `ap-add` and `ap-del` add and remove `lokiap0` with `iw`
 (which the package depends on) and fixed arguments.
 
+The trap (a honeypot) listens as your user on fixed high ports; only its
+low ports need the helper. `trap-on` takes no arguments. It adds a nat
+chain of its own, `trap`, that sends new IPv4 connections coming in
+through `eth0`, `wlan0` or `lokiap0` to port 21, 23, 80 or 445 of the
+Cardputer itself on to port 30021, 30023, 30080 or 30445. Connections the
+Cardputer only passes on (a hotspot device browsing the web) are never
+touched. A port is sent on only when
+nothing on the Cardputer listens on it (read from `/proc/net/tcp` and
+`tcp6`), so the real SSH on 22, Remote view's 8780 and any other service
+are never taken over, and only when a socket of the user who runs the
+helper listens on the high port, so the connections only ever reach
+LokiCTL. `trap-off` removes the chain, and the table when nothing else is
+in it. Ports 3389 and 8080 need no helper; LokiCTL listens on them itself.
+
 LokiCTL removes the table when the hotspot stops, and `lokiap0` when Share
 stops, and both when it quits (unless "Keep mode after quitting" is on);
-removing the package removes them too. Like the polkit rule, **every program
-of a `netdev` member may run the helper**, so it could block or unblock
-devices on the hotspot, add or remove `lokiap0` and switch the kill switch,
-and nothing else.
+removing the package removes them too. The trap's chain goes when the trap
+is taken away and whenever LokiCTL quits, keep mode or not; one left by a
+run that was killed goes at the next start. Like the polkit rule, **every
+program of a `netdev` member may run the helper**, so it could block or
+unblock devices on the hotspot, add or remove `lokiap0`, switch the kill
+switch and send the trap's four low ports on to the high ports (only where
+nothing listens on them), and nothing else.
 
 ## lokictl-capture (CAP_NET_RAW)
 

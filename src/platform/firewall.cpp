@@ -9,7 +9,9 @@
 #include <algorithm>
 #include <cerrno>
 #include <csignal>
+#include <cstdlib>
 #include <fcntl.h>
+#include <mutex>
 #include <sstream>
 #include <spawn.h>
 #include <sys/types.h>
@@ -33,6 +35,23 @@ constexpr milliseconds kWaitStep{10};
 constexpr std::size_t kOutputMax = 4096;
 // The line `list` prints while the kill switch is armed.
 constexpr const char* kKillSwitchLine = "kill-switch";
+// The line `list` prints while the trap's chain is there.
+constexpr const char* kTrapLine = "trap";
+
+// One run of the helper at a time: the data reader and the trap's thread
+// both run it, and trap-off reads the table before it changes it.
+std::mutex& helper_mutex() {
+    static std::mutex mutex;
+    return mutex;
+}
+
+// The trap's intent, and the lock that keeps a check of it and the run of
+// the helper that follows together (taken before helper_mutex()).
+std::mutex& trap_mutex() {
+    static std::mutex mutex;
+    return mutex;
+}
+bool trap_wanted = false;
 
 bool is_lower_hex(char character) {
     return (character >= '0' && character <= '9') || (character >= 'a' && character <= 'f');
@@ -86,6 +105,7 @@ void drain(int fd, std::string& output) {
 // first two). Returns an empty text when it worked, else a short reason.
 std::string run_helper(const std::vector<std::string>& arguments, milliseconds limit,
                        std::string* output = nullptr) {
+    const std::lock_guard<std::mutex> lock(helper_mutex());
     std::vector<std::string> words;
     words.emplace_back("lokictl-helper");
     words.insert(words.end(), arguments.begin(), arguments.end());
@@ -194,7 +214,50 @@ std::string run_helper(const std::vector<std::string>& arguments, milliseconds l
     return WEXITSTATUS(status) == 0 ? std::string() : std::string(helper_exit_reason(WEXITSTATUS(status)));
 }
 
+// After the whole table went: the trap's redirect again, while wanted.
+void restore_trap() {
+    const std::lock_guard<std::mutex> lock(trap_mutex());
+    if (trap_wanted) {
+        run_helper({"trap-on"}, kHelperTimeLimit);
+    }
+}
+
+// A trap a run before this one left (it was killed): removed, unless this
+// run wants one.
+void remove_stale_trap() {
+    const std::lock_guard<std::mutex> lock(trap_mutex());
+    if (!trap_wanted) {
+        run_helper({"trap-off"}, kHelperTimeLimit);
+    }
+}
+
 } // namespace
+
+std::string trap_on(std::vector<uint16_t>& ports, milliseconds limit) {
+    const std::lock_guard<std::mutex> lock(trap_mutex());
+    ports.clear();
+    std::string output;
+    const std::string reason = run_helper({"trap-on"}, limit, &output);
+    if (!reason.empty()) {
+        return reason;
+    }
+    std::istringstream lines(output);
+    std::string line;
+    while (std::getline(lines, line)) {
+        const long port = std::strtol(line.c_str(), nullptr, 10);
+        if (port > 0 && port < 1024) {
+            ports.push_back(static_cast<uint16_t>(port));
+        }
+    }
+    trap_wanted = !ports.empty();
+    return {};
+}
+
+std::string trap_off(milliseconds limit) {
+    const std::lock_guard<std::mutex> lock(trap_mutex());
+    trap_wanted = false;
+    return run_helper({"trap-off"}, limit);
+}
 
 std::string add_share_interface(milliseconds limit) {
     return run_helper({"ap-add"}, limit);
@@ -396,11 +459,14 @@ void DeviceBlocker::adopt() {
     }
     applied_.clear();
     bool kill = false;
+    bool trap = false;
     std::istringstream lines(output);
     std::string line;
     while (std::getline(lines, line)) {
         if (line == kKillSwitchLine) {
             kill = true;
+        } else if (line == kTrapLine) {
+            trap = true;
         } else if (valid_device_address(line) && !contains(applied_, line)) {
             applied_.push_back(line);
         }
@@ -412,6 +478,10 @@ void DeviceBlocker::adopt() {
     if (kill) {
         kill_wanted_ = true;
     }
+    // The trap is off at every start: one left behind goes.
+    if (trap) {
+        remove_stale_trap();
+    }
 }
 
 bool DeviceBlocker::clear(milliseconds limit) {
@@ -421,6 +491,9 @@ bool DeviceBlocker::clear(milliseconds limit) {
     table_ = Table::Absent;
     kill_ = Table::Absent;
     applied_.clear();
+    // The trap's chain went with the table; a trap that is on gets it back
+    // (the table then holds only that, which trap-off removes).
+    restore_trap();
     return true;
 }
 

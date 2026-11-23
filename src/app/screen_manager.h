@@ -48,6 +48,7 @@ public:
     bool show_discover_screen();
     bool show_watch_screen();
     bool show_health_screen();
+    bool show_trap_screen();
     bool show_map_screen();
     bool show_speed_screen();
     bool show_tool_screen(model::AppPage page);

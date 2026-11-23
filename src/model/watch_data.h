@@ -49,9 +49,10 @@ enum class WatchAlertKind : int32_t {
     Ipv6Router,     // an IPv6 router announcement from an unknown router
     Scan,           // one source tries many ports on the Cardputer
     ArpFlood,       // very many ARP frames in one second
+    Trap,           // someone connected to the trap (a fake service); never from Watch's detector
 };
 
-constexpr std::size_t kWatchAlertKindCount = 7;
+constexpr std::size_t kWatchAlertKindCount = 8;
 
 // The short name a list row shows ("Scan on you"), at most 16 characters.
 const char* watch_alert_name(WatchAlertKind kind);
@@ -67,7 +68,8 @@ struct WatchAlert {
     std::string hardware;  // the hardware address of who it is about; empty when not known
     std::string before;    // the hardware address that held it before (FakeRouter, SameAddress),
                            // or the first DHCP server's address (SecondDhcp); else empty
-    int32_t count{0};      // Scan: different ports tried; ArpFlood: ARP frames in the busiest second
+    int32_t count{0};      // Scan: different ports tried; ArpFlood: ARP frames in the busiest second;
+                           // Trap: the fake service's port
 };
 
 bool operator==(const WatchAlert& left, const WatchAlert& right);

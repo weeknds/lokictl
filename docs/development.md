@@ -82,6 +82,9 @@ that must raise none. `build/darwin-arm64/Debug/lokictl_health_tests`
 (also run by `ctest`) gives each health check rule a made-up result that
 should raise it and one that should not, and checks that every finding's
 text fits the screen (`tests/health_rules.cpp`).
+`build/darwin-arm64/Debug/lokictl_trap_tests` (also run by `ctest`)
+checks the trap's limits, how what a visitor sent is shown, the reading of
+the listening ports and the fixed port map (`tests/trap_checks.cpp`).
 
 ## Screenshots without a window
 

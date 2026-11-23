@@ -40,6 +40,19 @@ std::string remove_share_interface(std::chrono::milliseconds limit = kHelperTime
 // address (lowest bit of the first byte), which never sends.
 bool valid_device_address(const std::string& address);
 
+// The trap's redirect (F9.5), through the helper's trap-on and trap-off:
+// the low ports of model::trap_services() that nothing on the Cardputer
+// listens on are sent on to the high ports LokiCTL listens on (see
+// src/helper/lokictl_helper.c). trap_on() fills `ports` with the low ports
+// sent on and makes the trap wanted while any is; trap_off() makes it not
+// wanted and removes the redirect. While it is wanted, a removal of the
+// whole table (DeviceBlocker's clear) sets the redirect up again at once.
+// Both wait for the helper, at most `limit`, so they never run on the UI
+// thread. They return an empty text when it worked, else a short reason
+// ("helper not installed"). Runs of the helper never overlap.
+std::string trap_on(std::vector<uint16_t>& ports, std::chrono::milliseconds limit = kHelperTimeLimit);
+std::string trap_off(std::chrono::milliseconds limit = kHelperTimeLimit);
+
 // The saved list (the blocked_devices= key): addresses separated by commas,
 // spaces allowed around them. Capitals become lowercase; anything else
 // that is not a valid_device_address() and repeats are dropped, and of the

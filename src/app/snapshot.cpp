@@ -23,6 +23,8 @@
 #include "tool_controller.h"
 #include "tool_runner.h"
 #include "watch.h"
+#include "trap.h"
+#include "trap_controller.h"
 #include "watch_controller.h"
 
 #include "lvgl.h"
@@ -292,6 +294,12 @@ int run_snapshot(const SnapshotRequest& request) {
     // nothing is saved.
     WatchController watch(view_model, platform::make_watch_runner(false), platform::pretend_known_devices());
     watch.start();
+    // The trap with made-up connections, which also go into Watch's log.
+    TrapController trap(view_model, platform::make_trap_runner(false));
+    trap.set_hit_listener([&watch](const std::string& /*message*/, const std::vector<model::TrapHit>& fresh) {
+        add_trap_alerts(watch, fresh);
+    });
+    trap.start();
 
     ScreenManager screen_manager(view_model, assets, theme_engine);
     screen_manager.start();

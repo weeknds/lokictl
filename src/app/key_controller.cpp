@@ -93,6 +93,10 @@ void KeyController::show_watch_alert(const std::string& text) {
     toast_->show_highlighted("Watch: ", text, "", view::widgets::ToastTone::Warning, kWatchToastDurationMs);
 }
 
+void KeyController::show_trap_alert(const std::string& text) {
+    toast_->show_highlighted("Trap: ", text, "", view::widgets::ToastTone::Warning, kWatchToastDurationMs);
+}
+
 void KeyController::show_usb_wifi(const std::string& interface_name, bool connected) {
     toast_->show_highlighted(connected ? "USB Wi-Fi adapter connected: " : "USB Wi-Fi adapter removed: ",
                              interface_name,
@@ -388,6 +392,9 @@ void KeyController::open_command_page(model::AppPage page) {
             return;
         case model::AppPage::Watch:
             view_model_.open_watch();
+            return;
+        case model::AppPage::Trap:
+            view_model_.open_trap();
             return;
         case model::AppPage::Health:
             view_model_.open_health();

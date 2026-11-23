@@ -9,6 +9,7 @@
 #include "subjects.h"
 #include "base_model.h"
 #include "tool_data.h"
+#include "trap_data.h"
 #include "watch_data.h"
 
 #include "lvgl.h"
@@ -394,6 +395,31 @@ public:
     bool watch_detail() const;
     void set_watch_detail(bool open);
 
+    // The Trap page (Watch key 8, or `trap`): fake services that catch
+    // whoever connects. The trap runs on its own (app::TrapController), and
+    // its run comes back in trap(). Puts the selection on the newest
+    // connection and closes the detail, then opens the page.
+    bool open_trap();
+    // Only ever set on the UI thread, by app::TrapController; set_trap()
+    // returns false and tells nobody when `run` equals what is held.
+    const model::TrapRun& trap() const;
+    bool set_trap(const model::TrapRun& run);
+    lv_subject_t* trap_subject();
+    // Asks to set the trap or to take it away; app::TrapController carries
+    // it out. Counts every request.
+    enum class TrapRequest { Start, Stop };
+    void request_trap(TrapRequest request);
+    lv_subject_t* trap_request_subject();
+    TrapRequest requested_trap() const;
+    // The selected connection (0 is the newest) and whether its detail is
+    // shown.
+    lv_subject_t* trap_selection_subject();
+    int32_t trap_selection() const;
+    void set_trap_selection(int32_t row);
+    lv_subject_t* trap_detail_subject();
+    bool trap_detail() const;
+    void set_trap_detail(bool open);
+
     // The Health page (Tools key 7, or `health`). The health check runs as
     // a tool (model::ToolKind::Health, requested with request_tool_run() on
     // the uplink interface), so its run comes back in tools().health.
@@ -539,6 +565,12 @@ private:
     std::string requested_watch_hardware_;
     reactive::IntSubject watch_selection_subject_;
     reactive::BoolSubject watch_detail_subject_;
+    model::TrapRun trap_;
+    reactive::IntSubject trap_subject_;
+    reactive::IntSubject trap_request_subject_;
+    TrapRequest requested_trap_{TrapRequest::Start};
+    reactive::IntSubject trap_selection_subject_;
+    reactive::BoolSubject trap_detail_subject_;
     reactive::IntSubject health_selection_subject_;
     reactive::BoolSubject health_detail_subject_;
     reactive::IntSubject map_selection_subject_;

@@ -109,6 +109,9 @@ public:
     // The message for a Watch alert: "Watch: Scan on you", or "Watch: 3 new
     // alerts" for several at once.
     void show_watch_alert(const std::string& text);
+    // The message for a connection to the trap: "Trap: 192.0.2.7 tried
+    // web", or "Trap: 3 connections" for several at once.
+    void show_trap_alert(const std::string& text);
 
     // Called first for every key press (step 0). Returning true swallows
     // the key. Empty: no step 0.

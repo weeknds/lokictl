@@ -14,16 +14,18 @@
  * capability (set by the package's postinst; it is not setuid). Only root
  * and members of the netdev group may run it (root:netdev, mode 0750).
  *
- * It does exactly one of eight fixed commands and exits:
+ * It does exactly one of ten fixed commands and exits:
  *
  *   lokictl-helper block MAC [MAC...]    block these devices on the hotspot
  *   lokictl-helper unblock MAC [MAC...]  let them through again
- *   lokictl-helper list                  print the kill switch and the blocked devices
+ *   lokictl-helper list                  print the kill switch, the trap and the blocked devices
  *   lokictl-helper clear                 remove LokiCTL's firewall table
  *   lokictl-helper ap-add                add Share's interface (lokiap0)
  *   lokictl-helper ap-del                remove Share's interface
  *   lokictl-helper kill-on               arm the VPN kill switch
  *   lokictl-helper kill-off              disarm it
+ *   lokictl-helper trap-on               send the trap's low ports on to LokiCTL
+ *   lokictl-helper trap-off              stop doing that
  *
  * A MAC is six pairs of hex digits joined by ':' (for example
  * 02:00:00:00:00:01), not a group address; at most HELPER_MAX_ADDRESSES per
@@ -53,7 +55,29 @@
  *   never leave outside the tunnel either. Nothing else the Cardputer
  *   itself sends is touched.
  * "list" prints "kill-switch" on a line of its own while kill_forward
- * exists, then the blocked devices.
+ * exists, "trap" while the trap chain exists, then the blocked devices.
+ *
+ * The trap (LokiCTL's honeypot) pretends to offer a few services. LokiCTL
+ * itself listens, as the normal user, on fixed high ports; only the low
+ * ones need this helper. trap-on makes a nat chain of its own in the same
+ * table, "trap" (prerouting hook), that sends new IPv4 TCP connections
+ * coming in through a fixed set of interfaces (TRAP_INTERFACES) to a fixed
+ * low port of this machine itself on to its fixed high port (kTrapPorts:
+ * 21, 23, 80 and 445 to 30021, 30023, 30080 and 30445). Only connections
+ * addressed to this machine count ("fib daddr type local"): what it passes
+ * on for a hotspot's devices is never touched. It takes no arguments.
+ * A low port is sent on only when
+ * - nothing on this machine listens on it (any address, IPv4 or IPv6, any
+ *   user; read from /proc/net/tcp and /proc/net/tcp6), so a real service
+ *   such as SSH on 22 is never taken over (22 and every other port are
+ *   not in the map anyway), and
+ * - a socket of the user who runs the helper listens on its high port, so
+ *   the connections only ever reach LokiCTL.
+ * It prints each low port it sends on, one per line; when none qualifies
+ * it does what trap-off does. Running it again sets the chain up anew
+ * from what listens then. trap-off removes the chain, and the whole table
+ * when nothing else is in it. The other chains and the blocked set are
+ * never touched by either, and "clear" removes the trap with the rest.
  *
  * Share's interface goes through /usr/sbin/iw with fixed arguments only:
  * "iw dev wlan0 interface add lokiap0 type __ap" and "iw dev lokiap0 del".
@@ -111,6 +135,9 @@ enum {
  * for a shared connection without --user, so it drops to dnsmasq's built-in
  * default, which Debian's dnsmasq-base leaves at "nobody". */
 #define HELPER_DNS_USER "nobody"
+/* The interfaces the trap listens through: the cable, the built-in Wi-Fi
+ * (also Router's hotspot) and Share's hotspot. */
+#define TRAP_INTERFACES "{ \"eth0\", \"" HELPER_INTERFACE "\", \"" HELPER_SHARE_INTERFACE "\" }"
 #define HELPER_NFT "/usr/sbin/nft"
 #define HELPER_IW "/usr/sbin/iw"
 /* "aa:bb:cc:dd:ee:ff" */
@@ -121,6 +148,16 @@ enum {
 #define OUTPUT_MAX 65536
 
 static const char kProgram[] = "lokictl-helper";
+
+/* The trap's fixed port map: low port, the high port LokiCTL listens on.
+ * The same map is in src/model/trap_data.cpp. */
+static const struct {
+    unsigned int low;
+    unsigned int high;
+} kTrapPorts[] = {{21, 30021}, {23, 30023}, {80, 30080}, {445, 30445}};
+#define TRAP_PORT_COUNT (sizeof(kTrapPorts) / sizeof(kTrapPorts[0]))
+/* The most a /proc/net/tcp line is read of. */
+#define PROC_LINE_MAX 512
 
 /* The table, set and chains, made when missing. "add" leaves what is
  * there, and the two chains are emptied and get their one rule again, so
@@ -161,6 +198,19 @@ static const char kKillOff[] =
     "delete chain inet lokictl kill_forward\n"
     "delete chain inet lokictl kill_output\n";
 
+/* The trap's chain, made when missing and emptied; trap-on adds one rule
+ * per low port after it. */
+static const char kTrapChain[] =
+    "add table inet lokictl\n"
+    "add chain inet lokictl trap { type nat hook prerouting priority dstnat; policy accept; }\n"
+    "flush chain inet lokictl trap\n";
+
+static const char kTrapDelete[] =
+    "flush chain inet lokictl trap\n"
+    "delete chain inet lokictl trap\n";
+
+static const char kTableDelete[] = "delete table inet lokictl\n";
+
 static void fail(const char* message) {
     fprintf(stderr, "%s: %s\n", kProgram, message);
 }
@@ -168,7 +218,7 @@ static void fail(const char* message) {
 static void usage(void) {
     fprintf(stderr,
             "usage: %s block MAC [MAC...] | unblock MAC [MAC...] | list | clear | ap-add | ap-del |\n"
-            "       kill-on | kill-off\n"
+            "       kill-on | kill-off | trap-on | trap-off\n"
             "  MAC: six pairs of hex digits joined by ':', at most %d per call\n",
             kProgram,
             HELPER_MAX_ADDRESSES);
@@ -455,8 +505,160 @@ static int list_blocked(void) {
         if (has_line(output, "chain kill_forward {")) {
             printf("kill-switch\n");
         }
+        if (has_line(output, "chain trap {")) {
+            printf("trap\n");
+        }
         /* The rules hold no hardware address, so every one is in the set. */
         print_addresses(output);
+    }
+    return result;
+}
+
+/* Runs nft with `script` on its standard input and says what went wrong. */
+static int run_script(const char* script) {
+    char* const from_input[] = {"nft", "-f", "-", NULL};
+    const int result = run_program(HELPER_NFT, from_input, script, NULL, 0);
+    if (result == EXIT_NFT_NOT_RUN) {
+        fail("could not run " HELPER_NFT);
+    } else if (result == EXIT_NFT_FAILED) {
+        fail("nft refused the change");
+    }
+    return result;
+}
+
+/* How many lines of `text` start with "chain " or "set " once the blanks
+ * in front are skipped: the chains and sets of a listed table. */
+static int count_parts(const char* text) {
+    int count = 0;
+    for (const char* line = text; *line != '\0';) {
+        const char* end = strchr(line, '\n');
+        const size_t length = end ? (size_t)(end - line) : strlen(line);
+        size_t skip = 0;
+        while (skip < length && (line[skip] == ' ' || line[skip] == '\t')) {
+            ++skip;
+        }
+        if ((length - skip > 6 && strncmp(line + skip, "chain ", 6) == 0) ||
+            (length - skip > 4 && strncmp(line + skip, "set ", 4) == 0)) {
+            ++count;
+        }
+        line += length + (end ? 1 : 0);
+    }
+    return count;
+}
+
+/* Reads the listening TCP sockets in `path` (/proc/net/tcp or
+ * /proc/net/tcp6). For each pair of kTrapPorts it marks low_busy when
+ * anything listens on the low port, and high_ours when a socket of `uid`
+ * listens on the high port. Returns 0, or -1 when the file cannot be
+ * opened (errno says why). */
+static int read_listeners(const char* path, uid_t uid, int low_busy[], int high_ours[]) {
+    FILE* file = fopen(path, "re");
+    if (!file) {
+        return -1;
+    }
+    char line[PROC_LINE_MAX];
+    /* The first line holds the column names. */
+    if (fgets(line, sizeof(line), file)) {
+        while (fgets(line, sizeof(line), file)) {
+            unsigned int port = 0;
+            unsigned int state = 0;
+            unsigned long owner = 0;
+            /* "  0: 0100007F:0016 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000 ..." */
+            if (sscanf(line,
+                       " %*u: %*[0-9A-Fa-f]:%x %*[0-9A-Fa-f]:%*x %x %*x:%*x %*x:%*x %*x %lu",
+                       &port,
+                       &state,
+                       &owner) != 3 ||
+                state != 0x0A /* listening */) {
+                continue;
+            }
+            for (size_t index = 0; index < TRAP_PORT_COUNT; ++index) {
+                if (port == kTrapPorts[index].low) {
+                    low_busy[index] = 1;
+                }
+                if (port == kTrapPorts[index].high && owner == (unsigned long)uid) {
+                    high_ours[index] = 1;
+                }
+            }
+        }
+    }
+    fclose(file);
+    return 0;
+}
+
+/* trap-off: removes the trap's chain, and the whole table when nothing
+ * else is in it. */
+static int trap_off(void) {
+    static char output[OUTPUT_MAX];
+    char* const tables[] = {"nft", "list", "tables", "inet", NULL};
+    int result = run_program(HELPER_NFT, tables, "", output, sizeof(output));
+    if (result == EXIT_DONE && !has_line(output, "table inet lokictl")) {
+        return EXIT_DONE;
+    }
+    if (result == EXIT_DONE) {
+        char* const table[] = {"nft", "list", "table", "inet", "lokictl", NULL};
+        result = run_program(HELPER_NFT, table, "", output, sizeof(output));
+    }
+    if (result != EXIT_DONE) {
+        fail(result == EXIT_NFT_NOT_RUN ? "could not run " HELPER_NFT : "nft could not list the table");
+        return result;
+    }
+    const int trap = has_line(output, "chain trap {");
+    if (count_parts(output) - trap == 0) {
+        return run_script(kTableDelete);
+    }
+    return trap ? run_script(kTrapDelete) : EXIT_DONE;
+}
+
+/* trap-on: sends each low port of kTrapPorts on to its high port, where
+ * nothing listens on the low port and the caller listens on the high one;
+ * prints the ports sent on. */
+static int trap_on(void) {
+    int low_busy[TRAP_PORT_COUNT] = {0};
+    int high_ours[TRAP_PORT_COUNT] = {0};
+    const uid_t uid = getuid();
+    /* Anything that cannot be read counts as busy: nothing is sent on.
+     * Without IPv6 there is no tcp6 file. */
+    int readable = read_listeners("/proc/net/tcp", uid, low_busy, high_ours) == 0;
+    if (readable && read_listeners("/proc/net/tcp6", uid, low_busy, high_ours) != 0 && errno != ENOENT) {
+        readable = 0;
+    }
+
+    char script[SCRIPT_MAX];
+    size_t used = 0;
+    script[0] = '\0';
+    int built = append(script, &used, kTrapChain);
+    int sent_on[TRAP_PORT_COUNT] = {0};
+    int count = 0;
+    for (size_t index = 0; readable && built == 0 && index < TRAP_PORT_COUNT; ++index) {
+        if (low_busy[index] || !high_ours[index]) {
+            continue;
+        }
+        char rule[256];
+        snprintf(rule,
+                 sizeof(rule),
+                 "add rule inet lokictl trap iifname " TRAP_INTERFACES
+                 " meta nfproto ipv4 fib daddr type local tcp dport %u redirect to :%u\n",
+                 kTrapPorts[index].low,
+                 kTrapPorts[index].high);
+        built = append(script, &used, rule);
+        sent_on[index] = 1;
+        ++count;
+    }
+    if (built != 0) {
+        fail("internal error: the script is too long");
+        return EXIT_NFT_NOT_RUN;
+    }
+    if (count == 0) {
+        return trap_off();
+    }
+    const int result = run_script(script);
+    if (result == EXIT_DONE) {
+        for (size_t index = 0; index < TRAP_PORT_COUNT; ++index) {
+            if (sent_on[index]) {
+                printf("%u\n", kTrapPorts[index].low);
+            }
+        }
     }
     return result;
 }
@@ -500,7 +702,10 @@ int main(int argc, char* argv[]) {
     const int ap_del = strcmp(command, "ap-del") == 0;
     const int kill_on = strcmp(command, "kill-on") == 0;
     const int kill_off = strcmp(command, "kill-off") == 0;
-    if (!block && !unblock && !list && !clear && !ap_add && !ap_del && !kill_on && !kill_off) {
+    const int trap_start = strcmp(command, "trap-on") == 0;
+    const int trap_stop = strcmp(command, "trap-off") == 0;
+    if (!block && !unblock && !list && !clear && !ap_add && !ap_del && !kill_on && !kill_off && !trap_start &&
+        !trap_stop) {
         usage();
         return EXIT_USAGE;
     }
@@ -543,6 +748,12 @@ int main(int argc, char* argv[]) {
     if (ap_add || ap_del) {
         return share_interface(ap_add);
     }
+    if (trap_start) {
+        return trap_on();
+    }
+    if (trap_stop) {
+        return trap_off();
+    }
 
     char script[SCRIPT_MAX];
     size_t used = 0;
@@ -573,12 +784,5 @@ int main(int argc, char* argv[]) {
         return EXIT_NFT_NOT_RUN;
     }
 
-    char* const from_input[] = {"nft", "-f", "-", NULL};
-    const int result = run_program(HELPER_NFT, from_input, script, NULL, 0);
-    if (result == EXIT_NFT_NOT_RUN) {
-        fail("could not run " HELPER_NFT);
-    } else if (result == EXIT_NFT_FAILED) {
-        fail("nft refused the change");
-    }
-    return result;
+    return run_script(script);
 }

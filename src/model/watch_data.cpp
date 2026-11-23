@@ -26,6 +26,8 @@ const char* watch_alert_name(WatchAlertKind kind) {
             return "Scan on you";
         case WatchAlertKind::ArpFlood:
             return "ARP flood";
+        case WatchAlertKind::Trap:
+            return "Tried a trap";
     }
     return "Alert";
 }
@@ -50,6 +52,9 @@ const char* watch_alert_about(WatchAlertKind kind) {
         case WatchAlertKind::ArpFlood:
             return "Very many address questions (ARP) in one second. Something is broken, or someone floods the "
                    "network.";
+        case WatchAlertKind::Trap:
+            return "Someone connected to a fake service of the trap (honeypot). Nothing real runs there: someone "
+                   "is probing.";
     }
     return "";
 }
@@ -70,6 +75,8 @@ const char* watch_alert_log_name(WatchAlertKind kind) {
             return "scan";
         case WatchAlertKind::ArpFlood:
             return "arp flood";
+        case WatchAlertKind::Trap:
+            return "trap";
     }
     return "alert";
 }
