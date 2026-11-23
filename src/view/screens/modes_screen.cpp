@@ -123,6 +123,13 @@ ModesScreen::ModesScreen(viewmodel::BaseViewModel& view_model,
     init();
 }
 
+ModesScreen::~ModesScreen() {
+    if (failure_timer_) {
+        lv_timer_delete(failure_timer_);
+        failure_timer_ = nullptr;
+    }
+}
+
 bool ModesScreen::handles(model::AppPage page) {
     return page == model::AppPage::Modes;
 }
@@ -172,6 +179,7 @@ void ModesScreen::use_selected() {
     if (!can_use(row)) {
         return;
     }
+    reset_failure_time();
     if (turns_vpn_off(row)) {
         view_model().request_vpn_off();
     } else {
@@ -361,6 +369,7 @@ void ModesScreen::refresh() {
             if (off == 1) {
                 bar->set_key(kOffKeyIndex, {"Off", [this] {
                                                 if (offers_vpn_off()) {
+                                                    reset_failure_time();
                                                     view_model().request_vpn_off();
                                                 }
                                             }});
@@ -374,10 +383,40 @@ void ModesScreen::refresh() {
     refresh_status();
 }
 
+void ModesScreen::reset_failure_time() {
+    if (failure_timer_) {
+        lv_timer_delete(failure_timer_);
+        failure_timer_ = nullptr;
+    }
+    failure_over_ = false;
+}
+
+void ModesScreen::failure_timer_cb(lv_timer_t* timer) {
+    auto* screen = static_cast<ModesScreen*>(lv_timer_get_user_data(timer));
+    if (!screen) {
+        return;
+    }
+    lv_timer_delete(timer);
+    screen->failure_timer_ = nullptr;
+    screen->failure_over_ = true;
+    screen->refresh_status();
+}
+
 void ModesScreen::refresh_status() {
     const auto& theme = this->theme();
     const model::HomeData& data = view_model().home();
     const model::ModeSwitch& change = data.mode_switch;
+
+    // With the gateway down, a failed switch (a reconnect the tunnel
+    // refused) has kGatewayFailureMs on the line, then the line says again
+    // that the hotspot devices are blocked. Other failures stay.
+    const bool failed = change.state == model::SwitchState::Failed;
+    if (!failed) {
+        reset_failure_time();
+    } else if (gateway_down(data) && !failure_over_ && !failure_timer_) {
+        failure_timer_ = lv_timer_create(failure_timer_cb, kGatewayFailureMs, this);
+    }
+    const bool failure_shown = failed && !(failure_over_ && gateway_down(data));
 
     std::string left;
     std::string right;
@@ -387,7 +426,7 @@ void ModesScreen::refresh_status() {
         // The highlight stays on the mode asked for, so the line need not
         // name it.
         left = "Switching\u2026";
-    } else if (change.state == model::SwitchState::Failed) {
+    } else if (failure_shown) {
         switch (change.error) {
             case model::SwitchError::NoCable:
                 left = "Plug in a cable first";

@@ -70,4 +70,15 @@ std::string signin_host(std::string_view address);
 // The data layer's state for the check (see SigninLocal).
 SigninLocal signin_local(const HomeData& home);
 
+// LokiCTL's own check after joining a Wi-Fi network. Where NetworkManager's
+// internet check is off (HomeData::internet_check), it never says
+// `portal`, so LokiCTL checks once itself. `last` is the network checked
+// last (empty after leaving Wi-Fi), kept by the caller between readings.
+// - Not on Wi-Fi (the uplink is not a Wi-Fi network, or it has no address
+//   or no name yet): `last` is emptied, so joining again counts; false.
+// - NetworkManager's check is on, or the network is `last`: false.
+// - Otherwise `last` becomes the network's name; true: one check is due.
+// The first reading counts as joining.
+bool signin_check_due(const HomeData& home, std::string& last);
+
 } // namespace model

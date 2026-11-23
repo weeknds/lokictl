@@ -189,4 +189,16 @@ SigninLocal signin_local(const HomeData& home) {
     return local;
 }
 
+bool signin_check_due(const HomeData& home, std::string& last) {
+    if (home.uplink_kind != LinkKind::Wifi || home.uplink_address.empty() || home.wifi_name.empty()) {
+        last.clear();
+        return false;
+    }
+    if (home.internet_check || home.wifi_name == last) {
+        return false;
+    }
+    last = home.wifi_name;
+    return true;
+}
+
 } // namespace model

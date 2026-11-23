@@ -314,6 +314,9 @@ struct UsbWifiAdapter {
     std::string name;           // as the stick names itself, for example "ATHEROS USB2.0 WLAN"
     Managed managed{Managed::Unknown};
     std::string device;         // where it is plugged in (a system path); tells adapters apart, never shown
+    // Every interface on the stick, interface_name among them, sorted (a
+    // second one such as "wlan1mon"); never the survey's listening one.
+    std::vector<std::string> interfaces;
 };
 
 bool operator==(const UsbWifiAdapter& left, const UsbWifiAdapter& right);

@@ -12,7 +12,9 @@
 #include "lvgl.h"
 
 #include <cstdint>
+#include <functional>
 #include <memory>
+#include <string>
 
 namespace viewmodel {
 class BaseViewModel;
@@ -32,6 +34,14 @@ namespace app {
 //
 // A run keeps going when its page is left. Only one tool runs at a time: a
 // request to run while one runs is ignored (the pages switch Run off then).
+//
+// Its own sign-in check: where NetworkManager's internet check is off, it
+// never notices a sign-in page, so once a listener is set the controller
+// runs one sign-in check itself right after the Wi-Fi uplink joins a
+// network (model::signin_check_due(); the first reading counts). It waits
+// while another tool runs, and tells the listener when that check ends
+// with "sign-in needed". The run is the Sign-in page's, so the page shows
+// it, and Sent counts it like any check.
 //
 // Log lines: "tools: <ping|dns|trace|listen|probe|ports|speed> started", "tools:
 // <ping|dns|trace|listen|probe|ports|speed> stopped by the user", "tools: ping done, <r>/<s>
@@ -55,7 +65,9 @@ namespace app {
 // ended" (after a stop), "tools: leak failed: <why>", "tools: signin
 // started", "tools: signin done, no sign-in needed|sign-in needed|unclear,
 // status <n>", "tools: signin ended" (after a stop), "tools: signin
-// failed: <why>", "tools: speed done, down <d> kbit/s
+// failed: <why>", "tools: signin started after joining Wi-Fi" (its own
+// check; never the network's name), "tools: signin after joining Wi-Fi:
+// sign-in needed, message shown", "tools: speed done, down <d> kbit/s
 // (<n> bytes), up <u> kbit/s (<m> bytes)", "tools: speed failed: <why>" (never a target, a server, an address, a
 // hardware address, a name, a port result or a path), and "tools: runner
 // stopped" at the end.
@@ -80,10 +92,18 @@ public:
     // once, and without start().
     void stop();
 
+    // Told on the UI thread when the controller's own sign-in check (see
+    // above) finds that the Wi-Fi wants a sign-in. Empty (the default): the
+    // controller makes no own check, as in a snapshot.
+    using SigninListener = std::function<void()>;
+    void set_signin_listener(SigninListener listener);
+
 private:
     static void poll_timer_cb(lv_timer_t* timer);
     static void request_cb(lv_observer_t* observer, lv_subject_t* subject);
     void handle_request();
+    // Starts the own sign-in check when one is due and no tool runs.
+    void check_after_join();
     void poll();
     void log_change(const model::ToolsData& next) const;
 
@@ -94,6 +114,10 @@ private:
     int32_t requests_seen_{0};
     bool stopped_{false};
     model::ToolsData data_;  // the data handed over last
+    SigninListener signin_listener_;
+    std::string joined_wifi_;     // the Wi-Fi network the own check is for (model::signin_check_due())
+    bool own_check_due_{false};   // the own check waits for the runner
+    bool own_check_runs_{false};  // the sign-in run under way is the own check
 };
 
 } // namespace app

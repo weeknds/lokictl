@@ -8,7 +8,9 @@
 #       colima on macOS).
 #   WORKFLOW_PRESET=cp0-cross-package ./deploy.sh
 #       Runs that CMake workflow on this computer instead, for Linux computers
-#       with an arm64 cross compiler.
+#       with an arm64 cross compiler. Only this way reads PACKAGE_GLOB (default
+#       dist/*_arm64.deb) to find the newest package; the default way uses
+#       the path scripts/build-deb.sh prints.
 #
 # Set REMOTE_USER and REMOTE_HOST to copy the package to the device:
 #   REMOTE_USER=<user> REMOTE_HOST=<device-ip> ./deploy.sh

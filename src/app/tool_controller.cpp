@@ -119,6 +119,10 @@ void ToolController::stop() {
     }
 }
 
+void ToolController::set_signin_listener(SigninListener listener) {
+    signin_listener_ = std::move(listener);
+}
+
 void ToolController::poll_timer_cb(lv_timer_t* timer) {
     auto* controller = static_cast<ToolController*>(lv_timer_get_user_data(timer));
     if (controller) {
@@ -180,6 +184,9 @@ void ToolController::handle_request() {
         if (!runner_->start(job)) {
             return;  // one runs already
         }
+        if (kind == model::ToolKind::Signin) {
+            own_check_due_ = false;  // this run answers the same question
+        }
         if (kind == model::ToolKind::Health) {
             // Counts only: never a network's name.
             LOG_INFO("tools: health started, wifi networks heard: {}, joined wifi: {}, cable: {}",
@@ -197,10 +204,44 @@ void ToolController::handle_request() {
     poll();
 }
 
+void ToolController::check_after_join() {
+    if (!signin_listener_ || !poll_timer_) {
+        return;
+    }
+    if (model::signin_check_due(view_model_.home(), joined_wifi_)) {
+        own_check_due_ = true;
+    } else if (joined_wifi_.empty()) {
+        own_check_due_ = false;  // left the Wi-Fi before the check could start
+    }
+    if (!own_check_due_ || model::tool_running(data_)) {
+        return;
+    }
+    platform::ToolJob job{model::ToolKind::Signin, model::kSigninCheckHost, {}};
+    job.signin = model::signin_local(view_model_.home());
+    if (!runner_->start(job)) {
+        return;  // one runs already; tried again at the next tick
+    }
+    own_check_due_ = false;
+    own_check_runs_ = true;
+    // Never the network's name.
+    LOG_INFO("tools: signin started after joining Wi-Fi");
+}
+
 void ToolController::poll() {
+    check_after_join();
     model::ToolsData next = data_;
     runner_->take(next);
     next.sent = platform::sent_packets();
+    if (own_check_runs_ && next.signin.state != model::ToolState::Running) {
+        // The own check has ended (or was stopped); only "sign-in needed"
+        // is worth a message.
+        own_check_runs_ = false;
+        if (data_.signin.state == model::ToolState::Running && next.signin.state == model::ToolState::Done &&
+            next.signin.verdict == model::SigninVerdict::Needed && signin_listener_) {
+            LOG_INFO("tools: signin after joining Wi-Fi: sign-in needed, message shown");
+            signin_listener_();
+        }
+    }
     if (next == data_) {
         return;
     }

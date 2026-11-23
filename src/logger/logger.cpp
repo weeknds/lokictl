@@ -98,6 +98,9 @@ std::string current_timestamp() {
 #endif
 
 
+    // Far more than the 19 characters a date needs: GCC's
+    // -Wformat-truncation counts every int at its widest, and 80 keeps it
+    // quiet.
     char buffer[80];
     std::snprintf(buffer,
                   sizeof(buffer),

@@ -9,6 +9,7 @@
 #include "home_format.h"
 #include "status_summary.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 
@@ -158,9 +159,12 @@ void add_port(std::vector<StatusRow>& rows, const model::StatusPort& port, bool 
     add_row(rows, "hardware", port.hardware_address);
 }
 
+// Any interface of a stick counts, a second one such as "wlan1mon" too.
 bool is_usb_wifi(const model::HomeData& data, const std::string& interface_name) {
     for (const model::UsbWifiAdapter& adapter : data.usb_wifi) {
-        if (adapter.interface_name == interface_name) {
+        if (adapter.interface_name == interface_name ||
+            std::find(adapter.interfaces.begin(), adapter.interfaces.end(), interface_name) !=
+                adapter.interfaces.end()) {
             return true;
         }
     }

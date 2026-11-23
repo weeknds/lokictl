@@ -129,8 +129,10 @@ enum class ChannelLoad {
 // listening, where the stick listens to each channel 1/kSurveyChannels of
 // the run. Unknown before a second of the run has passed.
 ChannelLoad survey_channel_load(const SurveyRun& run, int32_t channel);
-// The bar of `channel` as 0 to 100: its frames per second of listening,
-// where kSurveyBusyRate and above are 100.
+// The bar of `channel` as 0 to 100: its frames against the busiest
+// channel's (100), so the bars differ even when few frames arrive while
+// hopping; 0 before any frame. How busy a channel really is stays with
+// survey_channel_load().
 int32_t survey_channel_level(const SurveyRun& run, int32_t channel);
 // The access points heard on `channel`.
 int32_t survey_channel_networks(const SurveyRun& run, int32_t channel);

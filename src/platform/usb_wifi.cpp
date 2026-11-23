@@ -159,14 +159,16 @@ std::vector<model::UsbWifiAdapter> read_usb_wifi(const fs::path& root) {
             device = interface_dir / "device";
         }
         const std::string device_text = device.string();
-        const bool known = std::any_of(adapters.begin(), adapters.end(), [&](const model::UsbWifiAdapter& adapter) {
+        const auto known = std::find_if(adapters.begin(), adapters.end(), [&](const model::UsbWifiAdapter& adapter) {
             return adapter.device == device_text;
         });
-        if (known) {
+        if (known != adapters.end()) {
+            known->interfaces.push_back(interface_name);
             continue;
         }
         model::UsbWifiAdapter adapter;
         adapter.interface_name = interface_name;
+        adapter.interfaces.push_back(interface_name);
         adapter.driver = clean_text(uevent.driver);
         adapter.usb_id = usb_id_text(uevent.product);
         adapter.name = adapter_name(device.parent_path());

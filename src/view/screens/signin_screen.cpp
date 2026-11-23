@@ -43,7 +43,7 @@ static_assert(kCodeTop >= 0, "the code must fit the height");
 constexpr const char* kShareTip =
     "In Share mode, sign in from a phone on LokiCTL's hotspot and every device on it gets internet.";
 constexpr const char* kCheckOffNote =
-    "The system's own check is off, so LokiCTL never notices a sign-in by itself: open this page.";
+    "The system's own check is off; LokiCTL checks once by itself when the Wi-Fi joins a network.";
 
 lv_obj_t* plain_object(lv_obj_t* parent) {
     auto* obj = lv_obj_create(parent);
@@ -218,7 +218,7 @@ view::widgets::HelpContent SigninScreen::help_content() {
                 {"ENTER / 5", "Address, what to do"},
                 {"6", "Check again"},
                 {"Share", "One sign-in serves all"},
-                {"Auto check", "Off: no sign-in alert"},
+                {"Auto check", "Runs on joining Wi-Fi"},
             }};
 }
 
@@ -427,10 +427,11 @@ void SigninScreen::refresh_column() {
         }
     }
 
-    // The system's own check: on, or off on this system.
+    // The system's own check, or LokiCTL's own once the Wi-Fi joins a
+    // network where the system's is off (app::ToolController).
     const bool check_on = view_model().home().internet_check;
-    set_text_if_changed(check_, check_shown_, check_on ? "on" : "off on this system");
-    set_tone_if_changed(check_, check_tone_, check_on ? tools::kToneText : tools::kToneWarning, theme);
+    set_text_if_changed(check_, check_shown_, check_on ? "on" : "on joining Wi-Fi");
+    set_tone_if_changed(check_, check_tone_, tools::kToneText, theme);
 
     // The Sent count at the bottom right, its caption left of it.
     if (set_text_if_changed(sent_, sent_shown_, std::to_string(data.sent))) {

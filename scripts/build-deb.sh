@@ -62,8 +62,10 @@ check_build_folder "${deps_dir_name}" "lvgl-build/cmake_install.cmake" \
 # 3. Build image: create it when it is missing or the Dockerfile changed.
 if command -v sha256sum >/dev/null 2>&1; then
   wanted_hash="$(sha256sum < "${dockerfile}" | awk '{print $1}')"
-else
+elif command -v shasum >/dev/null 2>&1; then
   wanted_hash="$(shasum -a 256 < "${dockerfile}" | awk '{print $1}')"
+else
+  fail "Neither sha256sum nor shasum was found; install one of them (coreutils or perl)."
 fi
 current_hash="$(docker image inspect --format "{{ index .Config.Labels \"${image_label}\" }}" "${image_tag}" 2>/dev/null || true)"
 

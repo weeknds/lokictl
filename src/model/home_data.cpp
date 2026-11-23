@@ -308,7 +308,8 @@ bool operator==(const UsbWifiAdapter& left, const UsbWifiAdapter& right) {
            left.usb_id == right.usb_id &&
            left.name == right.name &&
            left.managed == right.managed &&
-           left.device == right.device;
+           left.device == right.device &&
+           left.interfaces == right.interfaces;
 }
 
 bool operator!=(const UsbWifiAdapter& left, const UsbWifiAdapter& right) {

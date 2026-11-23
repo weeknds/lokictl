@@ -406,8 +406,11 @@ a stand-in that is never available, so there these values stay unknown
   connectivity check needs an address in its settings and must be
   switched on (`ConnectivityCheckAvailable` and `ConnectivityCheckEnabled`).
   Without it NetworkManager says `full` whenever it is connected and never
-  `portal`, and the Sign-in page says the auto check is off. On the
-  Cardputer's stock system it is off. LokiCTL only reads it.
+  `portal`. On the Cardputer's stock system it is off. LokiCTL only reads
+  it; while it is off, `app::ToolController` runs the Sign-in page's check
+  once after the Wi-Fi uplink (with an address) joins a network
+  (`model::signin_check_due()`) and shows the same message when it ends
+  `sign-in needed` (see [checks.md](checks.md#wi-fi-sign-in)).
 - **Without a link:** why. `network off` when networking is switched off,
   else `connecting` while a Wi-Fi or cable device is being connected, else
   `wi-fi off` when the radio is off, else `no network`. A cable that is not
@@ -914,7 +917,9 @@ failed: <why>`, `tools: speed done, down <d> kbit/s (<n> bytes), up <u> kbit/s
 (<m> bytes)`, `tools: speed failed: <why>`, `tools: leak started, vpn:
 on|off, gateway: yes|no`, `tools: leak done, leaks: <n>, not checked:
 <u>`, `tools: leak ended`, `tools: leak failed: <why>`, `tools: signin
-started`, `tools: signin done, no sign-in needed|sign-in needed|unclear,
+started`, `tools: signin started after joining Wi-Fi` (the own check),
+`tools: signin after joining Wi-Fi: sign-in needed, message shown`,
+`tools: signin done, no sign-in needed|sign-in needed|unclear,
 status <n>`, `tools: signin ended`, `tools: signin failed: <why>` (never a
 target, a server, an address, a sign-in address, a hardware address, a
 name, a file name or a port result), and `tools: runner stopped` when a
@@ -1437,7 +1442,9 @@ which `app::SurveyController` hands to the view model
   health check's rule; a second access point with the same name and as
   strong a security is a normal multi-access-point home and is not
   flagged. A busy channel: 200 or more frames per second of listening
-  (under 30 is quiet); the bars use the same rate. `Best ch` is the
+  (under 30 is quiet). The chart's bars are scaled to the busiest
+  channel, so they differ even when the stick hears only a few frames
+  while it hops; their colour still follows the rate. `Best ch` is the
   quietest of 1, 6 and 11.
 - **Runs.** Five minutes; the capture runs again for the rest when it
   stops at its size limit. Stop, quitting and SIGINT end the capture, then
@@ -1558,8 +1565,9 @@ page shows that link like any other uplink.)
   (`cf3/9271/108` reads `0cf3:9271`), the name from the USB device's
   `manufacturer` and `product` files (printable ASCII only, at most 48
   bytes). Interfaces on the same stick (a monitor interface beside
-  `wlan1`) are one adapter, named after the first by name; the survey's
-  own `lokimon0` is skipped, so the stick keeps its name. At most four.
+  `wlan1`) are one adapter, named after the first by name, and it keeps
+  all their names (`UsbWifiAdapter::interfaces`); the survey's own
+  `lokimon0` is skipped, so the stick keeps its name. At most four.
 - **Managed:** whether NetworkManager manages it (`yes`, `no`, or `--`
   without the service), from the same connection as the names. It reads
   `no` where NetworkManager is set to leave the stick alone (an
@@ -1575,8 +1583,8 @@ page shows that link like any other uplink.)
   managed state or a renamed interface on the same stick shows nothing.
 - **Status page:** after the ports, a `usb wi-fi` part: per adapter its
   interface, name, driver, usb id and managed state; with none, `adapter
-  none (optional)` and `built-in Wi-Fi is used`. The stick's own port gets
-  ` · usb` after its name.
+  none (optional)` and `built-in Wi-Fi is used`. Every port of a stick
+  (also a second one such as `wlan1mon`) gets ` · usb` after its name.
 - **Test folder:** a stick is a folder like the device's, for example
   `sys/class/net/wlan1` as a link to
   `../../devices/.../1-1.2/1-1.2:1.0/net/wlan1`, with a `wireless` folder,

@@ -749,6 +749,9 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override,
     });
     // NetworkManager noticed a sign-in page (hotel or cafe Wi-Fi).
     data.set_signin_listener([&key_controller] { key_controller.show_signin_needed(); });
+    // Where NetworkManager's check is off, the tools check once after the
+    // Wi-Fi joins a network, and say the same.
+    tools.set_signin_listener([&key_controller] { key_controller.show_signin_needed(); });
     watch.set_alert_listener([&key_controller](const std::string& text) { key_controller.show_watch_alert(text); });
     reports.set_listener(
         [&key_controller](bool saved, const std::string& text) { key_controller.show_report(saved, text); });
@@ -820,6 +823,7 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override,
     data.set_block_failure_listener({});
     data.set_usb_wifi_listener({});
     data.set_signin_listener({});
+    tools.set_signin_listener({});
     data.stop();
 
     if (quit_observer) {

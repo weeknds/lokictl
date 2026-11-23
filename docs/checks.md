@@ -299,8 +299,14 @@ lets you on the internet.
   connectivity check). When that check says `portal`, LokiCTL shows `Wi-Fi
   wants you to sign in` on any page. Many systems, Raspberry Pi OS among
   them, ship with that check off: then NetworkManager never notices a
-  sign-in page, the page shows `Auto check: off on this system`, and you
-  open Login yourself. LokiCTL never changes NetworkManager's settings.
+  sign-in page, so LokiCTL runs this check once by itself each time the
+  Wi-Fi joins a network (the first one it sees at start counts; leaving
+  Wi-Fi and joining again checks again), and shows the same message when
+  a sign-in is needed. The page then shows `Auto check: on joining
+  Wi-Fi`. That check is the page's own run (it shows there, and Sent
+  counts it), waits while another tool runs and is never repeated; the
+  log says `tools: signin started after joining Wi-Fi`, never the
+  network's name. LokiCTL never changes NetworkManager's settings.
 
 The sign-in address often carries a session code or your device's
 hardware address, so it is shown on the screen only, never logged or

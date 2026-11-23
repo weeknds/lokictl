@@ -193,7 +193,8 @@ how many packets LokiCTL has sent.
   on its hotspot gets internet through that one sign-in. When the system
   notices a sign-in page by itself, LokiCTL says `Wi-Fi wants you to sign
   in` on any page. Where that check is off (the page shows `Auto check:
-  off on this system`), open Login yourself.
+  on joining Wi-Fi`), LokiCTL checks once by itself each time the Wi-Fi
+  joins a network, and says the same if it is needed.
 
 ### Health check
 
@@ -466,7 +467,7 @@ the details and lists every file LokiCTL writes.
 | Full, half (duplex) | Whether a cable link sends both ways at once (full) or takes turns (half, slower). |
 | Drops | How many times the cable link went off since LokiCTL started. More than 3 means a loose cable or a bad port. |
 | Sign-in page | The web page a hotel or cafe Wi-Fi shows before it lets you on the internet (a captive portal). |
-| Auto check | The system's own internet check (NetworkManager's). When it's on, LokiCTL tells you about a sign-in page by itself. |
+| Auto check | The system's own internet check (NetworkManager's). When it's on, LokiCTL tells you about a sign-in page by itself; when it's off, LokiCTL checks once each time the Wi-Fi joins a network. |
 | iperf3 | A free program that measures the speed between two devices on the same network. One side runs it as a server, the other tests against it; there are iperf3 apps for phones too. |
 | Looked up (DNS) | Before a device talks to a website or service, it asks for the address of its name (a DNS lookup). The Talk page lists those names. |
 | Kick-off attack | Someone sends many "leave the network" frames (deauthentication) on a channel, which knocks phones and laptops off Wi-Fi, often to catch their password when they join again. The survey flags more than 20 in one second. |
@@ -483,7 +484,10 @@ the details and lists every file LokiCTL writes.
   you picked or to the phone or PC that tests against the Cardputer.
 - Apart from the tools you start yourself, LokiCTL sends nothing to the
   internet. Opening Login counts as starting a tool: it sends one small
-  plain web request to Cloudflare. There are no accounts and no analytics. The list of known
+  plain web request to Cloudflare. The one exception: where the system's
+  own internet check is off, LokiCTL sends that same request once by
+  itself each time the Wi-Fi joins a network, to notice a sign-in page.
+  There are no accounts and no analytics. The list of known
   security holes is built in and works offline; it is updated with each
   release.
 - Settings, the hotspot password, Watch's known devices, saved captures

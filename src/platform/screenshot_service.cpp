@@ -155,11 +155,28 @@ CaptureResult capture_active_screen_to(const std::filesystem::path& path) {
         return result;
     }
 
+    // The folders made here, deepest first, so a failed capture can take
+    // them away again instead of leaving them empty.
+    std::vector<std::filesystem::path> made;
+    const auto remove_made = [&made] {
+        std::error_code remove_error;
+        for (const auto& folder : made) {
+            std::filesystem::remove(folder, remove_error);  // only an empty folder goes
+        }
+    };
     if (const auto directory = path.parent_path(); !directory.empty()) {
         std::error_code filesystem_error;
+        for (auto folder = directory; !folder.empty() && !std::filesystem::exists(folder, filesystem_error);
+             folder = folder.parent_path()) {
+            made.push_back(folder);
+            if (folder == folder.parent_path()) {
+                break;
+            }
+        }
         std::filesystem::create_directories(directory, filesystem_error);
         if (filesystem_error) {
             result.error = "Unable to create output directory: " + filesystem_error.message();
+            remove_made();
             return result;
         }
     }
@@ -167,6 +184,7 @@ CaptureResult capture_active_screen_to(const std::filesystem::path& path) {
     lv_draw_buf_t* snapshot = lv_snapshot_take(screen, LV_COLOR_FORMAT_ARGB8888);
     if (!snapshot) {
         result.error = "LVGL snapshot failed";
+        remove_made();
         return result;
     }
 
@@ -176,6 +194,8 @@ CaptureResult capture_active_screen_to(const std::filesystem::path& path) {
     lv_draw_buf_destroy(snapshot);
     if (result.success) {
         result.path = path.string();
+    } else {
+        remove_made();
     }
     return result;
 }

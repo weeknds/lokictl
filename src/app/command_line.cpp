@@ -92,6 +92,8 @@ LaunchOptions parse_command_line(int argc, const char* const* argv) {
     bool has_snapshot_option = false;
     bool has_data = false;
     bool has_data_steps = false;
+    // The options with a value seen so far: a second one would silently win.
+    std::vector<std::string_view> given;
 
     for (int index = 1; index < argc; ++index) {
         const std::string_view argument = argv[index] ? argv[index] : "";
@@ -118,12 +120,17 @@ LaunchOptions parse_command_line(int argc, const char* const* argv) {
             return invalid("unknown argument '" + std::string(argument) + "'");
         }
 
+        // No value starts with '-', so "--snapshot -h" is not a file named "-h".
         const std::string_view value =
             index + 1 < argc && argv[index + 1] ? std::string_view(argv[index + 1]) : std::string_view();
-        if (value.empty() || value.substr(0, 2) == "--") {
+        if (value.empty() || value.front() == '-') {
             return invalid(std::string(argument) + " needs a value");
         }
         ++index;
+        if (std::find(given.begin(), given.end(), argument) != given.end()) {
+            return invalid(std::string(argument) + " is given more than once");
+        }
+        given.push_back(argument);
 
         if (argument == "--snapshot") {
             options.snapshot_path = std::string(value);

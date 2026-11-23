@@ -268,8 +268,23 @@ void check_counter() {
     expect(model::survey_channel_load(run, 6) == model::ChannelLoad::Busy, "channel 6 busy");
     expect(model::survey_channel_load(run, 1) == model::ChannelLoad::InUse, "channel 1 in use");
     expect(model::survey_channel_load(run, 2) == model::ChannelLoad::Quiet, "channel 2 quiet");
-    expect(model::survey_channel_level(run, 6) == 100 && model::survey_channel_level(run, 1) == 20, "bar levels");
+    expect(model::survey_channel_level(run, 6) == 100 && model::survey_channel_level(run, 1) == 16 &&
+               model::survey_channel_level(run, 2) == 0,
+           "bar levels against the busiest channel");
     expect(model::survey_best_channel(run) != 6, "the best channel is not the busy one");
+    {
+        // Few frames while hopping (about 7 a second in all): the bars still differ.
+        model::SurveyRun few;
+        few.elapsed_ms = 13000;
+        few.channels[0].frames = 7;
+        few.channels[5].frames = 3;
+        few.channels[10].frames = 1;
+        expect(model::survey_channel_level(few, 1) == 100 && model::survey_channel_level(few, 6) == 42 &&
+                   model::survey_channel_level(few, 11) == 14 &&
+                   model::survey_channel_load(few, 1) == model::ChannelLoad::Quiet,
+               "few frames: bars against the busiest, the load still quiet");
+        expect(model::survey_channel_level(model::SurveyRun{}, 1) == 0, "no frames: no bar");
+    }
     const std::vector<model::SurveyFinding> findings = model::survey_findings(run);
     expect(findings.size() == 3 && findings[0].text == "Kick-off attack on ch 11" &&
                findings[1].text == "Look-alike of Harbour-Cafe" && findings[2].text == "Channel 6: busy",
@@ -380,9 +395,10 @@ void check_real_header() {
     expect(run.frames == 2 && run.channels[0].frames == 2 && run.networks.size() == 1, "both counted on channel 1");
 }
 
-// read_usb_wifi() on a made-up folder: the stick's own interface (wlan1)
-// and the survey's listening interface on the same stick. The stick keeps
-// its name; the listening interface sorts first but is never read.
+// read_usb_wifi() on a made-up folder: the stick's own interface (wlan1),
+// a second one (wlan1mon) and the survey's listening interface on the same
+// stick. The stick keeps its name and lists both of its own; the listening
+// interface sorts first but is never read.
 void check_listen_interface() {
     namespace fs = std::filesystem;
     std::error_code error;
@@ -391,7 +407,7 @@ void check_listen_interface() {
     const fs::path usb = root / "sys/devices/usb1/1-1/1-1:1.0";
     fs::create_directories(usb, error);
     std::ofstream(usb / "uevent") << "DEVTYPE=usb_interface\nDRIVER=ath9k_htc\nPRODUCT=cf3/9271/108\n";
-    for (const char* name : {"wlan1", "lokimon0"}) {
+    for (const char* name : {"wlan1", "lokimon0", "wlan1mon"}) {
         const fs::path interface_dir = root / "sys/class/net" / name;
         fs::create_directories(interface_dir / "wireless", error);
         fs::create_directory_symlink(usb, interface_dir / "device", error);
@@ -399,6 +415,8 @@ void check_listen_interface() {
     std::vector<model::UsbWifiAdapter> adapters = platform::read_usb_wifi(root);
     expect(adapters.size() == 1 && adapters[0].interface_name == "wlan1" && adapters[0].usb_id == "0cf3:9271",
            "the listening interface never stands in for the stick");
+    expect(adapters.size() == 1 && adapters[0].interfaces == std::vector<std::string>{"wlan1", "wlan1mon"},
+           "every interface of the stick is kept, never the listening one");
     fs::remove_all(root, error);
 }
 

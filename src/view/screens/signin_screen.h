@@ -21,9 +21,11 @@ namespace screen {
 // Like the Hotspot page, without a title bar: a QR code at the left and a
 // column at its right with the page's name, the verdict ("Sign-in
 // needed", "No sign-in needed", "Checking…"), one short hint ("Scan with
-// your phone"), the sign-in page's host while one is needed, whether the
-// system's own check (NetworkManager's, which shows the message "Wi-Fi
-// wants you to sign in") is on, and the Sent count. The code holds the
+// your phone"), the sign-in page's host while one is needed, when a check
+// runs by itself ("on" while the system's own check, NetworkManager's, is
+// on; "on joining Wi-Fi" where it is off and app::ToolController checks
+// once after joining; either shows the message "Wi-Fi wants you to sign
+// in"), and the Sent count. The code holds the
 // sign-in address (model::signin_code_text()) only while a sign-in is
 // needed; otherwise a note stands in its place.
 //

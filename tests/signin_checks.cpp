@@ -8,7 +8,8 @@
 // reading of answers and of redirect addresses, which address the QR code
 // holds, and the fetch itself against a small test server on 127.0.0.1
 // that answers like an open internet, a sign-in redirect, a network's own
-// page, nothing at all, or too slowly. Built on the Mac only, as
+// page, nothing at all, or too slowly; and when LokiCTL's own check after
+// joining a Wi-Fi network is due. Built on the Mac only, as
 // lokictl_signin_tests; exits 1 when a check fails.
 //
 // With a port as its argument it only fetches from 127.0.0.1:<port> (any
@@ -285,6 +286,36 @@ int fetch_only(const char* port_text) {
 
 } // namespace
 
+// When the own check after joining a Wi-Fi network is due.
+void check_due() {
+    model::HomeData home;
+    home.uplink_kind = model::LinkKind::Wifi;
+    home.uplink_name = "wlan0";
+    home.uplink_address = "192.0.2.10";
+    home.wifi_name = "Harbour-Cafe";
+    home.internet_check = false;
+    std::string last;
+    expect(model::signin_check_due(home, last) && last == "Harbour-Cafe", "joining counts, the first reading too");
+    expect(!model::signin_check_due(home, last), "once per network");
+    home.wifi_name = "Hotel-Lobby";
+    expect(model::signin_check_due(home, last) && last == "Hotel-Lobby", "another network checks again");
+    home.uplink_kind = model::LinkKind::Cable;
+    home.wifi_name.clear();
+    expect(!model::signin_check_due(home, last) && last.empty(), "the cable never checks and resets");
+    home.uplink_kind = model::LinkKind::Wifi;
+    home.wifi_name = "Hotel-Lobby";
+    expect(model::signin_check_due(home, last), "joining the same network again checks again");
+    home.uplink_address.clear();
+    expect(!model::signin_check_due(home, last) && last.empty(), "no address yet: not joined");
+    home.uplink_address = "192.0.2.10";
+    home.internet_check = true;
+    expect(!model::signin_check_due(home, last) && last.empty(), "NetworkManager's own check on: no own check");
+    home.internet_check = false;
+    expect(model::signin_check_due(home, last), "its check found off later: checks then");
+    home.wifi_name.clear();
+    expect(!model::signin_check_due(home, last) && last.empty(), "no name: not joined");
+}
+
 int main(int argc, char** argv) {
     if (argc > 1) {
         return fetch_only(argv[1]);
@@ -292,6 +323,7 @@ int main(int argc, char** argv) {
     check_answers();
     check_code_and_host();
     check_fetch();
+    check_due();
     if (failures == 0) {
         std::printf("signin checks: all checks passed\n");
         return 0;

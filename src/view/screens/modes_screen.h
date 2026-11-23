@@ -29,7 +29,8 @@ namespace screen {
 //   and password while Router or Share runs, "VPN <server>" with the time
 //   since the last reply while the tunnel runs (with a hotspot too: the VPN
 //   gateway, while the VPN row is highlighted), "VPN down: hotspot devices
-//   blocked" while the gateway's kill switch is on without the tunnel, the
+//   blocked" while the gateway's kill switch is on without the tunnel (a
+//   failed switch shows there for kGatewayFailureMs first), the
 //   folder to put files in while the VPN row is highlighted and there are
 //   none, or the current link in Client.
 // In the gateway both the hotspot's row and the VPN row carry the tick.
@@ -54,9 +55,14 @@ namespace screen {
 // place when the values or the highlight change; nothing is built again.
 class ModesScreen : public BaseScreen {
 public:
+    // How long a failed switch shows on the status line while the VPN
+    // gateway is down, before the line says so again.
+    static constexpr uint32_t kGatewayFailureMs = 4000;
+
     ModesScreen(viewmodel::BaseViewModel& view_model,
                 app::AssetManager& assets,
                 view::ThemeEngine& theme_engine);
+    ~ModesScreen() override;
 
     // True for the pages this screen can show.
     static bool handles(model::AppPage page);
@@ -102,6 +108,11 @@ private:
     // bound to the content area, so they go when the screen goes.
     static void selection_observer(lv_observer_t* observer, lv_subject_t* subject);
     static void data_observer(lv_observer_t* observer, lv_subject_t* subject);
+    // Ends the failure's time on the status line (see kGatewayFailureMs).
+    // The user data is the screen.
+    static void failure_timer_cb(lv_timer_t* timer);
+    // Deletes the failure's timer and shows a new failure in full again.
+    void reset_failure_time();
 
     std::array<Row, model::kNetModeCount> rows_{};
     lv_obj_t* status_left_{nullptr};
@@ -118,6 +129,8 @@ private:
     int32_t shown_off_{-1};       // key 8: 1 Off (gateway down), 0 unused, -1 before the first
     int32_t shown_vpn_mark_{-1};  // the VPN row's tick in the gateway drawn (1) or not (0) last
     int32_t shown_vpn_switchable_{-1}; // the VPN row drawn usable (1) or not (0) last
+    lv_timer_t* failure_timer_{nullptr}; // runs while a failure shows with the gateway down
+    bool failure_over_{false};           // that failure has had its time on the status line
 };
 
 } // namespace screen

@@ -430,12 +430,11 @@ The commands:
 - `deploy [--no-build] [--with-deps] [<file.deb>]`: builds the package with
   `scripts/build-deb.sh` (only what changed is rebuilt), copies it to the
   user's home folder on the device (as `lokictl_upload.deb`) and installs it
-  with `apt`. It first checks
-  that `apt` would install nothing but LokiCTL; `--with-deps` also allows
-  missing libraries. `--no-build` takes the newest package in `dist/`, or you
-  can name a package file. Afterwards it checks that the installed program
-  matches the package and that the launcher entry and icon are in place, and
-  deletes the copied file.
+  with `apt`. It first checks that `apt` would install nothing but LokiCTL;
+  `--with-deps` also allows missing libraries. `--no-build` takes the newest
+  package in `dist/`, or you can name a package file. Afterwards it checks
+  that the installed program matches the package and that the launcher
+  entry and icon are in place, and deletes the copied file.
 - `run [--theme T] [--data D]`: starts LokiCTL on the device's screen (see
   below). `--theme` picks `instrument`, `constellation` or `terminal` for
   this run only and does not save it; without it, the theme saved on the
@@ -629,16 +628,16 @@ The name is defined in the identity block at the top of `CMakeLists.txt` (the
 `config/<name>.conf` and `assets/images/<name>.svg` and `<name>*.png`, and
 update `app-builder.json`, `icon_name` in `scripts/make-icons.sh` and the
 README. Configure stops with a clear message if the file names and the
-identity block disagree. The build image tag
-`lokictl-build:trixie` at the top of `scripts/build-deb.sh` carries the name
-too; renaming it is optional. The device scripts carry it as well: the
-constants at the top of `scripts/device-agent.py` (program path, unit and file
-names), the `dist/lokictl_*_arm64.deb` pattern in `scripts/device.sh`, the
-environment variable `LOKICTL_FRAME_STATS_FILE` (set in
-`scripts/device-agent.py`, read in `src/app/app.cpp`) and the environment
-variables `LOKICTL_CONFIG_FILE`, `LOKICTL_DATA_ROOT`, `LOKICTL_IDLE_SECONDS`
-and `LOKICTL_BACKLIGHT_FILE` (read in `src/app/app.cpp`).
-The connection variables `LOKICTL_DEVICE` and `LOKICTL_SSH_OPTS` and the
-upload file name (`upload_name`) in `scripts/device.sh` contain it too, and
-so do the copyright holder in `LICENSE`, the SPDX headers of the project's own
-files and the mentions in `docs/`.
+identity block disagree. The build image tag `lokictl-build:trixie` at the
+top of `scripts/build-deb.sh` carries the name too; renaming it is optional.
+The device scripts carry it as well: the constants at the top of
+`scripts/device-agent.py` (program path, unit and file names), the
+`dist/lokictl_*_arm64.deb` pattern in `scripts/device.sh`, the environment
+variable `LOKICTL_FRAME_STATS_FILE` (set in `scripts/device-agent.py`, read
+in `src/app/app.cpp`) and the environment variables `LOKICTL_CONFIG_FILE`,
+`LOKICTL_DATA_ROOT`, `LOKICTL_IDLE_SECONDS` and `LOKICTL_BACKLIGHT_FILE`
+(read in `src/app/app.cpp`). The connection variables `LOKICTL_DEVICE` and
+`LOKICTL_SSH_OPTS` and the upload file name (`upload_name`) in
+`scripts/device.sh` contain it too, and so do the copyright holder in
+`LICENSE`, the SPDX headers of the project's own files and the mentions in
+`docs/`.

@@ -421,7 +421,8 @@ rows and a status line, and it is drawn the same way in every theme:
   (in the gateway: with the VPN row highlighted), `VPN <server>` and, at
   the right, `reply 4 s ago` (or `none` before data came back); while the
   gateway's kill switch is on without a tunnel, `VPN down: hotspot devices
-  blocked` (warning colour); with the VPN row highlighted and no files,
+  blocked` (warning colour; a failed reconnect shows its failure for 4 s
+  first, then this line again); with the VPN row highlighted and no files,
   the folder `~/.config/lokictl/wireguard`, muted; in Client the current
   link, muted.
 
@@ -699,14 +700,16 @@ column at its right. The column: `Wi-Fi sign-in`, the verdict in its
 colour (`Sign-in needed` amber, `No sign-in needed` green, `Checking…`,
 `No answer`, `Can't tell`, `Not checked`), one hint under it (`Scan with
 your phone`, `The internet is open`, `Press 6 to check`, the reason), the
-sign-in page's host under `SIGN-IN PAGE` while one is needed, whether the
-system's own check is on under `AUTO CHECK` (`on`, or `off on this system`
-in amber) and `SENT N` at the bottom. The code (black on white) shows only
+sign-in page's host under `SIGN-IN PAGE` while one is needed, when a
+check runs by itself under `AUTO CHECK` (`on` while the system's own check
+is on, else `on joining Wi-Fi`: LokiCTL then checks once after the Wi-Fi
+joins a network) and `SENT N` at the bottom. The code (black on white) shows only
 while a sign-in is needed; otherwise a note stands in its place. The
 detail view shows the whole address (at most three lines), what it means,
 what to do and the Share-mode tip: sign in from a phone on LokiCTL's
-hotspot and every device on it gets internet. With the auto check off and
-no sign-in needed it says so instead.
+hotspot and every device on it gets internet. With the system's check off
+and no sign-in needed it says that LokiCTL checks once by itself when the
+Wi-Fi joins a network instead.
 
 | Key | What it does |
 |---|---|
@@ -946,9 +949,9 @@ first (`Kick-off attack on ch 11` in the error colour, `Look-alike of
 HomeNet` in the warning colour, `Channel 6: busy` in the accent colour),
 then the networks, look-alikes first, then the strongest (`Hidden network`
 muted), with `ch 6 WPA2` at the right. Key 5 swaps the list for a chart:
-one bar per channel 1 to 13, as high as the channel was busy (warning
-colour when busy, error colour where a kick-off attack was seen), the
-number under it. A note stands in place of both: `Plug in a USB Wi-Fi
+one bar per channel 1 to 13, its height against the busiest channel
+(warning colour when busy, error colour where a kick-off attack was
+seen), the number under it. A note stands in place of both: `Plug in a USB Wi-Fi
 stick`, `The system uses the stick`, `No network service to ask`, `Press 6
 to start listening`, `Listening…` or `Nothing heard`. The status line:
 `Needs a USB Wi-Fi stick`, `Ready on wlan1, sends nothing`, `Listening,

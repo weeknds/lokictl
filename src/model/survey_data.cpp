@@ -153,8 +153,20 @@ ChannelLoad survey_channel_load(const SurveyRun& run, int32_t channel) {
 }
 
 int32_t survey_channel_level(const SurveyRun& run, int32_t channel) {
-    const int32_t rate = frames_per_second(run, channel);
-    return std::clamp<int32_t>(rate * 100 / kSurveyBusyRate, 0, 100);
+    if (channel < 1 || channel > kSurveyChannels) {
+        return 0;
+    }
+    // Every channel is heard for the same time, so the frame counts compare
+    // as they are.
+    int64_t busiest = 0;
+    for (const SurveyChannel& each : run.channels) {
+        busiest = std::max<int64_t>(busiest, each.frames);
+    }
+    if (busiest <= 0) {
+        return 0;
+    }
+    const int64_t frames = std::max<int64_t>(run.channels[static_cast<std::size_t>(channel - 1)].frames, 0);
+    return static_cast<int32_t>(std::clamp<int64_t>(frames * 100 / busiest, 0, 100));
 }
 
 int32_t survey_channel_networks(const SurveyRun& run, int32_t channel) {

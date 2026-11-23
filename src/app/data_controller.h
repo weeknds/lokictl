@@ -192,7 +192,9 @@ public:
     // Told each time NetworkManager's own check finds a sign-in page
     // (model::Internet::Portal) where the reading before had none (the
     // first reading counts), on the UI thread; a listener set after such a
-    // reading is told at once. Empty: only the log says it.
+    // reading is told at once. Empty: only the log says it. Where that
+    // check is off, ToolController checks after joining a Wi-Fi network
+    // instead.
     using SigninListener = std::function<void()>;
     void set_signin_listener(SigninListener listener);
 
