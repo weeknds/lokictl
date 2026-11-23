@@ -7,6 +7,7 @@
 #include "status_rows.h"
 
 #include "home_format.h"
+#include "status_summary.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -97,6 +98,35 @@ void add_long_rows(std::vector<StatusRow>& rows, const char* label, const std::s
     add_row(rows, "", text.substr(cut));
 }
 
+std::string duplex_text(const std::string& duplex) {
+    if (duplex == "full") {
+        return "full, both ways at once";
+    }
+    if (duplex == "half") {
+        return "half, one way at a time";
+    }
+    return kUnknownText;
+}
+
+// One line per connected cable, then the battery's.
+void add_summary(std::vector<StatusRow>& rows, const model::HomeData& data) {
+    std::vector<const model::StatusPort*> cables;
+    for (const model::StatusPort& port : data.details.ports) {
+        if (port.kind == model::LinkKind::Cable && port.state == model::PortState::Connected) {
+            cables.push_back(&port);
+        }
+    }
+    for (const model::StatusPort* port : cables) {
+        const std::string name = cables.size() == 1 ? std::string("Cable") : port->name;
+        rows.push_back({false, "", name + ": " + model::cable_summary(*port),
+                        model::cable_link_poor(*port) ? NoteTone::Warning : NoteTone::Plain, true});
+    }
+    rows.push_back({false, "", "Battery: " + model::battery_summary(data),
+                    model::battery_low(data.battery_percent, data.battery_state) ? NoteTone::Warning
+                                                                                  : NoteTone::Plain,
+                    true});
+}
+
 void add_port(std::vector<StatusRow>& rows, const model::StatusPort& port, bool usb) {
     std::string heading = home::link_kind_text(port.kind) + " " + port.name;
     if (port.uplink) {
@@ -115,6 +145,11 @@ void add_port(std::vector<StatusRow>& rows, const model::StatusPort& port, bool 
             add_row(rows, "signal", signal_detail_text(port.signal_dbm));
         }
         add_row(rows, "speed", speed_detail_text(port.speed_mbps));
+        if (port.kind == model::LinkKind::Cable) {
+            add_row(rows, "duplex", duplex_text(port.duplex));
+            add_row(rows, "drops", known(port.drops) ? std::to_string(port.drops) + " since LokiCTL started"
+                                                     : std::string(kUnknownText));
+        }
         add_row(rows, "IPv4", port.ipv4);
         add_long_rows(rows, "IPv6", port.ipv6, ':');
         add_long_rows(rows, "link-local", port.ipv6_link, ':');
@@ -211,8 +246,11 @@ std::string battery_state_text(model::BatteryState state) {
 
 std::string time_left_text(const model::HomeData& data) {
     const model::StatusDetails& details = data.details;
-    if (data.battery_state == model::BatteryState::Discharging && known(details.battery_empty_minutes)) {
-        return duration_text(details.battery_empty_minutes);
+    if (data.battery_state == model::BatteryState::Discharging) {
+        if (details.battery_estimating) {
+            return "estimating...";
+        }
+        return home::text_or_unknown(model::battery_time_text(details.battery_empty_minutes));
     }
     if (data.battery_state == model::BatteryState::Charging && known(details.battery_full_minutes)) {
         return duration_text(details.battery_full_minutes) + " to full";
@@ -294,7 +332,9 @@ std::string uptime_long_text(int32_t seconds) {
 std::vector<StatusRow> status_rows(const model::HomeData& data, const std::string& list_date) {
     const model::StatusDetails& details = data.details;
     std::vector<StatusRow> rows;
-    rows.reserve(40);
+    rows.reserve(48);
+
+    add_summary(rows, data);
 
     if (details.ports.empty()) {
         add_heading(rows, "network", "", NoteTone::Quiet);

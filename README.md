@@ -94,7 +94,11 @@ for each network shows up as a new device.
 
 ### Status
 
-`8` on Home. Everything the home page has no room for: each network port
+`8` on Home. It starts with two short lines: how the cable link is doing
+(`Cable: 100 Mbit, full, 0 drops`, or a warning such as `Cable: slow
+link, check it`) and how long the battery lasts at the current use
+(`Battery: about 3 h 20 min left`; it needs about a minute on battery to
+tell). Then everything the home page has no room for: each network port
 with its addresses, signal and speed, the VPN, any USB Wi-Fi adapter, the
 DNS servers, the battery, the processor temperature, free memory,
 uptime and the date of the built-in list of security holes. F/X scroll,
@@ -409,6 +413,8 @@ the details and lists every file LokiCTL writes.
 | `Network 10 (VLAN)` | Several separate networks can share the same cables; each has a number (a VLAN). This is the one your port is on. |
 | Route, hop | The way your traffic takes to the internet; each router on the way is a hop. |
 | `Caught` | How many times someone connected to the trap. |
+| Full, half (duplex) | Whether a cable link sends both ways at once (full) or takes turns (half, slower). |
+| Drops | How many times the cable link went off since LokiCTL started. More than 3 means a loose cable or a bad port. |
 
 ## Data use
 

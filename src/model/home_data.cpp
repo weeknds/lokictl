@@ -209,6 +209,9 @@ bool operator==(const StatusPort& left, const StatusPort& right) {
            left.security == right.security &&
            left.signal_dbm == right.signal_dbm &&
            left.speed_mbps == right.speed_mbps &&
+           left.duplex == right.duplex &&
+           left.drops == right.drops &&
+           left.link_downs == right.link_downs &&
            left.ipv4 == right.ipv4 &&
            left.ipv6 == right.ipv6 &&
            left.ipv6_link == right.ipv6_link &&
@@ -232,6 +235,7 @@ bool operator==(const StatusDetails& left, const StatusDetails& right) {
            left.battery_charge_mah == right.battery_charge_mah &&
            left.battery_full_mah == right.battery_full_mah &&
            left.battery_empty_minutes == right.battery_empty_minutes &&
+           left.battery_estimating == right.battery_estimating &&
            left.battery_full_minutes == right.battery_full_minutes &&
            left.cpu_temp_tenths == right.cpu_temp_tenths &&
            left.memory_free_mb == right.memory_free_mb &&

@@ -29,8 +29,9 @@ enum class NoteTone {
 struct StatusRow {
     bool heading{false};  // a section heading rather than a value row
     std::string label;    // heading: the section's name; row: what the value is
-    std::string value;    // heading: a short note at the right end; row: the value
-    NoteTone tone{NoteTone::Plain}; // headings only
+    std::string value;    // heading: a short note at the right end; row: the value; line: the whole text
+    NoteTone tone{NoteTone::Plain}; // headings and lines only
+    bool line{false};     // one text across the whole row, without a label (the summary at the top)
 };
 
 // The most characters of a value that fit in a row. A Wi-Fi network's name
@@ -39,11 +40,17 @@ struct StatusRow {
 constexpr std::size_t kValueChars = 26;
 
 // The rows, in this order:
+// - the summary lines: one per connected cable port, "Cable: " (or the
+//   interface's name and ": " when there are several) and
+//   model::cable_summary(), in the warning tone when model::cable_link_poor();
+//   then "Battery: " and model::battery_summary(), in the warning tone while
+//   the battery is low;
 // - per port (HomeData::details.ports): a heading "wi-fi <name>" or
 //   "cable <name>" (with " · uplink" on the uplink) and its state as the
 //   note; then, while it is connected or runs the access point, for Wi-Fi
 //   network, security, signal, speed, IPv4, IPv6, link-local, router and
-//   hardware, for a cable speed, IPv4, IPv6, link-local, router and
+//   hardware, for a cable speed, duplex ("full, both ways at once"), drops
+//   ("0 since LokiCTL started"), IPv4, IPv6, link-local, router and
 //   hardware; otherwise only hardware. Without any port: a heading
 //   "network" and one row "ports --". A port that is a USB Wi-Fi adapter's
 //   interface gets " · usb" after its name.
@@ -57,7 +64,8 @@ constexpr std::size_t kValueChars = 26;
 // - "dns": one "server" row per DNS server, or one "server --";
 // - "battery" with the charge as the note (in the warning tone while the
 //   battery is low): state, voltage, current, temp, health, cycles, charge
-//   and time left;
+//   and time left (while discharging model::battery_time_text() or
+//   "estimating...", while charging the time to full);
 // - "device": processor, memory and uptime;
 // - "holes list" with the date of the list of known security holes the
 //   Ports page checks against (`list_date`; "missing" when the app found

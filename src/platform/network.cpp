@@ -546,6 +546,10 @@ std::vector<model::StatusPort> read_ports(const std::filesystem::path& root,
             } else {
                 const int32_t mbps = read_speed(interface_dir);
                 port.speed_mbps = mbps == model::kSpeedUnknown ? model::kDetailUnknown : mbps;
+                std::string duplex;
+                if (read_first_line(interface_dir / "duplex", duplex) && (duplex == "full" || duplex == "half")) {
+                    port.duplex = duplex;
+                }
             }
             for (const DefaultRoute& route : routes) {
                 if (route.interface_name == name && route.has_gateway) {
@@ -625,6 +629,26 @@ bool read_traffic_counters(const std::filesystem::path& root,
     }
     counters = reading;
     return true;
+}
+
+bool read_link_downs(const std::filesystem::path& root,
+                     const std::string& interface_name,
+                     std::size_t line,
+                     uint64_t& downs) {
+    if (!valid_interface_name(interface_name)) {
+        return false;
+    }
+    const std::filesystem::path interface_dir = root / "sys/class/net" / interface_name;
+    uint64_t count = 0;
+    if (read_counter(interface_dir / "carrier_down_count", line, count)) {
+        downs = count;
+        return true;
+    }
+    if (read_counter(interface_dir / "carrier_changes", line, count)) {
+        downs = count / 2 + count % 2;
+        return true;
+    }
+    return false;
 }
 
 } // namespace platform

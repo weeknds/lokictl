@@ -281,8 +281,18 @@ void LiveDataSource::read(model::HomeData& data) {
     }
 
     const auto now = std::chrono::steady_clock::now();
-    if (!battery_read_ || details_started || now - battery_read_at_ >= kBatteryInterval) {
+    if (test_folder_ || !battery_read_ || details_started || now - battery_read_at_ >= kBatteryInterval) {
         battery_ = read_battery(power_supply_dir_);
+        if (test_folder_) {
+            battery_test_clock_ += kBatteryInterval;
+        }
+        const auto battery_at = test_folder_ ? battery_test_clock_ : now.time_since_epoch();
+        model::BatterySample sample;
+        sample.at_ms = std::chrono::duration_cast<milliseconds>(battery_at).count();
+        sample.gauge_minutes = battery_.empty_minutes;
+        sample.current_ma = battery_.current_ma;
+        sample.charge_mah = battery_.charge_mah;
+        battery_clock_.add(battery_.state, sample);
         if (details_shown_) {
             read_battery_details(power_supply_dir_, details_);
             read_device_details(root_, details_);
@@ -292,6 +302,10 @@ void LiveDataSource::read(model::HomeData& data) {
     }
     data.battery_percent = battery_.percent;
     data.battery_state = battery_.state;
+    if (details_shown_) {
+        details_.battery_empty_minutes = battery_clock_.minutes();
+        details_.battery_estimating = battery_clock_.estimating();
+    }
 
     const bool network_due = !network_read_ || details_started || now - network_read_at_ >= kNetworkInterval;
     if (network_due) {
@@ -302,6 +316,22 @@ void LiveDataSource::read(model::HomeData& data) {
         }
         network_read_at_ = now;
         network_read_ = true;
+    }
+    // Cable drops with the network (in a test folder at every call): the
+    // uplink's count is kept the first time it is seen, on any page.
+    const std::size_t link_line = test_folder_ ? link_line_++ : 0;
+    if (network_due || test_folder_) {
+        int32_t downs = model::kDetailUnknown;
+        if (network_.kind == model::LinkKind::Cable && link_downs_start_.count(network_.interface_name) == 0) {
+            cable_drops(network_.interface_name, link_line, downs);
+        }
+        if (details_shown_) {
+            for (model::StatusPort& port : details_.ports) {
+                if (port.kind == model::LinkKind::Cable && port.state == model::PortState::Connected) {
+                    port.drops = cable_drops(port.name, link_line, port.link_downs);
+                }
+            }
+        }
     }
     // USB Wi-Fi adapters, on every page, so plugging one in or out is
     // noticed wherever the user is; in a test folder at every call. The
@@ -415,6 +445,20 @@ void LiveDataSource::read(model::HomeData& data) {
     data.up_kbps = up_kbps_;
     data.down_history = down_history_.shares();
     data.up_history = up_history_.shares();
+}
+
+int32_t LiveDataSource::cable_drops(const std::string& name, std::size_t line, int32_t& downs) {
+    constexpr auto kMost = static_cast<uint64_t>(std::numeric_limits<int32_t>::max() - 1);
+    uint64_t count = 0;
+    if (!read_link_downs(root_, name, line, count)) {
+        return model::kDetailUnknown;
+    }
+    const auto start = link_downs_start_.try_emplace(name, count).first;
+    if (count < start->second) {
+        start->second = count;
+    }
+    downs = static_cast<int32_t>(std::min(count, kMost));
+    return static_cast<int32_t>(std::min(count - start->second, kMost));
 }
 
 void LiveDataSource::read_vpn_files() {

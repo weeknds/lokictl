@@ -72,7 +72,8 @@ constexpr std::size_t kMaxPorts = 4;
 //   when "flags" cannot be read. The port named `uplink_name` is marked as
 //   the uplink.
 // - Only a connected port gets its signal (Wi-Fi, proc/net/wireless), its
-//   speed (cable, "speed") and its router (the gateway of its own default
+//   speed and duplex (cable, "speed" and "duplex", which counts only when it
+//   reads "full" or "half") and its router (the gateway of its own default
 //   route with the lowest metric in proc/net/route).
 // - IPv4: the port's first IPv4 address with its prefix, "10.0.0.12/24"
 //   (a line of `addresses_file` without a prefix gives the address alone).
@@ -115,6 +116,17 @@ bool read_traffic_counters(const std::filesystem::path& root,
                            const std::string& interface_name,
                            std::size_t line,
                            TrafficCounters& counters);
+
+// How many times the link of `interface_name` went down since the
+// interface came up: "<root>/sys/class/net/<name>/carrier_down_count", or,
+// without that file, (carrier_changes + 1) / 2 (the kernel counts a fall
+// first, then each rise and fall). `line` as for read_traffic_counters().
+// Returns false, and leaves `downs` alone, when the name could not be an
+// interface's or neither file holds a whole number. Never throws.
+bool read_link_downs(const std::filesystem::path& root,
+                     const std::string& interface_name,
+                     std::size_t line,
+                     uint64_t& downs);
 
 // The first IPv4 address of `interface_name` as text, from the system
 // (getifaddrs()), or from `addresses_file` when one is named (see

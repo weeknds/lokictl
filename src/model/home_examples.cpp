@@ -135,6 +135,9 @@ StatusDetails example_status_details(const HomeData& data) {
         cable.state = PortState::Connected;
         cable.uplink = true;
         cable.speed_mbps = detail_speed(data.uplink_speed_mbps);
+        cable.duplex = "full";
+        cable.drops = 0;
+        cable.link_downs = 1;
         cable.ipv4 = with_prefix(data.uplink_address);
         cable.ipv6 = "2001:db8:a::12";
         cable.ipv6_link = "fe80::4c:4bff:fe00:1";

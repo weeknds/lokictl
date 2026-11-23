@@ -85,6 +85,8 @@ view::widgets::HelpContent StatusScreen::help_content() {
                 {"ESC / 4", "Back"},
                 {"F / X", "Scroll a row"},
                 {"Z C / 5 6", "Previous / next part"},
+                {"Drops", "Times the cable went off"},
+                {"Time left", "At the last minute's use"},
             }};
 }
 
@@ -213,7 +215,7 @@ void StatusScreen::build_content(lv_obj_t* content) {
 }
 
 void StatusScreen::style_slot(Slot& slot, SlotKind kind, status::NoteTone tone) {
-    if (slot.kind == kind && (kind != SlotKind::Heading || slot.tone == tone)) {
+    if (slot.kind == kind && (kind == SlotKind::Row || slot.tone == tone)) {
         return;
     }
     const auto& theme = this->theme();
@@ -247,6 +249,17 @@ void StatusScreen::style_slot(Slot& slot, SlotKind kind, status::NoteTone tone) 
         fix_width(slot.value, kNoteWidth, small);
         lv_obj_set_pos(slot.value, kValueRight - kNoteWidth, top - baseline_from_top(small));
         lv_obj_remove_flag(slot.rule, LV_OBJ_FLAG_HIDDEN);
+    } else if (kind == SlotKind::Line) {
+        // The value runs across the whole row; the label stays empty.
+        const lv_font_t* mono = theme.font(view::FontRole::Mono);
+        fix_width(slot.label, 1, small);
+        lv_obj_set_pos(slot.label, kSideMargin, top - baseline_from_top(small));
+
+        view::style::text(slot.value, theme, view::FontRole::Mono, tone_color(tone));
+        lv_obj_set_style_text_align(slot.value, LV_TEXT_ALIGN_LEFT, 0);
+        fix_width(slot.value, kRuleWidth, mono);
+        lv_obj_set_pos(slot.value, kSideMargin, top - baseline_from_top(mono));
+        lv_obj_add_flag(slot.rule, LV_OBJ_FLAG_HIDDEN);
     } else {
         const lv_font_t* mono = theme.font(view::FontRole::Mono);
         view::style::text(slot.label, theme, view::FontRole::Small, theme.colors.muted);
@@ -278,7 +291,7 @@ void StatusScreen::show_rows() {
             continue;
         }
         const status::StatusRow& row = rows_[row_index];
-        style_slot(slot, row.heading ? SlotKind::Heading : SlotKind::Row, row.tone);
+        style_slot(slot, row.heading ? SlotKind::Heading : row.line ? SlotKind::Line : SlotKind::Row, row.tone);
         set_text_if_changed(slot.label, slot.label_text, row.heading ? caption_text(theme, row.label) : row.label);
         set_text_if_changed(slot.value, slot.value_text, row.value);
     }

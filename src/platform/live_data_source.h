@@ -14,6 +14,7 @@
 #include "network.h"
 #include "network_manager.h"
 #include "rate_history.h"
+#include "status_summary.h"
 #include "wifi_scan.h"
 #include "wireguard.h"
 
@@ -21,6 +22,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -99,7 +101,21 @@ public:
     // Reads the clock every time. The battery files are read on the first
     // call and then again only once kBatteryInterval has passed since the
     // last battery reading, and the network files the same way with
-    // kNetworkInterval; in between the last reading is used again.
+    // kNetworkInterval; in between the last reading is used again. In a
+    // test folder the battery is read at every call, and each call counts
+    // as kBatteryInterval after the one before.
+    //
+    // Every battery reading, on every page, goes into the battery clock
+    // (model::BatteryClock), so the Status page's time left
+    // (StatusDetails::battery_empty_minutes) is ready about a minute after
+    // the battery starts discharging, whatever page was shown.
+    //
+    // Cable drops (StatusPort::drops): the first time a cable interface is
+    // read connected, as the uplink on any page or as a port on the Status
+    // page, its link downs (read_link_downs()) are kept; drops are the
+    // downs since then. A count below the kept one (the interface came
+    // back) is kept instead. In a test folder call n reads line n of the
+    // files.
     //
     // The traffic: while it is shown (set_traffic_shown()) and there is an
     // uplink, the uplink's byte counters are read on the first call and then
@@ -198,6 +214,13 @@ public:
     static constexpr int kShareRemovalTries = 3;
 
 private:
+    // The drops of the cable `name` since its first reading (see read()),
+    // with the link downs as the kernel counts them in `downs`;
+    // kDetailUnknown when they cannot be read.
+    int32_t cable_drops(const std::string& name, std::size_t line, int32_t& downs);
+    std::map<std::string, uint64_t> link_downs_start_; // per cable interface, at its first reading
+    std::size_t link_line_{0};                          // test folder: the line the next reading takes
+
     // Forgets the traffic: no counters, rates not known, empty histories.
     void forget_traffic();
     // Reads the uplink's counters and works out the rates (see read()).
@@ -249,6 +272,8 @@ private:
     int share_removals_{0};          // tries to remove kShareInterface since it was last needed
     std::chrono::steady_clock::time_point share_removal_at_{};
     BatteryReading battery_;
+    model::BatteryClock battery_clock_;
+    std::chrono::steady_clock::duration battery_test_clock_{}; // test folder: kBatteryInterval per reading
     bool battery_read_{false};
     std::chrono::steady_clock::time_point battery_read_at_{};
     NetworkReading network_;

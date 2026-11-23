@@ -67,7 +67,7 @@ std::string text_or_unknown(const std::string& value) {
 // separated by spaces, with the network name last (it may hold spaces).
 void print_port(const model::StatusPort& port) {
     std::printf("port=%s kind=%s state=%s uplink=%s ipv4=%s ipv6=%s ipv6_link=%s router=%s "
-                "speed_mbps=%s signal_dbm=%s hardware=%s security=%s network=%s\n",
+                "speed_mbps=%s duplex=%s drops=%s link_downs=%s signal_dbm=%s hardware=%s security=%s network=%s\n",
                 port.name.c_str(),
                 model::link_kind_name(port.kind),
                 model::port_state_name(port.state),
@@ -77,6 +77,9 @@ void print_port(const model::StatusPort& port) {
                 text_or_unknown(port.ipv6_link).c_str(),
                 text_or_unknown(port.router).c_str(),
                 detail_text(port.speed_mbps).c_str(),
+                text_or_unknown(port.duplex).c_str(),
+                detail_text(port.drops).c_str(),
+                detail_text(port.link_downs).c_str(),
                 detail_text(port.signal_dbm).c_str(),
                 text_or_unknown(port.hardware_address).c_str(),
                 text_or_unknown(port.security).c_str(),
@@ -104,6 +107,7 @@ void print_details(const model::StatusDetails& details) {
     std::printf("battery_charge_mah=%s\n", detail_text(details.battery_charge_mah).c_str());
     std::printf("battery_full_mah=%s\n", detail_text(details.battery_full_mah).c_str());
     std::printf("battery_empty_min=%s\n", detail_text(details.battery_empty_minutes).c_str());
+    std::printf("battery_estimating=%s\n", details.battery_estimating ? "yes" : "no");
     std::printf("battery_full_min=%s\n", detail_text(details.battery_full_minutes).c_str());
     std::printf("cpu_temp_tenths=%s\n", detail_text(details.cpu_temp_tenths).c_str());
     std::printf("memory_free_mb=%s\n", detail_text(details.memory_free_mb).c_str());

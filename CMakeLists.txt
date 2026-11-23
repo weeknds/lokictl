@@ -843,6 +843,13 @@ if(USE_DESKTOP)
     target_link_libraries(${PROJECT_NAME}_leak_tests PRIVATE ${PROJECT_NAME}_model)
     add_test(NAME leak_rules COMMAND ${PROJECT_NAME}_leak_tests)
 
+    # The Status page's summary: cable and battery lines, the battery clock
+    # (tests/status_summary.cpp): build/darwin-arm64/Debug/lokictl_status_tests,
+    # or ctest.
+    add_executable(${PROJECT_NAME}_status_tests tests/status_summary.cpp)
+    target_link_libraries(${PROJECT_NAME}_status_tests PRIVATE ${PROJECT_NAME}_model)
+    add_test(NAME status_summary COMMAND ${PROJECT_NAME}_status_tests)
+
     # The trap's limits, shown text and port reading (tests/trap_checks.cpp):
     # build/darwin-arm64/Debug/lokictl_trap_tests, or ctest.
     add_executable(${PROJECT_NAME}_trap_tests tests/trap_checks.cpp)

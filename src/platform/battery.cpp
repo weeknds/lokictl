@@ -165,6 +165,17 @@ BatteryReading read_battery(const std::filesystem::path& power_supply_dir) {
     if (find_battery(power_supply_dir, battery_dir)) {
         reading.percent = read_capacity(battery_dir);
         reading.state = read_state(battery_dir);
+        if (reading.state == model::BatteryState::Discharging) {
+            reading.current_ma = read_thousandths(battery_dir, "current_now");
+            reading.charge_mah = read_thousandths(battery_dir, "charge_now");
+            if (reading.charge_mah == model::kDetailUnknown && reading.percent >= 0) {
+                const int32_t full = read_thousandths(battery_dir, "charge_full");
+                if (full != model::kDetailUnknown && full > 0) {
+                    reading.charge_mah = static_cast<int32_t>(static_cast<int64_t>(full) * reading.percent / 100);
+                }
+            }
+            reading.empty_minutes = read_minutes(battery_dir, "time_to_empty_now");
+        }
     }
     return reading;
 }
@@ -195,7 +206,6 @@ void read_battery_details(const std::filesystem::path& power_supply_dir, model::
     if (read_number(battery_dir, "cycle_count", value) && value >= 0) {
         details.battery_cycles = value;
     }
-    details.battery_empty_minutes = read_minutes(battery_dir, "time_to_empty_now");
     details.battery_full_minutes = read_minutes(battery_dir, "time_to_full_now");
 
     std::string health;

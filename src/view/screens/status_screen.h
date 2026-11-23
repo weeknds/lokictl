@@ -59,6 +59,7 @@ private:
         Hidden,
         Heading,
         Row,
+        Line,
     };
 
     struct Slot {

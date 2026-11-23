@@ -198,6 +198,10 @@ struct StatusPort {
     std::string security;            // Wi-Fi: that network's security, for example "WPA2"
     int32_t signal_dbm{kDetailUnknown}; // Wi-Fi: received signal, dBm
     int32_t speed_mbps{kDetailUnknown}; // link speed, Mbit/s
+    // A connected cable only (see platform::LiveDataSource):
+    std::string duplex;              // "full" or "half"; empty when not known
+    int32_t drops{kDetailUnknown};   // times the link went down since LokiCTL started
+    int32_t link_downs{kDetailUnknown}; // times it went down since the interface came up, as the kernel counts them
     std::string ipv4;                // first IPv4 address with its prefix, "10.0.0.12/24"
     std::string ipv6;                // first IPv6 address that is not link-local, without prefix
     std::string ipv6_link;           // the link-local IPv6 address (fe80::...), without prefix
@@ -220,7 +224,10 @@ struct StatusDetails {
     int32_t battery_cycles{kDetailUnknown};      // charge cycles
     int32_t battery_charge_mah{kDetailUnknown};  // charge now, mAh
     int32_t battery_full_mah{kDetailUnknown};    // charge when full, mAh
-    int32_t battery_empty_minutes{kDetailUnknown}; // until empty, while discharging
+    // Until empty while discharging, at the use of about the last minute
+    // (model::BatteryClock); not known while battery_estimating.
+    int32_t battery_empty_minutes{kDetailUnknown};
+    bool battery_estimating{false};              // on battery for less than about a minute
     int32_t battery_full_minutes{kDetailUnknown};  // until full, while charging
     int32_t cpu_temp_tenths{kDetailUnknown};     // processor, tenths of a degree Celsius
     int32_t memory_free_mb{kDetailUnknown};      // memory still available, MiB

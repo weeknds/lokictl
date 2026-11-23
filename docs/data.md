@@ -1311,20 +1311,46 @@ home page shows none of them, so a change there never builds it again.
   that is not link-local and the link-local one; the router of the port's
   own default route; the hardware address (`address`); signal and cable
   speed as for the uplink; NetworkManager's Wi-Fi name, security and speed.
+  A connected cable also gets its `duplex` (`full` or `half`) and its
+  drops: how many times its link went down since LokiCTL started. The
+  kernel counts falls since the interface came up (`carrier_down_count`,
+  or `(carrier_changes + 1) / 2` without it; a healthy link that came up
+  once already reads 1), so LokiCTL keeps the count of its first reading
+  (as the uplink on any page, or on the Status page) and shows the growth.
+  `--print-data` prints both, `drops=` and `link_downs=`.
 - **DNS** (`platform::read_dns_servers()`): the `nameserver` lines of
   `/etc/resolv.conf`, at most three.
 - **Battery** (`platform::read_battery_details()`): `voltage_now` (µV),
   `current_now` (µA, negative while discharging), `temp` (tenths of a
   degree), `health`, `cycle_count`, `charge_now` and `charge_full` (µAh),
-  and `time_to_empty_now` or `time_to_full_now` (seconds; the battery
-  answers them with a read error while they do not apply).
+  and `time_to_full_now` (seconds; the battery answers it with a read error
+  while it does not apply).
+- **Time left** (`model::BatteryClock` in `src/model/status_summary.h`):
+  every battery reading, every 10 s on every page, goes into a clock while
+  the battery discharges. It averages the last minute: the gauge's own
+  `time_to_empty_now` when the newest reading has a sensible one (1 minute
+  to 48 hours), else the charge left (`charge_now`, or `capacity` of
+  `charge_full`) over the average size of `current_now` (either sign).
+  For the first minute on battery the page says `estimating...`; any other
+  state starts afresh. The time is rounded so it does not jump about: to 5
+  minutes under an hour, to 10 minutes under 10 hours, to the hour above.
+- **Summary.** The page starts with one line per connected cable,
+  `Cable: 100 Mbit, full, 0 drops`, and one for the battery,
+  `Battery: about 3 h 20 min left` (or `estimating...`, `charging`, `on the
+  charger`). The cable line turns into a warning, `Cable: slow link, check
+  it` or `Cable: 5 drops, check it`, at 10 Mbit/s or slower (the health
+  check's rule), at half duplex, or after more than 3 drops.
 - **Device** (`platform::read_device_details()`): the thermal zone whose
   `type` is `cpu-thermal` (thousandths of a degree), `MemAvailable` and
   `MemTotal` of `/proc/meminfo`, and `/proc/uptime`.
 
 Every reader only reads. In a test folder the same files are read under
 the folder, and the `addresses` file may give a prefix:
-`<interface> <IPv4>/<prefix>`.
+`<interface> <IPv4>/<prefix>`. There the battery is read at every reading,
+each counting as 10 s after the one before, so `--data-steps 5` is enough
+for a time left; and reading n takes line n of `carrier_down_count` or
+`carrier_changes`, so a file with the lines `2`, `4`, `6`, `8` and `10`
+and `--data-steps 4` gives 4 drops and the warning.
 
 ## USB Wi-Fi adapters
 
@@ -1576,8 +1602,8 @@ up_history=8,10,8,14,22,12,8,10,30,55,100,60,28,14,8,8,12,20,12,8,10,16,10,8
 internet=unknown
 state=unknown
 ports=2
-port=eth0 kind=cable state=no-link uplink=no ipv4=unknown ipv6=unknown ipv6_link=unknown router=unknown speed_mbps=unknown signal_dbm=unknown hardware=02:4c:4b:00:00:01 security=unknown network=unknown
-port=wlan0 kind=wifi state=connected uplink=yes ipv4=10.20.30.44/24 ipv6=2001:db8:85a3:42:1000:8a2e:370:7334 ipv6_link=fe80::4c:4bff:fe00:2 router=10.20.30.1 speed_mbps=72 signal_dbm=-57 hardware=02:4c:4b:00:00:02 security=WPA2 network=Harbour-Cafe
+port=eth0 kind=cable state=no-link uplink=no ipv4=unknown ipv6=unknown ipv6_link=unknown router=unknown speed_mbps=unknown duplex=unknown drops=unknown link_downs=unknown signal_dbm=unknown hardware=02:4c:4b:00:00:01 security=unknown network=unknown
+port=wlan0 kind=wifi state=connected uplink=yes ipv4=10.20.30.44/24 ipv6=2001:db8:85a3:42:1000:8a2e:370:7334 ipv6_link=fe80::4c:4bff:fe00:2 router=10.20.30.1 speed_mbps=72 duplex=unknown drops=unknown link_downs=unknown signal_dbm=-57 hardware=02:4c:4b:00:00:02 security=WPA2 network=Harbour-Cafe
 dns=10.20.30.1
 battery_voltage_mv=4137
 battery_current_ma=-480
@@ -1587,6 +1613,7 @@ battery_cycles=7
 battery_charge_mah=1592
 battery_full_mah=1750
 battery_empty_min=199
+battery_estimating=no
 battery_full_min=unknown
 cpu_temp_tenths=523
 memory_free_mb=212

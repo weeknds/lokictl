@@ -16,6 +16,11 @@ namespace platform {
 struct BatteryReading {
     int32_t percent{model::kBatteryPercentUnknown}; // 0-100, or unknown
     model::BatteryState state{model::BatteryState::Unknown};
+    // While discharging only, for the time left (model::BatteryClock);
+    // otherwise, and when they cannot be read, model::kDetailUnknown.
+    int32_t current_ma{model::kDetailUnknown};    // current_now (µA) as mA
+    int32_t charge_mah{model::kDetailUnknown};    // charge_now (µAh) as mAh, or the charge in per cent of charge_full
+    int32_t empty_minutes{model::kDetailUnknown}; // time_to_empty_now (s) in whole minutes
 };
 
 // Reads the charge and the state of the first battery in
@@ -29,8 +34,11 @@ struct BatteryReading {
 // - `status`: "Charging" is charging, "Discharging" is discharging, "Full"
 //   and "Not charging" are idle; anything else, or no file, is unknown.
 //   The state is read on its own, whatever the charge says.
+// - While discharging also current_now, charge_now (without it, capacity
+//   times charge_full) and time_to_empty_now, as read_battery_details()
+//   reads them.
 // Without the folder, without a battery, or when the folder cannot be read,
-// both are unknown. Never throws on a file system error.
+// all are unknown. Never throws on a file system error.
 BatteryReading read_battery(const std::filesystem::path& power_supply_dir);
 
 // Reads the Status page's battery details from the same battery as
@@ -41,9 +49,11 @@ BatteryReading read_battery(const std::filesystem::path& power_supply_dir);
 // - temp, tenths of a degree, as it is;
 // - health as text (printable ASCII only, at most 24 characters);
 // - cycle_count, 0 or more;
-// - time_to_empty_now and time_to_full_now (seconds, 0 or more) in whole
-//   minutes; the battery answers them with a read error while they do not
-//   apply, which is unknown.
+// - time_to_full_now (seconds, 0 or more) in whole minutes; the battery
+//   answers it with a read error while it does not apply, which is
+//   unknown.
+// battery_empty_minutes is left unknown: the live source fills it from
+// read_battery()'s readings (model::BatteryClock).
 // Never throws on a file system error.
 void read_battery_details(const std::filesystem::path& power_supply_dir, model::StatusDetails& details);
 
