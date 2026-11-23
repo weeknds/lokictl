@@ -19,16 +19,17 @@ namespace screen {
 // The Speed page, opened from the Tools page. Under the title bar:
 // - the server row: the caption "server" and the speed server's host;
 // - two columns, DOWN and UP, each with the speed in Mbit/s ("--" before
-//   its phase), the bytes moved and a bar graph with one bar per half
-//   second (download in the accent colour, upload in the second accent),
-//   both on one scale, the fastest half second of the run;
-// - the status line: "Connecting", "Download 4 of 10 s", "Upload 7 of
-//   10 s", "Done", "Stopped" or why it failed, with the app-wide Sent count
-//   at its right.
+//   its phase), the bytes moved ("up to 50 MB" before its phase) and a bar
+//   graph with one bar per half second (download in the accent colour,
+//   upload in the second accent), both on one scale, the fastest half
+//   second of the run;
+// - the status line: "Uses up to 100 MB of data" before a run, then
+//   "Connecting", "Download 4 of 10 s", "Upload 7 of 10 s", "Done",
+//   "Stopped" or why it failed, with the app-wide Sent count at its right.
 //
 // Keys: 4 (Back) or a short ESC goes back, and a run keeps going; 6 (Run)
-// or Enter starts a test (a 10 s download, then a 10 s upload) and stops it
-// while it runs (Stop). While another tool runs, Run is switched off. The
+// or Enter starts a test (a download, then an upload, each for 10 s or
+// 50 MB, whichever comes first) and stops it while it runs (Stop). While another tool runs, Run is switched off. The
 // command bar's `speed` opens the page and asks for a start
 // (BaseViewModel::request_tool_start()); it never stops a running test.
 //

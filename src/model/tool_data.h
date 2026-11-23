@@ -273,12 +273,15 @@ struct PortRun {
 bool operator==(const PortRun& left, const PortRun& right);
 bool operator!=(const PortRun& left, const PortRun& right);
 
-// The speed test: a 10 s download, then a 10 s upload, against a speed
-// server (Cloudflare's by default, kSpeedServerDefault). Each phase shows
-// one sample every kSpeedSampleMs.
+// The speed test: a download, then an upload, each for 10 s or 50 MB,
+// whichever comes first, against a speed server (Cloudflare's by default,
+// kSpeedServerDefault). Each phase shows one sample every kSpeedSampleMs.
 constexpr int32_t kSpeedPhaseMs = 10000;
 constexpr int32_t kSpeedSampleMs = 500;
 constexpr std::size_t kSpeedSamples = static_cast<std::size_t>(kSpeedPhaseMs / kSpeedSampleMs);
+// The most one phase moves (body bytes), so a whole test moves at most
+// about twice this, however fast the line is.
+constexpr uint64_t kSpeedPhaseBytesMax = 50000000;
 // The server used when the settings name none: Cloudflare's anycast speed
 // endpoints (GET <server>/__down?bytes=N and POST <server>/__up), answered
 // by the nearest of its sites anywhere.
@@ -303,9 +306,9 @@ struct SpeedRun {
     std::string reason;                   // with ToolError::Failed ("server said 403")
     std::string server;                   // the server, as in the settings
     SpeedPhase phase{SpeedPhase::Connect};
-    int32_t phase_ms{0};                  // time into the current phase (0 until its first byte)
+    int32_t phase_ms{0};                  // time into the current phase (0 until its first byte); its length once over
     uint64_t down_bytes{0};               // body bytes received while downloading
-    uint64_t up_bytes{0};                 // bytes the server acknowledged while uploading
+    uint64_t up_bytes{0};                 // bytes the server acknowledged while uploading (at most those sent)
     int32_t down_kbps{kSpeedRateUnknown};     // down_bytes over the download's time so far
     int32_t up_kbps{kSpeedRateUnknown};       // up_bytes over the upload's time so far
     std::vector<int32_t> down_samples;    // kbit/s of each kSpeedSampleMs, oldest first; at most kSpeedSamples

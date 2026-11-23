@@ -918,13 +918,16 @@ after the page's confirmation (key 6 twice), for that target only.
 ### Speed test
 
 The Speed page (`model::ToolKind::Speed`, its run in `tools().speed`,
-`model::SpeedRun`) measures the speed to the internet: a 10 s download,
-then a 10 s upload, over HTTPS (`platform/speed_test.*`).
+`model::SpeedRun`) measures the speed to the internet: a download, then an
+upload, each for 10 s or 50 MB (`model::kSpeedPhaseBytesMax`), whichever
+comes first, over HTTPS (`platform/speed_test.*`). So one test moves at
+most about 100 MB, and the page says so before it starts.
 
 - **The server** is `https://speed.cloudflare.com` by default: Cloudflare's
   speed endpoints, answered by its nearest site anywhere. Downloads are
   `GET <server>/__down?bytes=25000000` (the server takes up to 99,999,999
-  bytes), uploads `POST <server>/__up` with 10 MB of zeros. Another server
+  bytes; never more than the phase may still move), uploads
+  `POST <server>/__up` with up to 10 MB of zeros. Another server
   with the same two endpoints can be set in the settings file:
 
   ```ini
@@ -938,15 +941,27 @@ then a 10 s upload, over HTTPS (`platform/speed_test.*`).
   anything else is ignored with a warning and the default is used. The
   page shows only the host, and the log never shows the address.
 - **libcurl** does the transfers. Device builds compile against its
-  headers only and load `libcurl.so.4` with `dlopen()` at the first test,
-  on the runner's thread, and keep it loaded. Linking it at build time
-  would load 18 more libraries (OpenSSL, Kerberos, LDAP and more) at every
-  start: a small test program grew from 1.0 to 7.3 MB RSS. So the package
+  headers only and load `libcurl.so.4` with `dlopen()` for each test, on
+  the runner's thread, and let it go afterwards (`curl_global_cleanup()`,
+  `dlclose()`, then `malloc_trim(0)`). Measured on Debian 13 arm64 after
+  one HTTPS request, that gives back about 4.5 MB of the 13 MB that
+  loading and the request added; libssl and libcrypto stay mapped, because
+  OpenSSL pins itself and could never be started again after
+  `OPENSSL_cleanup()`. libcurl stays loaded for the rest of the session
+  once a test ended during its first request: `CURLOPT_QUICK_EXIT` may
+  leave the name lookup's thread running inside libcurl then. The run's
+  DNS cache never expires, so no later connection starts a lookup.
+  Linking libcurl at build time would load 18 more libraries (OpenSSL,
+  Kerberos, LDAP and more) at every start: a small test program grew from
+  1.0 to 7.3 MB RSS. So the package
   names `libcurl4t64` and `ca-certificates` in `Depends:` itself.
   Certificates are always checked, no redirect is followed, HTTP/1.1 only.
 - **The run:** one small request first (`bytes=0`: the name, the
   connection and TLS), then downloads one after another until 10 s passed
-  since the first body byte, then uploads the same way. One curl multi
+  since the first body byte or the phase moved 50 MB, then uploads the
+  same way. A phase that a server overfills ends at once too. A phase cut
+  short by the cap ends with one shorter bar (at least 125 ms) and its
+  speed over its real time, so its graph has fewer than 20 bars. One curl multi
   handle drives each request with waits of at most 100 ms, so Stop and
   quitting are seen at once. A 10 s connect timeout; 10 s without data, or
   an answer other than 200, ends the run with the reason (`Server name not
@@ -954,17 +969,20 @@ then a 10 s upload, over HTTPS (`platform/speed_test.*`).
 - **Counting, honestly:** downloaded bytes are the body bytes received;
   uploaded bytes are the bytes the server acknowledged (the kernel's
   `tcpi_bytes_acked` from `TCP_INFO`), because bytes handed to the system
-  wait in its send buffer first and would read high. A speed is bytes × 8
+  wait in its send buffer first and would read high (and never more than
+  the body bytes handed over, since TLS adds a little). A speed is bytes × 8
   ÷ the phase's time; each half second gives one bar of the graph.
   **Sent** counts one per request (like a port scan's one per attempt):
   the TCP segments, TLS and the system's name lookup are not counted. The
-  page shows the bytes each way instead. A full test moves about 2 × 10 s
-  at the line's full speed: about 110 MB down and 25 MB up at 90 and 20
-  Mbit/s.
+  page shows the bytes each way instead. A full test moves 10 s at the
+  line's full speed each way, at most 50 MB each: 50 MB down and 25 MB up
+  at 90 and 20 Mbit/s.
 - **The pretend runner** (`platform::pretend_speed_test()`) gives a fixed
-  made-up run of about 21 s (about 86 Mbit/s down, 18 up) and opens no
-  socket. So `--keys 6 --settle-ms 5000` on `speed` shows the download,
-  `--settle-ms 16000` the upload and `--settle-ms 22000` the end.
+  made-up run of about 15 s and opens no socket: the download (about 89
+  Mbit/s) reaches the cap after about 4.8 s and shows 50.0 MB, 10 bars and
+  82.9 Mbit/s; the upload (about 18 Mbit/s) runs its 10 s. So `--keys 6
+  --settle-ms 3000` on `speed` shows the download, `--settle-ms 9000` the
+  upload and `--settle-ms 16000` the end.
 
 ## The Wi-Fi list
 
@@ -993,9 +1011,11 @@ The Wi-Fi page shows `model::WifiScan`, which the block carries as
   in-flight flag (it is not `busy()`, so it never holds up a switch, the
   firewall helper or client names), is ignored while a switch runs and is
   cancelled on quit. It ends when the device's last-scan time changes, or
-  after 15 s; the reader reads every 250 ms meanwhile. A permission refusal
-  shows `Scan not allowed: permission missing`, any other refusal `Scan
-  refused: <reason>` with the list kept. NetworkManager sends the scan, so
+  after 15 s; the reader reads every 250 ms meanwhile. A switch to Router
+  or Share drops a scan still waiting, without an error. A permission
+  refusal shows `Scan not allowed: permission missing`, any other refusal
+  `Scan refused: <reason>` with the list kept; opening the page again
+  starts without that text. NetworkManager sends the scan, so
   `Sent` does not count it. The permission (`wifi.scan`) comes from M5's
   own rule for the `netdev` group.
 - **Log lines:** `data: wi-fi scan asked`, then `data: wi-fi scan done

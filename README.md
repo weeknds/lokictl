@@ -574,7 +574,8 @@ but sample network data for now (see [docs/home.md](docs/home.md)):
   a host, hop by hop), Wi-Fi (the networks nearby) and Ports (after a
   confirmation, one TCP connection attempt to each of 50 common ports of
   one device on your own network, private addresses only, 10 a second)
-  and Speed (10 s of download, then 10 s of upload, over HTTPS to
+  and Speed (a download, then an upload, each for 10 s or 50 MB,
+  whichever comes first, so at most about 100 MB, over HTTPS to
   Cloudflare's nearest speed server, or the `speed_test_server=` of the
   settings file; see [docs/data.md](docs/data.md#speed-test)), with a
   count of every packet LokiCTL sent;

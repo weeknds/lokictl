@@ -283,7 +283,11 @@ void LiveDataSource::read(model::HomeData& data) {
     }
 
     // The Wi-Fi page's list, after the mode (a pretend Router has no list
-    // either).
+    // either). The page opened again starts without the last scan's
+    // failure.
+    if (wifi_shown_ && !wifi_shown_read_ && network_manager_) {
+        network_manager_->forget_wifi_scan_error();
+    }
     wifi_shown_read_ = wifi_shown_;
     if (!network_manager_) {
         pretend_scan_.apply(data, wifi_shown_);

@@ -493,7 +493,7 @@ The help panel shows the badge `DEVICES` and four rows.
 `tools` (home key 7) lists the tools in two columns: Ping, DNS and Trace on
 the left, Wi-Fi, Ports and Speed on the right. Next to Ping, DNS, Trace,
 Ports and Speed a tag tells how the latest run stands (`running`, the
-average time, `3 found`, `7 hops`, `not reached`, `3 open`, `86.4 / 17.9`).
+average time, `3 found`, `7 hops`, `not reached`, `3 open`, `82.9 / 17.9`).
 The status line says what the highlighted tool does, with `SENT N` at its
 right: every packet LokiCTL has sent in this run of the app (see
 [data.md](data.md#the-tools)).
@@ -583,14 +583,16 @@ panel shows the badge `PORTS` and five rows, one of them `6 twice`.
 ## The Speed page
 
 `speed` (the Tools page's Speed row, `screen::SpeedScreen`) measures the
-speed to the internet: a 10 s download, then a 10 s upload (see
+speed to the internet: a download, then an upload, each for 10 s or
+50 MB, whichever comes first, so one test moves at most about 100 MB (see
 [data.md](data.md#speed-test)). Under the title bar: the server row
 (`SERVER` and the host, `speed.cloudflare.com` unless the settings name
-another), then two columns, DOWN and UP, each with the bytes moved, the
-speed in Mbit/s (`--` before its phase) and a bar graph with one bar per
-half second, both graphs on one scale. The status line says `Connecting`,
-`Download 4 of 10 s`, `Upload 7 of 10 s`, `Done`, `Stopped` or why it
-failed, with `SENT N` at its right.
+another), then two columns, DOWN and UP, each with the bytes moved (`up to
+50 MB` before its phase), the speed in Mbit/s (`--` before its phase) and a
+bar graph with one bar per half second, both graphs on one scale. The
+status line says `Uses up to 100 MB of data` before the first test, then
+`Connecting`, `Download 4 of 10 s`, `Upload 7 of 10 s`, `Done`, `Stopped`
+or why it failed, with `SENT N` at its right.
 
 | Key | What it does |
 |---|---|

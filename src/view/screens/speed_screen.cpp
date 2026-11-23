@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <string>
 
 namespace screen {
 namespace {
@@ -105,7 +106,8 @@ view::widgets::HelpContent SpeedScreen::help_content() {
             {
                 {"ESC / 4", "Back (a run goes on)"},
                 {"ENTER / 6", "Run / stop"},
-                {"Data", "Full speed, 10 s each way"},
+                {"Data", "Up to " + std::to_string(model::kSpeedPhaseMs / 1000) + " s, " +
+                             std::to_string(model::kSpeedPhaseBytesMax / 1000000) + " MB each way"},
                 {"Sent", "One per request here"},
             }};
 }
@@ -254,7 +256,9 @@ void SpeedScreen::refresh_column(Column& column,
         lv_obj_align_to(column.unit, column.speed, LV_ALIGN_OUT_RIGHT_BOTTOM, kUnitGap,
                         theme.font(view::FontRole::Small)->base_line - theme.font(view::FontRole::Title)->base_line);
     }
-    set_text_if_changed(column.bytes, column.bytes_shown, kbps < 0 ? std::string() : tools::bytes_text(bytes));
+    // Before its phase has data, the most it will move.
+    set_text_if_changed(column.bytes, column.bytes_shown,
+                        kbps < 0 ? tools::speed_cap_text() : tools::bytes_text(bytes));
 
     std::array<uint8_t, model::kSpeedSamples> bars{};
     for (std::size_t index = 0; index < bars.size() && index < samples.size(); ++index) {

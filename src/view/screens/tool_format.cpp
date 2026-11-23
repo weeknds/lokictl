@@ -293,12 +293,25 @@ ToneText ports_status(const model::PortRun& run) {
     return {};
 }
 
+namespace {
+
+// Whole megabytes: "50 MB".
+std::string megabytes_text(uint64_t bytes) {
+    return std::to_string(bytes / 1000000) + " MB";
+}
+
+} // namespace
+
+std::string speed_cap_text() {
+    return "up to " + megabytes_text(model::kSpeedPhaseBytesMax);
+}
+
 ToneText speed_status(const model::SpeedRun& run) {
     const std::string seconds = std::to_string(run.phase_ms / 1000) + " of " +
                                 std::to_string(model::kSpeedPhaseMs / 1000) + " s";
     switch (run.state) {
         case model::ToolState::Idle:
-            return {"Download, then upload, 10 s each", kToneMuted};
+            return {"Uses up to " + megabytes_text(2 * model::kSpeedPhaseBytesMax) + " of data", kToneMuted};
         case model::ToolState::Running:
             switch (run.phase) {
                 case model::SpeedPhase::Connect:

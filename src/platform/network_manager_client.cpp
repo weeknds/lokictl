@@ -316,6 +316,7 @@ struct NetworkManagerClient::Impl {
     model::WifiScanError scan_error{model::WifiScanError::None};
     std::string scan_reason;
     void check_scan();
+    void drop_scan();
     static void on_scan_requested(GObject* source, GAsyncResult* result, gpointer user_data);
 
     // Actions; see the block below.
@@ -647,6 +648,7 @@ void NetworkManagerClient::start_router(const RouterRequest& request) {
     if (busy() || self.closing) {
         return;
     }
+    self.drop_scan();
     self.status = model::ModeSwitch{};
     self.status.target = model::NetMode::Router;
     NMClient* client = self.client;
@@ -686,6 +688,7 @@ void NetworkManagerClient::start_share(const RouterRequest& request) {
     if (busy() || self.closing) {
         return;
     }
+    self.drop_scan();
     self.status = model::ModeSwitch{};
     self.status.target = model::NetMode::Share;
     NMClient* client = self.client;
@@ -725,6 +728,7 @@ void NetworkManagerClient::restart_router(const RouterRequest& request) {
     if (busy() || self.closing) {
         return;
     }
+    self.drop_scan();
     NMClient* client = self.client;
     if (client == nullptr || !nm_client_get_nm_running(client)) {
         return;
@@ -1103,8 +1107,9 @@ void NetworkManagerClient::Impl::on_scan_requested(GObject* source, GAsyncResult
         return;
     }
     if (accepted) {
-        // The scan runs now; check_scan() sees it end.
-        self->scan_waiting = true;
+        // The scan runs now; check_scan() sees it end. Not when a switch
+        // began in the meantime: the hotspot would cut it short.
+        self->scan_waiting = self->status.state != model::SwitchState::Switching && !self->hotspot_active();
     } else if (permission_denied(error)) {
         self->scan_error = model::WifiScanError::NotAllowed;
     } else {
@@ -1130,8 +1135,25 @@ void NetworkManagerClient::Impl::check_scan() {
     }
 }
 
+// A switch that may bring up the hotspot begins: a scan still waiting
+// would never see its result (and would later read as timed out), so it
+// ends here without an error.
+void NetworkManagerClient::Impl::drop_scan() {
+    scan_waiting = false;
+    scan_error = model::WifiScanError::None;
+    scan_reason.clear();
+}
+
 bool NetworkManagerClient::scanning() const {
     return impl_->scan_pending || impl_->scan_waiting;
+}
+
+void NetworkManagerClient::forget_wifi_scan_error() {
+    Impl& self = *impl_;
+    if (!self.scan_pending && !self.scan_waiting) {
+        self.scan_error = model::WifiScanError::None;
+        self.scan_reason.clear();
+    }
 }
 
 void NetworkManagerClient::read_wifi_scan(const std::string& interface_name, model::WifiScan& scan) {
@@ -1226,6 +1248,8 @@ bool NetworkManagerClient::busy() const {
 void NetworkManagerClient::leave(std::chrono::milliseconds /*limit*/) {}
 
 void NetworkManagerClient::request_wifi_scan(const std::string& /*interface_name*/) {}
+
+void NetworkManagerClient::forget_wifi_scan_error() {}
 
 bool NetworkManagerClient::scanning() const {
     return false;

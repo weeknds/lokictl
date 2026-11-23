@@ -226,10 +226,15 @@ public:
     // while LokiCTL's hotspot is active and when there is no such device.
     // The scan ends when the device's last-scan time changes, or after
     // kScanLimit (WifiScanError::TimedOut); a refusal ends it at once
-    // (NotAllowed, or Refused with the service's reason).
+    // (NotAllowed, or Refused with the service's reason). A switch to
+    // Router or Share (or a hotspot restart) drops a scan still waiting,
+    // without an error.
     void request_wifi_scan(const std::string& interface_name);
     // True from request_wifi_scan() until that scan has ended.
     bool scanning() const;
+    // Forgets how the last scan ended (its error), unless a scan runs: the
+    // Wi-Fi page opened again starts without an old failure.
+    void forget_wifi_scan_error();
     // Fills in `scan` from the client's copy of the service's state, after
     // applying the change messages that have arrived (without waiting): the
     // access points `interface_name` hears (copied, sorted and capped with

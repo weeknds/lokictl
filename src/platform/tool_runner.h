@@ -45,9 +45,9 @@ struct ToolJob {
 // of model::common_ports() on one private address of the Cardputer's own
 // networks, 10 a second, at most 8 waiting, each counted with count_sent();
 // a connection made is closed at once and nothing is written. A speed test
-// (speed_test.h) downloads, then uploads, for 10 s each over HTTPS through
-// libcurl (loaded at its first run), each request counted once with
-// count_sent(). It never changes a network setting. A listen run keeps what it heard (whole PCAP records, at most
+// (speed_test.h) downloads, then uploads, each for 10 s or 50 MB over
+// HTTPS through libcurl (loaded for the run), each request counted once
+// with count_sent(). It never changes a network setting. A listen run keeps what it heard (whole PCAP records, at most
 // model::kCaptureSaveMax) until the next listen starts, so it can be saved
 // as a file (save_capture()); the file is written on this thread too.
 //

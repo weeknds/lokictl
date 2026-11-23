@@ -60,9 +60,12 @@ ToneText ping_status(const model::PingRun& run);
 ToneText dns_status(const model::DnsRun& run);
 ToneText trace_status(const model::TraceRun& run);
 ToneText ports_status(const model::PortRun& run);
-// The Speed page: "Connecting", "Download 4 of 10 s", "Upload 7 of 10 s",
+// The Speed page: before a run what it uses ("Uses up to 100 MB of
+// data"), then "Connecting", "Download 4 of 10 s", "Upload 7 of 10 s",
 // "Done", "Stopped", or why it failed.
 ToneText speed_status(const model::SpeedRun& run);
+// The most one direction of a speed test moves: "up to 50 MB".
+std::string speed_cap_text();
 
 // A byte count, short: "850 kB", "15.2 MB", "109 MB", "1.2 GB"; "0 kB"
 // for nothing.
