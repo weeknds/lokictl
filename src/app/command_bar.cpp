@@ -48,6 +48,7 @@ constexpr CommandSpec kCommands[] = {
     {"ports", CommandKind::Tool, model::AppPage::Home, model::ToolKind::Ports, "ports [address]"},
     {"scan", CommandKind::Tool, model::AppPage::Home, model::ToolKind::Listen, "scan"},
     {"probe", CommandKind::Tool, model::AppPage::Home, model::ToolKind::Probe, "probe"},
+    {"speed", CommandKind::Tool, model::AppPage::Home, model::ToolKind::Speed, "speed"},
 };
 
 // The modes `mode` switches to, in the order TAB lists them: the ones the
@@ -63,9 +64,10 @@ constexpr const char* kModeUsage = "Use: mode client|router|share";
 constexpr std::string_view kRouterWord = "router";
 constexpr std::string_view kThisWord = "this";
 
-// Ping, DNS, Trace and Ports take a target; Listen and Probe use the uplink.
+// Ping, DNS, Trace and Ports take a target; Listen, Probe and Speed use the
+// uplink.
 bool takes_target(model::ToolKind kind) {
-    return kind != model::ToolKind::Listen && kind != model::ToolKind::Probe;
+    return kind != model::ToolKind::Listen && kind != model::ToolKind::Probe && kind != model::ToolKind::Speed;
 }
 
 // Whether `router` and `this` may stand for an address with `kind`: not
@@ -347,6 +349,7 @@ std::string tool_command_refusal(model::ToolKind kind,
             {model::ToolKind::Listen, "Discover is listening"},
             {model::ToolKind::Probe, "Discover is probing"},
             {model::ToolKind::Ports, "Port scan is running"},
+            {model::ToolKind::Speed, "Speed test is running"},
         };
         for (const Running& running : kRunning) {
             if (model::tool_state(tools, running.kind) == model::ToolState::Running) {
@@ -355,7 +358,8 @@ std::string tool_command_refusal(model::ToolKind kind,
         }
         return "Another tool is running";
     }
-    // As the Discover page's keys 6 and 8: off without a network.
+    // Scan and probe are off without a network, as the Discover page's keys
+    // 6 and 8 are; a speed test needs one too.
     if (!takes_target(kind) && !model::valid_interface_name(home.uplink_name)) {
         return "No network: join one first";
     }
@@ -382,6 +386,8 @@ model::AppPage tool_command_page(model::ToolKind kind) {
             return model::AppPage::Trace;
         case model::ToolKind::Ports:
             return model::AppPage::Ports;
+        case model::ToolKind::Speed:
+            return model::AppPage::Speed;
         case model::ToolKind::Listen:
         case model::ToolKind::Probe:
             break;
@@ -508,7 +514,7 @@ view::widgets::HelpContent command_help() {
         {"PAGE", "home map tools status"},
         {"PAGE", "discover wifi settings"},
         {"TOOL [HOST]", "ping dns trace ports"},
-        {"TOOL", "scan probe"},
+        {"TOOL", "scan probe speed"},
     };
     return content;
 }

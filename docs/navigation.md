@@ -217,6 +217,10 @@ The commands, read without regard to case:
 | `ports [address]` | opens the Ports page and asks first, as its key 6 does; nothing is sent until the second 6 |
 | `scan` | starts Discover's passive Listen run |
 | `probe` | opens Discover's probe question; nothing is sent until the second 8 |
+| `speed` | opens the Speed page and starts a test, as its key 6 does |
+
+`scan`, `probe` and `speed` need a network: without one the bar says
+`No network: join one first`.
 
 **Mode.** `mode router` takes the Modes page's own path: it opens the
 Modes page (it stays when it is open already), puts the highlight on the
@@ -593,7 +597,9 @@ failed, with `SENT N` at its right.
 | `6` RUN / STOP or Enter | starts a test, or stops it; off while another tool runs |
 | `4` BACK or a short ESC | goes back; a test goes on and the page shows it again later |
 
-The run lives in the view model (`tools().speed`). The help panel shows
+The command bar's `speed` opens this page and starts a test, the same as
+the first `6`; it does nothing while a tool runs, so it never stops a
+test. The run lives in the view model (`tools().speed`). The help panel shows
 the badge `SPEED` and four rows.
 
 ## The Wi-Fi page

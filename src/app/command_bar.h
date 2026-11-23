@@ -51,12 +51,12 @@ struct CommandResult {
 // Reads one line: `help`, `theme <name>`, `mode <name>` (client, router or
 // share), a page name (`home`, `map`, `tools`, `discover`, `wifi`,
 // `status`, `settings`), or a tool: `ping`, `dns`, `trace` and `ports` with
-// an optional target, `scan` (Listen) and `probe`. Words are separated by
-// spaces and read without regard to case. As the target of `ping`, `trace`
-// and `ports`, `router` and `this` stand for home's gateway and uplink
-// addresses. Anything else is an Error with a message such as "Unknown
-// command: <word>"; so is a target the tool would not take, and `router`
-// or `this` without an address to stand for.
+// an optional target, `scan` (Listen), `probe` and `speed`. Words are
+// separated by spaces and read without regard to case. As the target of
+// `ping`, `trace` and `ports`, `router` and `this` stand for home's gateway
+// and uplink addresses. Anything else is an Error with a message such as
+// "Unknown command: <word>"; so is a target the tool would not take, and
+// `router` or `this` without an address to stand for.
 CommandResult parse_command(std::string_view line, const model::HomeData& home);
 
 // Why `mode` can't be switched to now, or empty when it can: the Modes
@@ -66,8 +66,8 @@ CommandResult parse_command(std::string_view line, const model::HomeData& home);
 std::string mode_command_refusal(model::NetMode mode, const model::HomeData& home);
 
 // Why a tool command can't start now, or empty when it can: while any tool
-// runs ("Ping is running: stop it first"), and for `scan` and `probe`
-// without a network to listen on.
+// runs ("Ping is running: stop it first"), and for `scan`, `probe` and
+// `speed` without a network to use.
 std::string tool_command_refusal(model::ToolKind kind,
                                  const model::ToolsData& tools,
                                  const model::HomeData& home);

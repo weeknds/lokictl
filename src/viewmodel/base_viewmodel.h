@@ -264,11 +264,11 @@ public:
     model::ToolKind requested_tool() const;
     const std::string& requested_tool_target() const;
     // The command bar's way to start a tool: after opening its page, it asks
-    // here, and the page (the Ping, DNS, Trace or Ports page, or Discover
-    // for Listen and Probe) takes the request once with take_tool_start()
-    // and does what its own key's first press does. tool_start_subject()
-    // counts every request. A page change (open_page(), go_back(),
-    // show_page()) drops a request not taken yet.
+    // here, and the page (the Ping, DNS, Trace, Ports or Speed page, or
+    // Discover for Listen and Probe) takes the request once with
+    // take_tool_start() and does what its own key's first press does.
+    // tool_start_subject() counts every request. A page change (open_page(),
+    // go_back(), show_page()) drops a request not taken yet.
     void request_tool_start(model::ToolKind kind);
     // True once for a request of `kind`, which is then forgotten; false
     // (and the request kept) when none waits or it is for another kind.

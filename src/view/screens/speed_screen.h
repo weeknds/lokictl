@@ -28,7 +28,9 @@ namespace screen {
 //
 // Keys: 4 (Back) or a short ESC goes back, and a run keeps going; 6 (Run)
 // or Enter starts a test (a 10 s download, then a 10 s upload) and stops it
-// while it runs (Stop). While another tool runs, Run is switched off.
+// while it runs (Stop). While another tool runs, Run is switched off. The
+// command bar's `speed` opens the page and asks for a start
+// (BaseViewModel::request_tool_start()); it never stops a running test.
 //
 // The run lives in the view model (tools().speed), so it is kept when the
 // page is left and across a theme switch.
@@ -65,6 +67,9 @@ private:
     bool this_running() const;
     bool any_running() const;
     void run_or_stop();
+    // The command bar asked for a test (BaseViewModel::take_tool_start()):
+    // does what the first 6 does, and nothing while any tool runs.
+    void start_from_command();
 
     void refresh();
     void refresh_keys();
@@ -73,6 +78,7 @@ private:
     void refresh_status();
 
     static void observer_cb(lv_observer_t* observer, lv_subject_t* subject);
+    static void start_cb(lv_observer_t* observer, lv_subject_t* subject);
 
     lv_obj_t* server_caption_{nullptr};
     lv_obj_t* server_{nullptr};

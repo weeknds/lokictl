@@ -221,6 +221,8 @@ void SpeedScreen::build_content(lv_obj_t* content) {
 
     // LVGL calls the observer once right away; the first call draws it all.
     lv_subject_add_observer_obj(view_model().tools_subject(), observer_cb, content, this);
+    // Last, so a start the command bar asked for finds the page built.
+    lv_subject_add_observer_obj(view_model().tool_start_subject(), start_cb, content, this);
 }
 
 void SpeedScreen::refresh_keys() {
@@ -308,6 +310,22 @@ void SpeedScreen::refresh() {
     refresh_column(down_, run.down_kbps, run.down_bytes, run.down_samples, scale);
     refresh_column(up_, run.up_kbps, run.up_bytes, run.up_samples, scale);
     refresh_status();
+}
+
+void SpeedScreen::start_from_command() {
+    // Always a first press: a running test (or another tool) is never
+    // stopped.
+    if (any_running()) {
+        return;
+    }
+    run_or_stop();
+}
+
+void SpeedScreen::start_cb(lv_observer_t* observer, lv_subject_t* /*subject*/) {
+    auto* screen = static_cast<SpeedScreen*>(lv_observer_get_user_data(observer));
+    if (screen && screen->view_model().take_tool_start(model::ToolKind::Speed)) {
+        screen->start_from_command();
+    }
 }
 
 void SpeedScreen::observer_cb(lv_observer_t* observer, lv_subject_t* /*subject*/) {
