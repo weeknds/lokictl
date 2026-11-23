@@ -312,6 +312,14 @@ public:
     int32_t trace_scroll() const;
     // Stores `row`; nothing is written when it stays the same.
     void set_trace_scroll(int32_t row);
+    // The Ports page's host detail: kPortsDetailClosed (the start value)
+    // while it is not shown, else its first row shown (the page clamps it
+    // to the rows). open_tool() closes it.
+    static constexpr int32_t kPortsDetailClosed = -1;
+    lv_subject_t* ports_detail_subject();
+    int32_t ports_detail() const;
+    // Stores `row`; nothing is written when it stays the same.
+    void set_ports_detail(int32_t row);
 
     // The Wi-Fi page.
     // Sets the first row shown back to 0, then opens the page (see
@@ -459,6 +467,7 @@ private:
     model::ToolsData tools_;
     reactive::IntSubject tools_subject_;
     reactive::IntSubject trace_scroll_subject_;
+    reactive::IntSubject ports_detail_subject_;
     reactive::IntSubject wifi_scroll_subject_;
     reactive::IntSubject wifi_scan_request_subject_;
     reactive::IntSubject discover_scroll_subject_;

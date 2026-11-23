@@ -249,15 +249,28 @@ constexpr int32_t kPortTimeoutMs = 1000;
 struct CommonPort {
     uint16_t port;
     const char* service;  // short, for example "ssh"
+    const char* plain;    // what it is in everyday words, for example "remote login"
 };
 
 // The ports a scan asks, ascending (50 of them).
 const std::vector<CommonPort>& common_ports();
 // The service of `port` in common_ports(); "" for a port not in it.
 const char* port_service(uint16_t port);
+// What `port` is for in everyday words; "" for a port not in it.
+const char* port_plain(uint16_t port);
+
+// What one open port said about itself (service_banner.h).
+struct PortBanner {
+    uint16_t port{0};
+    std::string text;  // "OpenSSH_9.6p1 Debian-3", "lighttpd/1.4.76", "TLS"; at most kBannerShownMax printable characters
+};
+
+bool operator==(const PortBanner& left, const PortBanner& right);
+bool operator!=(const PortBanner& left, const PortBanner& right);
 
 // The latest port scan of the Ports page. Every connection attempt the
-// system takes counts in the Sent count.
+// system takes counts in the Sent count, and so does every request to a
+// web port.
 struct PortRun {
     ToolState state{ToolState::Idle};
     ToolError error{ToolError::None};
@@ -268,10 +281,14 @@ struct PortRun {
     int32_t closed{0};           // ports that refused
     int32_t silent{0};           // ports that did not answer in kPortTimeoutMs
     std::vector<uint16_t> open;  // ports that took the connection, ascending
+    std::vector<PortBanner> banners;  // open ports that said what they are, ascending; at most one each
 };
 
 bool operator==(const PortRun& left, const PortRun& right);
 bool operator!=(const PortRun& left, const PortRun& right);
+
+// What `port` said in `run`; empty when it said nothing (yet).
+std::string port_banner(const PortRun& run, uint16_t port);
 
 // The speed test: a download, then an upload, each for 10 s or 50 MB,
 // whichever comes first, against a speed server (Cloudflare's by default,

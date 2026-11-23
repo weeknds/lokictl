@@ -1000,15 +1000,28 @@ after the page's confirmation (key 6 twice), for that target only.
   sends nothing.
 - **The scan:** one unprivileged non-blocking TCP `connect()` per port of
   `model::common_ports()` (50 well-known ports, ascending), one new attempt
-  every 100 ms, at most 8 waiting, each for 1 s. A connection that is made
-  means open and is closed at once (nothing is read or written); a refusal
-  means closed; nothing in 1 s means no answer. When the system refuses an
-  attempt itself (no route, the host known to be unreachable, not allowed)
-  the run ends with the reason. Every socket is closed when the run ends,
-  is stopped or fails.
+  every 100 ms, at most 8 sockets at once, each attempt given 1 s. A
+  refusal means closed; nothing in 1 s means no answer. When the system
+  refuses an attempt itself (no route, the host known to be unreachable,
+  not allowed) the run ends with the reason. Every socket is closed when
+  the run ends, is stopped or fails.
+- **Open ports say what they are** (`src/model/service_banner.*`,
+  `model::PortRun::banners`). A connection that is made means open. A TLS
+  port (443, 465, 853, 993, 995, 8443, 8883) is closed at once and keeps
+  `TLS`, shown as `encrypted (TLS)` (there is no TLS library). A plain web port (80, 631, 1900, 3000,
+  5000, 7000, 7547, 8000, 8008, 8080, 8123, 8888, 10000, 32400, 49152)
+  gets one `HEAD / HTTP/1.0` request with a Host line, and the value of the
+  answer's `Server:` line is kept. Every other port is only listened to,
+  so nothing is ever written to a printer's raw port (9100, 515). What
+  comes in is read for at most 1.5 s and 256 bytes, and reading ends early
+  once a whole greeting or the end of the headers is in. The page keeps
+  printable ASCII only, at most 40 characters: the first piece of text
+  without its protocol's prefix (`SSH-2.0-`, `220 `, `+OK`, `* OK`), with
+  Telnet's option bytes skipped.
 - **Sent** counts one per attempt the system takes (its handshake packets
-  and retries are not counted, like ARP for a probe). The log gets attempt
-  counts only: never the target, a port or how many were open.
+  and retries are not counted, like ARP for a probe), and one per request
+  to a web port. The log gets attempt counts only: never the target, a
+  port, what a port said or how many were open.
 - **The pretend runner** (`platform::pretend_port_scan()`) times the same
   attempts on the examples' networks (10.0.0.0/24, 10.42.0.0/24,
   10.20.30.0/24). The router (.1) has DNS, HTTP, HTTPS and UPnP open and

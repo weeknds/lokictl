@@ -57,6 +57,7 @@ BaseViewModel::BaseViewModel()
       tool_start_subject_(0),
       tools_subject_(0),
       trace_scroll_subject_(kTraceFollow),
+      ports_detail_subject_(kPortsDetailClosed),
       wifi_scroll_subject_(0),
       wifi_scan_request_subject_(0),
       discover_scroll_subject_(0),
@@ -428,6 +429,7 @@ bool BaseViewModel::open_tools() {
 
 bool BaseViewModel::open_tool(model::ToolKind kind) {
     set_tool_typing(false);
+    set_ports_detail(kPortsDetailClosed);
     switch (kind) {
         case model::ToolKind::Ping:
             break;
@@ -594,6 +596,20 @@ int32_t BaseViewModel::trace_scroll() const {
 void BaseViewModel::set_trace_scroll(int32_t row) {
     if (row != trace_scroll_subject_.value()) {
         trace_scroll_subject_.set(row);
+    }
+}
+
+lv_subject_t* BaseViewModel::ports_detail_subject() {
+    return ports_detail_subject_.native();
+}
+
+int32_t BaseViewModel::ports_detail() const {
+    return ports_detail_subject_.value();
+}
+
+void BaseViewModel::set_ports_detail(int32_t row) {
+    if (row != ports_detail_subject_.value()) {
+        ports_detail_subject_.set(row);
     }
 }
 

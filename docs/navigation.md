@@ -586,12 +586,30 @@ refuses anything else; names are never looked up.
 | Key | What it does |
 |---|---|
 | `6` SCAN or Enter | first shows what will be asked (`Asks 50 common ports, 10 a second`) and, in the warning colour, `Only devices you own or may test. Press 6 again to scan.`; nothing is sent (`Nothing sent yet`). A second `6` or Enter scans that target; any other key, a short ESC, leaving the page, another tool starting, the target changing or 10 s cancels. While a scan runs it reads STOP |
+| `7` HOST or Enter | on a finished (or stopped) scan of the selected target: opens the host detail. Enter does this instead of starting a scan; `6` still scans |
 | `z`/`c` or the arrows left and right | step through the targets |
 | `5` EDIT | types an address |
 | `4` BACK or a short ESC | goes back; a scan goes on |
 
 The confirmation lives in the page only, so nothing remembers it. The help
 panel shows the badge `PORTS` and five rows, one of them `6 twice`.
+
+**Host detail.** It takes the page's place: the target's caption and
+address with `3 open` at the right, then two columns: `name` and `MAC` when
+the Discover list or the hotspot knows them, and each open port with its
+service (`22 ssh`), what it is in everyday words (`model::port_plain()`)
+and what the port said about itself (`remote login · OpenSSH_9.9p2
+Debian-1`, `web page · lighttpd/1.4.76`, `web page · encrypted (TLS)`).
+Under a well-known
+risky port a one-line note follows, slightly indented, from
+`model::service_rules()` (`src/model/service_rules.*`): muted for info, the
+warning colour for a warning, the error colour for a risk. `f`/`x` scroll
+it (a thin scroll mark shows when it does not fit); Enter, `4` BACK or a
+short ESC close it. It closes by itself when the target changes or a scan
+starts. Whether it is open and its scroll live in the view model
+(`ports_detail()`), so a theme switch keeps it; opening the page from the
+Tools page or the command bar starts without it. Its help shows the badge
+`HOST`.
 
 ## The Speed page
 

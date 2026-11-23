@@ -15,6 +15,7 @@
 #include "lvgl.h"
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -22,6 +23,7 @@
 
 #if !USE_DESKTOP
 #include "dns_message.h"
+#include "service_banner.h"
 
 #include <arpa/inet.h>
 #include <linux/errqueue.h>
@@ -2087,10 +2089,14 @@ private:
     // of the Cardputer's own networks (checked here again, before anything
     // is sent). Each port gets one unprivileged non-blocking connect(): one
     // new attempt every model::kPortIntervalMs, at most model::kPortsWaiting
-    // waiting, each for model::kPortTimeoutMs. A connection that is made is
-    // closed at once; nothing is ever read or written. Each attempt the
-    // system takes is counted with count_sent(). Every socket is closed on
-    // the way out, whatever ends the run.
+    // sockets at once, each attempt given model::kPortTimeoutMs. A
+    // connection that is made is asked what it is (service_banner.h): a
+    // TLS port is closed at once; a web port gets one HEAD request; then
+    // what the port says is read for at most model::kBannerReadMs and
+    // model::kBannerBytesMax bytes, and the socket closed. Nothing else is
+    // ever written. Each attempt the system takes and each request sent is
+    // counted with count_sent(). Every socket is closed on the way out,
+    // whatever ends the run.
     void run_ports(const std::string& target) {
         const std::vector<model::CommonPort>& ports = model::common_ports();
         model::PortRun run;
@@ -2113,13 +2119,19 @@ private:
             return;
         }
 
+        // One socket: connecting, then (once connected) reading what the
+        // port says into `bytes`.
         struct Attempt {
-            int fd;
-            uint16_t port;
+            int fd{-1};
+            uint16_t port{0};
             Clock::time_point deadline;
+            bool reading{false};
+            model::BannerProbe probe{model::BannerProbe::Listen};
+            std::array<uint8_t, model::kBannerBytesMax> bytes{};
+            std::size_t size{0};
         };
-        // The attempts waiting for an answer. Whatever ends the run (also
-        // an exception), their sockets are closed.
+        // The sockets still open. Whatever ends the run (also an
+        // exception), they are closed.
         struct Waiting {
             std::vector<Attempt> list;
             ~Waiting() {
@@ -2138,6 +2150,65 @@ private:
         };
         const auto note_open = [&run](uint16_t port) {
             run.open.insert(std::upper_bound(run.open.begin(), run.open.end(), port), port);
+        };
+        const auto note_banner = [&run](uint16_t port, const std::string& text) {
+            if (text.empty()) {
+                return;
+            }
+            const auto at = std::lower_bound(run.banners.begin(), run.banners.end(), port,
+                                             [](const model::PortBanner& banner, uint16_t value) {
+                                                 return banner.port < value;
+                                             });
+            run.banners.insert(at, model::PortBanner{port, text});
+        };
+        // A connection was made: notes the port open and starts reading.
+        // Returns false when the socket was closed instead (a TLS port, or
+        // the request could not be sent).
+        const auto connected = [&](Attempt& attempt, Clock::time_point now) {
+            note_open(attempt.port);
+            attempt.probe = model::banner_probe(attempt.port);
+            if (attempt.probe == model::BannerProbe::Tls) {
+                note_banner(attempt.port, model::banner_text(attempt.probe, nullptr, 0));
+                ::close(attempt.fd);
+                return false;
+            }
+            if (attempt.probe == model::BannerProbe::Http) {
+                const std::string request = model::http_head_request(target, attempt.port);
+                const ssize_t written = ::send(attempt.fd, request.data(), request.size(), MSG_NOSIGNAL);
+                if (written > 0) {
+                    count_sent();
+                }
+                if (written != static_cast<ssize_t>(request.size())) {
+                    ::close(attempt.fd);
+                    return false;
+                }
+            }
+            attempt.reading = true;
+            attempt.deadline = now + std::chrono::milliseconds(model::kBannerReadMs);
+            return true;
+        };
+        // Reads what came in. Returns false once reading is over (and the
+        // socket closed): enough came, the port closed, an error, or the
+        // deadline passed.
+        const auto read_more = [&](Attempt& attempt, bool readable, Clock::time_point now) {
+            bool over = now >= attempt.deadline;
+            if (readable) {
+                const ssize_t got = ::recv(attempt.fd, attempt.bytes.data() + attempt.size,
+                                           attempt.bytes.size() - attempt.size, MSG_DONTWAIT);
+                if (got > 0) {
+                    attempt.size += static_cast<std::size_t>(got);
+                    over = over || attempt.size >= attempt.bytes.size() ||
+                           model::banner_complete(attempt.probe, attempt.bytes.data(), attempt.size);
+                } else if (got == 0 || (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)) {
+                    over = true;
+                }
+            }
+            if (!over) {
+                return true;
+            }
+            note_banner(attempt.port, model::banner_text(attempt.probe, attempt.bytes.data(), attempt.size));
+            ::close(attempt.fd);
+            return false;
         };
         const auto fail = [&](const std::string& reason) {
             close_all();
@@ -2181,13 +2252,18 @@ private:
                 to.sin_port = htons(port);
                 const int result = ::connect(fd, reinterpret_cast<const sockaddr*>(&to), sizeof(to));
                 const int number = result == 0 ? 0 : errno;
+                Attempt attempt;
+                attempt.fd = fd;
+                attempt.port = port;
+                attempt.deadline = now + timeout;
                 if (result == 0) {
                     count_sent();
-                    note_open(port);
-                    ::close(fd);
+                    if (connected(attempt, now)) {
+                        waiting.push_back(attempt);
+                    }
                 } else if (number == EINPROGRESS) {
                     count_sent();
-                    waiting.push_back({fd, port, now + timeout});
+                    waiting.push_back(attempt);
                 } else if (number == ECONNREFUSED) {
                     count_sent();
                     ++run.closed;
@@ -2214,7 +2290,7 @@ private:
             }
             entries.clear();
             for (const Attempt& attempt : waiting) {
-                entries.push_back({attempt.fd, POLLOUT, 0});
+                entries.push_back({attempt.fd, static_cast<short>(attempt.reading ? POLLIN : POLLOUT), 0});
                 wake = std::min(wake, attempt.deadline);
             }
             const int ready = ::poll(entries.empty() ? nullptr : entries.data(), static_cast<nfds_t>(entries.size()),
@@ -2223,17 +2299,25 @@ private:
             std::vector<Attempt> still;
             still.reserve(waiting.size());
             for (std::size_t index = 0; index < waiting.size(); ++index) {
-                const Attempt& attempt = waiting[index];
+                Attempt& attempt = waiting[index];
                 const short events = ready > 0 ? entries[index].revents : 0;
-                if ((events & (POLLOUT | POLLERR | POLLHUP)) != 0) {
+                if (attempt.reading) {
+                    if (read_more(attempt, (events & (POLLIN | POLLERR | POLLHUP)) != 0, now)) {
+                        still.push_back(attempt);
+                    }
+                } else if ((events & (POLLOUT | POLLERR | POLLHUP)) != 0) {
                     int error = 0;
                     socklen_t length = sizeof(error);
                     if (::getsockopt(attempt.fd, SOL_SOCKET, SO_ERROR, &error, &length) != 0) {
                         error = errno;
                     }
                     if (error == 0) {
-                        note_open(attempt.port);
-                    } else if (error == ECONNREFUSED) {
+                        if (connected(attempt, now)) {
+                            still.push_back(attempt);
+                        }
+                        continue;
+                    }
+                    if (error == ECONNREFUSED) {
                         ++run.closed;
                     } else {
                         ++run.silent;  // unreachable, timed out by the system, or anything else

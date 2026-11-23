@@ -135,16 +135,56 @@ bool operator!=(const ProbeRun& left, const ProbeRun& right) {
 
 const std::vector<CommonPort>& common_ports() {
     static const std::vector<CommonPort> ports{
-        {21, "ftp"},         {22, "ssh"},        {23, "telnet"},     {25, "smtp"},        {53, "dns"},
-        {80, "http"},        {110, "pop3"},      {111, "rpcbind"},   {135, "msrpc"},      {139, "netbios"},
-        {143, "imap"},       {443, "https"},     {445, "smb"},       {465, "smtps"},      {515, "lpd"},
-        {548, "afp"},        {554, "rtsp"},      {587, "submission"}, {631, "ipp"},       {853, "dns-tls"},
-        {873, "rsync"},      {993, "imaps"},     {995, "pop3s"},     {1080, "socks"},     {1883, "mqtt"},
-        {1900, "upnp"},      {2049, "nfs"},      {3000, "web"},      {3306, "mysql"},     {3389, "rdp"},
-        {5000, "web"},       {5432, "postgres"}, {5555, "adb"},      {5900, "vnc"},       {6379, "redis"},
-        {7000, "airplay"},   {7547, "tr-069"},   {8000, "http-alt"}, {8008, "http-alt"},  {8009, "cast"},
-        {8080, "http-proxy"}, {8123, "hass"},    {8443, "https-alt"}, {8883, "mqtts"},    {8888, "http-alt"},
-        {9100, "jetdirect"}, {10000, "webmin"},  {32400, "plex"},    {49152, "upnp"},     {62078, "iphone-sync"},
+        {21, "ftp", "file transfer"},
+        {22, "ssh", "remote login"},
+        {23, "telnet", "remote login"},
+        {25, "smtp", "sends mail"},
+        {53, "dns", "name lookups"},
+        {80, "http", "web page"},
+        {110, "pop3", "mailbox"},
+        {111, "rpcbind", "service list"},
+        {135, "msrpc", "Windows service"},
+        {139, "netbios", "Windows sharing"},
+        {143, "imap", "mailbox"},
+        {443, "https", "web page"},
+        {445, "smb", "file sharing"},
+        {465, "smtps", "sends mail"},
+        {515, "lpd", "printing"},
+        {548, "afp", "Mac file sharing"},
+        {554, "rtsp", "video stream"},
+        {587, "submission", "sends mail"},
+        {631, "ipp", "printing"},
+        {853, "dns-tls", "name lookups"},
+        {873, "rsync", "file copying"},
+        {993, "imaps", "mailbox"},
+        {995, "pop3s", "mailbox"},
+        {1080, "socks", "traffic relay"},
+        {1883, "mqtt", "smart home messages"},
+        {1900, "upnp", "device discovery"},
+        {2049, "nfs", "file sharing"},
+        {3000, "web", "web page"},
+        {3306, "mysql", "database"},
+        {3389, "rdp", "remote desktop"},
+        {5000, "web", "web page"},
+        {5432, "postgres", "database"},
+        {5555, "adb", "Android debugging"},
+        {5900, "vnc", "remote screen"},
+        {6379, "redis", "database"},
+        {7000, "airplay", "media streaming"},
+        {7547, "tr-069", "provider management"},
+        {8000, "http-alt", "web page"},
+        {8008, "http-alt", "web page"},
+        {8009, "cast", "casting"},
+        {8080, "http-proxy", "web page"},
+        {8123, "hass", "Home Assistant"},
+        {8443, "https-alt", "web page"},
+        {8883, "mqtts", "smart home messages"},
+        {8888, "http-alt", "web page"},
+        {9100, "jetdirect", "printing"},
+        {10000, "webmin", "admin web page"},
+        {32400, "plex", "Plex media"},
+        {49152, "upnp", "device discovery"},
+        {62078, "iphone-sync", "iPhone sync"},
     };
     return ports;
 }
@@ -158,14 +198,41 @@ const char* port_service(uint16_t port) {
     return "";
 }
 
+const char* port_plain(uint16_t port) {
+    for (const CommonPort& entry : common_ports()) {
+        if (entry.port == port) {
+            return entry.plain;
+        }
+    }
+    return "";
+}
+
+bool operator==(const PortBanner& left, const PortBanner& right) {
+    return left.port == right.port && left.text == right.text;
+}
+
+bool operator!=(const PortBanner& left, const PortBanner& right) {
+    return !(left == right);
+}
+
 bool operator==(const PortRun& left, const PortRun& right) {
     return left.state == right.state && left.error == right.error && left.reason == right.reason &&
            left.target == right.target && left.total == right.total && left.asked == right.asked &&
-           left.closed == right.closed && left.silent == right.silent && left.open == right.open;
+           left.closed == right.closed && left.silent == right.silent && left.open == right.open &&
+           left.banners == right.banners;
 }
 
 bool operator!=(const PortRun& left, const PortRun& right) {
     return !(left == right);
+}
+
+std::string port_banner(const PortRun& run, uint16_t port) {
+    for (const PortBanner& banner : run.banners) {
+        if (banner.port == port) {
+            return banner.text;
+        }
+    }
+    return {};
 }
 
 bool operator==(const SpeedRun& left, const SpeedRun& right) {

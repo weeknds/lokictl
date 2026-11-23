@@ -76,6 +76,22 @@ std::string bytes_text(uint64_t bytes);
 std::vector<std::string> open_port_items(const model::PortRun& run);
 std::string ports_counts_text(const model::PortRun& run);
 
+// One line of the Ports page's host detail: a caption or an open port at
+// the left, its value at the right.
+struct DetailLine {
+    std::string left;  // "name", "MAC", or a port with its service ("22 ssh"); empty on a note's line
+    ToneText right;    // the value, what the port is and said about itself, or a note
+};
+// The host detail of `run`: the host's name and hardware address when
+// known (an empty text is left out), then each open port with what it is
+// in everyday words and what it said ("web page · lighttpd/1.4.76",
+// "web page · encrypted (TLS)"), followed by its note from
+// model::service_rules() in the tone of its level (info muted, warning,
+// risk as an error). "No open ports" when there are none.
+std::vector<DetailLine> host_detail_lines(const model::PortRun& run,
+                                          const std::string& name,
+                                          const std::string& hardware_address);
+
 // The short state on the Tools page next to each tool: "running", the
 // last result, or nothing.
 ToneText ping_tag(const model::PingRun& run);

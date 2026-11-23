@@ -57,6 +57,15 @@ namespace screen {
 // target is the selected one, so one device's ports never stand under
 // another's address.
 //
+// The Ports page's host detail takes the page's place when Enter or 7
+// (Host) is pressed on a finished scan of the selected target: the
+// address with its caption, the name and hardware address when Discover
+// or the hotspot knows them, then each open port with what it said about
+// itself and, under a well-known risky one, a one-line note
+// (model::service_rules()). Up and down (F/X) scroll it; Enter, 4 (Back)
+// or a short ESC close it. It closes when the target changes or a scan
+// starts; it is kept in the view model (ports_detail()).
+//
 // Typing: a panel takes the page's place. Letters, digits and '.' are
 // added (at most model::kToolTargetMax), Backspace takes one away, Enter
 // keeps a valid target (model::valid_tool_target()) and selects it, Enter
@@ -118,6 +127,7 @@ private:
     void build_dns_results(lv_obj_t* panel);
     void build_trace_results(lv_obj_t* panel);
     void build_ports_results(lv_obj_t* panel);
+    void build_detail_panel(lv_obj_t* content);
     void build_typing_panel(lv_obj_t* content);
 
     // The targets to step through: the presets, then the typed one.
@@ -131,6 +141,16 @@ private:
     // Ports: whether the latest scan is shown (it runs, or its target is
     // the selected one); otherwise the page looks as before any scan.
     bool ports_result_shown() const;
+    // Ports: whether the host detail may be opened (a finished scan of the
+    // selected target is shown, and nothing else happens on the page), and
+    // whether it is open.
+    bool detail_allowed() const;
+    bool detail_open() const;
+    void open_detail();
+    void close_detail();
+    void scroll_detail(int32_t delta);
+    // 4 (Back): closes the host detail, or goes back.
+    void back_key();
     // True while this page's tool runs, and while either runs.
     bool this_running() const;
     bool any_running() const;
@@ -160,6 +180,7 @@ private:
     void refresh_ports();
     void refresh_status();
     void refresh_typing();
+    void refresh_detail();
 
     static void observer_cb(lv_observer_t* observer, lv_subject_t* subject);
 
@@ -189,6 +210,32 @@ private:
     int32_t thumb_height_shown_{-1};
     // Ports (with lines_ and server_ for the open ports and the counts)
     lv_obj_t* confirm_{nullptr};
+    // Ports: the host detail.
+    struct DetailRow {
+        lv_obj_t* left{nullptr};
+        lv_obj_t* right{nullptr};
+        std::string left_shown;
+        std::string right_shown;
+        int32_t right_tone{-1};
+        int32_t right_x{-1};
+    };
+    static constexpr std::size_t kDetailRows = 8;
+    lv_obj_t* detail_panel_{nullptr};
+    lv_obj_t* detail_caption_{nullptr};
+    lv_obj_t* detail_address_{nullptr};
+    lv_obj_t* detail_count_{nullptr};
+    std::array<DetailRow, kDetailRows> detail_rows_{};
+    int32_t visible_detail_rows_{0};
+    int32_t detail_list_top_{0};
+    int32_t detail_column_{-1};  // where the right column starts, as last placed
+    int32_t detail_last_top_{0}; // the last first row there is, as last drawn
+    lv_obj_t* detail_track_{nullptr};
+    lv_obj_t* detail_thumb_{nullptr};
+    int32_t detail_thumb_top_{-1};
+    int32_t detail_thumb_height_{-1};
+    std::string detail_caption_shown_;
+    std::string detail_address_shown_;
+    std::string detail_count_shown_;
     // All
     lv_obj_t* status_{nullptr};
     lv_obj_t* sent_caption_{nullptr};
@@ -217,7 +264,7 @@ private:
     std::string count_shown_;
     std::string typing_note_shown_;
     int32_t typing_note_tone_{-1};
-    int32_t shown_typing_{-1};  // 1 typing, 0 not, -1 before the first
+    int32_t shown_panel_{-1};   // 0 the page, 1 typing, 2 the host detail; -1 before the first
     int32_t shown_keys_{-1};    // what refresh_keys() set last
     bool draft_invalid_{false}; // Enter was pressed on a target that is not taken
     std::string confirm_shown_;

@@ -42,6 +42,8 @@ constexpr int32_t kThumbX         = kTrackX - 1;
 constexpr int32_t kThumbWidth     = 3;
 constexpr int32_t kThumbMinHeight = 8;
 constexpr int32_t kHopRight       = kThumbX - 4;
+// The Ports page's host detail: how far in a note starts.
+constexpr int32_t kNoteIndent     = 12;
 
 // Three spaces between addresses on one line.
 constexpr const char* kAddressGap = "   ";
@@ -161,7 +163,7 @@ view::widgets::HelpContent ToolScreen::help_content(model::ToolKind kind) {
                     {"Z / C", "Previous / next target"},
                     {"5", "Type a target (ENTER keeps)"},
                     {"6 twice", "Scan 50 ports, sends"},
-                    {"Sent", "Packets LokiCTL sent"},
+                    {"7", "Host details after a scan"},
                 }};
     }
     if (kind == model::ToolKind::Trace) {
@@ -185,18 +187,29 @@ view::widgets::HelpContent ToolScreen::help_content(model::ToolKind kind) {
 }
 
 view::widgets::HelpContent ToolScreen::help() const {
+    if (detail_open()) {
+        return {"HOST",
+                {
+                    {"ESC / 4", "Back to the scan"},
+                    {"F / X", "Scroll"},
+                    {"Notes", "Under risky ports"},
+                }};
+    }
     return help_content(kind_);
 }
 
 view::widgets::SoftKeySet ToolScreen::soft_keys() {
     // The screen owns its soft-key bar, so the keys never outlive it.
     // refresh_keys() sets them for the run and typing.
-    auto& view_model = this->view_model();
+    view::widgets::SoftKey host;
+    if (kind_ == model::ToolKind::Ports) {
+        host = {"Host", [this] { open_detail(); }, false, false};
+    }
     return {{
-        {"Back", [&view_model] { view_model.go_back(); }},
+        {"Back", [this] { back_key(); }},
         {"Edit", [this] { start_edit(); }},
         {kind_ == model::ToolKind::Ports ? "Scan" : "Run", [this] { run_or_stop(); }, true},
-        {},
+        host,
         {},
     }};
 }
@@ -368,6 +381,46 @@ void ToolScreen::confirm_timer_cb(lv_timer_t* timer) {
     }
 }
 
+bool ToolScreen::detail_open() const {
+    return kind_ == model::ToolKind::Ports &&
+           view_model().ports_detail() != viewmodel::BaseViewModel::kPortsDetailClosed;
+}
+
+bool ToolScreen::detail_allowed() const {
+    if (kind_ != model::ToolKind::Ports || confirming_ || view_model().tool_typing() || !ports_result_shown()) {
+        return false;
+    }
+    const model::ToolState state = view_model().tools().ports.state;
+    return state == model::ToolState::Done || state == model::ToolState::Stopped;
+}
+
+void ToolScreen::open_detail() {
+    if (!detail_open() && detail_allowed()) {
+        view_model().set_ports_detail(0);
+    }
+}
+
+void ToolScreen::close_detail() {
+    view_model().set_ports_detail(viewmodel::BaseViewModel::kPortsDetailClosed);
+}
+
+void ToolScreen::scroll_detail(int32_t delta) {
+    const int32_t first = view_model().ports_detail();
+    if (first == viewmodel::BaseViewModel::kPortsDetailClosed) {
+        return;
+    }
+    const int32_t shown = std::clamp<int32_t>(first, 0, detail_last_top_);
+    view_model().set_ports_detail(std::clamp<int32_t>(shown + delta, 0, detail_last_top_));
+}
+
+void ToolScreen::back_key() {
+    if (detail_open()) {
+        close_detail();
+        return;
+    }
+    view_model().go_back();
+}
+
 int32_t ToolScreen::first_hop_row() const {
     const auto count = static_cast<int32_t>(view_model().tools().trace.hops.size());
     const int32_t last_top = std::max<int32_t>(count - visible_hop_rows_, 0);
@@ -390,6 +443,14 @@ bool ToolScreen::text_entry() const {
 bool ToolScreen::on_key(uint32_t key) {
     if (view_model().tool_typing()) {
         return type_key(key);
+    }
+    if (detail_open()) {
+        if (key == LV_KEY_UP || key == LV_KEY_DOWN) {
+            scroll_detail(key == LV_KEY_UP ? -1 : 1);
+        } else if (key == LV_KEY_ENTER) {
+            close_detail();
+        }
+        return true;  // the page under it takes no key
     }
     if (confirming_) {
         if (key == LV_KEY_ENTER) {
@@ -414,7 +475,13 @@ bool ToolScreen::on_key(uint32_t key) {
             scroll_hops(key == LV_KEY_UP ? -1 : 1);
             return true;
         case LV_KEY_ENTER:
-            run_or_stop();
+            // On a finished scan of the selected target, Enter shows the
+            // host; otherwise it does what 6 does.
+            if (detail_allowed()) {
+                open_detail();
+            } else {
+                run_or_stop();
+            }
             return true;
         default:
             return false;
@@ -470,6 +537,10 @@ bool ToolScreen::type_key(uint32_t key) {
 
 // A short ESC cancels typing; otherwise the app goes back, and a run goes on.
 bool ToolScreen::on_back() {
+    if (detail_open()) {
+        close_detail();
+        return true;
+    }
     if (confirming_) {
         cancel_confirm();
         return true;
@@ -534,6 +605,9 @@ void ToolScreen::build_content(lv_obj_t* content) {
     view::style::caption(sent_caption_, theme, "sent");
 
     build_typing_panel(content);
+    if (kind_ == model::ToolKind::Ports) {
+        build_detail_panel(content);
+    }
 
     // LVGL calls each observer once right away; the first call draws it all.
     lv_subject_add_observer_obj(view_model().tools_subject(), observer_cb, content, this);
@@ -545,6 +619,9 @@ void ToolScreen::build_content(lv_obj_t* content) {
     }
     if (kind_ == model::ToolKind::Trace) {
         lv_subject_add_observer_obj(view_model().trace_scroll_subject(), observer_cb, content, this);
+    }
+    if (kind_ == model::ToolKind::Ports) {
+        lv_subject_add_observer_obj(view_model().ports_detail_subject(), observer_cb, content, this);
     }
     // Last, so a start the command bar asked for finds the page built.
     lv_subject_add_observer_obj(view_model().tool_start_subject(), start_cb, content, this);
@@ -717,30 +794,88 @@ void ToolScreen::build_typing_panel(lv_obj_t* content) {
     lv_label_set_long_mode(typing_note_, LV_LABEL_LONG_WRAP);
 }
 
+// The host detail: a header row like the target row (caption, address,
+// how many are open), then rows of two columns, with a scroll mark at the
+// right edge when they do not all fit.
+void ToolScreen::build_detail_panel(lv_obj_t* content) {
+    const auto& theme = this->theme();
+    const lv_font_t* small = theme.font(view::FontRole::Small);
+    const lv_font_t* mono = theme.font(view::FontRole::Mono);
+    detail_panel_ = plain_object(content);
+    lv_obj_set_size(detail_panel_, view::kScreenWidth, kContentHeight);
+    lv_obj_add_flag(detail_panel_, LV_OBJ_FLAG_HIDDEN);
+
+    const int32_t small_drop = baseline_from_top(mono) - baseline_from_top(small);
+    detail_caption_ = plain_label(detail_panel_, "");
+    view::style::caption(detail_caption_, theme, "");
+    lv_obj_set_pos(detail_caption_, kSideMargin, kTargetTop + small_drop);
+    detail_address_ = plain_label(detail_panel_, "");
+    view::style::text(detail_address_, theme, view::FontRole::Mono, theme.colors.accent2);
+    detail_count_ = plain_label(detail_panel_, "");
+    view::style::text(detail_count_, theme, view::FontRole::Small, theme.colors.muted);
+    lv_obj_align(detail_count_, LV_ALIGN_TOP_RIGHT, -kSideMargin, kTargetTop + small_drop);
+
+    const int32_t row_height = lv_font_get_line_height(small);
+    detail_list_top_ = kTargetTop + lv_font_get_line_height(mono) + kResultsGap;
+    visible_detail_rows_ = std::clamp<int32_t>((kContentHeight - 1 - detail_list_top_) / row_height, 1,
+                                               static_cast<int32_t>(kDetailRows));
+    for (int32_t index = 0; index < visible_detail_rows_; ++index) {
+        DetailRow& row = detail_rows_[static_cast<std::size_t>(index)];
+        const int32_t top = detail_list_top_ + index * row_height;
+        row.left = plain_label(detail_panel_, "");
+        view::style::text(row.left, theme, view::FontRole::Small, theme.colors.muted);
+        lv_label_set_long_mode(row.left, LV_LABEL_LONG_CLIP);
+        lv_obj_set_pos(row.left, kSideMargin, top);
+        row.right = plain_label(detail_panel_, "");
+        view::style::text(row.right, theme, view::FontRole::Small);
+        lv_label_set_long_mode(row.right, LV_LABEL_LONG_DOT);
+        lv_obj_set_y(row.right, top);
+    }
+
+    detail_track_ = plain_object(detail_panel_);
+    lv_obj_set_pos(detail_track_, kTrackX, detail_list_top_);
+    lv_obj_set_size(detail_track_, 1, visible_detail_rows_ * row_height);
+    lv_obj_set_style_bg_color(detail_track_, theme.colors.border_subtle, 0);
+    lv_obj_set_style_bg_opa(detail_track_, LV_OPA_COVER, 0);
+    lv_obj_add_flag(detail_track_, LV_OBJ_FLAG_HIDDEN);
+    detail_thumb_ = plain_object(detail_panel_);
+    lv_obj_set_style_bg_color(detail_thumb_, theme.colors.muted, 0);
+    lv_obj_set_style_bg_opa(detail_thumb_, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(detail_thumb_, std::min<int32_t>(theme.metrics.radius, 1), 0);
+    lv_obj_add_flag(detail_thumb_, LV_OBJ_FLAG_HIDDEN);
+}
+
 void ToolScreen::refresh_keys() {
     // 0: idle; 1: this tool runs (Edit off, Stop); 2: the other tool runs
     // (Run off); 3: typing (all off, keys 4-8 type digits).
+    // 4: the host detail is open (only Back). Ports: + 8 when Host may open.
     int32_t keys = 0;
     if (view_model().tool_typing()) {
         keys = 3;
+    } else if (detail_open()) {
+        keys = 4;
     } else if (this_running()) {
         keys = 1;
     } else if (any_running()) {
         keys = 2;
     }
-    if (keys == shown_keys_) {
+    const bool host = kind_ == model::ToolKind::Ports && keys == 0 && detail_allowed();
+    const int32_t shown = keys + (host ? 8 : 0);
+    if (shown == shown_keys_) {
         return;
     }
-    shown_keys_ = keys;
+    shown_keys_ = shown;
     auto* bar = soft_key_bar();
     if (!bar) {
         return;
     }
-    auto& view_model = this->view_model();
-    bar->set_key(0, {"Back", [&view_model] { view_model.go_back(); }, false, keys != 3});
+    bar->set_key(0, {"Back", [this] { back_key(); }, false, keys != 3});
     bar->set_key(1, {"Edit", [this] { start_edit(); }, false, keys == 0 || keys == 2});
     const char* run = kind_ == model::ToolKind::Ports ? "Scan" : "Run";
     bar->set_key(2, {keys == 1 ? "Stop" : run, [this] { run_or_stop(); }, true, keys == 0 || keys == 1});
+    if (kind_ == model::ToolKind::Ports) {
+        bar->set_key(3, {"Host", [this] { open_detail(); }, false, host});
+    }
 }
 
 void ToolScreen::refresh_target() {
@@ -1049,12 +1184,130 @@ void ToolScreen::refresh_typing() {
     set_tone_if_changed(typing_note_, typing_note_tone_, tone, theme);
 }
 
+void ToolScreen::refresh_detail() {
+    const auto& theme = this->theme();
+    const lv_font_t* small = theme.font(view::FontRole::Small);
+    const model::PortRun& run = view_model().tools().ports;
+
+    // Who it is: the caption of its target, and what Discover or the
+    // hotspot knows about the address.
+    std::string caption = "host";
+    for (const Target& target : ports_targets()) {
+        if (target.text == run.target) {
+            caption = target.caption;
+            break;
+        }
+    }
+    std::string name;
+    std::string hardware_address;
+    const model::ToolsData& data = view_model().tools();
+    for (const model::DiscoverDevice& entry : model::discover_devices(data.listen, data.probe)) {
+        if (entry.device.address == run.target) {
+            name = entry.device.name;
+            hardware_address = entry.device.hardware_address;
+            break;
+        }
+    }
+    for (const model::HomeClient& client : view_model().home().clients) {
+        if (client.address == run.target) {
+            if (name.empty()) {
+                name = client.name;
+            }
+            if (hardware_address.empty()) {
+                hardware_address = client.hardware_address;
+            }
+            break;
+        }
+    }
+    const std::vector<tools::DetailLine> lines = tools::host_detail_lines(run, name, hardware_address);
+
+    const bool caption_changed = caption != detail_caption_shown_;
+    if (caption_changed) {
+        detail_caption_shown_ = caption;
+        view::style::caption(detail_caption_, theme, caption.c_str());
+    }
+    const bool count_changed =
+        set_text_if_changed(detail_count_, detail_count_shown_, std::to_string(run.open.size()) + " open");
+    set_text_if_changed(detail_address_, detail_address_shown_, run.target);
+    if (caption_changed || count_changed) {
+        lv_obj_update_layout(detail_caption_);
+        lv_obj_update_layout(detail_count_);
+        const int32_t left = kSideMargin + lv_obj_get_width(detail_caption_) + kCaptionGap;
+        const int32_t right = kRight - lv_obj_get_width(detail_count_) - kStatusGap;
+        lv_obj_set_pos(detail_address_, left, kTargetTop);
+        lv_obj_set_size(detail_address_, std::max<int32_t>(right - left, 0),
+                        lv_font_get_line_height(theme.font(view::FontRole::Mono)));
+    }
+
+    // The right column starts after the widest left text ("8080
+    // http-proxy"), at most half the width in.
+    int32_t column = 0;
+    for (const tools::DetailLine& line : lines) {
+        column = std::max(column, text_width(line.left, small));
+    }
+    column = kSideMargin + std::min(column, kWidth / 2) + kStatusGap;
+    const auto count = static_cast<int32_t>(lines.size());
+    const int32_t last_top = std::max<int32_t>(count - visible_detail_rows_, 0);
+    detail_last_top_ = last_top;
+    const int32_t first = std::clamp<int32_t>(view_model().ports_detail(), 0, last_top);
+    const bool scrolls = count > visible_detail_rows_;
+    const int32_t right_end = scrolls ? kHopRight : kRight;
+    const int32_t row_height = lv_font_get_line_height(small);
+    for (int32_t index = 0; index < visible_detail_rows_; ++index) {
+        DetailRow& row = detail_rows_[static_cast<std::size_t>(index)];
+        tools::DetailLine line;
+        if (first + index < count) {
+            line = lines[static_cast<std::size_t>(first + index)];
+        }
+        set_text_if_changed(row.left, row.left_shown, line.left);
+        set_text_if_changed(row.right, row.right_shown, line.right.text);
+        set_tone_if_changed(row.right, row.right_tone, line.right.tone, theme);
+        if (column != detail_column_) {
+            lv_obj_set_size(row.left, column - kStatusGap - kSideMargin, row_height);
+        }
+        // A note (no left text) starts a little in from the left, so it
+        // has nearly the whole line.
+        const int32_t x = line.left.empty() ? kSideMargin + kNoteIndent : column;
+        if (x != row.right_x) {
+            lv_obj_set_x(row.right, x);
+            row.right_x = x;
+        }
+        lv_obj_set_size(row.right, std::max<int32_t>(right_end - x, 0), row_height);
+    }
+    detail_column_ = column;
+
+    // The scroll mark, only when the rows do not all fit.
+    set_hidden(detail_track_, !scrolls);
+    set_hidden(detail_thumb_, !scrolls);
+    if (scrolls) {
+        const int32_t list_height = visible_detail_rows_ * row_height;
+        const int32_t thumb_height = std::max<int32_t>(list_height * visible_detail_rows_ / count, kThumbMinHeight);
+        const int32_t offset = (list_height - thumb_height) * first / last_top;
+        if (thumb_height != detail_thumb_height_ || offset != detail_thumb_top_) {
+            lv_obj_set_size(detail_thumb_, kThumbWidth, thumb_height);
+            lv_obj_set_pos(detail_thumb_, kThumbX, detail_list_top_ + offset);
+            detail_thumb_height_ = thumb_height;
+            detail_thumb_top_ = offset;
+        }
+    }
+}
+
 void ToolScreen::refresh() {
     const bool typing = view_model().tool_typing();
-    if ((typing ? 1 : 0) != shown_typing_) {
-        set_hidden(main_panel_, typing);
-        set_hidden(typing_panel_, !typing);
-        shown_typing_ = typing ? 1 : 0;
+    // The host detail goes when its scan is no longer the one shown (the
+    // target changed, a scan started) or the page types. The nested
+    // refresh this causes draws the page; this one then changes nothing.
+    if (detail_open() && (typing || !detail_allowed())) {
+        view_model().set_ports_detail(viewmodel::BaseViewModel::kPortsDetailClosed);
+    }
+    const int32_t panel = typing ? 1 : detail_open() ? 2 : 0;
+    if (panel != shown_panel_) {
+        set_hidden(main_panel_, panel != 0);
+        set_hidden(typing_panel_, panel != 1);
+        if (detail_panel_) {
+            set_hidden(detail_panel_, panel != 2);
+        }
+        shown_panel_ = panel;
     }
     // A confirmation goes when its target is no longer the selected one, or
     // a tool runs.
@@ -1069,6 +1322,10 @@ void ToolScreen::refresh() {
     refresh_keys();
     if (typing) {
         refresh_typing();
+        return;
+    }
+    if (panel == 2) {
+        refresh_detail();
         return;
     }
     refresh_target();
@@ -1096,6 +1353,9 @@ void ToolScreen::refresh() {
 void ToolScreen::start_from_command() {
     // Always a first press: a confirmation already waiting is dropped, so a
     // command never gives the second 6, and a running tool is never stopped.
+    if (detail_open()) {
+        close_detail();
+    }
     cancel_confirm();
     if (view_model().tool_typing() || any_running()) {
         return;

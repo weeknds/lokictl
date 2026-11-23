@@ -6,6 +6,8 @@
 
 #include "port_scan.h"
 
+#include "service_banner.h"
+
 #include <arpa/inet.h>
 #include <ifaddrs.h>
 #include <net/if.h>
@@ -64,8 +66,40 @@ const std::vector<uint16_t> kMediaOpen{7000, 8008, 8009, 8443};
 const std::vector<uint16_t> kStorageOpen{22, 139, 445, 5000, 32400};
 const std::vector<uint16_t> kDeviceSilent{3389};
 
+// What the made-up open ports say about themselves; an open port not
+// listed says nothing. TLS ports say "TLS" by themselves
+// (model::banner_text()).
+const std::vector<model::PortBanner> kPretendBanners{
+    {22, "OpenSSH_9.9p2 Debian-1"},
+    {80, "lighttpd/1.4.76"},
+    {631, "CUPS/2.4 IPP/2.1"},
+    {1900, "Linux/6.1 UPnP/1.0 MiniUPnPd/2.3.7"},
+    {5000, "nginx/1.26.3"},
+    {7000, "MediaRenderer/3.2"},
+};
+// A made-up greeting comes this long after its port took the connection.
+constexpr uint32_t kPretendBannerMs = 200;
+
 bool contains(const std::vector<uint16_t>& list, uint16_t port) {
     return std::find(list.begin(), list.end(), port) != list.end();
+}
+
+// What the made-up `port` says, and how long after its connection it is
+// done reading (model::kBannerReadMs when it says nothing).
+std::string pretend_banner(uint16_t port, uint32_t& reading_ms) {
+    const model::BannerProbe probe = model::banner_probe(port);
+    if (probe == model::BannerProbe::Tls) {
+        reading_ms = 0;
+        return model::banner_text(probe, nullptr, 0);
+    }
+    for (const model::PortBanner& banner : kPretendBanners) {
+        if (banner.port == port) {
+            reading_ms = kPretendBannerMs;
+            return banner.text;
+        }
+    }
+    reading_ms = static_cast<uint32_t>(model::kBannerReadMs);
+    return {};
 }
 
 } // namespace
@@ -157,8 +191,11 @@ model::PortRun pretend_port_scan(uint32_t elapsed_ms, const std::string& target,
         const uint16_t port = ports[index].port;
         const uint32_t sent_at = static_cast<uint32_t>(index) * static_cast<uint32_t>(model::kPortIntervalMs);
         const bool quiet = contains(*silent, port);
+        const bool is_open = !quiet && contains(*open, port);
         const uint32_t settled_at = sent_at + (quiet ? static_cast<uint32_t>(model::kPortTimeoutMs) : 2u);
-        end = std::max(end, settled_at);
+        uint32_t reading_ms = 0;
+        const std::string banner = is_open ? pretend_banner(port, reading_ms) : std::string();
+        end = std::max(end, settled_at + reading_ms);
         if (elapsed_ms < sent_at) {
             continue;
         }
@@ -169,8 +206,14 @@ model::PortRun pretend_port_scan(uint32_t elapsed_ms, const std::string& target,
         }
         if (quiet) {
             ++run.silent;
-        } else if (contains(*open, port)) {
+        } else if (is_open) {
             run.open.push_back(port);
+            if (model::banner_probe(port) == model::BannerProbe::Http) {
+                ++sent;  // the request for its headers
+            }
+            if (!banner.empty() && elapsed_ms >= settled_at + reading_ms) {
+                run.banners.push_back({port, banner});
+            }
         } else {
             ++run.closed;
         }

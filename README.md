@@ -111,8 +111,9 @@ default).
 `7` on Home. Pick a tool with F/X and open it with `Enter` or `6`. On
 Ping, DNS, Trace and Ports, Z/C steps through a few ready-made targets
 (your router or `9.9.9.9`, for example) and `5` lets you type your own.
-`Enter` or `6` starts and stops a run. Only one tool runs at a time, and a
-counter at the bottom shows how many packets LokiCTL has sent.
+`Enter` or `6` starts and stops a run (on Ports, `6` only, once a scan has
+finished). Only one tool runs at a time, and a counter at the bottom shows
+how many packets LokiCTL has sent.
 
 - Ping sends 10 echoes and shows the times and the loss.
 - DNS looks up a name and shows its addresses and the server that answered.
@@ -122,7 +123,13 @@ counter at the bottom shows how many packets LokiCTL has sent.
   channel and security. It can't scan while the hotspot runs.
 - Ports tries 50 common TCP ports on one device, 10 a second. It only takes
   private addresses (like `192.168.x.x`) on a network the Cardputer is on,
-  and it sends nothing until you press `6` a second time.
+  and it sends nothing until you press `6` a second time. Open ports are
+  asked what they run: SSH, FTP, mail and Telnet servers by their
+  greeting, web servers by one request for their name. After a scan,
+  `Enter` or `7` shows the device: its name and MAC address if Discover
+  knows them, each open port in plain words ("remote login", "web page")
+  with the software it named, and a short note under ports that are often
+  a risk (Telnet sends passwords in plain text, for example).
 - Speed downloads and then uploads for 10 seconds each, or 50 MB each,
   whichever comes first. It uses Cloudflare's speed test over HTTPS. You
   can use another server with a `speed_test_server=` line in the

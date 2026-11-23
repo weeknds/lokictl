@@ -42,8 +42,11 @@ bool port_scan_allowed(uint32_t target, const std::vector<OwnNetwork>& networks,
 // of the examples (10.0.0.0/24, 10.42.0.0/24 and 10.20.30.0/24); any other
 // address fails at once, with nothing sent. The router (.1) and the
 // Cardputer itself have their own sets of open ports; any other device
-// gets one of three made-up sets, picked from its address. `sent` is the
-// number of attempts made by then; `done` says the run has ended.
+// gets one of three made-up sets, picked from its address. Some open ports
+// say what they are (made-up greetings, a little after they open; a TLS
+// port says "TLS"), the others keep the run going for
+// model::kBannerReadMs. `sent` is the number of attempts made by then,
+// plus one request for each open web port; `done` says the run has ended.
 model::PortRun pretend_port_scan(uint32_t elapsed_ms, const std::string& target, uint32_t& sent, bool& done);
 
 } // namespace platform

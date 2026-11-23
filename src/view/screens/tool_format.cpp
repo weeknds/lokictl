@@ -7,6 +7,8 @@
 #include "tool_format.h"
 
 #include "home_format.h"
+#include "service_banner.h"
+#include "service_rules.h"
 
 #include <cstdio>
 
@@ -263,6 +265,43 @@ std::string ports_counts_text(const model::PortRun& run) {
     }
     return std::to_string(run.open.size()) + " open · " + std::to_string(run.closed) + " closed · " +
            std::to_string(run.silent) + " no answer";
+}
+
+std::vector<DetailLine> host_detail_lines(const model::PortRun& run,
+                                          const std::string& name,
+                                          const std::string& hardware_address) {
+    std::vector<DetailLine> lines;
+    if (!name.empty()) {
+        lines.push_back({"name", {name, kToneText}});
+    }
+    if (!hardware_address.empty()) {
+        lines.push_back({"MAC", {hardware_address, kToneText}});
+    }
+    const std::vector<std::string> items = open_port_items(run);
+    for (std::size_t index = 0; index < run.open.size() && index < items.size(); ++index) {
+        const uint16_t port = run.open[index];
+        // Everyday words first, then what the port said ("encrypted" for
+        // a TLS port).
+        std::string text = model::port_plain(port);
+        std::string said = model::port_banner(run, port);
+        if (!said.empty() && model::banner_probe(port) == model::BannerProbe::Tls) {
+            said = "encrypted (" + said + ")";
+        }
+        if (!said.empty()) {
+            text += (text.empty() ? "" : " · ") + said;
+        }
+        lines.push_back({items[index], {text, kToneText}});
+        if (const model::ServiceRule* rule = model::service_rule(port)) {
+            const int32_t tone = rule->level == model::RiskLevel::Risk      ? kToneError
+                                 : rule->level == model::RiskLevel::Warning ? kToneWarning
+                                                                            : kToneMuted;
+            lines.push_back({"", {rule->note, tone}});
+        }
+    }
+    if (run.open.empty()) {
+        lines.push_back({"", {"No open ports", kToneMuted}});
+    }
+    return lines;
 }
 
 ToneText ports_status(const model::PortRun& run) {

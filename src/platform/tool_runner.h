@@ -43,8 +43,10 @@ struct ToolJob {
 // without a name, each counted with count_sent(). A port scan
 // (port_scan.h) makes one unprivileged TCP connection attempt to each port
 // of model::common_ports() on one private address of the Cardputer's own
-// networks, 10 a second, at most 8 waiting, each counted with count_sent();
-// a connection made is closed at once and nothing is written. A speed test
+// networks, 10 a second, at most 8 sockets at once, each counted with
+// count_sent(); a connection made is asked what it is (service_banner.h:
+// what the service says first, or one counted HEAD request on a web port,
+// read for at most 1.5 s), then closed. A speed test
 // (speed_test.h) downloads, then uploads, each for 10 s or 50 MB over
 // HTTPS through libcurl (loaded for the run), each request counted once
 // with count_sent(). It never changes a network setting. A listen run keeps what it heard (whole PCAP records, at most
