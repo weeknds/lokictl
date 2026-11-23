@@ -97,6 +97,18 @@ lv_obj_t* map_internet(lv_obj_t* parent, int32_t x, int32_t y, int32_t size, con
     return obj;
 }
 
+lv_obj_t* map_switch(lv_obj_t* parent, int32_t x, int32_t y, int32_t width, int32_t height, const Theme& theme) {
+    auto* obj = plain_object(parent);
+    lv_obj_set_pos(obj, x, y);
+    lv_obj_set_size(obj, width, height);
+    lv_obj_set_style_bg_color(obj, theme.colors.background, 0);
+    lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(obj, theme.colors.text, 0);
+    lv_obj_set_style_border_width(obj, 1, 0);
+    lv_obj_set_style_border_opa(obj, LV_OPA_COVER, 0);
+    return obj;
+}
+
 lv_obj_t* map_device(lv_obj_t* parent,
                      int32_t x,
                      int32_t y,

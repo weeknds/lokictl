@@ -855,6 +855,18 @@ the home page. Opening it sends nothing.
   left, with `Join a network first` at the bottom; with a network and no
   devices yet the bottom says `Press 6 to listen` (`Listening…` while a run
   has heard nothing yet, `No devices heard` after one).
+- **Topology.** On a cable port (not on Wi-Fi) a listen run also runs the
+  capture helper's `topology` command next to `discover`, which hears LLDP
+  and CDP frames
+  (`platform/topology.*`). When the first switch or access point it heard
+  is not the router itself, a small box on the uplink stands for it, and
+  its Discover entry (same address or hardware address) folds into it.
+  When it is the router (its management address is the gateway, or its
+  chassis or sending address is the router's), no box is drawn and the
+  router's detail says `router, port 5`. Once a trace went out to the
+  internet (key 8 here, or the Trace page), up to three small dots on the
+  internet's line stand for the hops between the router and the target
+  (muted for a hop that gave no answer).
 - **The panel** (right, behind a thin line): clock and battery, the
   interface (`NO NETWORK` without one), `devices N` and the state of
   listening (`listening 4:12`, `listened 5:00`, `stopped at 1:23`,
@@ -863,7 +875,14 @@ the home page. Opening it sends nothing.
   colour), its kind (`printer`, `hotspot client`, `eth0 · cable` for this
   device, `--` when not known), its IPv4 address, its hardware address and
   `heard 12 s ago` (a client: its signal; this device: its Wi-Fi signal or
-  link speed).
+  link speed). The internet (the route): `Route to internet` (`To
+  internet` where that does not fit), `7 hops, 13 ms` (`not traced yet`,
+  `tracing, hop 4`, `trace failed`), the address traced and `Enter: every
+  hop`. The switch: its name (`switch` when it gives none), `switch, port
+  5`, its management address, what it is in whole words that fit (`8-port
+  managed`) and `Network 10 (VLAN)` (else `heard 12 s ago`). This device's
+  kind says `via office-sw port 5`, or `via office-sw` with `port 5, link
+  100M` on the last line when that is too wide.
 
 The Cardputer's own ports fold into this device and the entry with the
 router's address into the router; neither takes a slot. A device keeps its
@@ -876,23 +895,28 @@ built again only when the set of nodes changes.
 
 | Key | What it does |
 |---|---|
-| `f`/`x`/`z`/`c` or the arrows | step through the router, the network devices (clockwise from the lower left), this device and the clients; no wrap |
+| `f`/`x`/`z`/`c` or the arrows | step through the internet (the route), the router, the network devices (clockwise from the lower left), the switch, this device and the clients; no wrap |
 | `6` START / STOP | the same passive listen run as the Discover page's key 6 (5 minutes on the uplink interface, sends nothing), or stops it; off without a network and while another tool runs |
-| `enter` | on a hotspot client: opens the Devices page on it |
+| `8` ROUTE / STOP | the first press selects the internet and shows `Press 8 again to trace` at the bottom (nothing sent); a second 8 within 10 s traces the route to 9.9.9.9 with the Trace page's code (one probe a hop, at most 20, each counted in Sent) and sets the Trace page to the same target; any other key, a short ESC or 10 s cancels; while the trace runs, `8` stops it; off without a network and while another tool runs |
+| `enter` | on a hotspot client: opens the Devices page on it; on the internet once a route was traced: opens the Trace page with every hop |
 | `4` BACK or a short ESC | goes back; a run goes on |
 
-Keys 5, 7 and 8 are empty; a probe can only be started on the Discover
-page. The slots and the selected node live in the view model
-(`map_slots()`, `map_selection_*`), so a theme switch keeps both; opening
-the page from Discover starts with empty slots and the router selected. The
-help panel shows the badge `MAP` and four rows.
+Keys 5 and 7 are empty; a probe can only be started on the Discover page.
+The slots and the selected node live in the view model (`map_slots()`,
+`map_selection_*`), so a theme switch keeps both; opening the page from
+Discover starts with empty slots and the router selected. The help panel
+shows the badge `MAP` and five rows.
 Snapshots: `--page map` shows the page before a run (the sample router
 with its three clients), `--keys 6 --settle-ms 12000` the made-up devices
 around the router, `--data cable --keys 6,right,right,right --settle-ms
 12000` the brackets and the panel on the unnamed speaker, `--keys
 right,right,right` a client, and `--data offline` the page without a
 network. The made-up runs have at most six devices, so `+N` does not show
-on the Mac.
+on the Mac. On the made-up cable port (`--data cable`) a made-up switch
+`office-sw` (port 5, network 10) is heard 1.8 s into a listen run:
+`--data cable --keys 6,6,down,down,down --settle-ms 2500` selects it, one
+more `down` shows this device; `--data cable --keys 8,8 --settle-ms 9000`
+shows a traced route.
 
 ## The Status page
 

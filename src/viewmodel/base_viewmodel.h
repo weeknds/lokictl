@@ -36,16 +36,19 @@ constexpr int32_t kHomeClientRows = 3;
 // The highlighted row of the Modes page while it follows the active mode.
 constexpr int32_t kModesFollowsActive = -1;
 
-// The Map page's nodes, as map_selection() names them: the router, the
-// network devices' slots (slot s is kMapFirstSlot + s), this device, and
-// the hotspot's clients (client i of the home page's list is
-// kMapFirstClient + i, at most kHomeClientRows of them). A node keeps its
-// number while the page is open, so the selection stays on it when other
-// nodes come and go.
+// The Map page's nodes, as map_selection() names them, in stepping order:
+// the route to the internet, the router, the network devices' slots (slot
+// s is kMapFirstSlot + s), the switch between the router and this device,
+// this device, and the hotspot's clients (client i of the home page's list
+// is kMapFirstClient + i, at most kHomeClientRows of them). A node keeps
+// its number while the page is open, so the selection stays on it when
+// other nodes come and go.
 constexpr int32_t kMapSlots = 6;
-constexpr int32_t kMapRouter = 0;
-constexpr int32_t kMapFirstSlot = 1;
-constexpr int32_t kMapDevice = kMapFirstSlot + kMapSlots;
+constexpr int32_t kMapRoute = 0;
+constexpr int32_t kMapRouter = 1;
+constexpr int32_t kMapFirstSlot = 2;
+constexpr int32_t kMapSwitch = kMapFirstSlot + kMapSlots;
+constexpr int32_t kMapDevice = kMapSwitch + 1;
 constexpr int32_t kMapFirstClient = kMapDevice + 1;
 
 // A change of the hotspot the Hotspot page asks for (see

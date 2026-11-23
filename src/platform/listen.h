@@ -234,12 +234,15 @@ private:
 };
 
 #if !USE_DESKTOP
-// The helper's two fixed commands: `discover` (ARP, DHCP, mDNS and SSDP,
-// for the Discover page) and `watch` (ARP, DHCP, TCP connection requests to
-// this machine and IPv6 router announcements, for Watch, watch.h).
+// The helper's three fixed commands: `discover` (ARP, DHCP, mDNS and SSDP,
+// for the Discover page), `watch` (ARP, DHCP, TCP connection requests to
+// this machine and IPv6 router announcements, for Watch, watch.h) and
+// `topology` (LLDP and CDP, what switches say about themselves, for the
+// Map, topology.h).
 enum class CaptureCommand {
     Discover,
     Watch,
+    Topology,
 };
 
 // The capture helper, run for one listen or one Watch run (device builds
@@ -254,7 +257,8 @@ public:
     CaptureProcess& operator=(const CaptureProcess&) = delete;
 
     // Runs "lokictl-capture discover <interface_name> <seconds>" (or
-    // "watch" for CaptureCommand::Watch) with an empty environment, /dev/null for its standard input and error, no
+    // "watch" for CaptureCommand::Watch, "topology" for
+    // CaptureCommand::Topology) with an empty environment, /dev/null for its standard input and error, no
     // blocked signals, and its standard output on a pipe whose reading end
     // (fd(), non-blocking, closed on exec) stays here. Returns true, or
     // false with `error` and `reason` set (ToolError::NotAllowed, or

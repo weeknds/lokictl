@@ -85,6 +85,11 @@ text fits the screen (`tests/health_rules.cpp`).
 `build/darwin-arm64/Debug/lokictl_trap_tests` (also run by `ctest`)
 checks the trap's limits, how what a visitor sent is shown, the reading of
 the listening ports and the fixed port map (`tests/trap_checks.cpp`).
+`build/darwin-arm64/Debug/lokictl_topology_tests` (also run by `ctest`,
+built with the address and undefined-behaviour checkers) reads made-up
+LLDP and CDP frames: whole, cut short at every byte, with fields running
+past the end, hostile texts and random bytes, plus the Map's router, port
+and network words (`tests/topology_frames.cpp`).
 
 ## Screenshots without a window
 

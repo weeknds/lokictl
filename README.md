@@ -232,6 +232,16 @@ internet above and the hotspot's devices below. Move with F/X/Z/C, and the
 panel on the right shows the selected device. `6` starts a listen run from
 here too.
 
+The map also shows how the network is built. While listening on a cable,
+LokiCTL hears what a managed switch or access point says about itself
+(LLDP or CDP), and the map puts a small box for it between your router and
+the Cardputer: its name, the port you're plugged into (`switch, port 5`)
+and the port's network (`Network 10 (VLAN)`). Plugged straight into the
+router, the router's details get the port instead. Unmanaged switches say
+nothing, so they don't show. `8` twice traces the route to the internet
+(the same as Trace to 9.9.9.9); the hops show as dots above the router, and
+`Enter` on the internet lists each one.
+
 ### Remote view
 
 Remote view shows the Cardputer's screen in a web browser on another
@@ -363,6 +373,9 @@ the details and lists every file LokiCTL writes.
 | UPnP | A router feature that lets apps and devices open ports to the internet by themselves. |
 | Sent | How many packets LokiCTL has sent since it started. |
 | Trap | Fake services that catch whoever connects to them (a honeypot). |
+| Switch, port | A box that joins cables. A managed one says its name and which of its ports (sockets) you're plugged into, using LLDP or CDP. |
+| `Network 10 (VLAN)` | Several separate networks can share the same cables; each has a number (a VLAN). This is the one your port is on. |
+| Route, hop | The way your traffic takes to the internet; each router on the way is a hop. |
 | `Caught` | How many times someone connected to the trap. |
 
 ## Data use

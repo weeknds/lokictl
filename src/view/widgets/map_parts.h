@@ -15,7 +15,7 @@
 namespace view::widgets {
 
 // The pieces a network map is drawn with: dots, rings, lines, the internet's
-// square, this device, stars and the selection's brackets. Each one is a
+// square, a switch's box, this device, stars and the selection's brackets. Each one is a
 // plain object (or an lv_line) placed at a fixed position in its parent's
 // coordinates, coloured from the theme or from a colour the caller takes
 // from the theme. The Constellation home page and the Map page draw with
@@ -62,6 +62,10 @@ lv_obj_t* map_orbit(lv_obj_t* parent, int32_t centre_x2, int32_t centre_y2, int3
 // The internet: a square of `size` at (x, y), outlined in the text colour
 // and filled with the ground colour.
 lv_obj_t* map_internet(lv_obj_t* parent, int32_t x, int32_t y, int32_t size, const Theme& theme);
+
+// A switch: a box `width` by `height` at (x, y), outlined in the text
+// colour and filled with the ground colour.
+lv_obj_t* map_switch(lv_obj_t* parent, int32_t x, int32_t y, int32_t width, int32_t height, const Theme& theme);
 
 // This device: a ring of `size` at (x, y) with a `border` px border and a
 // dot of `dot_size` in its middle, both in `color`. Returns the ring.

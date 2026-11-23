@@ -799,7 +799,8 @@ target_link_libraries(${PROJECT_NAME}
 
 # Checks of the service and version reading and of the list of known
 # security holes (tests/vuln_checks.cpp), of Watch's alerts, of the
-# health check's rules and of the trap, on the Mac only:
+# health check's rules, of the trap and of the topology frames, on the Mac
+# only:
 # build/darwin-arm64/Debug/lokictl_tests, or ctest.
 if(USE_DESKTOP)
     add_executable(${PROJECT_NAME}_tests tests/vuln_checks.cpp src/platform/dns_message.cpp)
@@ -840,6 +841,16 @@ if(USE_DESKTOP)
     add_executable(${PROJECT_NAME}_trap_tests tests/trap_checks.cpp)
     target_link_libraries(${PROJECT_NAME}_trap_tests PRIVATE ${PROJECT_NAME}_model)
     add_test(NAME trap_checks COMMAND ${PROJECT_NAME}_trap_tests)
+
+    # The LLDP and CDP reading from made-up, broken and hostile frames
+    # (tests/topology_frames.cpp), with the address and undefined-behaviour
+    # checkers: build/darwin-arm64/Debug/lokictl_topology_tests, or ctest.
+    add_executable(${PROJECT_NAME}_topology_tests tests/topology_frames.cpp src/platform/topology.cpp)
+    target_include_directories(${PROJECT_NAME}_topology_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/platform)
+    target_link_libraries(${PROJECT_NAME}_topology_tests PRIVATE ${PROJECT_NAME}_model)
+    target_compile_options(${PROJECT_NAME}_topology_tests PRIVATE -fsanitize=address,undefined -fno-sanitize-recover=all)
+    target_link_options(${PROJECT_NAME}_topology_tests PRIVATE -fsanitize=address,undefined)
+    add_test(NAME topology_frames COMMAND ${PROJECT_NAME}_topology_tests)
 endif()
 
 # Package deb

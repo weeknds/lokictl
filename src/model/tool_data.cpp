@@ -7,6 +7,7 @@
 #include "tool_data.h"
 
 #include <algorithm>
+#include <cctype>
 
 namespace model {
 namespace {
@@ -112,10 +113,81 @@ bool operator!=(const HeardDevice& left, const HeardDevice& right) {
     return !(left == right);
 }
 
+bool operator==(const Neighbour& left, const Neighbour& right) {
+    return left.protocol == right.protocol && left.hardware_address == right.hardware_address &&
+           left.chassis == right.chassis && left.name == right.name && left.port == right.port &&
+           left.model == right.model && left.address == right.address && left.vlan == right.vlan &&
+           left.vlans == right.vlans && left.heard_s == right.heard_s;
+}
+
+bool operator!=(const Neighbour& left, const Neighbour& right) {
+    return !(left == right);
+}
+
+bool neighbour_is_router(const Neighbour& neighbour,
+                         const std::string& gateway_address,
+                         const std::string& router_hardware) {
+    if (!gateway_address.empty() && neighbour.address == gateway_address) {
+        return true;
+    }
+    if (router_hardware.empty()) {
+        return false;
+    }
+    return neighbour.chassis == router_hardware || neighbour.hardware_address == router_hardware;
+}
+
+std::string neighbour_port_text(const Neighbour& neighbour) {
+    const std::string& port = neighbour.port;
+    if (port.empty()) {
+        return {};
+    }
+    // "port eth0", never a bare "eth0" that reads like the Cardputer's own
+    // port; a text that already starts with the word stays ("Port 5").
+    const bool says_port = port.size() >= 4 && std::equal(port.begin(), port.begin() + 4, "port", [](char a, char b) {
+                               return std::tolower(static_cast<unsigned char>(a)) == b;
+                           });
+    return says_port ? port : "port " + port;
+}
+
+std::string neighbour_vlan_text(const Neighbour& neighbour, std::size_t max_chars) {
+    // The port's own network says the most; the others only without it.
+    if (neighbour.vlan > 0) {
+        std::string text = "Network " + std::to_string(neighbour.vlan) + " (VLAN)";
+        if (text.size() > max_chars) {
+            text = "Network " + std::to_string(neighbour.vlan);
+        }
+        return text.size() <= max_chars ? text : std::string();
+    }
+    const std::vector<int32_t>& all = neighbour.vlans;
+    if (all.empty()) {
+        return {};
+    }
+    if (all.size() == 1) {
+        Neighbour one;
+        one.vlan = all.front();
+        return neighbour_vlan_text(one, max_chars);
+    }
+    // As many numbers as fit, the rest counted.
+    for (std::size_t shown = all.size(); shown >= 1; --shown) {
+        std::string text = "Networks";
+        for (std::size_t index = 0; index < shown; ++index) {
+            text += (index == 0 ? " " : ", ") + std::to_string(all[index]);
+        }
+        if (shown < all.size()) {
+            text += " +" + std::to_string(all.size() - shown);
+        }
+        if (text.size() <= max_chars) {
+            return text;
+        }
+    }
+    return {};
+}
+
 bool operator==(const ListenRun& left, const ListenRun& right) {
     return left.state == right.state && left.error == right.error && left.reason == right.reason &&
            left.interface_name == right.interface_name && left.elapsed_s == right.elapsed_s &&
-           left.frames == right.frames && left.devices == right.devices && left.save == right.save &&
+           left.frames == right.frames && left.devices == right.devices && left.neighbours == right.neighbours &&
+           left.save == right.save &&
            left.save_name == right.save_name && left.save_reason == right.save_reason &&
            left.save_bytes == right.save_bytes && left.save_full == right.save_full;
 }

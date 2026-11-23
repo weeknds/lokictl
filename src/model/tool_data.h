@@ -192,6 +192,51 @@ constexpr std::size_t kSsdpServerMax = 60;
 bool operator==(const HeardDevice& left, const HeardDevice& right);
 bool operator!=(const HeardDevice& left, const HeardDevice& right);
 
+// A switch, access point or router right next to the Cardputer that said
+// what it is in an LLDP or CDP frame, heard while listening (topology.h).
+// Every text is printable ASCII, one line, at most kNeighbourTextMax
+// characters; a text that is not known is empty.
+struct Neighbour {
+    std::string protocol;          // "LLDP" or "CDP"
+    std::string hardware_address;  // the frame's sender, "02:00:00:00:00:02"
+    std::string chassis;           // LLDP: its chassis ID (a hardware or IPv4 address, or a name); CDP: empty
+    std::string name;              // its own name (LLDP system name, CDP device ID): "office-sw"
+    std::string port;              // the port the Cardputer is on: "5", "Port 5", "Gi0/5"
+    std::string model;             // what it is (LLDP system description, CDP platform), first line
+    std::string address;           // its management IPv4 address
+    int32_t vlan{0};               // the port's own network number (VLAN): 1 to 4094, 0 not known
+    std::vector<int32_t> vlans;    // the networks (VLANs) the port names, ascending, at most kNeighbourVlansMax
+    int32_t heard_s{0};            // seconds into the run when it was last heard
+};
+
+// Neighbour texts keep at most this many characters, and the list at most
+// this many networks; a listen run keeps at most kNeighboursMax of them.
+constexpr std::size_t kNeighbourTextMax = 40;
+constexpr std::size_t kNeighbourVlansMax = 8;
+constexpr std::size_t kNeighboursMax = 4;
+
+bool operator==(const Neighbour& left, const Neighbour& right);
+bool operator!=(const Neighbour& left, const Neighbour& right);
+
+// Whether `neighbour` is the router itself (the Cardputer plugged straight
+// into it): its management address is the router's `gateway_address`, or
+// its chassis ID or sending address is the router's hardware address
+// `router_hardware` (as Discover heard it; empty when not known).
+bool neighbour_is_router(const Neighbour& neighbour,
+                         const std::string& gateway_address,
+                         const std::string& router_hardware);
+
+// The port in a few plain words: "port 5", "port Gi0/5", "port eth0"; a
+// text that already starts with "port" stays ("Port 5"); empty when not
+// known.
+std::string neighbour_port_text(const Neighbour& neighbour);
+
+// The networks (VLANs) in a few plain words, at most `max_chars`
+// characters: "Network 10 (VLAN)" for the port's own one; without it the
+// ones the port names, "Networks 1, 20", cut to "Networks 1 +2" when they
+// do not fit; empty when none is known.
+std::string neighbour_vlan_text(const Neighbour& neighbour, std::size_t max_chars);
+
 // Where saving a listen run as a PCAP file stands.
 enum class CaptureSave : int32_t {
     None = 0,  // not asked
@@ -210,6 +255,7 @@ struct ListenRun {
     int32_t elapsed_s{0};             // seconds since the run started; stops when it ends
     int32_t frames{0};                // ARP, DHCP, mDNS and SSDP frames heard
     std::vector<HeardDevice> devices; // by IPv4 address, those without one last; at most kListenMaxDevices
+    std::vector<Neighbour> neighbours;  // switches and routers that said what they are, first heard first; at most kNeighboursMax
     CaptureSave save{CaptureSave::None};
     std::string save_name;            // the file's name, without its folder ("20261123-075130.pcap")
     std::string save_reason;          // with CaptureSave::Failed ("disk full")

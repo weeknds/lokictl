@@ -1271,7 +1271,10 @@ bool CaptureProcess::start(const std::string& interface_name,
     // Only this end stays here; it never blocks the runner's loop.
     fcntl(ends[0], F_SETFL, fcntl(ends[0], F_GETFL) | O_NONBLOCK);
 
-    std::string words[] = {"lokictl-capture", command == CaptureCommand::Watch ? "watch" : "discover",
+    const char* command_word = command == CaptureCommand::Watch      ? "watch"
+                               : command == CaptureCommand::Topology ? "topology"
+                                                                     : "discover";
+    std::string words[] = {"lokictl-capture", command_word,
                            interface_name, std::to_string(seconds)};
     char* argv[] = {words[0].data(), words[1].data(), words[2].data(), words[3].data(), nullptr};
     char* environment[] = {nullptr};

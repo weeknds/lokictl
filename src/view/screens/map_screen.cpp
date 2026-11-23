@@ -22,7 +22,9 @@ namespace parts = view::widgets;
 using viewmodel::kMapDevice;
 using viewmodel::kMapFirstClient;
 using viewmodel::kMapFirstSlot;
+using viewmodel::kMapRoute;
 using viewmodel::kMapRouter;
+using viewmodel::kMapSwitch;
 
 // --- The map (x 0-187). The chain runs down the point between pixels 93
 // and 94; even-sized shapes are centred on it.
@@ -56,6 +58,19 @@ constexpr int32_t kDeviceY       = 70;
 constexpr int32_t kDeviceSize    = 14;
 constexpr int32_t kDeviceBorder  = 2;
 constexpr int32_t kDeviceDotSize = 6;
+
+// The route's hops: up to three small dots on the internet's line, centred
+// on the chain; their tops by how many are drawn.
+constexpr std::size_t kHops = MapScreen::kRouteDots;
+constexpr int32_t kHopX    = 92;
+constexpr int32_t kHopSize = 4;
+constexpr int32_t kHopTops[kHops][kHops] = {{21, 0, 0}, {18, 24, 0}, {15, 21, 27}};
+
+// The switch: a box on the uplink between the router and this device.
+constexpr int32_t kSwitchX      = 87;
+constexpr int32_t kSwitchY      = 53;
+constexpr int32_t kSwitchWidth  = 14;
+constexpr int32_t kSwitchHeight = 8;
 
 // Where the lines to the network devices and to the clients start; the
 // router's and the device's rings cover these points.
@@ -94,10 +109,13 @@ constexpr std::size_t kClientUse[kClients + 1][kClients] = {
 // (Constellation only, see build_map()).
 constexpr Point kStars[] = {{16, 8}, {12, 88}, {176, 90}};
 
-// The brackets: around a dot, the router and this device.
-constexpr int32_t kDotBracketHeight    = 16;
-constexpr int32_t kRouterBracketHeight = 18;
-constexpr int32_t kDeviceBracketHeight = 20;
+// The brackets: around a dot, the router, this device, the internet and
+// the switch.
+constexpr int32_t kDotBracketHeight      = 16;
+constexpr int32_t kRouterBracketHeight   = 18;
+constexpr int32_t kDeviceBracketHeight   = 20;
+constexpr int32_t kInternetBracketHeight = 16;
+constexpr int32_t kSwitchBracketHeight   = 14;
 
 // The bottom row: "+N" at the left, or a note centred under the chain.
 constexpr int32_t kBottomY    = 122;
@@ -109,6 +127,13 @@ static_assert(kInternetX + kInternetSize / 2 == kRouterLinkX && kRouterX + kRout
                   kDeviceX + kDeviceSize / 2 == kRouterLinkX && kUplinkX + kUplinkWidth / 2 == kRouterLinkX,
               "the chain's parts are centred on one line");
 static_assert(kRouterY + kRouterSize < kDeviceY, "the uplink runs between the router and the device");
+static_assert(kHopX + kHopSize / 2 == kRouterLinkX && kSwitchX + kSwitchWidth / 2 == kRouterLinkX,
+              "the hops and the switch sit on the chain");
+static_assert(kInternetY + kInternetSize < kHopTops[kHops - 1][0] &&
+                  kHopTops[kHops - 1][kHops - 1] + kHopSize < kRouterY,
+              "the hops sit between the internet and the router");
+static_assert(kRouterY + kRouterSize < kSwitchY && kSwitchY + kSwitchHeight < kDeviceY,
+              "the switch sits between the router and the device");
 static_assert(kNoteX + kNoteWidth < kMapWidth, "the note stays on the map");
 static_assert(kSlots == static_cast<std::size_t>(viewmodel::kMapSlots), "one slot per view model slot");
 static_assert(kClients == static_cast<std::size_t>(viewmodel::kHomeClientRows), "one slot per client row");
@@ -227,6 +252,24 @@ std::string or_unknown(const std::string& text) {
     return text.empty() ? std::string("--") : text;
 }
 
+// Whether `text` is an IPv4 address out on the internet: not a private,
+// link-local, loopback or 0.x address.
+bool internet_address(const std::string& text) {
+    if (!model::is_ipv4_text(text) || model::port_scan_address(text)) {
+        return false;
+    }
+    return text.rfind("127.", 0) != 0 && text.rfind("0.", 0) != 0;
+}
+
+// "14 ms", "0.9 ms": a hop's round trip.
+std::string hop_time_text(int32_t time_us) {
+    if (time_us < 10000) {
+        const int32_t tenths = (time_us + 50) / 100;
+        return std::to_string(tenths / 10) + "." + std::to_string(tenths % 10) + " ms";
+    }
+    return std::to_string((time_us + 500) / 1000) + " ms";
+}
+
 } // namespace
 
 MapScreen::MapScreen(viewmodel::BaseViewModel& view_model,
@@ -234,6 +277,13 @@ MapScreen::MapScreen(viewmodel::BaseViewModel& view_model,
                      view::ThemeEngine& theme_engine)
     : BaseScreen(view_model, assets, theme_engine) {
     init(Layout::NoTitleBar);
+}
+
+MapScreen::~MapScreen() {
+    if (confirm_timer_) {
+        lv_timer_delete(confirm_timer_);
+        confirm_timer_ = nullptr;
+    }
 }
 
 bool MapScreen::handles(model::AppPage page) {
@@ -246,7 +296,8 @@ view::widgets::HelpContent MapScreen::help_content() {
                 {"ESC / 4", "Back (listening goes on)"},
                 {"F Z / X C", "Step through the map"},
                 {"6", "Listen 5 min, sends none"},
-                {"ENTER", "Devices, on a client"},
+                {"8 twice", "Route to internet, sends"},
+                {"ENTER", "Devices, or every hop"},
             }};
 }
 
@@ -256,14 +307,15 @@ view::widgets::HelpContent MapScreen::help() const {
 
 view::widgets::SoftKeySet MapScreen::soft_keys() {
     // The screen owns its soft-key bar, so the keys never outlive it.
-    // refresh() switches Start on and off and turns it into Stop.
+    // refresh() switches Start and Route on and off and turns them into
+    // Stop.
     auto& view_model = this->view_model();
     return {{
         {"Back", [&view_model] { view_model.go_back(); }},
         {},
         {"Start", [this] { listen_or_stop(); }, true},
         {},
-        {},
+        {"Route", [this] { route_or_stop(); }, false, false},
     }};
 }
 
@@ -284,12 +336,86 @@ bool MapScreen::can_listen() const {
 }
 
 void MapScreen::listen_or_stop() {
+    if (confirming_) {
+        cancel_confirm();  // like any other key: only cancels
+        return;
+    }
     if (listening()) {
         view_model().request_tool_stop();
     } else if (can_listen()) {
         view_model().set_discover_scroll(0);
         view_model().request_tool_run(model::ToolKind::Listen, uplink());
     }
+}
+
+bool MapScreen::tracing() const {
+    return view_model().tools().trace.state == model::ToolState::Running;
+}
+
+bool MapScreen::can_route() const {
+    if (tracing()) {
+        return true;
+    }
+    return !model::tool_running(view_model().tools()) && !uplink().empty() &&
+           view_model().home().uplink_kind != model::LinkKind::None;
+}
+
+void MapScreen::route_or_stop() {
+    if (tracing()) {
+        cancel_confirm();
+        view_model().request_tool_stop();
+        return;
+    }
+    if (!can_route()) {
+        return;
+    }
+    if (!confirming_) {
+        // The first 8: the question; nothing is sent.
+        confirming_ = true;
+        if (!confirm_timer_) {
+            confirm_timer_ = lv_timer_create(confirm_timer_cb, kConfirmMs, this);
+        }
+        view_model().set_map_selection(kMapRoute);
+        refresh();
+        return;
+    }
+    // The second 8: the confirmation, for this trace only. The Trace page
+    // then shows the same target (its presets follow the router).
+    cancel_confirm();
+    const bool router = model::is_ipv4_text(view_model().home().gateway_address);
+    view_model().set_tool_target(model::ToolKind::Trace, router ? 1 : 0);
+    view_model().set_trace_scroll(viewmodel::BaseViewModel::kTraceFollow);
+    view_model().request_tool_run(model::ToolKind::Trace, kRouteTarget);
+}
+
+void MapScreen::cancel_confirm() {
+    if (confirm_timer_) {
+        lv_timer_delete(confirm_timer_);
+        confirm_timer_ = nullptr;
+    }
+    if (confirming_) {
+        confirming_ = false;
+        refresh();
+    }
+}
+
+void MapScreen::confirm_timer_cb(lv_timer_t* timer) {
+    auto* screen = static_cast<MapScreen*>(lv_timer_get_user_data(timer));
+    if (screen) {
+        screen->cancel_confirm();
+    }
+}
+
+std::string MapScreen::fitting(const std::vector<std::string>& candidates, view::FontRole role) const {
+    const lv_font_t* font = theme().font(role);
+    for (const std::string& text : candidates) {
+        lv_point_t size{};
+        lv_text_get_size(&size, text.c_str(), font, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+        if (size.x <= kTextWidth) {
+            return text;
+        }
+    }
+    return candidates.empty() ? std::string() : candidates.back();
 }
 
 MapScreen::Nodes MapScreen::nodes() {
@@ -323,6 +449,51 @@ MapScreen::Nodes MapScreen::nodes() {
             }
             result.network.push_back(entry);
         }
+    }
+
+    // The switch or router next to the Cardputer, from the latest listen
+    // run on the uplink. A switch's own entry folds into its box.
+    const model::ListenRun& run = tools.listen;
+    if (result.linked && !run.neighbours.empty() && run.interface_name == home.uplink_name) {
+        result.has_neighbour = true;
+        result.neighbour = run.neighbours.front();
+        result.neighbour_age_s = std::max<int32_t>(run.elapsed_s - result.neighbour.heard_s, 0);
+        const std::string router_hardware =
+            result.has_router_entry ? result.router.device.hardware_address : std::string();
+        result.neighbour_is_router =
+            model::neighbour_is_router(result.neighbour, home.gateway_address, router_hardware);
+        if (!result.neighbour_is_router) {
+            const model::Neighbour& neighbour = result.neighbour;
+            const auto same = std::find_if(result.network.begin(), result.network.end(),
+                                           [&neighbour](const model::DiscoverDevice& entry) {
+                                               const model::HeardDevice& device = entry.device;
+                                               return (!neighbour.address.empty() && device.address == neighbour.address) ||
+                                                      (!device.hardware_address.empty() &&
+                                                       (device.hardware_address == neighbour.chassis ||
+                                                        device.hardware_address == neighbour.hardware_address));
+                                           });
+            if (same != result.network.end()) {
+                result.switch_entry = *same;
+                result.has_switch_entry = true;
+                result.network.erase(same);
+            }
+        }
+    }
+
+    // The route to the internet: the latest trace, when it went out to the
+    // internet. The router and the target themselves are not hops between.
+    const model::TraceRun& trace = tools.trace;
+    if (result.linked && trace.state != model::ToolState::Idle &&
+        (trace.address.empty() ? !model::is_ipv4_text(trace.target) : internet_address(trace.address))) {
+        result.has_route = true;
+        for (const model::TraceHop& hop : trace.hops) {
+            if (hop.time_us == model::kPingWaiting || (!hop.address.empty() && hop.address == home.gateway_address) ||
+                (!hop.address.empty() && hop.address == trace.address)) {
+                continue;
+            }
+            result.route_hops.push_back(hop);
+        }
+        result.route_dots = static_cast<int32_t>(std::min(result.route_hops.size(), kRouteDots));
     }
 
     // A device keeps its slot while the page is open, also while it is not
@@ -380,12 +551,16 @@ MapScreen::Nodes MapScreen::nodes() {
 std::vector<int32_t> MapScreen::present(const Nodes& nodes) const {
     std::vector<int32_t> list;
     if (nodes.linked) {
+        list.push_back(kMapRoute);
         list.push_back(kMapRouter);
     }
     for (std::size_t slot = 0; slot < kSlotCount; ++slot) {
         if (nodes.slot_device[slot] >= 0) {
             list.push_back(kMapFirstSlot + static_cast<int32_t>(slot));
         }
+    }
+    if (nodes.has_switch()) {
+        list.push_back(kMapSwitch);
     }
     list.push_back(kMapDevice);
     for (int32_t client = 0; client < nodes.clients; ++client) {
@@ -418,6 +593,72 @@ MapScreen::NodeInfo MapScreen::describe(const Nodes& nodes, int32_t node) const 
     const model::HomeData& home = view_model().home();
     NodeInfo info;
     info.address_tone = kToneAccent2;
+    const std::string port = nodes.has_neighbour ? model::neighbour_port_text(nodes.neighbour) : std::string();
+    // The networks (VLANs), as many as fit the panel.
+    std::string vlan;
+    for (std::size_t chars = 24; nodes.has_neighbour && chars >= 8; --chars) {
+        vlan = model::neighbour_vlan_text(nodes.neighbour, chars);
+        if (vlan.empty() || fitting({vlan, std::string()}) == vlan) {
+            break;
+        }
+    }
+    if (node == kMapRoute) {
+        const model::TraceRun& trace = view_model().tools().trace;
+        info.name = fitting({"Route to internet", "To internet"}, view::FontRole::Strong);
+        info.address = kRouteTarget;
+        if (!nodes.has_route) {
+            info.kind = "not traced yet";
+            info.hardware = "Press 8 twice";
+            return info;
+        }
+        info.address = or_unknown(trace.address.empty() ? trace.target : trace.address);
+        info.hardware = "Enter: every hop";
+        const auto hops = static_cast<int32_t>(trace.hops.size());
+        switch (trace.state) {
+            case model::ToolState::Running:
+                info.kind = "tracing, hop " + std::to_string(std::max<int32_t>(hops, 1));
+                break;
+            case model::ToolState::Failed:
+                info.kind = "trace failed";
+                break;
+            default: {
+                std::string kind = std::to_string(hops) + (hops == 1 ? " hop" : " hops");
+                if (trace.end == model::TraceEnd::Reached && !trace.hops.empty() && trace.hops.back().time_us >= 0) {
+                    kind += ", " + hop_time_text(trace.hops.back().time_us);
+                } else if (trace.state == model::ToolState::Stopped) {
+                    kind += ", stopped";
+                } else if (trace.end != model::TraceEnd::Reached) {
+                    kind += ", no answer";
+                }
+                info.kind = kind;
+                break;
+            }
+        }
+        return info;
+    }
+    if (node == kMapSwitch) {
+        const model::Neighbour& neighbour = nodes.neighbour;
+        info.name = neighbour.name.empty() ? std::string("switch") : neighbour.name;
+        info.kind = port.empty() ? std::string("switch") : "switch, " + port;
+        const std::string address = !neighbour.address.empty()     ? neighbour.address
+                                    : nodes.has_switch_entry        ? nodes.switch_entry.device.address
+                                                                    : std::string();
+        info.address = or_unknown(address);
+        // What it is, in as many whole words as fit ("8-port managed").
+        info.hardware = "--";
+        if (!neighbour.model.empty()) {
+            std::vector<std::string> words;
+            for (std::size_t end = neighbour.model.size(); end != std::string::npos && end > 0;
+                 end = neighbour.model.rfind(' ', end - 1)) {
+                words.push_back(neighbour.model.substr(0, end));
+            }
+            info.hardware = fitting(words);
+        } else if (!neighbour.chassis.empty()) {
+            info.hardware = neighbour.chassis;
+        }
+        info.last = vlan.empty() ? heard_text(nodes.neighbour_age_s) : vlan;
+        return info;
+    }
     if (node == kMapRouter) {
         info.name = "router";
         info.address = or_unknown(home.gateway_address);
@@ -430,6 +671,15 @@ MapScreen::NodeInfo MapScreen::describe(const Nodes& nodes, int32_t node) const 
             info.kind = "--";
             info.hardware = "--";
             info.last = "not heard yet";
+        }
+        if (nodes.has_neighbour && nodes.neighbour_is_router) {
+            // The Cardputer is plugged straight into the router.
+            if (!port.empty()) {
+                info.kind = "router, " + port;
+            }
+            if (!vlan.empty()) {
+                info.last = vlan;
+            }
         }
         return info;
     }
@@ -445,6 +695,23 @@ MapScreen::NodeInfo MapScreen::describe(const Nodes& nodes, int32_t node) const 
             info.last = "signal " + home::signal_text(home.wifi_signal_dbm);
         } else {
             info.last = "link " + home::speed_text(home.uplink_speed_mbps);
+        }
+        if (nodes.has_neighbour) {
+            // Which switch (or the router) and port it is plugged into:
+            // "via office-sw port 5", or when that is too wide "via
+            // office-sw" with the port in front of the link line.
+            const std::string who = nodes.neighbour_is_router ? std::string("router")
+                                    : nodes.neighbour.name.empty() ? std::string("switch")
+                                                                   : nodes.neighbour.name;
+            const std::string whole = port.empty() ? std::string() : "via " + who + " " + port;
+            if (!whole.empty() && fitting({whole, std::string()}) == whole) {
+                info.kind = whole;
+            } else {
+                info.kind = fitting({"via " + who, port.empty() ? std::string("via switch") : "via " + port});
+                if (!port.empty() && nodes.linked) {
+                    info.last = fitting({port + ", " + info.last, info.last});
+                }
+            }
         }
         return info;
     }
@@ -478,7 +745,20 @@ MapScreen::NodeInfo MapScreen::describe(const Nodes& nodes, int32_t node) const 
     return info;
 }
 
+bool MapScreen::on_back() {
+    if (confirming_) {
+        cancel_confirm();
+        return true;
+    }
+    return false;
+}
+
 bool MapScreen::on_key(uint32_t key) {
+    if (confirming_) {
+        // Any other key cancels the question, and does nothing else.
+        cancel_confirm();
+        return true;
+    }
     switch (key) {
         case LV_KEY_LEFT:
         case LV_KEY_UP:
@@ -489,7 +769,12 @@ bool MapScreen::on_key(uint32_t key) {
             step(1);
             return true;
         case LV_KEY_ENTER: {
-            const int32_t node = shown_selection(nodes());
+            const Nodes current = nodes();
+            const int32_t node = shown_selection(current);
+            if (node == kMapRoute && current.has_route) {
+                view_model().open_tool(model::ToolKind::Trace);
+                return true;
+            }
             if (node < kMapFirstClient) {
                 return false;
             }
@@ -519,6 +804,8 @@ void MapScreen::build(const Nodes& nodes) {
     slot_tones_.fill(-1);
     client_dots_ = {};
     client_tones_.fill(-1);
+    route_dots_ = {};
+    route_tones_.fill(-1);
     brackets_ = {};
     brackets_shown_ = -1;
     internet_ = Text{};
@@ -548,6 +835,8 @@ void MapScreen::build(const Nodes& nodes) {
         }
     }
     built_clients_ = nodes.clients;
+    built_switch_ = nodes.has_switch();
+    built_route_dots_ = nodes.route_dots;
 }
 
 void MapScreen::build_map(const Nodes& nodes) {
@@ -582,6 +871,15 @@ void MapScreen::build_map(const Nodes& nodes) {
     parts::map_internet(map, kInternetX, kInternetY, kInternetSize, theme);
     if (nodes.linked) {
         parts::map_ring(map, kRouterX, kRouterY, kRouterSize, 1, colors.text, theme);
+    }
+    // The route's hops on the internet's line; update() colours them.
+    const auto dots = static_cast<std::size_t>(nodes.route_dots);
+    for (std::size_t dot = 0; dot < dots; ++dot) {
+        route_dots_[dot] = parts::map_dot(map, kHopX, kHopTops[dots - 1][dot], kHopSize, colors.text);
+        route_tones_[dot] = kToneText;
+    }
+    if (nodes.has_switch()) {
+        parts::map_switch(map, kSwitchX, kSwitchY, kSwitchWidth, kSwitchHeight, theme);
     }
     for (std::size_t slot = 0; slot < kSlotCount; ++slot) {
         if (nodes.slot_device[slot] >= 0) {
@@ -721,6 +1019,20 @@ void MapScreen::update(const Nodes& nodes) {
             lv_obj_set_style_bg_color(slot_dots_[slot], tone_color(theme, tone), 0);
         }
     }
+    // A hop that gave no answer is muted; with more hops than dots, the
+    // dots stand for all of them.
+    for (std::size_t dot = 0; dot < kRouteDots; ++dot) {
+        if (!route_dots_[dot]) {
+            continue;
+        }
+        const bool silent = nodes.route_hops.size() <= kRouteDots && dot < nodes.route_hops.size() &&
+                            nodes.route_hops[dot].address.empty();
+        const int32_t tone = silent ? kToneMuted : kToneText;
+        if (tone != route_tones_[dot]) {
+            route_tones_[dot] = tone;
+            lv_obj_set_style_bg_color(route_dots_[dot], tone_color(theme, tone), 0);
+        }
+    }
     for (std::size_t client = 0; client < kClientCount; ++client) {
         if (!client_dots_[client] || client >= home.clients.size()) {
             continue;
@@ -745,13 +1057,18 @@ void MapScreen::update(const Nodes& nodes) {
         lv_obj_set_style_text_letter_space(internet_.label, size.x <= kInternetLabelRoom ? spacing : 0, 0);
     }
 
-    set_hidden(overflow_.label, nodes.overflow <= 0);
+    // The route question takes the whole bottom row.
+    set_hidden(overflow_.label, nodes.overflow <= 0 || confirming_);
     if (nodes.overflow > 0) {
         set_text(overflow_, "+" + std::to_string(nodes.overflow), kToneMuted);
     }
 
     std::string note;
-    if (!nodes.linked) {
+    int32_t note_tone = kToneMuted;
+    if (confirming_) {
+        note = "Press 8 again to trace";
+        note_tone = kToneWarning;
+    } else if (!nodes.linked) {
         note = "Join a network first";
     } else if (nodes.network.empty()) {
         if (listening()) {
@@ -764,16 +1081,23 @@ void MapScreen::update(const Nodes& nodes) {
     }
     set_hidden(note_.label, note.empty());
     if (!note.empty()) {
-        set_text(note_, note, kToneMuted);
+        set_text(note_, note, note_tone);
     }
 
     // The brackets around the selected node.
     const int32_t selected = shown_selection(nodes);
     if (selected != brackets_shown_) {
         brackets_shown_ = selected;
-        if (selected == kMapRouter) {
+        if (selected == kMapRoute) {
+            parts::show_map_brackets(brackets_, kInternetX, kInternetX + kInternetSize,
+                                     kInternetY + (kInternetSize - kInternetBracketHeight) / 2,
+                                     kInternetBracketHeight);
+        } else if (selected == kMapRouter) {
             parts::show_map_brackets(brackets_, kRouterX, kRouterX + kRouterSize,
                                      kRouterY + (kRouterSize - kRouterBracketHeight) / 2, kRouterBracketHeight);
+        } else if (selected == kMapSwitch) {
+            parts::show_map_brackets(brackets_, kSwitchX, kSwitchX + kSwitchWidth,
+                                     kSwitchY + (kSwitchHeight - kSwitchBracketHeight) / 2, kSwitchBracketHeight);
         } else if (selected == kMapDevice) {
             parts::show_map_brackets(brackets_, kDeviceX, kDeviceX + kDeviceSize,
                                      kDeviceY + (kDeviceSize - kDeviceBracketHeight) / 2, kDeviceBracketHeight);
@@ -832,7 +1156,8 @@ void MapScreen::refresh() {
             slots |= 1u << slot;
         }
     }
-    if (!built_ || current.linked != built_linked_ || slots != built_slots_ || current.clients != built_clients_) {
+    if (!built_ || current.linked != built_linked_ || slots != built_slots_ || current.clients != built_clients_ ||
+        current.has_switch() != built_switch_ || current.route_dots != built_route_dots_) {
         build(current);
     }
     update(current);
@@ -842,6 +1167,13 @@ void MapScreen::refresh() {
         shown_key_ = key;
         if (auto* bar = soft_key_bar()) {
             bar->set_key(2, {key == 2 ? "Stop" : "Start", [this] { listen_or_stop(); }, true, key != 0});
+        }
+    }
+    const int32_t route_key = tracing() ? 2 : can_route() ? 1 : 0;
+    if (route_key != shown_route_key_) {
+        shown_route_key_ = route_key;
+        if (auto* bar = soft_key_bar()) {
+            bar->set_key(4, {route_key == 2 ? "Stop" : "Route", [this] { route_or_stop(); }, false, route_key != 0});
         }
     }
 }

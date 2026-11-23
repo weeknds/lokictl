@@ -9,17 +9,20 @@
  * traffic. It only ever receives; it never sends a packet.
  *
  * LokiCTL runs as the normal user. Hearing the ARP, DHCP, mDNS and SSDP
- * traffic of the network (the Discover page), and what Watch looks for,
- * needs a packet socket, which takes one Linux capability, CAP_NET_RAW. This small program holds it as a
+ * traffic of the network (the Discover page), what Watch looks for, and
+ * what switches say about themselves (the Map's topology), needs a packet
+ * socket, which takes one Linux capability, CAP_NET_RAW. This small
+ * program holds it as a
  * file capability (set by the package's postinst; it is not setuid), and
  * only root and members of the netdev group may run it (root:netdev, mode
  * 0750).
  *
- * It does one of two fixed commands, which differ only in their frame
- * filter:
+ * It does one of three fixed commands, which differ only in their frame
+ * filter (and, for topology, the two link-layer groups it listens to):
  *
  *   lokictl-capture discover INTERFACE SECONDS
  *   lokictl-capture watch INTERFACE SECONDS
+ *   lokictl-capture topology INTERFACE SECONDS
  *
  * INTERFACE is the name of an existing network interface of Ethernet type
  * (a cable port, or Wi-Fi in its normal mode): 1 to 15 characters of a-z,
@@ -40,8 +43,17 @@
  *    set, ACK clear) and was sent to this machine (packet type "host", so
  *    not its own outgoing ones); and IPv6 router announcements (ICMPv6
  *    type 134 right after the IPv6 header).
+ *    topology: LLDP (EtherType 0x88cc sent to 01:80:c2:00:00:0e) and CDP
+ *    (an IEEE 802.3 frame sent to 01:00:0c:cc:cc:cc with LLC SNAP, the
+ *    organisation code 00:00:0c and protocol 0x2000), the frames in which
+ *    switches, access points and routers say their name and port.
  * 3. The socket is bound to the interface. It is never put into
  *    promiscuous mode, so it hears only what reaches the Cardputer anyway.
+ *    For topology only, the socket also listens to those two link-layer
+ *    groups (PACKET_ADD_MEMBERSHIP), since a network card passes such
+ *    frames on only when asked to. This sends nothing and changes no
+ *    setting: the kernel drops both again when the socket closes, at the
+ *    latest when this program ends. discover and watch join no group.
  * 4. Every capability is dropped, no_new_privs is set, and a seccomp filter
  *    allows only what the rest needs: receiving, polling, the clock, write
  *    to standard output and standard error, close and exit. Every other
@@ -184,6 +196,39 @@ static struct sock_filter kWatchFilter[] = {
     /* 27 */ BPF_STMT(BPF_RET | BPF_K, 0),                    /* drop */
 };
 
+/* topology: LLDP sent to the nearest-bridge group 01:80:c2:00:00:0e, and
+ * CDP: an IEEE 802.3 frame (a length, not an EtherType, at byte 12) sent
+ * to 01:00:0c:cc:cc:cc with LLC SNAP aa aa 03, the organisation code
+ * 00:00:0c and protocol 0x2000 (other Cisco protocols that share the group,
+ * such as VTP and DTP, are dropped). Accepted frames are cut to
+ * CAPTURE_SNAP_LENGTH. A load past the end of a frame drops it. */
+static struct sock_filter kTopologyFilter[] = {
+    /* 0 */ BPF_STMT(BPF_LD | BPF_H | BPF_ABS, 12),             /* EtherType, or an 802.3 length */
+    /* 1 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x88cc, 0, 4),   /* not LLDP: 6 */
+    /* 2 */ BPF_STMT(BPF_LD | BPF_W | BPF_ABS, 0),              /* destination, bytes 0-3 */
+    /* 3 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x0180c200, 0, 12), /* not the LLDP group: 16 */
+    /* 4 */ BPF_STMT(BPF_LD | BPF_H | BPF_ABS, 4),              /* destination, bytes 4-5 */
+    /* 5 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x000e, 9, 10),  /* the LLDP group: 15, else 16 */
+    /* 6 */ BPF_JUMP(BPF_JMP | BPF_JGE | BPF_K, 0x0600, 9, 0),   /* an EtherType, not a length: 16 */
+    /* 7 */ BPF_STMT(BPF_LD | BPF_W | BPF_ABS, 0),              /* destination, bytes 0-3 */
+    /* 8 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x01000ccc, 0, 7), /* not the CDP group: 16 */
+    /* 9 */ BPF_STMT(BPF_LD | BPF_H | BPF_ABS, 4),              /* destination, bytes 4-5 */
+    /* 10 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0xcccc, 0, 5),  /* not the CDP group: 16 */
+    /* 11 */ BPF_STMT(BPF_LD | BPF_W | BPF_ABS, 14),            /* LLC aa aa 03, organisation code byte 1 */
+    /* 12 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0xaaaa0300, 0, 3), /* not LLC SNAP: 16 */
+    /* 13 */ BPF_STMT(BPF_LD | BPF_W | BPF_ABS, 18),            /* organisation code bytes 2-3, protocol */
+    /* 14 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x000c2000, 0, 1), /* CDP: 15, else 16 */
+    /* 15 */ BPF_STMT(BPF_RET | BPF_K, CAPTURE_SNAP_LENGTH),    /* accept */
+    /* 16 */ BPF_STMT(BPF_RET | BPF_K, 0),                      /* drop */
+};
+
+/* The two link-layer groups topology listens to: LLDP's nearest-bridge
+ * group and CDP's group. */
+static const unsigned char kTopologyGroups[2][ETH_ALEN] = {
+    {0x01, 0x80, 0xc2, 0x00, 0x00, 0x0e},
+    {0x01, 0x00, 0x0c, 0xcc, 0xcc, 0xcc},
+};
+
 /* One allowed system call: on a match it is allowed, otherwise the next
  * test follows. */
 #define ALLOW_CALL(number)                                     \
@@ -231,7 +276,7 @@ static void fail(const char* message) {
 
 static void usage(void) {
     fprintf(stderr,
-            "usage: %s discover|watch INTERFACE SECONDS\n"
+            "usage: %s discover|watch|topology INTERFACE SECONDS\n"
             "  INTERFACE: an Ethernet-type interface, for example eth0 or wlan0\n"
             "  SECONDS: 1 to %d\n",
             kProgram,
@@ -341,9 +386,10 @@ static int lock_calls(void) {
 }
 
 /* Opens the packet socket on `name`, with `filter` locked on it, bound and
- * receiving. Exits with EXIT_USAGE, EXIT_NO_PERMISSION or
- * EXIT_SOCKET_FAILED when it cannot. */
-static int open_socket(const char* name, const struct sock_fprog* filter) {
+ * receiving; with `join_groups`, also listening to kTopologyGroups. Exits
+ * with EXIT_USAGE, EXIT_NO_PERMISSION or EXIT_SOCKET_FAILED when it
+ * cannot. */
+static int open_socket(const char* name, const struct sock_fprog* filter, int join_groups) {
     const unsigned int index = if_nametoindex(name);
     if (index == 0) {
         fail("no such interface");
@@ -389,6 +435,20 @@ static int open_socket(const char* name, const struct sock_fprog* filter) {
         fail("could not listen on the interface");
         _exit(EXIT_SOCKET_FAILED);
     }
+    /* Only this socket's membership: the kernel drops it when the socket
+     * closes. Nothing is sent to join a link-layer group. */
+    for (size_t group = 0; join_groups && group < sizeof(kTopologyGroups) / sizeof(kTopologyGroups[0]); ++group) {
+        struct packet_mreq membership;
+        memset(&membership, 0, sizeof(membership));
+        membership.mr_ifindex = (int)index;
+        membership.mr_type = PACKET_MR_MULTICAST;
+        membership.mr_alen = ETH_ALEN;
+        memcpy(membership.mr_address, kTopologyGroups[group], ETH_ALEN);
+        if (setsockopt(fd, SOL_PACKET, PACKET_ADD_MEMBERSHIP, &membership, sizeof(membership)) != 0) {
+            fail("could not listen for switches on the interface");
+            _exit(EXIT_SOCKET_FAILED);
+        }
+    }
     return fd;
 }
 
@@ -428,18 +488,25 @@ int main(int argc, char* argv[]) {
     signal(SIGALRM, SIG_DFL);
 
     /* Every argument is checked before anything is opened. */
-    if (argc != 4 || (strcmp(argv[1], "discover") != 0 && strcmp(argv[1], "watch") != 0)) {
+    if (argc != 4 || (strcmp(argv[1], "discover") != 0 && strcmp(argv[1], "watch") != 0 &&
+                      strcmp(argv[1], "topology") != 0)) {
         usage();
         return EXIT_USAGE;
     }
-    /* The command picks one of the two fixed filters, nothing else. */
+    /* The command picks one of the three fixed filters (and, for topology,
+     * the two fixed groups), nothing else. */
     struct sock_fprog filter = {
         .len = (unsigned short)(sizeof(kFrameFilter) / sizeof(kFrameFilter[0])),
         .filter = kFrameFilter,
     };
+    int join_groups = 0;
     if (strcmp(argv[1], "watch") == 0) {
         filter.len = (unsigned short)(sizeof(kWatchFilter) / sizeof(kWatchFilter[0]));
         filter.filter = kWatchFilter;
+    } else if (strcmp(argv[1], "topology") == 0) {
+        filter.len = (unsigned short)(sizeof(kTopologyFilter) / sizeof(kTopologyFilter[0]));
+        filter.filter = kTopologyFilter;
+        join_groups = 1;
     }
     const char* name = argv[2];
     if (!valid_interface_name(name)) {
@@ -456,7 +523,7 @@ int main(int argc, char* argv[]) {
         return EXIT_NO_PERMISSION;
     }
 
-    const int fd = open_socket(name, &filter);
+    const int fd = open_socket(name, &filter, join_groups);
     /* A last stop, should the loop below ever be stuck in a write (set
      * before the seccomp filter, which does not allow it). */
     alarm((unsigned int)seconds + 5U);

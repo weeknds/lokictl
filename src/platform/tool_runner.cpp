@@ -12,6 +12,7 @@
 #include "probe.h"
 #include "sent_counter.h"
 #include "speed_test.h"
+#include "topology.h"
 
 #include "lvgl.h"
 
@@ -506,6 +507,17 @@ private:
         }
         run.frames = heard.frames();
         run.devices = heard.devices();
+        // A made-up switch next to the pretend cable port (none over Wi-Fi).
+        if (job_.target == pretend_own_ports().front().name) {
+            HeardNeighbours neighbours;
+            for (const PretendTopologyFrame& frame : pretend_topology_frames()) {
+                if (frame.at_ms > shown) {
+                    break;
+                }
+                neighbours.note_frame(frame.bytes.data(), frame.bytes.size(), static_cast<int32_t>(frame.at_ms / 1000));
+            }
+            run.neighbours = neighbours.neighbours();
+        }
         kept_bytes_ = reader.kept().size();
         kept_full_ = reader.kept_full();
         if (elapsed >= kLimitMs) {
@@ -2556,7 +2568,10 @@ private:
 
     // Listens on `interface_name` for model::kListenSeconds through the
     // capture helper, which alone may open the packet socket and only
-    // receives; its stream is read here without privileges. Sends nothing.
+    // receives; its stream is read here without privileges. On a cable
+    // port a second run of the helper (`topology`) hears what switches and
+    // routers say about themselves (LLDP, CDP); when it cannot run or ends
+    // early, the devices are still listed. Sends nothing.
     void run_listen(const std::string& interface_name) {
         model::ListenRun run;
         run.state = model::ToolState::Running;
@@ -2578,6 +2593,19 @@ private:
             publish(run);
             return;
         }
+        HeardNeighbours neighbours;
+        CaptureReader topology_reader;
+        CaptureProcess topology;
+        // Switches say what they are on cables; a Wi-Fi port hears none of
+        // it, so the second helper runs on a cable port only. (The name was
+        // checked with model::valid_interface_name().)
+        const std::string wireless = "/sys/class/net/" + interface_name + "/wireless";
+        if (::access(wireless.c_str(), F_OK) != 0) {
+            model::ToolError unused_error = model::ToolError::None;
+            std::string unused_reason;
+            topology.start(interface_name, model::kListenSeconds, unused_error, unused_reason,
+                           CaptureCommand::Topology);
+        }
 
         const Clock::time_point begin = Clock::now();
         // The helper ends itself at its time limit; should it stay longer,
@@ -2591,13 +2619,29 @@ private:
                 end = End::Stopped;
                 break;
             }
-            pollfd entry{capture.fd(), POLLIN, 0};
-            ::poll(&entry, 1, kWaitSliceMs);
+            // A helper that is not running has fd -1, which poll() skips.
+            pollfd entries[2] = {{capture.fd(), POLLIN, 0}, {topology.fd(), POLLIN, 0}};
+            ::poll(entries, 2, kWaitSliceMs);
             const Clock::time_point now = Clock::now();
             const auto at_s = static_cast<int32_t>(std::chrono::duration_cast<std::chrono::seconds>(now - begin).count());
             const auto on_frame = [&heard, at_s](const uint8_t* frame, std::size_t size, uint32_t /*seconds*/) {
                 heard.note_frame(frame, size, at_s);
             };
+            const auto on_neighbour = [&neighbours, at_s](const uint8_t* frame, std::size_t size, uint32_t /*seconds*/) {
+                neighbours.note_frame(frame, size, at_s);
+            };
+            for (int reads = 0; reads < kMaxReads && topology.fd() >= 0; ++reads) {
+                const ssize_t got = ::read(topology.fd(), buffer, sizeof(buffer));
+                if (got < 0 && errno == EINTR) {
+                    continue;
+                }
+                if (got < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+                    break;
+                }
+                if (got <= 0 || !topology_reader.feed(buffer, static_cast<std::size_t>(got), on_neighbour)) {
+                    topology.stop();  // done, failed or broken: the devices go on
+                }
+            }
             for (int reads = 0; reads < kMaxReads && end == End::Running; ++reads) {
                 const ssize_t got = ::read(capture.fd(), buffer, sizeof(buffer));
                 if (got < 0 && errno == EINTR) {
@@ -2618,6 +2662,7 @@ private:
             run.elapsed_s = std::min(at_s, model::kListenSeconds);
             run.frames = heard.frames();
             run.devices = heard.devices();
+            run.neighbours = neighbours.neighbours();
             if (run.save == model::CaptureSave::None && save_flag_.exchange(false)) {
                 if (file.create(capture_folder_, run.save_reason)) {
                     run.save = model::CaptureSave::Saving;
@@ -2632,6 +2677,7 @@ private:
             }
         }
 
+        topology.stop();
         switch (end) {
             case End::Stopped:
                 capture.stop();
