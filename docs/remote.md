@@ -6,8 +6,9 @@ SPDX-License-Identifier: MIT
 # Remote view
 
 Remote view shows the Cardputer's screen in a web browser on another
-computer on the same network. It is **off at every start** and is never
-saved: you switch it on yourself, each time, on the Settings page.
+computer on the same network, and lets you press its keys from there. It is
+**off at every start** and is never saved: you switch it on yourself, each
+time, on the Settings page.
 
 ## Using it
 
@@ -16,20 +17,47 @@ saved: you switch it on yourself, each time, on the Settings page.
 2. A panel shows the address to open, for example
    `Open http://10.0.0.12:8780`, a six-digit code such as `482 913`, and the
    time left to use it (2 minutes).
-3. Send the code from the other computer. The page for a browser comes in a
-   later version; for now `curl` does it (replace the address and code):
-
-   ```sh
-   curl -c jar.txt -d code=482913 http://10.0.0.12:8780/pair
-   curl -b jar.txt -o screen.png http://10.0.0.12:8780/screen.png
-   ```
-
-4. Once paired the panel goes away and the row reads `viewed`.
+3. Open that address in a browser on the other computer and type the code.
+4. Once paired the panel goes away, the row reads `viewed` and the browser
+   shows the screen (see "The page" below).
 5. To stop, press Enter or key 6 (`Off`) on the row again. Quitting the app
    stops it too.
 
 The row reads `off`, `on` (waiting for the code) or `viewed` (a browser is
 paired).
+
+## The page
+
+The page shows the Cardputer's screen, scaled to fit the window, with a key
+pad under it laid out like the device: keys **4** to **8** right under the
+screen, then **ESC**, the arrows, **Enter** and **Help**. Clicking a key
+presses it on the Cardputer.
+
+While the screen shows, typing on the computer's keyboard types on the
+Cardputer: letters, digits and other printable characters, **Enter**,
+**Esc**, **Backspace**, the arrow keys, and **F1** for help. A key held down
+counts once, and shortcuts with Ctrl or Cmd stay with the browser. Each key
+goes through the same steps as a key pressed on the Cardputer: when its
+screen has dimmed, the first key only wakes it; keys 4 to 8 press the soft
+keys and F, X, Z and C move like arrows, except while a page is waiting for
+typing, which keeps only the characters it accepts.
+
+A key from the browser is pressed and let go at once, so it can never be a
+long press: holding ESC (which quits LokiCTL or goes back to the launcher)
+and fn+J (screenshot) only work on the Cardputer itself.
+
+When Remote view ends, the page asks for a new code.
+
+### From the command line
+
+`curl` can do the same (replace the address and code). A key needs the
+`Origin` header the page's browser sends:
+
+```sh
+curl -c jar.txt -d code=482913 http://10.0.0.12:8780/pair
+curl -b jar.txt -o screen.png http://10.0.0.12:8780/screen.png
+curl -b jar.txt -H 'Origin: http://10.0.0.12:8780' -d k=c54 http://10.0.0.12:8780/key
+```
 
 ## When it switches itself off
 
@@ -74,6 +102,14 @@ nothing else on the device.
 - **No DNS rebinding.** Every request must name the server by its address
   and port in the `Host` header; anything else gets 421. A web page on the
   internet can't reach the server through a name that points at it.
+- **Keys only from the page.** A key needs the session cookie and an
+  `Origin` header naming the server itself (`http://<address>:8780`), so
+  another web site open in the same browser can't send keys. At most 16 keys
+  wait and at most 20 are taken a second; more get 429. Keys never go to the
+  log.
+- **A locked-down page.** The page loads nothing from anywhere else. Its
+  `Content-Security-Policy` allows only its own script and style, pictures
+  from the server's answers and requests to the server itself.
 - **Small, strict requests.** One request per connection, a request head of
   at most 2 KB, a body of at most 64 bytes and 2 seconds to send them. The
   server runs on its own thread, so the device's screen never waits for it.
@@ -91,10 +127,16 @@ valid. Use it on networks you trust, and switch it off when you are done.
 
 | Request | Answer |
 |---|---|
-| `GET /` | a short plain text |
+| `GET /` | the web page (`text/html`, with its `Content-Security-Policy`) |
 | `POST /pair` with the form body `code=NNNNNN` | `200` and the session cookie; `403` for a wrong code; `409` while a browser is paired |
 | `GET /screen.png?since=N` with the cookie | `204` while frame N is still the current one, otherwise `200` with the screen as a 320x170 PNG and `X-Frame: M`, the number of that frame; `401` without the cookie |
+| `POST /key` with the form body `k=<name>`, the cookie and `Origin: http://<address>:8780` | `204` when the key was taken; `400` for an unknown name; `401` without the cookie; `403` without that `Origin`; `429` when 16 keys wait or 20 came in the last second |
 | anything else | `404` for another path, `405` for another method |
+
+Key names: `c32` to `c126` for a printable ASCII character by its code
+(`c97` is `a`, `c46` is `.`, `c54` is the key 6), and `esc`, `enter`,
+`backspace`, `up`, `down`, `left`, `right` and `help`. Form bodies are not
+decoded, which is why characters go by their code.
 
 Every answer carries `Connection: close`, `Cache-Control: no-store`,
 `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` and
@@ -116,6 +158,9 @@ standard error:
 LOKICTL_REMOTE=on build/darwin-arm64/Debug/lokictl
 # remote view: code 482913 at http://127.0.0.1:8780
 ```
+
+Open `http://127.0.0.1:8780` in a browser on the same computer and type the
+code.
 
 The simulator's pictures leave out the panels on top of the page (help,
 messages); the device's pictures have them.

@@ -7,6 +7,7 @@
 #pragma once
 
 #include "remote/remote_frames.h"
+#include "remote/remote_keys.h"
 #include "remote/remote_pairing.h"
 
 #include <atomic>
@@ -59,6 +60,10 @@ struct ServerOptions {
     // peers from that interface's subnet only.
     bool loopback_only{false};
     uint16_t port{kPort};
+    // Where POST /key puts the keys of the paired browser. Owned by the
+    // caller and kept until the server's thread has ended; without it every
+    // key gets 400.
+    KeyQueue* keys{nullptr};
 };
 
 // The Remote view server: a small HTTP/1.1 server on its own thread, never
@@ -70,11 +75,16 @@ struct ServerOptions {
 //   from any other peer at once, before reading anything.
 // - A Host header other than "<address>:<port>" gets 421 (this stops DNS
 //   rebinding).
-// - GET / gives a short plain text. POST /pair with code=NNNNNN pairs one
-//   browser (see Pairing) and sets the session cookie (HttpOnly,
-//   SameSite=Strict, Path=/). GET /screen.png?since=N needs the cookie
-//   (else 401) and answers 204 while frame N is current, else the screen
-//   as a PNG with X-Frame: M. Other paths get 404, a wrong method 405.
+// - GET / gives the web page (page_html()) with its Content-Security-Policy.
+//   POST /pair with code=NNNNNN pairs one browser (see Pairing) and sets
+//   the session cookie (HttpOnly, SameSite=Strict, Path=/).
+//   GET /screen.png?since=N needs the cookie (else 401) and answers 204
+//   while frame N is current, else the screen as a PNG with X-Frame: M.
+//   POST /key with k=<name> (key_from_name()) needs an Origin header of
+//   exactly "http://<address>:<port>" (else 403) and the cookie (else 401);
+//   an unknown name gets 400, a full queue or too many keys a second 429
+//   (KeyQueue), an accepted key 204. Other paths get 404, a wrong method
+//   405.
 // - It ends by itself (see StopReason) when the pairing ends, or when the
 //   address it listens on goes away or changes (checked every 2 s).
 //

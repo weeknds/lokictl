@@ -8,6 +8,8 @@
 
 #include "network.h"
 #include "remote/remote_http.h"
+#include "remote/remote_keys.h"
+#include "remote/remote_page.h"
 
 #include <arpa/inet.h>
 #include <cerrno>
@@ -33,12 +35,6 @@ constexpr int kIdlePollMs = 1000;
 constexpr int kListenBacklog = 4;
 constexpr uint32_t kLoopback = 0x7F000001U; // 127.0.0.1
 constexpr const char* kCookieName = "lokictl_session";
-
-constexpr std::string_view kIndexText =
-    "LokiCTL remote view\n"
-    "\n"
-    "POST /pair with code=NNNNNN (the code on the Cardputer's screen),\n"
-    "then GET /screen.png with the cookie it sets.\n";
 
 #if defined(MSG_NOSIGNAL)
 constexpr int kSendFlags = MSG_NOSIGNAL;
@@ -140,11 +136,16 @@ bool send_all(int fd, std::string_view data, int wake_fd, int64_t deadline_ms) {
     return true;
 }
 
+void send_body(int fd, int status, std::string_view content_type, std::string_view body, int wake_fd,
+               int64_t deadline_ms, std::string_view extra_headers = {}) {
+    std::string answer = response_head(status, content_type, body.size(), extra_headers);
+    answer.append(body);
+    send_all(fd, answer, wake_fd, deadline_ms);
+}
+
 void send_text(int fd, int status, std::string_view text, int wake_fd, int64_t deadline_ms,
                std::string_view extra_headers = {}) {
-    std::string answer = response_head(status, "text/plain; charset=utf-8", text.size(), extra_headers);
-    answer.append(text);
-    send_all(fd, answer, wake_fd, deadline_ms);
+    send_body(fd, status, "text/plain; charset=utf-8", text, wake_fd, deadline_ms, extra_headers);
 }
 
 } // namespace
@@ -478,7 +479,38 @@ void Server::handle_connection(int fd, Pairing& pairing, FrameCache& frames) {
             send_text(fd, 405, "method not allowed\n", wake_read_, deadline, "Allow: GET\r\n");
             return;
         }
-        send_text(fd, 200, kIndexText, wake_read_, deadline);
+        const std::string policy =
+            std::string("Content-Security-Policy: ").append(page_security_policy()).append("\r\n");
+        send_body(fd, 200, "text/html; charset=utf-8", page_html(), wake_read_, deadline, policy);
+        return;
+    }
+
+    if (request.path == "/key") {
+        if (request.method != "POST") {
+            send_text(fd, 405, "method not allowed\n", wake_read_, deadline, "Allow: POST\r\n");
+            return;
+        }
+        // Only the page itself may send keys: the browser names the page's
+        // origin. Checked before the cookie, so a refused request is no
+        // sign of life.
+        if (request.origin != "http://" + expected_host_) {
+            send_text(fd, 403, "wrong origin\n", wake_read_, deadline);
+            return;
+        }
+        if (!pairing.check_token(cookie_value(request.cookie, kCookieName), now)) {
+            send_text(fd, 401, "pair first\n", wake_read_, deadline);
+            return;
+        }
+        uint32_t key = 0;
+        if (!options_.keys || !key_from_name(form_value(body, "k"), key)) {
+            send_text(fd, 400, "unknown key\n", wake_read_, deadline);
+            return;
+        }
+        if (options_.keys->push(key, now) != KeyQueue::Push::Added) {
+            send_text(fd, 429, "too many keys\n", wake_read_, deadline);
+            return;
+        }
+        send_all(fd, response_head(204, {}, 0), wake_read_, deadline);
         return;
     }
 

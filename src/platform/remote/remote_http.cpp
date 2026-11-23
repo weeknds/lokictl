@@ -74,6 +74,7 @@ const char* status_text(int status) {
         case 409: return "Conflict";
         case 413: return "Content Too Large";
         case 421: return "Misdirected Request";
+        case 429: return "Too Many Requests";
         case 431: return "Request Header Fields Too Large";
         case 503: return "Service Unavailable";
         default: return "Internal Server Error";
@@ -145,6 +146,7 @@ HeadResult parse_request_head(std::string_view data, HttpRequest& request, std::
     }
 
     bool seen_host = false;
+    bool seen_origin = false;
     bool seen_length = false;
     std::size_t position = line_end + 2;
     while (position < head.size()) {
@@ -181,6 +183,12 @@ HeadResult parse_request_head(std::string_view data, HttpRequest& request, std::
             }
             seen_host = true;
             request.host.assign(value);
+        } else if (same_name(name, "origin")) {
+            if (seen_origin) {
+                return HeadResult::Bad;
+            }
+            seen_origin = true;
+            request.origin.assign(value);
         } else if (same_name(name, "content-length")) {
             uint64_t length = 0;
             if (seen_length || !parse_decimal(value, length)) {

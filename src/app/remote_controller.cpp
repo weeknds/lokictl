@@ -6,8 +6,10 @@
 
 #include "remote_controller.h"
 
+#include "linux_input.h"
 #include "logger.h"
 #include "remote/remote_frames.h"
+#include "remote/remote_keys.h"
 #include "remote/remote_pairing.h"
 #include "remote/remote_server.h"
 #include "remote/remote_switch.h"
@@ -39,6 +41,10 @@ constexpr const char* kRemoteVariable = "LOKICTL_REMOTE";
 #else
 constexpr uint32_t kTimerPeriodMs = 250;
 #endif
+
+// The key timer presses one waiting key per tick while a browser is paired:
+// up to about 33 a second, more than the 20 a second a browser may send.
+constexpr uint32_t kKeyPeriodMs = 30;
 
 // How long the panel shows why Remote view could not start.
 constexpr uint32_t kMessageMs = 4000;
@@ -89,7 +95,8 @@ const char* start_failure_message(StopReason reason) {
 } // namespace
 
 RemoteController::RemoteController(view::ThemeEngine& theme_engine)
-    : panel_(std::make_unique<view::widgets::RemotePanel>(lv_layer_top(), theme_engine)) {
+    : panel_(std::make_unique<view::widgets::RemotePanel>(lv_layer_top(), theme_engine)),
+      keys_(std::make_unique<platform::remote::KeyQueue>()) {
     panel_->build();
 
     lv_subject_t* requests = platform::remote::switch_request_subject();
@@ -101,6 +108,10 @@ RemoteController::RemoteController(view::ThemeEngine& theme_engine)
     timer_ = lv_timer_create(timer_cb, kTimerPeriodMs, this);
     if (timer_) {
         lv_timer_pause(timer_);
+    }
+    key_timer_ = lv_timer_create(key_timer_cb, kKeyPeriodMs, this);
+    if (key_timer_) {
+        lv_timer_pause(key_timer_);
     }
     platform::remote::set_view_state(ViewState::Off);
 
@@ -133,6 +144,11 @@ void RemoteController::stop() {
         lv_timer_delete(timer_);
         timer_ = nullptr;
     }
+    if (key_timer_) {
+        lv_timer_delete(key_timer_);
+        key_timer_ = nullptr;
+    }
+    key_timer_running_ = false;
 
     // Both servers are told first, so they wind down together; destroying
     // them then waits for their threads.
@@ -212,8 +228,10 @@ void RemoteController::switch_on() {
         panel_->hide();
     }
     message_shown_ = false;
+    keys_->clear();
 
     platform::remote::ServerOptions options;
+    options.keys = keys_.get();
     std::unique_ptr<platform::remote::FrameSource> frames;
 #if USE_DESKTOP
     options.loopback_only = true;
@@ -242,6 +260,7 @@ void RemoteController::switch_off() {
     }
     retiring_ = std::move(server_);
     hand_off_ = nullptr;
+    run_key_timer(false);
     if (panel_) {
         panel_->hide();
     }
@@ -256,6 +275,47 @@ void RemoteController::resume_timer() {
     if (timer_) {
         lv_timer_resume(timer_);
     }
+}
+
+void RemoteController::run_key_timer(bool run) {
+    if (run == key_timer_running_) {
+        return;
+    }
+    key_timer_running_ = run;
+    if (!run) {
+        keys_->clear();
+    }
+    if (key_timer_) {
+        if (run) {
+            lv_timer_resume(key_timer_);
+        } else {
+            lv_timer_pause(key_timer_);
+        }
+    }
+}
+
+void RemoteController::key_timer_cb(lv_timer_t* timer) {
+    auto* controller = static_cast<RemoteController*>(lv_timer_get_user_data(timer));
+    if (controller) {
+        controller->press_waiting_key();
+    }
+}
+
+void RemoteController::press_waiting_key() {
+    if (!server_ || !key_timer_running_ || stopped_) {
+        return;
+    }
+    uint32_t key = 0;
+    if (!keys_->pop(key)) {
+        return;
+    }
+    // Press and release together: every key acts on its press (ESC on its
+    // release), so nothing is lost, and a key that is never held can't
+    // become a long press (a held ESC quits the app) or stay down when the
+    // key itself switches Remote view off. One key per tick, so the next
+    // one finds the page this one asked for.
+    platform::inject_key(key, true);
+    platform::inject_key(key, false);
 }
 
 void RemoteController::timer_cb(lv_timer_t* timer) {
@@ -299,6 +359,7 @@ void RemoteController::poll() {
                     panel_->show_code(status.url, status.code, static_cast<int32_t>((left_ms + 999) / 1000));
                 }
                 platform::remote::set_view_state(ViewState::Waiting);
+                run_key_timer(false);
                 break;
             }
             case ServerPhase::Paired:
@@ -310,6 +371,7 @@ void RemoteController::poll() {
                     panel_->hide();
                 }
                 platform::remote::set_view_state(ViewState::Viewed);
+                run_key_timer(true);
                 break;
             case ServerPhase::Stopped: {
                 server_->join();
@@ -327,6 +389,7 @@ void RemoteController::poll() {
                 }
                 hand_off_ = nullptr;
                 server_.reset();
+                run_key_timer(false);
                 platform::remote::set_view_state(ViewState::Off);
                 break;
             }

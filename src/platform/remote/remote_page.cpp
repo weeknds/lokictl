@@ -1,0 +1,277 @@
+/*
+ * SPDX-FileCopyrightText: 2026 LokiCTL contributors
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
+#include "remote/remote_page.h"
+
+namespace platform::remote {
+namespace {
+
+constexpr std::string_view kSecurityPolicy =
+    "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src blob:; "
+    "connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+
+// The page. Keys go to POST /key as k=<name> (see key_from_name()), one at a
+// time so that typed text keeps its order; pictures come from
+// GET /screen.png?since=<frame>, one request at a time.
+constexpr std::string_view kPage = R"page(<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LokiCTL remote view</title>
+<style>
+:root{color-scheme:dark;--bg:#0f1113;--fg:#e6e8ea;--dim:#9aa1a7;--key:#202428;--hi:#2c3136;--line:#3a4046;--go:#5ccfb8;--bad:#f2867c}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--fg)}
+body{padding:16px;font:15px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+main{margin:0 auto;width:min(100%,960px,max(320px,calc((100vh - 260px) * 1.88)))}
+h1{margin:0 0 10px;font-size:15px;font-weight:600;color:var(--dim)}
+.hide{display:none!important}
+#msg{min-height:1.45em;margin:0 0 10px;color:var(--dim)}
+#msg.bad{color:var(--bad)}
+form{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+input{width:11ch;padding:8px 10px;font:inherit;font-size:22px;letter-spacing:.15em;color:var(--fg);background:var(--key);border:1px solid var(--line);border-radius:6px}
+button{padding:8px 12px;font:inherit;color:var(--fg);background:var(--key);border:1px solid var(--line);border-radius:6px;cursor:pointer;user-select:none;-webkit-user-select:none;touch-action:manipulation}
+button:hover{background:var(--hi)}
+button:active{border-color:var(--go);color:var(--go)}
+button:disabled{opacity:.5;cursor:default}
+#screen{display:block;width:100%;aspect-ratio:320/170;image-rendering:pixelated;background:#000;border:1px solid var(--line);border-radius:4px}
+.soft{position:relative;height:42px;margin-top:6px}
+.soft button{position:absolute;top:0;width:12%;height:100%;padding:0;transform:translateX(-50%)}
+.pad{display:grid;grid-template-columns:repeat(3,52px) 1fr 96px;grid-template-rows:repeat(2,44px);gap:6px;margin-top:14px}
+.pad button{padding:0}
+.note{margin:14px 0 0;font-size:13px;color:var(--dim)}
+</style>
+</head>
+<body>
+<main>
+<h1>LokiCTL remote view</h1>
+<p id="msg"></p>
+<form id="pair" class="hide" autocomplete="off">
+<input id="code" inputmode="numeric" maxlength="7" placeholder="000000" aria-label="Code from the Cardputer">
+<button type="submit">Pair</button>
+</form>
+<div id="view" class="hide">
+<img id="screen" alt="The Cardputer's screen">
+<div class="soft">
+<button tabindex="-1" data-k="c52" style="left:15.31%">4</button>
+<button tabindex="-1" data-k="c53" style="left:32.81%">5</button>
+<button tabindex="-1" data-k="c54" style="left:50.31%">6</button>
+<button tabindex="-1" data-k="c55" style="left:67.81%">7</button>
+<button tabindex="-1" data-k="c56" style="left:85.31%">8</button>
+</div>
+<div class="pad">
+<button tabindex="-1" data-k="esc" style="grid-area:1/1">ESC</button>
+<button tabindex="-1" data-k="up" style="grid-area:1/2" aria-label="Up">&uarr;</button>
+<button tabindex="-1" data-k="help" style="grid-area:1/5">Help</button>
+<button tabindex="-1" data-k="left" style="grid-area:2/1" aria-label="Left">&larr;</button>
+<button tabindex="-1" data-k="down" style="grid-area:2/2" aria-label="Down">&darr;</button>
+<button tabindex="-1" data-k="right" style="grid-area:2/3" aria-label="Right">&rarr;</button>
+<button tabindex="-1" data-k="enter" style="grid-area:2/5">Enter</button>
+</div>
+<p class="note">Typing here types on the Cardputer: letters, digits, Enter, Esc, Backspace, the arrows, F1 for help.</p>
+</div>
+<p class="note">Plain HTTP: use Remote view only on a network you trust.</p>
+</main>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const form = $("pair"), code = $("code"), view = $("view"), img = $("screen"), msg = $("msg");
+const FORM = {"Content-Type": "application/x-www-form-urlencoded"};
+const NAMES = {Escape: "esc", Enter: "enter", Backspace: "backspace", ArrowUp: "up",
+  ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right", F1: "help"};
+const ENDED = "Remote view ended. Switch it on again on the Cardputer and type the new code.";
+let state = "probe"; // "probe", then "form" or "live"
+let frame = 0, timer = 0, warnTimer = 0, blobUrl = "", polling = false, quick = false;
+let keys = [], sending = false;
+
+function say(text, bad) {
+  clearTimeout(warnTimer);
+  msg.textContent = text || "";
+  msg.className = bad ? "bad" : "";
+}
+
+// A problem that passes: the message goes away after 3 s.
+function warn(text) {
+  say(text, true);
+  warnTimer = setTimeout(() => say(""), 3000);
+}
+
+function showForm(text, bad) {
+  state = "form";
+  clearTimeout(timer);
+  keys = [];
+  view.classList.add("hide");
+  form.classList.remove("hide");
+  say(text, bad);
+  code.focus();
+}
+
+function showView() {
+  state = "live";
+  form.classList.add("hide");
+  view.classList.remove("hide");
+  say("");
+}
+
+function schedule(ms) {
+  clearTimeout(timer);
+  if (state === "live") timer = setTimeout(poll, ms);
+}
+
+// A picture soon, for example after a key.
+function soon() {
+  if (polling) quick = true;
+  else schedule(150);
+}
+
+async function poll() {
+  if (polling) return;
+  polling = true;
+  let next = 500;
+  try {
+    const r = await fetch("/screen.png?since=" + frame, {cache: "no-store"});
+    if (r.status === 401) {
+      polling = false;
+      if (state === "probe") showForm("Type the code shown on the Cardputer.", false);
+      else showForm(ENDED, true);
+      return;
+    }
+    if (r.status === 200) {
+      const blob = await r.blob();
+      frame = Number(r.headers.get("X-Frame")) || 0;
+      const url = URL.createObjectURL(blob);
+      img.src = url;
+      if (blobUrl) URL.revokeObjectURL(blobUrl);
+      blobUrl = url;
+    } else if (r.status !== 204) {
+      next = 1000;
+    }
+    if (state === "probe") showView();
+  } catch (err) {
+    if (state === "probe") {
+      polling = false;
+      showForm("No answer from the Cardputer. Is Remote view on?", true);
+      return;
+    }
+    warn("No answer from the Cardputer. Is Remote view still on?");
+    next = 2000;
+  }
+  polling = false;
+  schedule(quick ? 150 : next);
+  quick = false;
+}
+
+form.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const digits = code.value.replace(/\D/g, "");
+  if (digits.length !== 6) {
+    say("The code has 6 digits.", true);
+    return;
+  }
+  const button = form.querySelector("button");
+  button.disabled = true;
+  say("Pairing...");
+  try {
+    const r = await fetch("/pair", {method: "POST", headers: FORM, body: "code=" + digits});
+    if (r.status === 200) {
+      code.value = "";
+      frame = 0;
+      showView();
+      poll();
+    } else if (r.status === 403) {
+      say("Wrong code. 5 wrong codes switch Remote view off.", true);
+    } else if (r.status === 409) {
+      say("Another browser is already paired.", true);
+    } else {
+      say("Could not pair (answer " + r.status + ").", true);
+    }
+  } catch (err) {
+    say("No answer from the Cardputer. Is Remote view on?", true);
+  }
+  button.disabled = false;
+});
+
+// Keys go one at a time, so they arrive in the order they were pressed.
+function press(name) {
+  if (state !== "live") return;
+  if (keys.length >= 16) {
+    warn("Too many keys at once.");
+    return;
+  }
+  keys.push(name);
+  pump();
+}
+
+async function pump() {
+  if (sending) return;
+  sending = true;
+  while (keys.length && state === "live") {
+    const k = keys.shift();
+    try {
+      const r = await fetch("/key", {method: "POST", headers: FORM, body: "k=" + k,
+        referrerPolicy: "same-origin"});
+      if (r.status === 401) {
+        sending = false;
+        showForm(ENDED, true);
+        return;
+      }
+      if (r.status === 429) {
+        keys = [];
+        warn("Too many keys at once. Slow down a little.");
+      } else if (r.status !== 204) {
+        warn("The Cardputer did not take a key (answer " + r.status + ").");
+      }
+    } catch (err) {
+      keys = [];
+      warn("No answer from the Cardputer.");
+    }
+    soon();
+  }
+  sending = false;
+}
+
+view.addEventListener("mousedown", (e) => {
+  if (e.target.closest("button")) e.preventDefault();
+});
+view.addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-k]");
+  if (b) press(b.dataset.k);
+});
+document.addEventListener("keydown", (e) => {
+  if (state !== "live" || e.metaKey || e.isComposing) return;
+  // AltGr (Ctrl+Alt on Windows) and Option still type characters.
+  const altGraph = e.getModifierState && e.getModifierState("AltGraph");
+  if (e.ctrlKey && !altGraph) return;
+  let k = "";
+  if (e.key.length === 1) {
+    const c = e.key.charCodeAt(0);
+    if (c >= 32 && c <= 126) k = "c" + c;
+  } else if (!e.altKey && !e.ctrlKey) {
+    k = NAMES[e.key] || "";
+  }
+  if (!k) return;
+  e.preventDefault();
+  if (!e.repeat) press(k);
+});
+
+poll();
+</script>
+</body>
+</html>
+)page";
+
+} // namespace
+
+std::string_view page_html() {
+    return kPage;
+}
+
+std::string_view page_security_policy() {
+    return kSecurityPolicy;
+}
+
+} // namespace platform::remote

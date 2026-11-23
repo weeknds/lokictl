@@ -25,6 +25,7 @@ struct HttpRequest {
     std::string path;            // "/screen.png", without the query
     std::string query;           // after '?', may be empty
     std::string host;            // the Host header; empty when there is none
+    std::string origin;          // the Origin header; empty when there is none
     std::string cookie;          // the Cookie header(s), joined by "; "
     std::size_t content_length{0};
 };
@@ -40,8 +41,8 @@ enum class HeadResult {
 // Reads the head at the start of `data` (what arrived so far). On Complete,
 // `head_size` is the number of bytes of the head; the body follows. Refuses
 // anything unusual: a target that is not a plain path, a version other
-// than HTTP/1.0 or 1.1, a line without CRLF, folded or repeated Host or
-// Content-Length headers, and any Transfer-Encoding.
+// than HTTP/1.0 or 1.1, a line without CRLF, folded or repeated Host,
+// Origin or Content-Length headers, and any Transfer-Encoding.
 HeadResult parse_request_head(std::string_view data, HttpRequest& request, std::size_t& head_size);
 
 // The value of `name` in "a=1&b=2" (a query or a form body), without any
