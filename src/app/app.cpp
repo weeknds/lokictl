@@ -31,6 +31,7 @@
 #include "theme_engine.h"
 #include "tool_controller.h"
 #include "talk_controller.h"
+#include "survey_controller.h"
 #include "lan_controller.h"
 #include "trap_controller.h"
 #include "report_controller.h"
@@ -695,6 +696,11 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override,
     // made-up on the Mac. Stopped right after the main loop, so no iperf3
     // is left running.
     LanController lan(view_model, platform::make_lan_runner(live_watch));
+    // The Wi-Fi survey with an optional USB stick: live on the device,
+    // made-up on the Mac. It starts only on the page's key. Stopped right
+    // after the main loop, so its listening interface is gone before the
+    // app ends; at the start it removes one a killed run left behind.
+    SurveyController survey(view_model, platform::make_survey_runner(live_watch));
     // Reports: saved into ~/Documents/LokiCTL/reports on the device; the
     // simulator saves only into a folder named by LOKICTL_REPORT_DIR.
     ReportController reports(view_model, platform::report_folder());
@@ -786,6 +792,7 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override,
     trap.start();
     talk.start();
     lan.start();
+    survey.start();
     reports.start();
     while (running && stop_signal == 0
 #if USE_DESKTOP
@@ -807,6 +814,7 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override,
     trap.set_hit_listener({});
     talk.stop();
     lan.stop();
+    survey.stop();
     watch.stop();
     watch.set_alert_listener({});
     data.set_block_failure_listener({});

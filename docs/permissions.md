@@ -46,7 +46,7 @@ It is not setuid; the package's install script gives it the single Linux
 capability `CAP_NET_ADMIN` (with `setcap`, from `libcap2-bin`) and lets only
 root and the `netdev` group run it (owner `root:netdev`, mode 0750).
 
-It does one of ten fixed commands and exits:
+It does one of twelve fixed commands and exits:
 
 | Command | What it does |
 |---|---|
@@ -60,6 +60,8 @@ It does one of ten fixed commands and exits:
 | `kill-off` | disarms it |
 | `trap-on` | sends the trap's low ports on to the ports LokiCTL listens on |
 | `trap-off` | stops that |
+| `survey STICK` | adds a listen-only (monitor mode) interface, `lokimon0`, on a USB Wi-Fi stick and hops its channels until stopped, then removes it |
+| `survey-off` | removes `lokimon0` |
 
 It only ever changes its own nftables table, `inet lokictl`: a set of
 blocked hardware addresses with two rules that drop what such a device
@@ -85,6 +87,25 @@ helper listens on the high port, so the connections only ever reach
 LokiCTL. `trap-off` removes the chain, and the table when nothing else is
 in it. Ports 3389 and 8080 need no helper; LokiCTL listens on them itself.
 
+The Wi-Fi survey uses an optional USB Wi-Fi stick, never the built-in
+Wi-Fi. `survey` takes the stick's interface name and checks it itself
+before it touches anything: a plain name (letters, digits, `.`, `_`, `-`),
+never `wlan0` or `lokimon0`, an interface with a `wireless` folder in
+`/sys/class/net` whose device is a USB interface. It takes only a stick
+that is down and in managed mode (so nothing else is using it), and it
+never changes the stick's own interface: it runs `iw dev STICK interface
+add lokimon0 type monitor`, brings `lokimon0` up, and then `iw dev
+lokimon0 set channel N` every 250 ms over channels 1 to 14, dropping each
+channel the kernel refuses under the country's rules. Monitor mode only
+receives; nothing is sent. It removes `lokimon0` (`iw dev lokimon0 del`)
+when LokiCTL closes its standard input or dies, on SIGTERM, after 15
+minutes at most, or when the stick is pulled out (which takes `lokimon0`
+with it). `survey-off` takes no argument and does the same for a
+`lokimon0` a killed survey left behind; `survey` also removes such a
+leftover before it starts, and removing the package removes one too.
+Both remove only a `lokimon0` in monitor mode on a USB stick. These two
+commands touch no firewall.
+
 LokiCTL removes the table when the hotspot stops, and `lokiap0` when Share
 stops, and both when it quits (unless "Keep mode after quitting" is on);
 removing the package removes them too. The trap's chain goes when the trap
@@ -92,8 +113,9 @@ is taken away and whenever LokiCTL quits, keep mode or not; one left by a
 run that was killed goes at the next start. Like the polkit rule, **every
 program of a `netdev` member may run the helper**, so it could block or
 unblock devices on the hotspot, add or remove `lokiap0`, switch the kill
-switch and send the trap's four low ports on to the high ports (only where
-nothing listens on them), and nothing else.
+switch, send the trap's four low ports on to the high ports (only where
+nothing listens on them) and add and remove a listen-only `lokimon0` on an
+idle USB Wi-Fi stick, and nothing else.
 
 ## lokictl-capture (CAP_NET_RAW)
 
@@ -102,10 +124,10 @@ hearing the network's raw traffic.
 A second, separate helper does that,
 `/usr/libexec/lokictl/lokictl-capture` (source: `src/helper/lokictl_capture.c`),
 with the single capability `CAP_NET_RAW`, again not setuid and only for
-root and the `netdev` group. It does one of four fixed commands,
-`discover`, `watch`, `topology` or `names`, each with an interface and a
-number of seconds (at most 30 minutes), which differ only in their fixed
-filter. It
+root and the `netdev` group. It does one of five fixed commands,
+`discover`, `watch`, `topology`, `names` or `survey`, each with an
+interface and a number of seconds (at most 30 minutes), which differ only
+in their fixed filter (and `survey` in the kind of interface). It
 opens a packet socket with that filter: for `discover` only ARP, DHCP, mDNS
 (UDP to port 5353) and SSDP (UDP to port 1900); for `watch` only ARP, DHCP,
 TCP connection requests (SYN without ACK) sent to the Cardputer itself, and
@@ -116,7 +138,13 @@ their name and port; for `names` only IPv4 UDP and TCP to port 53 (DNS
 questions) sent to the interface's own IPv4 address, which the helper
 reads from the kernel before it sets the filter (the Talk page: the names
 the devices on LokiCTL's hotspot look up; answers and lookups sent on to
-other servers are not passed). It is never in promiscuous mode. `discover`,
+other servers are not passed); for `survey` only `lokimon0`, the
+listen-only interface the firewall helper adds on a USB Wi-Fi stick, in
+monitor mode (never `wlan0`, never an Ethernet-type interface), and of
+what it hears only beacons, probe answers and kick-off frames
+(deauthentication, disassociation) whole, and of every other frame only
+the radio header and the frame's kind, never its addresses or content
+(the Survey page). It is never in promiscuous mode. `discover`,
 `watch` and `names` join no multicast group; `topology` asks the network card to pass those two
 link-layer groups to its socket (`PACKET_ADD_MEMBERSHIP`), because many
 cards drop them otherwise. That sends nothing, changes no setting, and the
@@ -129,7 +157,9 @@ minutes while Watch is on, and for the Talk page while the hotspot runs. **Every
 too**, so it could listen to the ARP, DHCP, mDNS and SSDP traffic that
 reaches the Cardputer, to connection requests made to the Cardputer, to
 IPv6 router announcements, to switches' LLDP and CDP frames and to the
-DNS questions sent to the Cardputer's own addresses, and nothing else.
+DNS questions sent to the Cardputer's own addresses, and to the Wi-Fi
+beacons and kick-off frames a stick's `lokimon0` hears, and nothing
+else.
 
 Both helpers are only needed for the features above. Without them the rest
 of the app works, and the pages say what is missing (`Block failed: helper

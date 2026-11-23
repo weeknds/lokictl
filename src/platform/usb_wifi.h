@@ -34,6 +34,8 @@ constexpr std::size_t kMaxUsbWifiName = 48;
 // - Interfaces whose "device" leads to the same place (a second interface
 //   on the same stick, such as a monitor one) are one adapter, named after
 //   the first of them by name. That place is model::UsbWifiAdapter::device.
+//   The survey's own listening interface (model::kSurveyListenInterface)
+//   is never read, so the stick keeps its own name while a survey runs.
 // - Driver: "DRIVER=" of that uevent. USB id: "PRODUCT=<vendor>/<product>/
 //   <release>" in hex, written "0cf3:9271". Name: the USB device's
 //   "manufacturer" and "product" (the folder above "device"), joined by a

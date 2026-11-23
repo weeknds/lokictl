@@ -35,12 +35,22 @@ struct OwnPort {
 // address left out. Empty when there are none (on the Mac).
 std::vector<OwnPort> read_own_ports(const std::string& root = "/sys/class/net");
 
+// The PCAP link types the capture helper writes: Ethernet, and Wi-Fi with
+// a radiotap header in front (the survey's command).
+constexpr uint32_t kPcapLinkEthernet = 1;
+constexpr uint32_t kPcapLinkRadiotap = 127;
+
 // Reads the helper's output: a PCAP stream (the 24-byte file header, then
 // records of a 16-byte header and the frame), in this machine's byte order,
-// with Ethernet frames of at most kCaptureSnapLength bytes. The stream may
-// arrive in pieces of any size.
+// with frames of the expected link type (Ethernet unless set otherwise) of
+// at most kCaptureSnapLength bytes. The stream may arrive in pieces of any
+// size.
 class CaptureReader {
 public:
+    // The link type the file header must say (kPcapLinkEthernet unless
+    // set). Call it before the first feed().
+    void expect_link(uint32_t link) { link_ = link; }
+
     // Called for each whole frame: its bytes, its length and the record's
     // time in whole seconds.
     using FrameFn = std::function<void(const uint8_t* frame, std::size_t size, uint32_t seconds)>;
@@ -70,6 +80,7 @@ private:
     bool kept_full_{false};
     bool header_read_{false};
     bool broken_{false};
+    uint32_t link_{kPcapLinkEthernet};
 };
 
 // The device list of one listen run, from the frames heard: one entry per
@@ -234,17 +245,20 @@ private:
 };
 
 #if !USE_DESKTOP
-// The helper's four fixed commands: `discover` (ARP, DHCP, mDNS and SSDP,
+// The helper's five fixed commands: `discover` (ARP, DHCP, mDNS and SSDP,
 // for the Discover page), `watch` (ARP, DHCP, TCP connection requests to
 // this machine and IPv6 router announcements, for Watch, watch.h),
 // `topology` (LLDP and CDP, what switches say about themselves, for the
-// Map, topology.h) and `names` (DNS questions to the interface's own
-// address, the names the hotspot's devices look up, talk.h).
+// Map, topology.h), `names` (DNS questions to the interface's own
+// address, the names the hotspot's devices look up, talk.h) and `survey`
+// (what a USB Wi-Fi stick in monitor mode hears, radiotap link type,
+// survey.h).
 enum class CaptureCommand {
     Discover,
     Watch,
     Topology,
     Names,
+    Survey,
 };
 
 // The capture helper, run for one listen or one Watch run (device builds
@@ -260,7 +274,9 @@ public:
 
     // Runs "lokictl-capture discover <interface_name> <seconds>" (or
     // "watch" for CaptureCommand::Watch, "topology" for
-    // CaptureCommand::Topology, "names" for CaptureCommand::Names) with an empty environment, /dev/null for its standard input and error, no
+    // CaptureCommand::Topology, "names" for CaptureCommand::Names, "survey"
+    // for CaptureCommand::Survey) with an empty environment, /dev/null for
+    // its standard input and error, no
     // blocked signals, and its standard output on a pipe whose reading end
     // (fd(), non-blocking, closed on exec) stays here. Returns true, or
     // false with `error` and `reason` set (ToolError::NotAllowed, or

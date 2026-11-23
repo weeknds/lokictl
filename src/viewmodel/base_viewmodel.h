@@ -10,6 +10,7 @@
 #include "base_model.h"
 #include "tool_data.h"
 #include "lan_speed.h"
+#include "survey_data.h"
 #include "trap_data.h"
 #include "talk_data.h"
 #include "watch_data.h"
@@ -526,6 +527,33 @@ public:
     int32_t lan_place() const;
     void set_lan_place(int32_t index);
 
+    // The Survey page (Wi-Fi key 7, or `survey`): what an optional USB
+    // Wi-Fi stick hears in the air. The run is app::SurveyController's and
+    // comes back in survey(). Opens the page (see open_page()); what it
+    // shows is kept.
+    bool open_survey();
+    // Only ever set on the UI thread, by app::SurveyController;
+    // set_survey() returns false and tells nobody when `run` equals what is
+    // held.
+    const model::SurveyRun& survey() const;
+    bool set_survey(const model::SurveyRun& run);
+    lv_subject_t* survey_subject();
+    // Asks to start a survey with the free USB Wi-Fi stick, or to stop it.
+    // app::SurveyController carries it out. Counts every request.
+    enum class SurveyRequest { Start, Stop };
+    void request_survey(SurveyRequest request);
+    lv_subject_t* survey_request_subject();
+    SurveyRequest requested_survey() const;
+    // What the page shows, kept across a theme switch: the channel chart
+    // (true) or the list (false, the start value), and the first list row
+    // shown. survey_view_subject() counts every change made with these
+    // setters.
+    lv_subject_t* survey_view_subject();
+    bool survey_chart() const;
+    void set_survey_chart(bool chart);
+    int32_t survey_scroll() const;
+    void set_survey_scroll(int32_t row);
+
     // Reports: asks to save what LokiCTL has found as a report (key 8 on
     // the Health page, R on the Watch and Discover pages, the command
     // `report`). The view model only passes the request on:
@@ -687,6 +715,13 @@ private:
     int32_t lan_target_{0};
     std::string lan_typed_target_;
     int32_t lan_place_{0};
+    model::SurveyRun survey_;
+    reactive::IntSubject survey_subject_;
+    reactive::IntSubject survey_request_subject_;
+    SurveyRequest requested_survey_{SurveyRequest::Stop};
+    reactive::IntSubject survey_view_subject_;
+    bool survey_chart_{false};
+    int32_t survey_scroll_{0};
     reactive::IntSubject report_request_subject_;
     reactive::IntSubject map_selection_subject_;
     std::array<std::string, kMapSlots> map_slots_;

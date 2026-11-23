@@ -53,6 +53,16 @@ bool valid_device_address(const std::string& address);
 std::string trap_on(std::vector<uint16_t>& ports, std::chrono::milliseconds limit = kHelperTimeLimit);
 std::string trap_off(std::chrono::milliseconds limit = kHelperTimeLimit);
 
+// The Wi-Fi survey (F9.13), through the helper's `survey-off`: removes
+// the listening interface (model::kSurveyListenInterface) a survey added
+// on the USB Wi-Fi stick, after a survey that could not do so itself (it
+// was killed). The helper removes only one in monitor mode on a USB stick;
+// the stick's own interface is never touched. Waits for the helper, at
+// most `limit`, so it never runs on the UI thread. Returns an empty text
+// when it worked (also when there was none), else a short reason ("helper
+// not installed").
+std::string remove_survey_listener(std::chrono::milliseconds limit = kHelperTimeLimit);
+
 // Whether LokiCTL's table holds the VPN kill switch's chains right now,
 // read through the helper's `list` (the leak test, F9.8). It changes
 // nothing. Waits for the helper, at most `limit`, so it never runs on the

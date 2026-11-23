@@ -5,8 +5,10 @@
 # On removal, takes @APP_DISPLAY_NAME@'s own NetworkManager profiles away (by their
 # exact names, which a quit with "Keep mode after quitting" on leaves
 # running), its own firewall table (blocked devices on the hotspot and the
-# VPN kill switch) and Share's interface (lokiap0), so nothing it made stays
-# behind. No other profile, table or interface is touched.
+# VPN kill switch), Share's interface (lokiap0) and the Wi-Fi survey's
+# listening interface on a USB stick (lokimon0, left only by a survey that
+# was killed), so nothing it made stays behind. No other profile, table or
+# interface is touched.
 
 set -e
 
@@ -22,6 +24,10 @@ fi
 
 if [ "$1" = "remove" ] && [ -x /usr/sbin/iw ] && [ -e /sys/class/net/lokiap0 ]; then
     /usr/sbin/iw dev lokiap0 del || true
+fi
+
+if [ "$1" = "remove" ] && [ -x /usr/sbin/iw ] && [ -e /sys/class/net/lokimon0 ]; then
+    /usr/sbin/iw dev lokimon0 del || true
 fi
 
 exit 0

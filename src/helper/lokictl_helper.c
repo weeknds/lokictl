@@ -6,7 +6,8 @@
 
 /*
  * lokictl-helper: the only part of LokiCTL that may change the firewall
- * or add a network interface.
+ * or add a network interface (Share's hotspot, or the survey's listening
+ * interface on a USB Wi-Fi stick).
  *
  * LokiCTL runs as the normal user. Blocking a device on its hotspot, and
  * adding the interface that Share runs its hotspot on, need one Linux
@@ -14,7 +15,7 @@
  * capability (set by the package's postinst; it is not setuid). Only root
  * and members of the netdev group may run it (root:netdev, mode 0750).
  *
- * It does exactly one of ten fixed commands and exits:
+ * It does exactly one of twelve fixed commands and exits:
  *
  *   lokictl-helper block MAC [MAC...]    block these devices on the hotspot
  *   lokictl-helper unblock MAC [MAC...]  let them through again
@@ -26,6 +27,8 @@
  *   lokictl-helper kill-off              disarm it
  *   lokictl-helper trap-on               send the trap's low ports on to LokiCTL
  *   lokictl-helper trap-off              stop doing that
+ *   lokictl-helper survey STICK          listen with a USB Wi-Fi stick (see below)
+ *   lokictl-helper survey-off            remove the survey's listening interface
  *
  * A MAC is six pairs of hex digits joined by ':' (for example
  * 02:00:00:00:00:01), not a group address; at most HELPER_MAX_ADDRESSES per
@@ -85,9 +88,44 @@
  * gone), so running it twice gives the same result. No other interface is
  * ever added or removed.
  *
- * Exit status: 0 done; 2 not a command, or a bad address; 3 the capability
- * is missing; 4 nft refused the change; 5 nft could not be run; 6 iw
- * refused the change; 7 iw could not be run.
+ * The Wi-Fi survey uses an optional USB Wi-Fi stick, never the built-in
+ * Wi-Fi. STICK is checked here before anything is done: 1 to 15 characters
+ * of a-z, A-Z, 0-9, '.', '_' and '-' (not "." or ".."), never "wlan0" or
+ * SURVEY_INTERFACE, an interface with a "wireless" folder in
+ * /sys/class/net whose device is a USB interface ("DEVTYPE=usb_interface"
+ * in its uevent). Only then is its name used, in a path under
+ * /sys/class/net and as iw's interface. The stick's own interface is never
+ * changed: the survey listens through a second interface of its own,
+ * SURVEY_INTERFACE (lokimon0), in monitor mode on the same stick. These
+ * commands touch no firewall.
+ * - survey: only a stick that is idle (down, in the normal managed mode,
+ *   so nothing else uses it) is taken. A SURVEY_INTERFACE a killed survey
+ *   left behind is removed first. Then "iw dev STICK interface add
+ *   lokimon0 type monitor" adds the listening interface, it is brought up,
+ *   "ready" is printed on its own line, and it hops over the 2.4 GHz
+ *   channels 1 to 14, SURVEY_DWELL_MS on each ("iw dev lokimon0 set
+ *   channel N"). A channel the kernel refuses (one the country's rules do
+ *   not allow) is dropped for good, so it hops only the allowed ones.
+ *   Receiving is all monitor mode does here: nothing is ever sent. It ends
+ *   when its standard input closes or reaches its end (LokiCTL holds it
+ *   open while it wants the survey, so it also ends when LokiCTL dies,
+ *   however), on SIGTERM, SIGINT or SIGHUP, when its parent dies
+ *   (PR_SET_PDEATHSIG), after SURVEY_MAX_SECONDS, or when the interface
+ *   stops taking channels (the stick was pulled out). It then removes
+ *   SURVEY_INTERFACE ("iw dev lokimon0 del"); the stick stays down and in
+ *   managed mode throughout.
+ * - survey-off: takes no argument and removes SURVEY_INTERFACE when it is
+ *   there, as survey does at its end. LokiCTL uses it only after a survey
+ *   that was killed.
+ * Only a SURVEY_INTERFACE that is LokiCTL's kind (in monitor mode, on a
+ * USB Wi-Fi stick) is ever removed; one that is gone already (the stick
+ * was pulled out) counts as removed.
+ *
+ * Exit status: 0 done; 2 not a command, or a bad address or stick; 3 the
+ * capability is missing; 4 nft refused the change; 5 nft could not be run;
+ * 6 iw refused the change (or the stick could not be brought up or down);
+ * 7 iw could not be run; 8 the stick is in use (up, or not in managed
+ * mode), or an interface of another kind is called lokimon0.
  */
 
 #define _GNU_SOURCE
@@ -95,12 +133,18 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <linux/capability.h>
+#include <net/if.h>
+#include <net/if_arp.h>
+#include <poll.h>
 #include <signal.h>
 #include <spawn.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <sys/prctl.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -115,6 +159,7 @@ enum {
     EXIT_NFT_NOT_RUN = 5,
     EXIT_IW_FAILED = 6,
     EXIT_IW_NOT_RUN = 7,
+    EXIT_STICK_BUSY = 8,
 };
 
 /* The most addresses one call takes. */
@@ -140,6 +185,17 @@ enum {
 #define TRAP_INTERFACES "{ \"eth0\", \"" HELPER_INTERFACE "\", \"" HELPER_SHARE_INTERFACE "\" }"
 #define HELPER_NFT "/usr/sbin/nft"
 #define HELPER_IW "/usr/sbin/iw"
+/* The survey's listening interface, added on the stick in monitor mode.
+ * The capture helper listens only on this name. */
+#define SURVEY_INTERFACE "lokimon0"
+/* The survey: how long it stays on each channel, the longest it listens,
+ * and how many channel changes in a row may fail before the stick counts
+ * as gone. */
+#define SURVEY_DWELL_MS 250
+#define SURVEY_MAX_SECONDS 900
+#define SURVEY_MAX_FAILURES 3
+/* The 2.4 GHz channels the survey tries. */
+#define SURVEY_CHANNELS 14
 /* "aa:bb:cc:dd:ee:ff" */
 #define MAC_TEXT_LENGTH 17
 /* The longest script: the fixed lines plus HELPER_MAX_ADDRESSES addresses. */
@@ -218,8 +274,9 @@ static void fail(const char* message) {
 static void usage(void) {
     fprintf(stderr,
             "usage: %s block MAC [MAC...] | unblock MAC [MAC...] | list | clear | ap-add | ap-del |\n"
-            "       kill-on | kill-off | trap-on | trap-off\n"
-            "  MAC: six pairs of hex digits joined by ':', at most %d per call\n",
+            "       kill-on | kill-off | trap-on | trap-off | survey STICK | survey-off\n"
+            "  MAC: six pairs of hex digits joined by ':', at most %d per call\n"
+            "  STICK: a USB Wi-Fi stick's interface, for example wlan1 (never wlan0)\n",
             kProgram,
             HELPER_MAX_ADDRESSES);
 }
@@ -685,7 +742,291 @@ static int share_interface(int add) {
     return EXIT_DONE;
 }
 
+
+/* ---------------------------------------------------------------------
+ * The Wi-Fi survey's stick. */
+
+/* Set by SIGTERM, SIGINT and SIGHUP while a survey runs. */
+static volatile sig_atomic_t survey_stop = 0;
+
+static void survey_signal(int number) {
+    (void)number;
+    survey_stop = 1;
+}
+
+/* 1 to 15 characters of a-z, A-Z, 0-9, '.', '_' and '-', not "." or "..". */
+static int valid_interface_name(const char* name) {
+    const size_t length = strlen(name);
+    if (length == 0 || length >= IFNAMSIZ || strcmp(name, ".") == 0 || strcmp(name, "..") == 0) {
+        return 0;
+    }
+    for (size_t index = 0; index < length; ++index) {
+        const char c = name[index];
+        const int allowed = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+                            c == '.' || c == '_' || c == '-';
+        if (!allowed) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/* Whether the interface `name` (already checked) has a "wireless" folder
+ * and sits on a USB interface. */
+static int usb_wifi_interface(const char* name) {
+    char path[96];
+    struct stat info;
+    snprintf(path, sizeof(path), "/sys/class/net/%s/wireless", name);
+    if (stat(path, &info) != 0 || !S_ISDIR(info.st_mode)) {
+        return 0;
+    }
+    snprintf(path, sizeof(path), "/sys/class/net/%s/device/uevent", name);
+    FILE* file = fopen(path, "re");
+    if (!file) {
+        return 0;
+    }
+    char line[256];
+    int usb = 0;
+    while (fgets(line, sizeof(line), file)) {
+        if (strcmp(line, "DEVTYPE=usb_interface\n") == 0 || strcmp(line, "DEVTYPE=usb_interface") == 0) {
+            usb = 1;
+        }
+    }
+    fclose(file);
+    return usb;
+}
+
+/* Whether `name` is a USB Wi-Fi stick: a valid name that is not the
+ * built-in Wi-Fi or the survey's own listening interface, with a
+ * "wireless" folder, on a USB interface. The name is checked before it is
+ * put into a path. */
+static int valid_stick(const char* name) {
+    if (!valid_interface_name(name) || strcmp(name, HELPER_INTERFACE) == 0 || strcmp(name, SURVEY_INTERFACE) == 0) {
+        return 0;
+    }
+    return usb_wifi_interface(name);
+}
+
+/* The stick's interface flags into *flags. Returns 0, or -1. */
+static int stick_flags(const char* name, short* flags) {
+    const int fd = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+    if (fd < 0) {
+        return -1;
+    }
+    struct ifreq request;
+    memset(&request, 0, sizeof(request));
+    memcpy(request.ifr_name, name, strlen(name));
+    const int result = ioctl(fd, SIOCGIFFLAGS, &request);
+    close(fd);
+    if (result != 0) {
+        return -1;
+    }
+    *flags = request.ifr_flags;
+    return 0;
+}
+
+/* Brings the stick up (up != 0) or down. Returns 0, or -1. */
+static int stick_set_up(const char* name, int up) {
+    const int fd = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+    if (fd < 0) {
+        return -1;
+    }
+    struct ifreq request;
+    memset(&request, 0, sizeof(request));
+    memcpy(request.ifr_name, name, strlen(name));
+    int result = ioctl(fd, SIOCGIFFLAGS, &request);
+    if (result == 0) {
+        if (up) {
+            request.ifr_flags |= IFF_UP;
+        } else {
+            request.ifr_flags &= ~IFF_UP;
+        }
+        result = ioctl(fd, SIOCSIFFLAGS, &request);
+    }
+    close(fd);
+    return result == 0 ? 0 : -1;
+}
+
+/* The stick's link type, from the kernel (1 managed, 803 monitor). Returns
+ * it, or -1. */
+static int stick_type(const char* name) {
+    char path[96];
+    snprintf(path, sizeof(path), "/sys/class/net/%s/type", name);
+    FILE* file = fopen(path, "re");
+    if (!file) {
+        return -1;
+    }
+    int type = -1;
+    if (fscanf(file, "%d", &type) != 1) {
+        type = -1;
+    }
+    fclose(file);
+    return type;
+}
+
+/* Runs "iw dev STICK <words...>" (fixed words only). Returns EXIT_DONE,
+ * EXIT_NFT_FAILED (iw failed) or EXIT_NFT_NOT_RUN. */
+static int stick_iw(const char* name, const char* word1, const char* word2, const char* word3) {
+    char stick[IFNAMSIZ];
+    char first[16];
+    char second[16];
+    char third[16];
+    snprintf(stick, sizeof(stick), "%s", name);
+    snprintf(first, sizeof(first), "%s", word1);
+    snprintf(second, sizeof(second), "%s", word2);
+    snprintf(third, sizeof(third), "%s", word3);
+    char* const arguments[] = {"iw", "dev", stick, first, second, third, NULL};
+    return run_program(HELPER_IW, arguments, "", NULL, 0);
+}
+
+/* Removes the survey's listening interface (SURVEY_INTERFACE) when it is
+ * there, but only one of LokiCTL's kind: in monitor mode, on a USB Wi-Fi
+ * stick. Returns EXIT_DONE (also when it is gone, or went while this ran:
+ * the stick was pulled out), EXIT_STICK_BUSY (another kind of interface
+ * has the name), EXIT_IW_FAILED or EXIT_IW_NOT_RUN. */
+static int listener_remove(void) {
+    if (access("/sys/class/net/" SURVEY_INTERFACE, F_OK) != 0) {
+        return EXIT_DONE;
+    }
+    if (!usb_wifi_interface(SURVEY_INTERFACE) || stick_type(SURVEY_INTERFACE) != ARPHRD_IEEE80211_RADIOTAP) {
+        if (access("/sys/class/net/" SURVEY_INTERFACE, F_OK) != 0) {
+            return EXIT_DONE;
+        }
+        fail("another kind of interface is called " SURVEY_INTERFACE);
+        return EXIT_STICK_BUSY;
+    }
+    char* const arguments[] = {"iw", "dev", SURVEY_INTERFACE, "del", NULL};
+    const int result = run_program(HELPER_IW, arguments, "", NULL, 0);
+    if (result == EXIT_NFT_NOT_RUN) {
+        fail("could not run " HELPER_IW);
+        return EXIT_IW_NOT_RUN;
+    }
+    if (result != EXIT_DONE && access("/sys/class/net/" SURVEY_INTERFACE, F_OK) == 0) {
+        fail("could not remove " SURVEY_INTERFACE);
+        return EXIT_IW_FAILED;
+    }
+    return EXIT_DONE;
+}
+
+/* Waits `ms` milliseconds on standard input. Returns 1 when the survey
+ * should end: input closed or at its end, a stop signal, or an error. */
+static int survey_wait(int ms) {
+    struct timespec start;
+    clock_gettime(CLOCK_MONOTONIC, &start);
+    for (;;) {
+        if (survey_stop) {
+            return 1;
+        }
+        struct timespec now;
+        clock_gettime(CLOCK_MONOTONIC, &now);
+        const long done = (now.tv_sec - start.tv_sec) * 1000L + (now.tv_nsec - start.tv_nsec) / 1000000L;
+        if (done >= ms) {
+            return 0;
+        }
+        struct pollfd entry = {0, POLLIN, 0};
+        const int ready = poll(&entry, 1, (int)(ms - done));
+        if (ready < 0 && errno == EINTR) {
+            continue;
+        }
+        if (ready < 0 || (entry.revents & (POLLERR | POLLHUP | POLLNVAL))) {
+            return 1;
+        }
+        if (entry.revents & POLLIN) {
+            char ignored[64];
+            const ssize_t got = read(0, ignored, sizeof(ignored));
+            if (got == 0 || (got < 0 && errno != EINTR && errno != EAGAIN)) {
+                return 1;
+            }
+        }
+    }
+}
+
+/* survey: add the listening interface, hop, remove it (see the top of
+ * this file). */
+static int survey(const char* name, pid_t parent) {
+    /* Ends with the parent; the check after it catches a parent that died
+     * before it was set. */
+    prctl(PR_SET_PDEATHSIG, SIGTERM, 0, 0, 0);
+    if (getppid() != parent) {
+        return EXIT_DONE;
+    }
+    struct sigaction action;
+    memset(&action, 0, sizeof(action));
+    action.sa_handler = survey_signal;
+    sigemptyset(&action.sa_mask);
+    sigaction(SIGTERM, &action, NULL);
+    sigaction(SIGINT, &action, NULL);
+    sigaction(SIGHUP, &action, NULL);
+
+    short flags = 0;
+    if (stick_flags(name, &flags) != 0) {
+        fail("no such stick");
+        return EXIT_USAGE;
+    }
+    if ((flags & IFF_UP) != 0 || stick_type(name) != ARPHRD_ETHER) {
+        fail("the stick is in use (up, or not in managed mode)");
+        return EXIT_STICK_BUSY;
+    }
+    /* One a killed survey left behind goes first. */
+    int result = listener_remove();
+    if (result != EXIT_DONE) {
+        return result;
+    }
+    char stick[IFNAMSIZ];
+    snprintf(stick, sizeof(stick), "%s", name);
+    char* const add_arguments[] = {
+        "iw", "dev", stick, "interface", "add", SURVEY_INTERFACE, "type", "monitor", NULL};
+    result = run_program(HELPER_IW, add_arguments, "", NULL, 0);
+    if (result == EXIT_NFT_NOT_RUN) {
+        fail("could not run " HELPER_IW);
+        return EXIT_IW_NOT_RUN;
+    }
+    if (result != EXIT_DONE || stick_set_up(SURVEY_INTERFACE, 1) != 0) {
+        fail("the stick could not listen (monitor mode)");
+        listener_remove();
+        return EXIT_IW_FAILED;
+    }
+    printf("ready\n");
+    fflush(stdout);
+
+    /* 0: not tried yet, 1: the kernel took it, -1: refused (dropped). */
+    int channels[SURVEY_CHANNELS + 1] = {0};
+    int failures = 0;
+    int usable = SURVEY_CHANNELS;
+    struct timespec start;
+    clock_gettime(CLOCK_MONOTONIC, &start);
+    int ended = 0;
+    while (!ended && usable > 0) {
+        for (int channel = 1; channel <= SURVEY_CHANNELS && !ended; ++channel) {
+            if (channels[channel] < 0) {
+                continue;
+            }
+            char number[4];
+            snprintf(number, sizeof(number), "%d", channel);
+            result = stick_iw(SURVEY_INTERFACE, "set", "channel", number);
+            if (result == EXIT_DONE) {
+                channels[channel] = 1;
+                failures = 0;
+            } else if (channels[channel] == 0) {
+                channels[channel] = -1; /* not allowed here */
+                --usable;
+                continue;
+            } else if (++failures >= SURVEY_MAX_FAILURES) {
+                fail("the stick stopped taking channels");
+                ended = 1;
+                break;
+            }
+            struct timespec now;
+            clock_gettime(CLOCK_MONOTONIC, &now);
+            ended = survey_wait(SURVEY_DWELL_MS) || now.tv_sec - start.tv_sec >= SURVEY_MAX_SECONDS;
+        }
+    }
+    return listener_remove();
+}
+
 int main(int argc, char* argv[]) {
+    /* Before anything else: who started it, for the survey's parent check. */
+    const pid_t parent = getppid();
     tidy_descriptors();
     signal(SIGPIPE, SIG_IGN);
 
@@ -704,8 +1045,10 @@ int main(int argc, char* argv[]) {
     const int kill_off = strcmp(command, "kill-off") == 0;
     const int trap_start = strcmp(command, "trap-on") == 0;
     const int trap_stop = strcmp(command, "trap-off") == 0;
+    const int survey_start = strcmp(command, "survey") == 0;
+    const int survey_end = strcmp(command, "survey-off") == 0;
     if (!block && !unblock && !list && !clear && !ap_add && !ap_del && !kill_on && !kill_off && !trap_start &&
-        !trap_stop) {
+        !trap_stop && !survey_start && !survey_end) {
         usage();
         return EXIT_USAGE;
     }
@@ -732,6 +1075,15 @@ int main(int argc, char* argv[]) {
                 memcpy(addresses[count++], bytes, 6);
             }
         }
+    } else if (survey_start) {
+        if (argc != 3) {
+            usage();
+            return EXIT_USAGE;
+        }
+        if (!valid_stick(argv[2])) {
+            fail("not a USB Wi-Fi stick (and never wlan0)");
+            return EXIT_USAGE;
+        }
     } else if (argc != 2) {
         usage();
         return EXIT_USAGE;
@@ -753,6 +1105,12 @@ int main(int argc, char* argv[]) {
     }
     if (trap_stop) {
         return trap_off();
+    }
+    if (survey_start) {
+        return survey(argv[2], parent);
+    }
+    if (survey_end) {
+        return listener_remove();
     }
 
     char script[SCRIPT_MAX];

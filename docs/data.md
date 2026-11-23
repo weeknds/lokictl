@@ -1390,6 +1390,88 @@ The Wi-Fi page shows `model::WifiScan`, which the block carries as
   (<n> networks)` or `data: wi-fi scan: <why not>`; never a network name.
   `--print-data` has no Wi-Fi lines.
 
+## The Wi-Fi survey
+
+The Survey page shows `model::SurveyRun` (`src/model/survey_data.h`),
+which `app::SurveyController` hands to the view model
+(`BaseViewModel::survey()`); it is not part of the reading block.
+
+- **Only with a free USB stick.** `model::survey_stick()` takes the first
+  adapter of `HomeData::usb_wifi` (see [USB Wi-Fi
+  adapters](#usb-wi-fi-adapters)) that NetworkManager does not manage
+  (`managed no`; not `--` without the service), never `wlan0` or
+  `lokimon0`. Nothing starts on its own: only the page's key 6.
+- **Two helpers, fixed commands.** The firewall helper's `lokictl-helper
+  survey <stick>` checks the stick itself (a valid name, not `wlan0` or
+  `lokimon0`, a `wireless` folder, `DEVTYPE=usb_interface`), takes it
+  only when it is down and in managed mode, and leaves the stick's own
+  interface that way: it adds a second, listen-only interface on the
+  stick, `lokimon0` (`iw dev <stick> interface add lokimon0 type
+  monitor`; some sticks, such as ath9k_htc ones, hear nothing when their
+  own interface is switched to monitor mode), brings it up, says `ready`,
+  then hops `lokimon0` over channels 1 to 14 every 250 ms, dropping for
+  good each channel the kernel refuses (the country's rules; channels 1
+  to 13 in Europe). It removes `lokimon0` when its standard input closes
+  (LokiCTL holds it), on SIGTERM, when its parent dies
+  (`PR_SET_PDEATHSIG`), after 15 minutes or when it stops taking channels.
+  Then `lokictl-capture survey lokimon0 <seconds>` (the only interface it
+  takes for a survey) passes on beacons, probe answers and kick-off frames
+  whole, and of every other frame only its radio header and its kind
+  (radiotap link type 127). Neither sends a frame. NetworkManager leaves
+  an interface in monitor mode alone, and LokiCTL's adapter list skips
+  `lokimon0`, so the stick keeps its own name while the survey runs.
+- **Reading** (`platform::read_wifi_frame()` and `SurveyCounter` in
+  `src/platform/survey.h`, unprivileged, every length checked): the
+  radiotap header (channel, signal, checksum flags), then each access
+  point by BSSID (at most 48; the one heard longest ago makes room): name
+  (at most 32 bytes, control bytes `?`, broken UTF-8 bytes `?`), hidden
+  (an empty or all-zero name; a probe answer may name it), channel (the
+  beacon's own, else where it was heard), security in the Wi-Fi page's
+  words, the strongest signal. Every frame counts for the channel it was
+  heard on.
+- **Findings.** A kick-off attack: more than 20 deauthentication or
+  disassociation frames on one channel within one second (the stick hears
+  each channel about 1/13 of the time, so this is a lower bound). A
+  look-alike: an access point with the joined network's name and weak
+  security (open, OWE, WEP or WPA) weaker than the joined one's, like the
+  health check's rule; a second access point with the same name and as
+  strong a security is a normal multi-access-point home and is not
+  flagged. A busy channel: 200 or more frames per second of listening
+  (under 30 is quiet); the bars use the same rate. `Best ch` is the
+  quietest of 1, 6 and 11.
+- **Runs.** Five minutes; the capture runs again for the rest when it
+  stops at its size limit. Stop, quitting and SIGINT end the capture, then
+  close the helper's input and send SIGTERM; after 2.5 s it is killed and
+  `survey-off` removes `lokimon0`. While `lokimon0` may be there a note
+  (`$XDG_RUNTIME_DIR/lokictl-survey-stick`) holds the stick's name; the
+  next start runs `survey-off` only when that note is there (a run that
+  was killed whole), and `survey` itself removes a leftover `lokimon0`
+  before it adds one. Both remove only a `lokimon0` in monitor mode on a
+  USB stick; the stick's own interface is never touched. Nothing is
+  saved, and the report does not include it.
+- **Log lines:** `survey: started on wlan1`, `survey: done, networks: 7,
+  warnings: 2, frames: 9120` (or `stopped`, `failed: <why>`), `survey: no
+  stick to use (none|managed|unknown)`, `survey: stick gone, stopping`;
+  never a network name or address.
+- **Mac and snapshots:** the pretend runner feeds made-up frames by the
+  second (seven access points, one hidden and one open copy of
+  `Harbour-Cafe`, a busy channel 6, a kick-off attack on channel 11 from
+  second 20). The made-up sources have no stick; a test folder with one
+  and a Wi-Fi uplink joined to `Harbour-Cafe` shows everything:
+
+```text
+sys/class/net/wlan1/wireless/      (an empty folder)
+sys/class/net/wlan1/device/uevent  DEVTYPE=usb_interface
+                                   DRIVER=ath9k_htc
+networkmanager                     running yes
+                                   link wlan0 WPA2 72 Harbour-Cafe
+```
+
+plus the Wi-Fi uplink of [`LOKICTL_DATA_ROOT`](#lokictl_data_root).
+`tests/survey_checks.cpp` (`lokictl_survey_tests`, with the address and
+undefined-behaviour checkers) reads good, cut, broken and hostile frames
+and checks every finding and limit.
+
 ## The Status page's details
 
 The Status page (home page, key 8) shows the extra values of
@@ -1459,10 +1541,12 @@ and `--data-steps 4` gives 4 drops and the warning.
 
 ## USB Wi-Fi adapters
 
-LokiCTL needs no USB Wi-Fi adapter (a Wi-Fi stick): every feature runs on
-the built-in Wi-Fi, `wlan0`. The Wi-Fi scan, the hotspot and the modes
-always use `wlan0`, and LokiCTL never changes a stick. It only notices when
-one is plugged in or removed, and says so. (If NetworkManager joins a
+LokiCTL needs no USB Wi-Fi adapter (a Wi-Fi stick): every feature but the
+Wi-Fi survey runs on the built-in Wi-Fi, `wlan0`. The Wi-Fi scan, the
+hotspot and the modes always use `wlan0`. Only a survey the user starts
+changes a stick, and only one NetworkManager leaves alone (see [The Wi-Fi
+survey](#the-wi-fi-survey)); otherwise LokiCTL only notices when one is
+plugged in or removed, and says so. (If NetworkManager joins a
 managed stick to a network and routes the traffic through it, the home
 page shows that link like any other uplink.)
 
@@ -1474,7 +1558,8 @@ page shows that link like any other uplink.)
   (`cf3/9271/108` reads `0cf3:9271`), the name from the USB device's
   `manufacturer` and `product` files (printable ASCII only, at most 48
   bytes). Interfaces on the same stick (a monitor interface beside
-  `wlan1`) are one adapter, named after the first by name. At most four.
+  `wlan1`) are one adapter, named after the first by name; the survey's
+  own `lokimon0` is skipped, so the stick keeps its name. At most four.
 - **Managed:** whether NetworkManager manages it (`yes`, `no`, or `--`
   without the service), from the same connection as the names. It reads
   `no` where NetworkManager is set to leave the stick alone (an

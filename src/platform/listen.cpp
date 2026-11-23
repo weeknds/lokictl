@@ -351,7 +351,7 @@ bool CaptureReader::feed(const uint8_t* data, std::size_t size, const FrameFn& o
         const uint32_t snap = native32(header + 16);
         const uint32_t link = native32(header + 20);
         if (!magic_ok || major != 2 || minor != 4 || snap == 0 || snap > kCaptureSnapLength ||
-            link != kLinkEthernet) {
+            link != link_) {
             broken_ = true;
             pending_.clear();
             return false;
@@ -1274,6 +1274,7 @@ bool CaptureProcess::start(const std::string& interface_name,
     const char* command_word = command == CaptureCommand::Watch      ? "watch"
                                : command == CaptureCommand::Topology ? "topology"
                                : command == CaptureCommand::Names    ? "names"
+                               : command == CaptureCommand::Survey   ? "survey"
                                                                      : "discover";
     std::string words[] = {"lokictl-capture", command_word,
                            interface_name, std::to_string(seconds)};

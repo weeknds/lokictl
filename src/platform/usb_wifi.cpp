@@ -6,6 +6,8 @@
 
 #include "usb_wifi.h"
 
+#include "survey_data.h"
+
 #include <algorithm>
 #include <cctype>
 #include <fstream>
@@ -139,6 +141,11 @@ std::vector<model::UsbWifiAdapter> read_usb_wifi(const fs::path& root) {
     std::sort(names.begin(), names.end());
 
     for (const std::string& interface_name : names) {
+        // The survey's listening interface sits on a stick that is listed
+        // under its own interface.
+        if (interface_name == model::kSurveyListenInterface) {
+            continue;
+        }
         const fs::path interface_dir = net / interface_name;
         if (!fs::is_directory(interface_dir / "wireless", error)) {
             continue;

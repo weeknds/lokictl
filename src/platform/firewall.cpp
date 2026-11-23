@@ -76,6 +76,8 @@ const char* helper_exit_reason(int code) {
             return "Wi-Fi driver refused";
         case 7:
             return "iw not found";
+        case 8:
+            return "stick in use";
         default:
             return "helper failed";
     }
@@ -265,6 +267,10 @@ std::string add_share_interface(milliseconds limit) {
 
 std::string remove_share_interface(milliseconds limit) {
     return run_helper({"ap-del"}, limit);
+}
+
+std::string remove_survey_listener(milliseconds limit) {
+    return run_helper({"survey-off"}, limit);
 }
 
 bool valid_device_address(const std::string& address) {

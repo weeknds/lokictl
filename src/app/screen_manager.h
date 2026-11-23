@@ -52,6 +52,7 @@ public:
     bool show_signin_screen();
     bool show_talk_screen();
     bool show_lan_screen();
+    bool show_survey_screen();
     bool show_trap_screen();
     bool show_map_screen();
     bool show_speed_screen();

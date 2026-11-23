@@ -136,6 +136,23 @@ how many packets LokiCTL has sent.
   20 hops.
 - Wi-Fi lists the networks the built-in Wi-Fi can hear, with signal,
   channel and security. It can't scan while the hotspot runs.
+- Survey (`7` on Wi-Fi, or the command `survey`) needs an optional USB
+  Wi-Fi stick (the built-in Wi-Fi can't do this). Press `6` and for five
+  minutes the stick only listens, hopping over the 2.4 GHz channels your
+  country allows. It lists what it hears in short lines: `Kick-off attack
+  on ch 11` (someone is knocking devices off Wi-Fi), `Look-alike of
+  HomeNet` (a network with your Wi-Fi's name and weaker security),
+  `Channel 6: busy`, then every network, with hidden ones as `Hidden
+  network`. `5` switches to a chart of how busy each channel is. It
+  never sends anything. It listens through a second interface it adds
+  on the stick, `lokimon0`, and leaves the stick's own one alone;
+  `lokimon0` goes away when the survey ends, when you stop it or when
+  LokiCTL quits. It only takes a
+  stick NetworkManager leaves alone and that nothing else is using. If
+  the page says `Stick is in use`, NetworkManager has it: put a file in
+  `/etc/NetworkManager/conf.d/` with the lines `[keyfile]` and
+  `unmanaged-devices=interface-name:wlan1` (your stick's name), then run
+  `sudo nmcli general reload conf`.
 - Ports tries 50 common TCP ports on one device, 10 a second. It only takes
   private addresses (like `192.168.x.x`) on a network the Cardputer is on,
   and it sends nothing until you press `6` a second time. Open ports are
@@ -370,7 +387,7 @@ and names, up and down (fn+F and fn+X) bring back the last 8 commands, and
 |---|---|
 | `help` | Lists the commands. |
 | `report` | Saves a report of what LokiCTL has found (see [Reports](#reports)). |
-| `home`, `map`, `tools`, `discover`, `watch`, `trap`, `health`, `leak`, `signin`, `talk`, `lan`, `wifi`, `status`, `settings` | Opens that page. |
+| `home`, `map`, `tools`, `discover`, `watch`, `trap`, `health`, `leak`, `signin`, `talk`, `lan`, `wifi`, `survey`, `status`, `settings` | Opens that page. |
 | `theme <name>` | Switches to `instrument`, `constellation` or `terminal`. |
 | `mode <name>` | Switches to `client`, `router`, `share` or `vpn`. |
 | `ping [target]` | Pings a host, or the target that's selected on the Ping page. |
@@ -408,13 +425,17 @@ setuid. The package adds three things so the network features work:
   a WPA-protected hotspot. polkit can't tell programs apart, so every
   program a `netdev` member runs gets these rights, not only LokiCTL.
 - `lokictl-helper`, a tiny program with one capability, `CAP_NET_ADMIN`.
-  It runs ten fixed commands and only touches LokiCTL's own firewall
+  It runs twelve fixed commands and only touches LokiCTL's own firewall
   table (`inet lokictl`, used for blocking, the kill switch and the trap's
-  low ports) and Share's extra interface, `lokiap0`.
+  low ports), Share's extra interface, `lokiap0`, and, for the survey, a
+  listen-only interface, `lokimon0`, on a USB Wi-Fi stick (never
+  `wlan0`): adding it, its channel, and removing it.
 - `lokictl-capture`, a tiny program with one capability, `CAP_NET_RAW`.
   For Discover it only hears ARP, DHCP, mDNS and SSDP; for Watch only ARP,
   DHCP, connection requests to the Cardputer and IPv6 router
-  announcements. It can't send anything, and it stops when the run ends.
+  announcements; for the survey only Wi-Fi beacons, kick-off frames and
+  the kind of every other frame (never its content). It can't send
+  anything, and it stops when the run ends.
 
 Only root and the `netdev` group can run the two helpers. Removing the
 package removes all three. [docs/permissions.md](docs/permissions.md) has
@@ -448,6 +469,10 @@ the details and lists every file LokiCTL writes.
 | Auto check | The system's own internet check (NetworkManager's). When it's on, LokiCTL tells you about a sign-in page by itself. |
 | iperf3 | A free program that measures the speed between two devices on the same network. One side runs it as a server, the other tests against it; there are iperf3 apps for phones too. |
 | Looked up (DNS) | Before a device talks to a website or service, it asks for the address of its name (a DNS lookup). The Talk page lists those names. |
+| Kick-off attack | Someone sends many "leave the network" frames (deauthentication) on a channel, which knocks phones and laptops off Wi-Fi, often to catch their password when they join again. The survey flags more than 20 in one second. |
+| Hidden network | A network that doesn't say its name in its beacons (the frames an access point sends about ten times a second). It isn't safer; devices that know it call out its name instead. |
+| Busy channel | A Wi-Fi channel with a lot of traffic. A network on a quieter channel (1, 6 or 11) is often faster. |
+| Monitor mode | The listen-only mode of a Wi-Fi stick, in which it hears every frame on a channel. The built-in Wi-Fi can't do it. |
 
 ## Data use
 
@@ -475,13 +500,15 @@ the details and lists every file LokiCTL writes.
 - The hotspot hands out IPv4 addresses only.
 - While the hotspot runs, the Devices page can't show each device's
   signal.
-- A USB Wi-Fi adapter isn't needed and isn't used. If you plug one in,
-  LokiCTL tells you and lists it on the Status page, but leaves it alone.
+- A USB Wi-Fi adapter isn't needed. If you plug one in, LokiCTL tells you
+  and lists it on the Status page; only the survey uses it, and only
+  while it runs. The survey is 2.4 GHz only and hears each channel for a
+  quarter of a second at a time, so it can miss short bursts.
 - Typing gives lowercase letters, digits, `.` and space for now.
 
 ## Legal
 
-Only scan, probe or capture networks you own or are allowed to test.
+Only scan, probe, capture or survey networks you own or are allowed to test.
 Listening sends nothing, but a probe and a port scan do, and doing that on
 someone else's network can break their rules or the law. Saved captures
 and reports contain what devices on the network said about themselves, so

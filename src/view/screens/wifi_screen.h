@@ -29,7 +29,8 @@ namespace screen {
 //   with the app-wide Sent count at its right (a scan is sent by the
 //   network service and is not counted).
 //
-// Keys: 4 (Back) or a short ESC goes back; 6 (Scan) or Enter asks for a
+// Keys: 4 (Back) or a short ESC goes back; 7 (Stick) opens the Wi-Fi
+// survey with a USB stick (the Survey page); 6 (Scan) or Enter asks for a
 // fresh scan (switched off while one runs and while there is no list); up
 // and down (F/X) scroll the list. Opening the page asks for nothing: it
 // shows the list the network service already has.

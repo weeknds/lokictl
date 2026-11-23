@@ -427,6 +427,9 @@ void KeyController::open_command_page(model::AppPage page) {
         case model::AppPage::Lan:
             view_model_.open_lan();
             return;
+        case model::AppPage::Survey:
+            view_model_.open_survey();
+            return;
         case model::AppPage::Talk:
             view_model_.open_talk();
             return;

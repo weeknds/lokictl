@@ -890,6 +890,23 @@ if(USE_DESKTOP)
     target_link_options(${PROJECT_NAME}_talk_tests PRIVATE -fsanitize=address,undefined)
     add_test(NAME talk_checks COMMAND ${PROJECT_NAME}_talk_tests)
 
+    # The Wi-Fi survey: radio headers and Wi-Fi frames from made-up, broken
+    # and hostile bytes and a real stick's radio header, the counting of
+    # access points, look-alikes, kick-off attacks and busy channels, and
+    # which stick a survey uses (tests/survey_checks.cpp), with the address
+    # and undefined-behaviour checkers:
+    # build/darwin-arm64/Debug/lokictl_survey_tests, or ctest.
+    add_executable(${PROJECT_NAME}_survey_tests
+        tests/survey_checks.cpp
+        src/platform/survey.cpp
+        src/platform/usb_wifi.cpp
+    )
+    target_include_directories(${PROJECT_NAME}_survey_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/platform)
+    target_link_libraries(${PROJECT_NAME}_survey_tests PRIVATE ${PROJECT_NAME}_model)
+    target_compile_options(${PROJECT_NAME}_survey_tests PRIVATE -fsanitize=address,undefined -fno-sanitize-recover=all)
+    target_link_options(${PROJECT_NAME}_survey_tests PRIVATE -fsanitize=address,undefined)
+    add_test(NAME survey_checks COMMAND ${PROJECT_NAME}_survey_tests)
+
     # The LAN speed test's reading of iperf3 output: saved output, errors,
     # output cut off at every byte and hostile lines (tests/lan_checks.cpp),
     # with the address and undefined-behaviour checkers:

@@ -213,7 +213,7 @@ The commands, read without regard to case:
 | `report` | saves a report of what LokiCTL has found (`Report saved: 07:51:30`, or `Report not saved: <why>`; see [permissions.md](permissions.md#reports)) |
 | `theme <name>` | switches the theme: `instrument`, `constellation` or `terminal` |
 | `mode <name>` | switches the mode: `client`, `router`, `share` or `vpn` (see below) |
-| `home`, `map`, `tools`, `discover`, `watch`, `trap`, `health`, `leak`, `signin`, `talk`, `wifi`, `status`, `settings` | open that page, the same way its key does |
+| `home`, `map`, `tools`, `discover`, `watch`, `trap`, `health`, `leak`, `signin`, `talk`, `wifi`, `survey`, `status`, `settings` | open that page, the same way its key does |
 | `ping`, `dns`, `trace` `[target]` | open the tool's page and run it, on the target when one is given |
 | `ports [address]` | opens the Ports page and asks first, as its key 6 does; nothing is sent until the second 6 |
 | `scan` | starts Discover's passive Listen run |
@@ -922,6 +922,7 @@ list: a note and `Not while the hotspot runs`; likewise `Wi-Fi is off` and
 | Key | What it does |
 |---|---|
 | `6` SCAN or Enter | asks for a fresh scan; off while one runs or while there is no list |
+| `7` STICK | opens the Survey page (the Wi-Fi survey with a USB stick) |
 | `f`/`x` or the arrows up and down | scroll the networks |
 | `4` BACK or a short ESC | goes back |
 
@@ -932,6 +933,42 @@ shows the badge `WI-FI` and five rows. Snapshots: the default `sample`
 source runs Router, so `--page wifi` shows the refusal; `--data wifi`
 shows the made-up list, `--keys 6` a scan under way and `--keys 6,data`
 its end.
+
+## The Survey page
+
+`survey` (the Wi-Fi page's key 7, `screen::SurveyScreen`) shows what an
+optional USB Wi-Fi stick hears (see [data.md](data.md#the-wi-fi-survey)).
+Under the title bar: the summary line (`wlan1 · 7 networks`, or `wlan1 ·
+USB stick` before a run, `Wi-Fi survey` without a stick) with `2 warnings`
+or `Best ch 11` at its right; then the list, one line each, four lines in
+every theme with the thin scroll mark when there are more: the findings
+first (`Kick-off attack on ch 11` in the error colour, `Look-alike of
+HomeNet` in the warning colour, `Channel 6: busy` in the accent colour),
+then the networks, look-alikes first, then the strongest (`Hidden network`
+muted), with `ch 6 WPA2` at the right. Key 5 swaps the list for a chart:
+one bar per channel 1 to 13, as high as the channel was busy (warning
+colour when busy, error colour where a kick-off attack was seen), the
+number under it. A note stands in place of both: `Plug in a USB Wi-Fi
+stick`, `The system uses the stick`, `No network service to ask`, `Press 6
+to start listening`, `Listening…` or `Nothing heard`. The status line:
+`Needs a USB Wi-Fi stick`, `Ready on wlan1, sends nothing`, `Listening,
+4:12 left`, `Done, listened 5:00`, `Stopped after 1:23`, `Survey not
+allowed` or what went wrong (`Stick is in use`).
+
+| Key | What it does |
+|---|---|
+| `6` START / STOP or Enter | starts a survey with the free stick, or stops it; off without one |
+| `5` CHART / LIST | swaps the list and the chart |
+| `f`/`x` or the arrows up and down | scroll the list |
+| `4` BACK or a short ESC | goes back; a survey keeps going |
+
+The view and the first line shown live in the view model
+(`survey_chart()`, `survey_scroll()`). The help panel shows the badge
+`SURVEY` and five rows. Snapshots: the made-up sources have no stick, so
+`--page survey` shows `Plug in a USB Wi-Fi stick`; with a test folder that
+has one (see [data.md](data.md#the-wi-fi-survey)), `--data live --keys 6
+--settle-ms 30000` shows the made-up survey after 30 s and `--keys 6,5` its
+chart.
 
 ## The Discover page
 

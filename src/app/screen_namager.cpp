@@ -21,6 +21,7 @@
 #include "signin_screen.h"
 #include "talk_screen.h"
 #include "lan_screen.h"
+#include "survey_screen.h"
 #include "trap_screen.h"
 #include "watch_screen.h"
 #include "hotspot_screen.h"
@@ -205,6 +206,14 @@ bool ScreenManager::show_lan_screen() {
         return false;
     }
     page_loaded(model::AppPage::Lan);
+    return true;
+}
+
+bool ScreenManager::show_survey_screen() {
+    if (!load_screen(std::make_unique<screen::SurveyScreen>(view_model_, assets_, theme_engine_))) {
+        return false;
+    }
+    page_loaded(model::AppPage::Survey);
     return true;
 }
 
@@ -400,6 +409,10 @@ bool ScreenManager::show_page(model::AppPage page) {
 
     if (screen::LanScreen::handles(page)) {
         return show_lan_screen();
+    }
+
+    if (screen::SurveyScreen::handles(page)) {
+        return show_survey_screen();
     }
 
     if (screen::MapScreen::handles(page)) {

@@ -27,6 +27,7 @@
 #include "trap_controller.h"
 #include "talk.h"
 #include "talk_controller.h"
+#include "survey_controller.h"
 #include "lan_runner.h"
 #include "lan_controller.h"
 #include "report_controller.h"
@@ -312,6 +313,9 @@ int run_snapshot(const SnapshotRequest& request) {
     // The LAN speed test, made-up: nothing is started.
     LanController lan(view_model, platform::make_lan_runner(false));
     lan.start();
+    // The Wi-Fi survey, made-up: it starts only on key 6, with a stick.
+    SurveyController survey(view_model, platform::make_survey_runner(false));
+    survey.start();
     // Reports only go to a folder named by LOKICTL_REPORT_DIR here, so a
     // snapshot never writes into the user's own folders.
     ReportController reports(view_model, platform::report_folder());

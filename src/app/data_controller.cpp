@@ -474,8 +474,11 @@ void DataController::update_shown() {
     const model::AppPage page = view_model_.current_page();
     reader_.set_traffic_shown(!screen_dark_ && page == model::AppPage::Home);
     reader_.set_details_shown(!screen_dark_ && page == model::AppPage::Status);
-    // The health check takes NetworkManager's last scan list as it starts.
-    reader_.set_wifi_shown(!screen_dark_ && (page == model::AppPage::Wifi || page == model::AppPage::Health));
+    // The health check takes NetworkManager's last scan list as it starts;
+    // the survey finds the joined network in it when the cable is the
+    // uplink.
+    reader_.set_wifi_shown(!screen_dark_ && (page == model::AppPage::Wifi || page == model::AppPage::Health ||
+                                             page == model::AppPage::Survey));
 }
 
 bool DataController::poll() {

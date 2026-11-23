@@ -198,7 +198,7 @@ view::widgets::HelpContent WifiScreen::help_content() {
                 {"F / X", "Scroll the networks"},
                 {"ENTER / 6", "Scan for networks"},
                 {"Accent", "The joined network"},
-                {"Sent", "Scans are not counted"},
+                {"7", "Survey with a USB stick"},
             }};
 }
 
@@ -214,7 +214,7 @@ view::widgets::SoftKeySet WifiScreen::soft_keys() {
         {"Back", [&view_model] { view_model.go_back(); }},
         {},
         {"Scan", [this] { scan(); }, true},
-        {},
+        {"Stick", [&view_model] { view_model.open_survey(); }},
         {},
     }};
 }

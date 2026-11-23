@@ -81,6 +81,9 @@ BaseViewModel::BaseViewModel()
       lan_subject_(0),
       lan_request_subject_(0),
       lan_choice_subject_(0),
+      survey_subject_(0),
+      survey_request_subject_(0),
+      survey_view_subject_(0),
       report_request_subject_(0),
       map_selection_subject_(kMapRouter),
       home_selection_subject_(0),
@@ -972,6 +975,67 @@ bool BaseViewModel::open_signin() {
 
 bool BaseViewModel::open_lan() {
     return open_page(model::AppPage::Lan);
+}
+
+bool BaseViewModel::open_survey() {
+    return open_page(model::AppPage::Survey);
+}
+
+const model::SurveyRun& BaseViewModel::survey() const {
+    return survey_;
+}
+
+bool BaseViewModel::set_survey(const model::SurveyRun& run) {
+    if (run == survey_) {
+        return false;
+    }
+    survey_ = run;
+    bump(survey_subject_);
+    return true;
+}
+
+lv_subject_t* BaseViewModel::survey_subject() {
+    return survey_subject_.native();
+}
+
+void BaseViewModel::request_survey(SurveyRequest request) {
+    requested_survey_ = request;
+    bump(survey_request_subject_);
+}
+
+lv_subject_t* BaseViewModel::survey_request_subject() {
+    return survey_request_subject_.native();
+}
+
+BaseViewModel::SurveyRequest BaseViewModel::requested_survey() const {
+    return requested_survey_;
+}
+
+lv_subject_t* BaseViewModel::survey_view_subject() {
+    return survey_view_subject_.native();
+}
+
+bool BaseViewModel::survey_chart() const {
+    return survey_chart_;
+}
+
+void BaseViewModel::set_survey_chart(bool chart) {
+    if (chart != survey_chart_) {
+        survey_chart_ = chart;
+        bump(survey_view_subject_);
+    }
+}
+
+int32_t BaseViewModel::survey_scroll() const {
+    return survey_scroll_;
+}
+
+void BaseViewModel::set_survey_scroll(int32_t row) {
+    const int32_t next = std::max<int32_t>(row, 0);
+    if (next != survey_scroll_) {
+        survey_scroll_ = next;
+        bump(survey_view_subject_);
+    }
 }
 
 const model::LanRun& BaseViewModel::lan() const {

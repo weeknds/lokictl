@@ -10,26 +10,32 @@
  *
  * LokiCTL runs as the normal user. Hearing the ARP, DHCP, mDNS and SSDP
  * traffic of the network (the Discover page), what Watch looks for, what
- * switches say about themselves (the Map's topology), and the names the
- * devices on the Cardputer's own hotspot look up, needs a packet
- * socket, which takes one Linux capability, CAP_NET_RAW. This small
+ * switches say about themselves (the Map's topology), the names the
+ * devices on the Cardputer's own hotspot look up, and what a USB Wi-Fi
+ * stick in listen-only (monitor) mode hears (the Wi-Fi survey), needs a
+ * packet socket, which takes one Linux capability, CAP_NET_RAW. This small
  * program holds it as a
  * file capability (set by the package's postinst; it is not setuid), and
  * only root and members of the netdev group may run it (root:netdev, mode
  * 0750).
  *
- * It does one of four fixed commands, which differ only in their frame
- * filter (and, for topology, the two link-layer groups it listens to):
+ * It does one of five fixed commands, which differ only in their frame
+ * filter (and, for topology, the two link-layer groups it listens to; for
+ * survey, the kind of interface):
  *
  *   lokictl-capture discover INTERFACE SECONDS
  *   lokictl-capture watch INTERFACE SECONDS
  *   lokictl-capture topology INTERFACE SECONDS
  *   lokictl-capture names INTERFACE SECONDS
+ *   lokictl-capture survey INTERFACE SECONDS
  *
- * INTERFACE is the name of an existing network interface of Ethernet type
- * (a cable port, or Wi-Fi in its normal mode): 1 to 15 characters of a-z,
- * A-Z, 0-9, '.', '_' and '-'. It is looked up by the kernel; no file path
- * is ever made from it. SECONDS is 1 to CAPTURE_MAX_SECONDS.
+ * INTERFACE is the name of an existing network interface: 1 to 15
+ * characters of a-z, A-Z, 0-9, '.', '_' and '-'. It is looked up by the
+ * kernel; no file path is ever made from it. For the first four it must be
+ * of Ethernet type (a cable port, or Wi-Fi in its normal mode); for survey
+ * it must be "lokimon0", the listening interface the firewall helper adds
+ * on a USB Wi-Fi stick, in monitor mode (link type radiotap). SECONDS is 1
+ * to CAPTURE_MAX_SECONDS.
  *
  * In order:
  * 1. A packet socket is opened with protocol 0, so it receives nothing yet.
@@ -56,6 +62,12 @@
  *    (SIOCGIFADDR) once, before the filter is attached; no argument sets
  *    it. Lookups sent anywhere else (forwarded through the Cardputer to
  *    another server) and the answers are dropped.
+ *    survey: Wi-Fi frames behind a radiotap header (version 0, at least 8
+ *    bytes). Beacons, probe answers, deauthentications and
+ *    disassociations (management frames, which carry no one's data) pass
+ *    whole; of every other frame only the radiotap header and the first
+ *    two bytes of the Wi-Fi frame (its kind) pass, so no data, address or
+ *    other content of anyone's traffic leaves the kernel.
  * 3. The socket is bound to the interface. It is never put into
  *    promiscuous mode, so it hears only what reaches the Cardputer anyway.
  *    For topology only, the socket also listens to those two link-layer
@@ -69,16 +81,17 @@
  *    to standard output and standard error, close and exit. Every other
  *    call fails, so nothing can be sent from here on, not even by mistake.
  * 5. What it hears goes to standard output as a PCAP stream (link type
- *    Ethernet, microsecond times, this machine's byte order), and nowhere
- *    else: there is no file argument.
+ *    Ethernet, or 802.11 with radiotap for survey; microsecond times, this
+ *    machine's byte order), and nowhere else: there is no file argument.
  *
  * It ends after SECONDS, after CAPTURE_MAX_BYTES of output, or as soon as
  * whoever reads its output has gone away.
  *
  * Exit status: 0 done (time up, size limit, or the reader went away);
  * 2 not the command, a bad interface (for names also one without an IPv4
- * address) or a bad number; 3 the capability is
- * missing; 4 the socket could not be set up, or failed.
+ * address; for survey any but lokimon0 in monitor mode) or a bad number;
+ * 3 the capability is missing; 4 the socket could not be set up, or
+ * failed.
  */
 
 #define _GNU_SOURCE
@@ -126,6 +139,7 @@ enum {
 /* The PCAP file header and record header. */
 #define PCAP_MAGIC 0xa1b2c3d4U
 #define PCAP_LINK_ETHERNET 1U
+#define PCAP_LINK_RADIOTAP 127U
 #define PCAP_FILE_HEADER 24
 #define PCAP_RECORD_HEADER 16
 
@@ -265,6 +279,40 @@ static struct sock_filter kNamesFilter[] = {
 /* The instruction of kNamesFilter that holds the own address. */
 #define NAMES_ADDRESS_INDEX 7
 
+/* survey: a radiotap header of version 0 whose length X (little-endian, at
+ * bytes 2 and 3; classic BPF loads are big-endian, so it is built from the
+ * two bytes) is at least 8, then a Wi-Fi frame. The first byte of the
+ * frame control (at X; a frame that ends before it is dropped) picks what
+ * passes: a beacon (0x80), probe answer (0x50), disassociation (0xa0) or
+ * deauthentication (0xc0), with Wi-Fi version 0, is cut to
+ * CAPTURE_SNAP_LENGTH; every other frame to X + 2 bytes, its radio header
+ * and its kind. A load past the end of a frame drops it. */
+static struct sock_filter kSurveyFilter[] = {
+    /* 0 */ BPF_STMT(BPF_LD | BPF_B | BPF_ABS, 0),            /* radiotap version */
+    /* 1 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0, 0, 16),    /* not 0: 18 */
+    /* 2 */ BPF_STMT(BPF_LD | BPF_B | BPF_ABS, 3),            /* length, high byte */
+    /* 3 */ BPF_STMT(BPF_ALU | BPF_LSH | BPF_K, 8),
+    /* 4 */ BPF_STMT(BPF_MISC | BPF_TAX, 0),
+    /* 5 */ BPF_STMT(BPF_LD | BPF_B | BPF_ABS, 2),            /* length, low byte */
+    /* 6 */ BPF_STMT(BPF_ALU | BPF_ADD | BPF_X, 0),           /* A = radiotap length */
+    /* 7 */ BPF_JUMP(BPF_JMP | BPF_JGE | BPF_K, 8, 0, 10),    /* shorter than 8: 18 */
+    /* 8 */ BPF_STMT(BPF_MISC | BPF_TAX, 0),                  /* X = radiotap length */
+    /* 9 */ BPF_STMT(BPF_LD | BPF_B | BPF_IND, 0),            /* frame control, first byte */
+    /* 10 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x80, 6, 0), /* beacon: 17 */
+    /* 11 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0x50, 5, 0), /* probe answer: 17 */
+    /* 12 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0xa0, 4, 0), /* disassociation: 17 */
+    /* 13 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0xc0, 3, 0), /* deauthentication: 17 */
+    /* 14 */ BPF_STMT(BPF_MISC | BPF_TXA, 0),
+    /* 15 */ BPF_STMT(BPF_ALU | BPF_ADD | BPF_K, 2),          /* A = X + 2 */
+    /* 16 */ BPF_STMT(BPF_RET | BPF_A, 0),                    /* radio header and kind only */
+    /* 17 */ BPF_STMT(BPF_RET | BPF_K, CAPTURE_SNAP_LENGTH),  /* the whole frame */
+    /* 18 */ BPF_STMT(BPF_RET | BPF_K, 0),                    /* drop */
+};
+
+/* The only interface survey listens on: the firewall helper's listening
+ * interface on a USB Wi-Fi stick (never the built-in Wi-Fi). */
+static const char kSurveyInterface[] = "lokimon0";
+
 /* The two link-layer groups topology listens to: LLDP's nearest-bridge
  * group and CDP's group. */
 static const unsigned char kTopologyGroups[2][ETH_ALEN] = {
@@ -319,8 +367,9 @@ static void fail(const char* message) {
 
 static void usage(void) {
     fprintf(stderr,
-            "usage: %s discover|watch|topology|names INTERFACE SECONDS\n"
-            "  INTERFACE: an Ethernet-type interface, for example eth0 or wlan0\n"
+            "usage: %s discover|watch|topology|names|survey INTERFACE SECONDS\n"
+            "  INTERFACE: an Ethernet-type interface, for example eth0 or wlan0;\n"
+            "             for survey only lokimon0 (a USB Wi-Fi stick's listening interface)\n"
             "  SECONDS: 1 to %d\n",
             kProgram,
             CAPTURE_MAX_SECONDS);
@@ -431,9 +480,12 @@ static int lock_calls(void) {
 /* Opens the packet socket on `name`, with `filter` locked on it, bound and
  * receiving; with `join_groups`, also listening to kTopologyGroups. With
  * `own_address`, the interface's own IPv4 address is first written into
- * kNamesFilter (which `filter` is then). Exits with EXIT_USAGE,
- * EXIT_NO_PERMISSION or EXIT_SOCKET_FAILED when it cannot. */
-static int open_socket(const char* name, const struct sock_fprog* filter, int join_groups, int own_address) {
+ * kNamesFilter (which `filter` is then). With `radiotap`, the interface
+ * must be in monitor mode (link type radiotap) instead of Ethernet type.
+ * Exits with EXIT_USAGE, EXIT_NO_PERMISSION or EXIT_SOCKET_FAILED when it
+ * cannot. */
+static int open_socket(const char* name, const struct sock_fprog* filter, int join_groups, int own_address,
+                       int radiotap) {
     const unsigned int index = if_nametoindex(name);
     if (index == 0) {
         fail("no such interface");
@@ -458,7 +510,11 @@ static int open_socket(const char* name, const struct sock_fprog* filter, int jo
         fail("no such interface");
         _exit(EXIT_USAGE);
     }
-    if (request.ifr_hwaddr.sa_family != ARPHRD_ETHER) {
+    if (radiotap && request.ifr_hwaddr.sa_family != ARPHRD_IEEE80211_RADIOTAP) {
+        fail("not a Wi-Fi interface in monitor mode");
+        _exit(EXIT_USAGE);
+    }
+    if (!radiotap && request.ifr_hwaddr.sa_family != ARPHRD_ETHER) {
         fail("not an Ethernet-type interface");
         _exit(EXIT_USAGE);
     }
@@ -552,19 +608,22 @@ int main(int argc, char* argv[]) {
 
     /* Every argument is checked before anything is opened. */
     if (argc != 4 || (strcmp(argv[1], "discover") != 0 && strcmp(argv[1], "watch") != 0 &&
-                      strcmp(argv[1], "topology") != 0 && strcmp(argv[1], "names") != 0)) {
+                      strcmp(argv[1], "topology") != 0 && strcmp(argv[1], "names") != 0 &&
+                      strcmp(argv[1], "survey") != 0)) {
         usage();
         return EXIT_USAGE;
     }
-    /* The command picks one of the four fixed filters (and, for topology,
+    /* The command picks one of the five fixed filters (and, for topology,
      * the two fixed groups; for names, the interface's own address from the
-     * kernel), nothing else. */
+     * kernel; for survey, a monitor-mode interface and the radiotap link
+     * type), nothing else. */
     struct sock_fprog filter = {
         .len = (unsigned short)(sizeof(kFrameFilter) / sizeof(kFrameFilter[0])),
         .filter = kFrameFilter,
     };
     int join_groups = 0;
     int own_address = 0;
+    int radiotap = 0;
     if (strcmp(argv[1], "watch") == 0) {
         filter.len = (unsigned short)(sizeof(kWatchFilter) / sizeof(kWatchFilter[0]));
         filter.filter = kWatchFilter;
@@ -576,9 +635,13 @@ int main(int argc, char* argv[]) {
         filter.len = (unsigned short)(sizeof(kNamesFilter) / sizeof(kNamesFilter[0]));
         filter.filter = kNamesFilter;
         own_address = 1;
+    } else if (strcmp(argv[1], "survey") == 0) {
+        filter.len = (unsigned short)(sizeof(kSurveyFilter) / sizeof(kSurveyFilter[0]));
+        filter.filter = kSurveyFilter;
+        radiotap = 1;
     }
     const char* name = argv[2];
-    if (!valid_interface_name(name)) {
+    if (!valid_interface_name(name) || (radiotap && strcmp(name, kSurveyInterface) != 0)) {
         fail("not an interface name");
         return EXIT_USAGE;
     }
@@ -592,7 +655,7 @@ int main(int argc, char* argv[]) {
         return EXIT_NO_PERMISSION;
     }
 
-    const int fd = open_socket(name, &filter, join_groups, own_address);
+    const int fd = open_socket(name, &filter, join_groups, own_address, radiotap);
     /* A last stop, should the loop below ever be stuck in a write (set
      * before the seccomp filter, which does not allow it). */
     alarm((unsigned int)seconds + 5U);
@@ -608,7 +671,7 @@ int main(int argc, char* argv[]) {
     put32(header, PCAP_MAGIC);
     memcpy(header + 4, version, sizeof(version));
     put32(header + 16, CAPTURE_SNAP_LENGTH);
-    put32(header + 20, PCAP_LINK_ETHERNET);
+    put32(header + 20, radiotap ? PCAP_LINK_RADIOTAP : PCAP_LINK_ETHERNET);
     if (write_all(header, sizeof(header)) != 0) {
         _exit(EXIT_DONE);
     }
