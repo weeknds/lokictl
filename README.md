@@ -5,7 +5,8 @@ SPDX-License-Identifier: MIT
 
 # LokiCTL
 
-A pocket network multitool for the M5Stack CardputerZero.
+A pocket network multitool for the M5Stack CardputerZero. I couldn't wait
+for the Flipper One, so I built my own small network tool in the meantime.
 
 ![Home page with live speeds, the mode and the devices on the hotspot](docs/media/home.gif)
 
@@ -176,7 +177,7 @@ and reports contain what devices on the network said about themselves, so
 treat them as private. Your WireGuard file never leaves the device.
 
 LokiCTL is an independent project. It is not affiliated with or endorsed
-by M5Stack.
+by M5Stack or Flipper Devices.
 
 ## Documentation
 
