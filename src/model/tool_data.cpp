@@ -363,7 +363,8 @@ bool operator==(const HealthFinding& left, const HealthFinding& right) {
 
 bool operator==(const HealthDevice& left, const HealthDevice& right) {
     return left.address == right.address && left.name == right.name && left.kind == right.kind &&
-           left.router == right.router && left.own == right.own && left.open == right.open;
+           left.router == right.router && left.own == right.own && left.open == right.open &&
+           left.banners == right.banners && left.verdicts == right.verdicts && left.holes == right.holes;
 }
 
 bool operator!=(const HealthDevice& left, const HealthDevice& right) {
@@ -436,6 +437,7 @@ bool operator==(const ToolsData& left, const ToolsData& right) {
            left.listen == right.listen && left.probe == right.probe && left.ports == right.ports &&
            left.speed == right.speed && left.health == right.health && left.leak == right.leak &&
            left.signin == right.signin && left.latest == right.latest &&
+           left.latest_check == right.latest_check &&
            left.sent == right.sent && left.list_date == right.list_date;
 }
 

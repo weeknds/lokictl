@@ -41,6 +41,10 @@ const char* finding_tier_name(FindingTier tier);
 // The most things and devices the dashboard lists.
 constexpr std::size_t kDashMaxThings = 32;
 constexpr std::size_t kDashMaxDevices = 64;
+// The most a device's page lists of each.
+constexpr std::size_t kDashMaxPorts = 8;
+constexpr std::size_t kDashMaxHoles = 4;
+constexpr std::size_t kDashMaxIssues = 4;
 
 // One thing to know about: everything found about one subject (a device,
 // the Wi-Fi, the cable link, the network), at its worst finding's tier,
@@ -56,6 +60,34 @@ struct DashThing {
     std::string time;    // local time it was found, "21:40"; empty when not known
 };
 
+// One open service of a device, for its page.
+struct DashPort {
+    uint16_t port{0};
+    std::string name;     // what it is, in plain words: "Remote login"; "Port 8123" when not known
+    std::string version;  // the software it named, short: "Dropbear 2015.67"; empty when it named none
+    FindingTier tier{FindingTier::Fine};
+    std::string tag;      // "2 holes", "Old", "Fix", "Check", "Info" or "OK"
+};
+
+// One known security hole of a device. The list of holes has no words of
+// its own for a hole, so `text` says which service and software it is in.
+struct DashHole {
+    uint16_t port{0};
+    std::string cve;       // the official number, "CVE-2016-7406"
+    int32_t score{-1};     // the 0-10 severity in tenths (98 is 9.8); -1 not known
+    bool used{false};      // attackers are known to use it
+    std::string text;      // "A known hole in its remote login, Dropbear 2015.67."
+};
+
+// One thing found about a device, for its page: the device's own words.
+struct DashIssue {
+    FindingTier tier{FindingTier::Know};
+    std::string title;               // without the device's name: "2 security holes"
+    std::string about;               // what it means, one or two plain sentences
+    std::vector<std::string> steps;  // what to do, 2 or 3 short numbered steps
+    uint16_t port{0};                // the port it is about; 0 for none
+};
+
 // One device on the networks the Cardputer is on (never the Cardputer).
 struct DashDevice {
     std::string id;        // its IPv4 address, else its hardware address
@@ -69,6 +101,19 @@ struct DashDevice {
     std::string tag;       // "2 holes", "Fix", "Check", "New", "OK"
     std::string services;  // its open services in plain words; "none"; "not checked"
     std::string seen;      // "now", "4 min", "2 h", "earlier"
+    std::string kind;      // what Discover or the check says it is ("printer", "router"); empty when not known
+    bool hotspot{false};   // on LokiCTL's own hotspot now
+    bool blocked{false};   // LokiCTL's firewall blocks it on the hotspot (HomeClient::blocked)
+    // Its page: the open services (at most kDashMaxPorts; `more_ports`
+    // more), its known holes (at most kDashMaxHoles, the worst first) and
+    // its issues (at most kDashMaxIssues, the worst first). Holes in a
+    // version a vendor built ("Debian") are left out: its updates may have
+    // fixed them, and an issue (May need updates) says so.
+    std::vector<DashPort> ports;
+    int32_t more_ports{0};
+    std::vector<DashHole> holes;
+    int32_t more_holes{0};
+    std::vector<DashIssue> issues;
 };
 
 // The counts every page shows. Things: subjects at each tier. Devices:
@@ -82,6 +127,8 @@ struct DashCounts {
     int32_t device_look{0};
     int32_t fine{0};       // checked, and nothing to fix or look at
     int32_t unchecked{0};  // never scanned, and nothing heard about it
+    int32_t device_new{0}; // devices new on the network (DashDevice::is_new)
+    int32_t hotspot{0};    // devices on LokiCTL's own hotspot (DashDevice::hotspot)
 };
 
 struct DashOverview {
@@ -92,12 +139,18 @@ struct DashOverview {
     std::vector<DashDevice> devices;  // the worst first, then by address; at most kDashMaxDevices
     std::vector<std::string> watch_lines;  // Watch's newest alerts in plain words, at most 5
     std::vector<std::string> watch_times;  // their local times, "21:42"
+    std::string list_date;  // the date of the list of known holes the versions were checked against; empty when none
     DashCounts counts;
 };
 
 // Works the overview out from the home data (the hotspot's devices, the
 // uplink, the clock), the tools' latest runs and Watch's log. Every count
 // is over the lists before they are cut to their limits.
+//
+// A device scanned by both the health check and the Ports page takes its
+// open ports, services, holes and port findings from the one started last
+// (ToolsData::latest_check), so a newer scan replaces what an older one
+// said; a Ports scan of a device the check did not scan always counts.
 DashOverview dashboard_overview(const HomeData& home, const ToolsData& tools, const WatchData& watch);
 
 // Made-up tool runs, Watch log and trap for the dashboard while the home

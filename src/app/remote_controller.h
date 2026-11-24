@@ -27,6 +27,7 @@ class RemotePanel;
 }
 
 namespace platform::remote {
+class BlockQueue;
 class HandOffSource;
 class KeyQueue;
 class Server;
@@ -90,12 +91,22 @@ namespace app {
 // reads the view model itself. It also keeps the last minute of traffic
 // for the dashboard's chart, from the moment the server starts.
 //
+// Block and Allow from the dashboard (POST /api/v1/block) wait in a queue
+// this controller owns, emptied whenever a server starts or stops. Its
+// timer takes them: a request applies only to a device on LokiCTL's own
+// hotspot right now (an access point in Router or Share, a client with
+// that IPv4 address and a hardware address), and goes the way the Devices
+// page's key 8 goes (BaseViewModel::request_block()); anything else is
+// dropped. The page sees the result in the next status. Log lines: "remote
+// view: block asked from the browser" or "... allow asked ..." (never an
+// address).
+//
 // Create it after the ThemeEngine and the view model, and destroy it
 // before them.
 class RemoteController {
 public:
     RemoteController(view::ThemeEngine& theme_engine,
-                     const viewmodel::BaseViewModel& view_model,
+                     viewmodel::BaseViewModel& view_model,
                      std::string web_folder,
                      std::string font_folder);
     // Calls stop().
@@ -135,12 +146,15 @@ private:
     // forgets the waiting keys.
     void run_key_timer(bool run);
     void press_waiting_key();
+    // Applies the dashboard's waiting Block and Allow requests.
+    void apply_blocks();
 
-    const viewmodel::BaseViewModel& view_model_;
+    viewmodel::BaseViewModel& view_model_;
     std::unique_ptr<view::widgets::RemotePanel> panel_;
     std::unique_ptr<view::widgets::RemoteMark> mark_;
     // Declared before the servers: their threads may use it until they end.
     std::unique_ptr<platform::remote::KeyQueue> keys_;
+    std::unique_ptr<platform::remote::BlockQueue> blocks_;
     std::unique_ptr<platform::remote::Server> server_;   // the one that runs
     std::unique_ptr<platform::remote::Server> retiring_; // told to stop, not yet ended
     platform::remote::HandOffSource* hand_off_{nullptr}; // owned by server_ (desktop)

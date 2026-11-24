@@ -7,32 +7,49 @@
 // not at all while it is hidden. Otherwise the pairing screen.
 
 import { h, render, Component } from "./preact.module.js";
-import { getJson, setToken } from "./ui.js";
+import { getJson, setToken, REFRESH_EVENT } from "./ui.js";
 import { Pair } from "./pair.js";
 import { Shell, findPage } from "./shell.js";
 
 const POLL_MS = 2000;
 const RETRY_MS = 3000;
+const REFRESH_MS = 700;
 const ENDED = "Your session ended. Type the new code from the Cardputer.";
 
+// "#/devices/10.0.0.43": the page ("devices") and what it shows (one
+// device, by its id); the sub-path is empty for the page itself.
 function routeFromHash() {
-  const name = location.hash.replace(/^#\/?/, "").split(/[/?]/)[0];
-  return findPage(name || "home").id;
+  const parts = location.hash.replace(/^#\/?/, "").split("?")[0].split("/");
+  const route = findPage(parts[0] || "home").id;
+  let sub = "";
+  if (route === "devices" && parts[1]) {
+    try {
+      sub = decodeURIComponent(parts[1]);
+    } catch (err) {
+      sub = "";
+    }
+  }
+  return { route, sub };
 }
 
 class App extends Component {
   constructor() {
     super();
     // "start": asking whether this browser is paired; then "pair" or "shell".
-    this.state = { view: "start", route: routeFromHash(), status: null, lost: false, message: "", bad: false };
+    const where = routeFromHash();
+    this.state = { view: "start", route: where.route, sub: where.sub, status: null, lost: false, message: "", bad: false };
     this.timer = 0;
     this.asking = false;
     this.onHash = () => {
-      const route = routeFromHash();
-      if (route !== this.state.route) {
-        this.setState({ route });
+      const { route, sub } = routeFromHash();
+      if (route !== this.state.route || sub !== this.state.sub) {
+        this.setState({ route, sub });
         window.scrollTo(0, 0);
       }
+    };
+    // A page that changed something (Block, Allow) asks for the news soon.
+    this.onRefresh = () => {
+      if (this.state.view === "shell") this.schedule(REFRESH_MS);
     };
     this.onVisible = () => {
       if (document.hidden) {
@@ -47,6 +64,7 @@ class App extends Component {
   componentDidMount() {
     window.addEventListener("hashchange", this.onHash);
     document.addEventListener("visibilitychange", this.onVisible);
+    window.addEventListener(REFRESH_EVENT, this.onRefresh);
     this.start();
   }
 
@@ -54,6 +72,7 @@ class App extends Component {
     clearTimeout(this.timer);
     window.removeEventListener("hashchange", this.onHash);
     document.removeEventListener("visibilitychange", this.onVisible);
+    window.removeEventListener(REFRESH_EVENT, this.onRefresh);
   }
 
   componentDidUpdate() {
@@ -116,12 +135,12 @@ class App extends Component {
     this.schedule(next);
   }
 
-  render(props, { view, route, status, lost, message, bad }) {
+  render(props, { view, route, sub, status, lost, message, bad }) {
     if (view === "pair") {
       return h(Pair, { message, bad, onPaired: this.onPaired });
     }
     if (view === "shell") {
-      return h(Shell, { route, status, lost });
+      return h(Shell, { route, sub, status, lost });
     }
     return null;
   }

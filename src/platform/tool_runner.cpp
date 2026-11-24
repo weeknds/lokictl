@@ -183,6 +183,9 @@ public:
         if (job.kind == model::ToolKind::Listen || job.kind == model::ToolKind::Probe) {
             latest_.latest = job.kind;
         }
+        if (job.kind == model::ToolKind::Health || job.kind == model::ToolKind::Ports) {
+            latest_.latest_check = job.kind;
+        }
         fresh_ = true;
         if (job.kind == model::ToolKind::Listen) {
             save_asked_ = false;
@@ -286,6 +289,7 @@ public:
         data.leak = latest_.leak;
         data.signin = latest_.signin;
         data.latest = latest_.latest;
+        data.latest_check = latest_.latest_check;
         data.list_date = latest_.list_date;
         fresh_ = false;
         return true;
@@ -1056,6 +1060,9 @@ public:
             if (job.kind == model::ToolKind::Listen || job.kind == model::ToolKind::Probe) {
                 latest_.latest = job.kind;
             }
+            if (job.kind == model::ToolKind::Health || job.kind == model::ToolKind::Ports) {
+                latest_.latest_check = job.kind;
+            }
             fresh_ = true;
         }
         wake_.notify_all();
@@ -1098,6 +1105,7 @@ public:
         data.leak = latest_.leak;
         data.signin = latest_.signin;
         data.latest = latest_.latest;
+        data.latest_check = latest_.latest_check;
         data.list_date = latest_.list_date;
         fresh_ = false;
         return true;

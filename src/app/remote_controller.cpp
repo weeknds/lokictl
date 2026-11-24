@@ -128,13 +128,14 @@ void blend_over(lv_draw_buf_t* base, const lv_draw_buf_t* top) {
 } // namespace
 
 RemoteController::RemoteController(view::ThemeEngine& theme_engine,
-                                   const viewmodel::BaseViewModel& view_model,
+                                   viewmodel::BaseViewModel& view_model,
                                    std::string web_folder,
                                    std::string font_folder)
     : view_model_(view_model),
       panel_(std::make_unique<view::widgets::RemotePanel>(lv_layer_top(), theme_engine)),
       mark_(std::make_unique<view::widgets::RemoteMark>(lv_layer_top(), theme_engine)),
       keys_(std::make_unique<platform::remote::KeyQueue>()),
+      blocks_(std::make_unique<platform::remote::BlockQueue>()),
       web_folder_(std::move(web_folder)),
       font_folder_(std::move(font_folder)) {
     panel_->build();
@@ -341,11 +342,13 @@ void RemoteController::switch_on() {
     }
     message_shown_ = false;
     keys_->clear();
+    blocks_->clear();
     set_hotspot(false, false);
     hotspot_open_seen_ = false;
 
     platform::remote::ServerOptions options;
     options.keys = keys_.get();
+    options.blocks = blocks_.get();
     options.reports_folder = platform::report_folder();
     options.web_folder = web_folder_;
     options.font_folder = font_folder_;
@@ -381,6 +384,7 @@ void RemoteController::switch_off() {
     retiring_ = std::move(server_);
     hand_off_ = nullptr;
     run_key_timer(false);
+    blocks_->clear();
     set_hotspot(false, false);
     hotspot_open_seen_ = false;
     if (panel_) {
@@ -542,6 +546,7 @@ void RemoteController::poll() {
         if (server_ && hand_off_) {
             hand_off_frame();
         }
+        apply_blocks();
         hand_over_status();
     }
 
@@ -554,6 +559,29 @@ void RemoteController::poll() {
 
     if (!server_ && !retiring_ && !message_shown_ && timer_) {
         lv_timer_pause(timer_);
+    }
+}
+
+void RemoteController::apply_blocks() {
+    platform::remote::BlockRequest request;
+    while (blocks_->pop(request)) {
+        if (!server_) {
+            continue;
+        }
+        const model::HomeData& home = view_model_.home();
+        if (!home.ap_active || !model::is_hotspot_mode(home.mode)) {
+            continue;
+        }
+        for (const model::HomeClient& client : home.clients) {
+            if (client.address != request.address || client.hardware_address.empty()) {
+                continue;
+            }
+            if (client.blocked != request.block) {
+                LOG_INFO("remote view: {} asked from the browser", request.block ? "block" : "allow");
+                view_model_.request_block(client.hardware_address, request.block);
+            }
+            break;
+        }
     }
 }
 
@@ -576,7 +604,8 @@ void RemoteController::hand_over_status() {
                          tools.ports.state == model::ToolState::Idle &&
                          watch.run.state == model::ToolState::Idle;
     if (made_up) {
-        const model::DashSample sample = model::sample_dashboard();
+        model::DashSample sample = model::sample_dashboard();
+        sample.tools.list_date = tools.list_date;
         parts.overview = model::dashboard_overview(home, sample.tools, sample.watch);
         parts.watching = sample.watch.run.state == model::ToolState::Running;
         parts.trap_on = sample.trap.state == model::ToolState::Running;

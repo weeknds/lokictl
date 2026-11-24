@@ -80,8 +80,25 @@ internet.
   the traffic of the last minute, the mode and VPN, and Watch's newest
   alerts and the trap. A computer also lists the devices. Before any
   health check the verdict says `Not checked yet`: a device nobody has
-  checked never counts as fine. The other pages say what they will show;
-  their contents come in later updates.
+  checked never counts as fine.
+- **Devices** lists every device the Cardputer knows, one line each, in
+  three groups: `Needs attention`, `Looks fine` and `Not checked yet`
+  (only when there are any). A search box finds a name, an address or a
+  service, and the filters `All`, `Issues`, `New` and `Hotspot` show
+  their counts. A computer shows the same as a table.
+- **A device's page** leads with its worst problem in plain words and the
+  first step of the fix (`Fix it step by step` shows all of them), then
+  anything else found, its open services (port, the software it named,
+  a tag such as `2 holes` or `Old`) and its known security holes: how
+  serious (a word, the score such as `9.8 of 10` and a 10-step meter) and
+  the official number. Holes are found by the version a service reports,
+  checked against LokiCTL's built-in list. `Check again` leads to
+  Security. A device on LokiCTL's own hotspot has **Block** (it stays
+  connected but can't use the hotspot) or **Allow**, the same as `8` on
+  the Cardputer's Devices page; the page shows the result, or why it
+  failed.
+- The other pages say what they will show; their contents come in later
+  updates.
 - **The findings are worked out once, on the Cardputer**, and every page
   shows the same numbers. One *thing* per device (or the Wi-Fi, the cable
   link, the network), at its worst finding: **Fix soon** (a risk of the
@@ -281,13 +298,14 @@ form too; the code from the Cardputer's screen still guards it.
 
 | Request | Answer |
 |---|---|
-| `GET /`, `/app.css`, `/app.js`, `/pair.js`, `/shell.js`, `/ui.js`, `/home.js`, `/preact.module.js`, `/icon.svg`, `/fonts/Inter-Regular.ttf`, `/fonts/Inter-SemiBold.ttf` | the dashboard's files, no session needed (`404` when the file is not installed) |
+| `GET /`, `/app.css`, `/app.js`, `/pair.js`, `/shell.js`, `/ui.js`, `/home.js`, `/devices.js`, `/preact.module.js`, `/icon.svg`, `/fonts/Inter-Regular.ttf`, `/fonts/Inter-SemiBold.ttf` | the dashboard's files, no session needed (`404` when the file is not installed) |
 | `GET /screen` | the screen page (`text/html`, with its own `Content-Security-Policy`) |
 | `POST /pair` with the form body `code=NNNNNN` | `200` and the session cookie; `403` for a wrong code; `409` while a browser is paired |
 | `GET /api/v1/session` with the cookie | `200` with `{"token":"<request token>"}`; `401` without the cookie |
 | `GET /api/v1/status` with the cookie | `200` with what the home page knows, as JSON (below); `503` before the app handed any over; `401` without the cookie |
 | `GET /screen.png?since=N` with the cookie | `204` while frame N is still the current one, otherwise `200` with the screen as a 320x170 PNG and `X-Frame: M`, the number of that frame; `401` without the cookie |
 | `POST /key` with the form body `k=<name>`, the cookie, `Origin: http://<address>:8780` and `X-LokiCTL-Token` | `204` when the key was taken; `400` for an unknown name; `401` without the cookie; `403` without that `Origin` or with a wrong or missing token; `429` when 16 keys wait or 20 came in the last second |
+| `POST /api/v1/block` with the form body `id=<IPv4>&on=1` (block) or `on=0` (allow), the cookie, `Origin` and `X-LokiCTL-Token` as for `/key` | `204` when the request was queued; `400` for an id that is not an IPv4 address or another `on`; `401` without the cookie; `403` without that `Origin` or with a wrong or missing token; `429` when 4 requests wait. The Cardputer applies it only to a device on its own hotspot right now; the next status shows the result |
 | `GET /reports` with the cookie | `200` with the saved reports as JSON, the newest first, at most 40: `{"reports":[{"name":"lokictl-20261123-075130.html","bytes":21000},...]}`; `401` without the cookie |
 | `GET /report?name=<name>` with the cookie | `200` with that file as a download (`text/html` or `text/csv`); `404` for a name that is not a report's or a file that can't be read; `401` without the cookie |
 | anything else | `404` for another path, `405` for another method |
@@ -317,11 +335,13 @@ since Remote view started; `things` (at most 32) and `devices` (at most
  "mode":{"id":"router","name":"Router","hotspot":true,"hotspot_devices":3,
          "hotspot_name":"LokiCTL-7F","vpn":"off","vpn_reply_s":null,
          "kill_switch":false,"keep":false},
+ "block":{"failures":0,"message":""},
  "traffic":{"down_kbps":1200,"up_kbps":80,"history":[[1100,70],[1200,80]]},
  "counts":{"devices":12,"security":1},
  "overview":{"checked":true,"checking":false,"checked_at":"21:44",
              "fix":1,"look":2,"know":2,"total":12,"device_fix":1,
-             "device_look":2,"fine":9,"unchecked":0,
+             "device_look":2,"fine":9,"unchecked":0,"device_new":2,"hotspot":3,
+             "list_date":"2026-11-23",
              "things":[{"tier":"fix","icon":"shield",
                         "title":"Smart TV has 2 security holes",
                         "hint":"update the device's software",
@@ -330,15 +350,31 @@ since Remote view started; `things` (at most 32) and `devices` (at most
              "devices":[{"id":"10.0.0.43","name":"Smart TV","address":"10.0.0.43",
                          "ring":"cable","router":false,"new":false,"checked":true,
                          "tier":"fix","tag":"2 holes",
-                         "services":"remote login, casting, web page","seen":"2 min"}]},
+                         "services":"remote login, casting, web page","seen":"2 min",
+                         "kind":"","hotspot":false,"blocked":false,
+                         "ports":[{"port":22,"name":"Remote login","version":"Dropbear 2015.67",
+                                   "tier":"fix","tag":"2 holes"}],"more_ports":0,
+                         "holes":[{"port":22,"cve":"CVE-2016-7406","score":98,"used":false,
+                                   "text":"A known hole in its remote login, Dropbear 2015.67."}],
+                         "more_holes":0,
+                         "issues":[{"tier":"fix","title":"2 security holes",
+                                    "about":"This version has known security holes ...",
+                                    "steps":["Open the device's settings ...","..."],"port":22}]}]},
  "watch":{"on":true,"trap":true,"trap_ports":6,
           "feed":[{"time":"21:42","text":"Someone scanned the Cardputer from 10.0.0.75"}]}}
 ```
 
 `tier` is `fix`, `look`, `know` or `ok`; `device_fix + device_look + fine
-+ unchecked = total`. While the Cardputer shows made-up data (the
-simulator) and no tool has run, the findings are made up too and
-`sample` is `true`.
++ unchecked = total`. `device_new` and `hotspot` count the new devices and
+those on LokiCTL's own hotspot. Each device carries its page: at most 8
+open services (`more_ports` more), 4 holes (`score` in tenths, `used` when
+attackers are known to use it; a version a vendor built, such as Debian's,
+gets no holes here, only a `May need updates` issue) and 4 issues, the
+worst first. For a device both the health check and the Ports page
+scanned, the one started last counts. `block` holds how many blocks or
+allows failed since the start and the last failure's words. While the
+Cardputer shows made-up data (the simulator) and no tool has run, the
+findings are made up too and `sample` is `true`.
 
 Frame numbers grow only when the screen changed, so a viewer that sends the
 last number it got receives a picture only when there is a new one. On the

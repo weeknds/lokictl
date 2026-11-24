@@ -47,6 +47,8 @@
 
 namespace {
 
+using platform::remote::BlockQueue;
+using platform::remote::BlockRequest;
 using platform::remote::KeyQueue;
 using platform::remote::Server;
 using platform::remote::ServerOptions;
@@ -246,6 +248,75 @@ void check_findings() {
            "status JSON: the overview's count and list have their own names");
     expect(counts_add_up(parts.overview.counts), "findings: counts add up with a hostile name");
 
+    // The Devices page's counts and a device's page.
+    expect(counts.device_new == 2 && counts.hotspot == 3, "findings: the sample has 2 new devices and 3 on the hotspot");
+    std::size_t listed_new = 0;
+    std::size_t listed_hotspot = 0;
+    for (const model::DashDevice& device : overview.devices) {
+        listed_new += device.is_new ? 1 : 0;
+        listed_hotspot += device.hotspot ? 1 : 0;
+    }
+    expect(listed_new == 2 && listed_hotspot == 3, "findings: the new and hotspot counts match the list");
+    const model::DashDevice& smart_tv = overview.devices[0];
+    const auto port_of = [](const model::DashDevice& device, uint16_t number) {
+        return std::find_if(device.ports.begin(), device.ports.end(),
+                            [number](const model::DashPort& port) { return port.port == number; });
+    };
+    const auto login = port_of(smart_tv, 22);
+    const auto web = port_of(smart_tv, 8080);
+    expect(login != smart_tv.ports.end() && login->name == "Remote login" && login->version == "Dropbear 2015.67" &&
+               login->tag == "2 holes" && login->tier == model::FindingTier::Fix,
+           "device page: the remote login, its version and its holes");
+    expect(web != smart_tv.ports.end() && web->tag == "Old" && smart_tv.ports[0].port == 22,
+           "device page: the old web page, the worst service first");
+    expect(smart_tv.holes.size() == 2 && smart_tv.holes[0].cve == "CVE-2016-7406" && smart_tv.holes[0].score == 98 &&
+               smart_tv.more_holes == 0 && smart_tv.holes[0].text == "A known hole in its remote login, Dropbear 2015.67.",
+           "device page: the holes with their official numbers and scores");
+    expect(smart_tv.issues.size() == 2 && smart_tv.issues[0].title == "2 security holes" &&
+               smart_tv.issues[0].steps.size() == 3 && !smart_tv.issues[0].about.empty() &&
+               smart_tv.issues[1].title == "Runs old software",
+           "device page: the issues the worst first, with plain steps");
+    const auto phone = std::find_if(overview.devices.begin(), overview.devices.end(),
+                                    [](const model::DashDevice& device) { return device.id == "10.42.0.11"; });
+    expect(phone != overview.devices.end() && phone->hotspot && !phone->blocked && phone->ports.size() == 1 &&
+               phone->ports[0].name == "iPhone sync" && phone->issues.empty(),
+           "device page: a fine hotspot device");
+
+    // A newer Ports scan of the TV that finds nothing replaces the check's
+    // holes; an older one changes nothing.
+    model::ToolsData rescanned = sample.tools;
+    rescanned.ports.state = model::ToolState::Done;
+    rescanned.ports.target = "10.0.0.43";
+    rescanned.ports.open = {8009};
+    rescanned.latest_check = model::ToolKind::Ports;
+    const model::DashOverview newer = model::dashboard_overview(home, rescanned, sample.watch);
+    const auto tv_newer = std::find_if(newer.devices.begin(), newer.devices.end(),
+                                       [](const model::DashDevice& device) { return device.id == "10.0.0.43"; });
+    expect(tv_newer != newer.devices.end() && tv_newer->tier == model::FindingTier::Fine && tv_newer->holes.empty() &&
+               tv_newer->ports.size() == 1 && newer.counts.fix == 0 && counts_add_up(newer.counts),
+           "findings: a newer Ports scan replaces the check's findings about that device");
+    rescanned.latest_check = model::ToolKind::Health;
+    const model::DashOverview older = model::dashboard_overview(home, rescanned, sample.watch);
+    expect(!older.devices.empty() && older.devices[0].id == "10.0.0.43" && older.devices[0].tag == "2 holes" &&
+               older.devices[0].ports.size() == 3,
+           "findings: an older Ports scan does not undo the check");
+
+    // The page's parts in the status JSON, and a hotspot device blocked.
+    model::HomeData blocked_home = home;
+    blocked_home.clients[0].blocked = true;
+    blocked_home.block_failures = 1;
+    blocked_home.block_message = "Block failed: helper not installed";
+    model::DashboardParts page_parts;
+    page_parts.overview = model::dashboard_overview(blocked_home, sample.tools, sample.watch);
+    const std::string page_json = model::dashboard_status_json(blocked_home, page_parts);
+    expect(contains(page_json, "\"ports\":[{\"port\":22,\"name\":\"Remote login\",\"version\":\"Dropbear 2015.67\",\"tier\":\"fix\",\"tag\":\"2 holes\"}") &&
+               contains(page_json, "\"cve\":\"CVE-2016-7406\",\"score\":98,\"used\":false") &&
+               contains(page_json, "\"steps\":[\"") && contains(page_json, "\"device_new\":2,\"hotspot\":3,"),
+           "status JSON: a device's services, holes, steps and the new counts");
+    expect(contains(page_json, "\"hotspot\":true,\"blocked\":true") &&
+               contains(page_json, "\"block\":{\"failures\":1,\"message\":\"Block failed: helper not installed\"}"),
+           "status JSON: a blocked hotspot device and the last block failure");
+
     // The traffic log keeps the last minute.
     model::TrafficLog log;
     for (int32_t second = 0; second < 75; ++second) {
@@ -350,11 +421,20 @@ void expect_policy(const Answer& answer, const std::string& what, bool own = fal
 }
 
 void check_server() {
+    using platform::remote::dotted_ipv4;
+    expect(dotted_ipv4("10.42.0.11") && dotted_ipv4("255.255.255.255") && dotted_ipv4("0.0.0.0"),
+           "dotted_ipv4: plain addresses");
+    expect(!dotted_ipv4("10.42.0") && !dotted_ipv4("10.42.0.256") && !dotted_ipv4("10.042.0.1") &&
+               !dotted_ipv4("10.42.0.1.") && !dotted_ipv4("a.b.c.d") && !dotted_ipv4("") && !dotted_ipv4("10.42.0.1%3A"),
+           "dotted_ipv4: anything else");
+
     KeyQueue keys;
+    BlockQueue blocks;
     ServerOptions options;
     options.loopback_only = true;
     options.port = 18780;
     options.keys = &keys;
+    options.blocks = &blocks;
     options.web_folder = WEB_DIR;
     options.font_folder = FONTS_DIR;
     Server server(options, std::make_unique<StillFrames>());
@@ -383,6 +463,7 @@ void check_server() {
         {"/shell.js", "text/javascript; charset=utf-8"},
         {"/ui.js", "text/javascript; charset=utf-8"},
         {"/home.js", "text/javascript; charset=utf-8"},
+        {"/devices.js", "text/javascript; charset=utf-8"},
         {"/preact.module.js", "text/javascript; charset=utf-8"},
         {"/icon.svg", "image/svg+xml"},
         {"/fonts/Inter-Regular.ttf", "font/ttf"},
@@ -464,6 +545,34 @@ void check_server() {
     expect_policy(pressed, "POST /key 204");
     uint32_t pressed_key = 0;
     expect(keys.pop(pressed_key) && !keys.pop(pressed_key), "exactly one key was queued");
+
+    // Block and Allow: Origin, session and request token, as a key.
+    const std::string with_token = "X-LokiCTL-Token: " + token + "\r\n";
+    const std::string block = "id=10.42.0.11&on=1";
+    const Answer block_no_origin = ask(port, post(host, "/api/v1/block", block, cookie + with_token));
+    expect(block_no_origin.status == 403, "POST /api/v1/block without Origin: 403");
+    expect_policy(block_no_origin, "POST /api/v1/block 403");
+    expect(ask(port, post(host, "/api/v1/block", block, origin + with_token)).status == 401,
+           "POST /api/v1/block without the cookie: 401");
+    expect(ask(port, post(host, "/api/v1/block", block, origin + cookie)).status == 403,
+           "POST /api/v1/block without the token: 403");
+    expect(ask(port, post(host, "/api/v1/block", "id=10.42.0.x&on=1", origin + cookie + with_token)).status == 400,
+           "POST /api/v1/block with a bad id: 400");
+    expect(ask(port, post(host, "/api/v1/block", "id=10.42.0.11&on=2", origin + cookie + with_token)).status == 400,
+           "POST /api/v1/block with a bad on: 400");
+    expect(ask(port, get(host, "/api/v1/block", cookie)).status == 405, "GET /api/v1/block: 405");
+    const Answer blocked = ask(port, post(host, "/api/v1/block", block, origin + cookie + with_token));
+    expect(blocked.status == 204, "POST /api/v1/block with Origin, cookie and token: 204");
+    expect_policy(blocked, "POST /api/v1/block 204");
+    BlockRequest asked;
+    expect(blocks.pop(asked) && asked.address == "10.42.0.11" && asked.block && !blocks.pop(asked),
+           "exactly one block request was queued, as asked");
+    for (std::size_t index = 0; index < BlockQueue::kMaxWaiting; ++index) {
+        ask(port, post(host, "/api/v1/block", "id=10.42.0.11&on=0", origin + cookie + with_token));
+    }
+    expect(ask(port, post(host, "/api/v1/block", block, origin + cookie + with_token)).status == 429,
+           "POST /api/v1/block with a full queue: 429");
+    blocks.clear();
 
     server.request_stop();
     server.join();

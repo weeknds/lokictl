@@ -8,6 +8,7 @@
 
 #include "health_check.h"
 #include "service_rules.h"
+#include "service_version.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -32,6 +33,12 @@ struct Entry {
     std::string name;
     std::string kind;
     std::vector<uint16_t> open;
+    // What its ports said and the check against the list of known holes,
+    // from the scan that counts for it (the health check's or the Ports
+    // page's).
+    std::vector<PortBanner> banners;
+    std::vector<PortVerdict> verdicts;
+    std::vector<ServiceFinding> found;
     int32_t seen_s{-1};  // seconds since it was last seen; -1 not known
     int32_t holes{0};
 };
@@ -179,6 +186,245 @@ std::string services_text(const Entry& entry) {
         text += " +" + std::to_string(words.size() - shown);
     }
     return text;
+}
+
+// ---------- A device's page ----------
+
+// A rule's title as a short sentence: "Telnet open" -> "Telnet is open".
+std::string open_sentence(const std::string& title) {
+    const std::string tail = " open";
+    if (title.size() > tail.size() && title.compare(title.size() - tail.size(), tail.size(), tail) == 0) {
+        return title.substr(0, title.size() - tail.size()) + " is open";
+    }
+    return title;
+}
+
+std::string with_full_stop(std::string text) {
+    if (!text.empty() && text.back() != '.') {
+        text += '.';
+    }
+    return text;
+}
+
+// What a health finding says on its device's page.
+DashIssue health_issue(const HealthFinding& finding) {
+    DashIssue issue;
+    issue.tier = tier_of(finding.level);
+    issue.port = finding.port;
+    issue.about = health_about(finding);
+    const std::string again = "Then press Check again.";
+    switch (finding.issue) {
+        case HealthIssue::Service:
+            issue.title = finding.port == 9100 ? std::string("Lets anyone print") : open_sentence(finding.title);
+            break;
+        case HealthIssue::RouterPage:
+            issue.title = "Its settings page isn't encrypted";
+            break;
+        case HealthIssue::Upnp:
+            issue.title = "Lets apps open ports";
+            break;
+        case HealthIssue::Holes: {
+            if (finding.title.empty() || finding.title[0] < '0' || finding.title[0] > '9') {
+                issue.title = "A hole attackers use";
+            } else {
+                const int32_t count = leading_count(finding.title);
+                issue.title = std::to_string(count) + (count == 1 ? " security hole" : " security holes");
+            }
+            issue.steps = {"Open the device's settings or its app and find its software update.",
+                           "Install the newest update and let the device restart.", again};
+            return issue;
+        }
+        case HealthIssue::Outdated:
+            issue.title = "Runs old software";
+            issue.steps = {"Look for a software update in the device's settings or its app.",
+                           "If there is none, think about replacing it: it gets no more security fixes.", again};
+            return issue;
+        case HealthIssue::Check:
+            issue.title = "May need updates";
+            issue.steps = {"Make sure the device installs its updates; most do this in their settings.", again};
+            return issue;
+        case HealthIssue::ManyPorts:
+            issue.title = "Many open ports";
+            break;
+        case HealthIssue::OpenWifi:
+        case HealthIssue::WepWifi:
+        case HealthIssue::WpaWifi:
+        case HealthIssue::LookAlike:
+        case HealthIssue::SlowCable:
+            issue.title = finding.title;
+            break;
+    }
+    issue.steps = {with_full_stop(health_fix(finding)), "You find this in the device's settings page or its app.", again};
+    return issue;
+}
+
+// What a Watch alert says on the page of the device it is about.
+DashIssue watch_issue(const WatchAlert& alert) {
+    DashIssue issue;
+    const std::string unknown = "If you don't know the device, unplug it or turn it off.";
+    switch (alert.kind) {
+        case WatchAlertKind::NewDevice:
+            issue.title = "New on your network";
+            issue.about = "Watch saw it join your network for the first time.";
+            issue.steps = {"If you know the device, there is nothing to do.",
+                           "If you don't, change your Wi-Fi password and see which devices come back."};
+            break;
+        case WatchAlertKind::FakeRouter:
+            issue.title = "Claims to be the router";
+            issue.about = "It answers for the router's address, so someone may be listening in.";
+            issue.steps = {unknown, "Then restart your router."};
+            break;
+        case WatchAlertKind::SameAddress:
+            issue.title = "Shares its address";
+            issue.about = "Two devices claim the same address. That can break the network or hide an attack.";
+            issue.steps = {"Restart the device so it gets a new address.", "If it happens again, look for a device you don't know."};
+            break;
+        case WatchAlertKind::SecondDhcp:
+            issue.title = "Hands out addresses";
+            issue.about = "It hands out network addresses as a router does, which can send traffic the wrong way.";
+            issue.steps = {"If it isn't meant to be a router, turn that off in its settings.", unknown};
+            break;
+        case WatchAlertKind::Ipv6Router:
+            issue.title = "Acts as an IPv6 router";
+            issue.about = "It announced itself as an IPv6 router, which can send traffic the wrong way.";
+            issue.steps = {"If it isn't meant to be a router, turn IPv6 routing off in its settings.", unknown};
+            break;
+        case WatchAlertKind::Scan:
+            issue.title = "Scanned the Cardputer";
+            issue.about = "It tried many ports on the Cardputer, as a port scanner does.";
+            issue.steps = {"Find out what runs on this device.", "If nobody here started a scan, check it for unwanted software."};
+            break;
+        case WatchAlertKind::Trap:
+            issue.title = "Tried the trap";
+            issue.about = "It connected to one of the trap's fake services, which nothing real uses.";
+            issue.steps = {"Find out what runs on this device.", "If nobody here was testing, check it for unwanted software."};
+            break;
+        case WatchAlertKind::ArpFlood:
+            issue.title = "A flood of address requests";
+            issue.about = "Many address requests a second, as some attacks send.";
+            issue.steps = {unknown};
+            break;
+    }
+    return issue;
+}
+
+// A port's tag on the device's page, from the worst issue about it.
+std::string port_tag(FindingTier tier) {
+    switch (tier) {
+        case FindingTier::Fix:
+            return "Fix";
+        case FindingTier::Look:
+            return "Check";
+        case FindingTier::Know:
+            return "Info";
+        case FindingTier::Fine:
+            break;
+    }
+    return "OK";
+}
+
+// The device's page: its issues (the health check's findings about it and
+// Watch's alerts), its open services and its known holes.
+void fill_page(DashDevice& device,
+               const Entry& entry,
+               const std::vector<HealthFinding>& findings,
+               const std::vector<std::pair<std::string, DashIssue>>& watch_issues) {
+    std::vector<const HealthFinding*> own;
+    if (!device.address.empty()) {
+        for (const HealthFinding& finding : findings) {
+            if (finding.address == device.address) {
+                own.push_back(&finding);
+            }
+        }
+    }
+    for (const HealthFinding* finding : own) {
+        device.issues.push_back(health_issue(*finding));
+    }
+    for (const auto& [id, issue] : watch_issues) {
+        if (id == device.id) {
+            device.issues.push_back(issue);
+        }
+    }
+    std::stable_sort(device.issues.begin(), device.issues.end(),
+                     [](const DashIssue& left, const DashIssue& right) { return left.tier > right.tier; });
+    if (device.issues.size() > kDashMaxIssues) {
+        device.issues.resize(kDashMaxIssues);
+    }
+
+    for (const uint16_t number : entry.open) {
+        DashPort port;
+        port.port = number;
+        const std::string plain = port_plain(number);
+        // "iPhone sync" keeps its small i.
+        const bool named = plain.size() > 1 && plain[1] >= 'A' && plain[1] <= 'Z';
+        port.name = plain.empty() ? "Port " + std::to_string(number) : named ? plain : upper_first(plain);
+        for (const PortBanner& banner : entry.banners) {
+            if (banner.port == number) {
+                port.version = service_short_text(read_service(banner.text));
+            }
+        }
+        const HealthFinding* worst = nullptr;
+        for (const HealthFinding* finding : own) {
+            if (finding->port == number && (worst == nullptr || tier_of(finding->level) > tier_of(worst->level))) {
+                worst = finding;
+            }
+        }
+        port.tier = worst ? tier_of(worst->level) : FindingTier::Fine;
+        port.tag = port_tag(port.tier);
+        if (worst && worst->issue == HealthIssue::Holes) {
+            const int32_t count = leading_count(worst->title);
+            port.tag = worst->title[0] >= '0' && worst->title[0] <= '9'
+                           ? std::to_string(count) + (count == 1 ? " hole" : " holes")
+                           : std::string("1 hole");
+            for (const PortVerdict& verdict : entry.verdicts) {
+                if (verdict.port == number && verdict.holes > 0) {
+                    port.tag = std::to_string(verdict.holes) + (verdict.holes == 1 ? " hole" : " holes");
+                }
+            }
+        } else if (worst && worst->issue == HealthIssue::Outdated) {
+            port.tag = "Old";
+        }
+        device.ports.push_back(std::move(port));
+    }
+    std::stable_sort(device.ports.begin(), device.ports.end(),
+                     [](const DashPort& left, const DashPort& right) { return left.tier > right.tier; });
+    if (device.ports.size() > kDashMaxPorts) {
+        device.more_ports = static_cast<int32_t>(device.ports.size() - kDashMaxPorts);
+        device.ports.resize(kDashMaxPorts);
+    }
+
+    int32_t known = 0;
+    for (const PortVerdict& verdict : entry.verdicts) {
+        known += verdict.vendor.empty() ? verdict.holes : 0;
+    }
+    for (const ServiceFinding& found : entry.found) {
+        if (found.kind != FindingKind::Hole || !found.vendor.empty() || found.cve.empty()) {
+            continue;
+        }
+        DashHole hole;
+        hole.port = found.port;
+        hole.cve = found.cve;
+        hole.score = found.score;
+        hole.used = found.exploited;
+        const std::string plain = port_plain(found.port);
+        const std::string software = found.name + (found.version.empty() ? "" : " " + found.version);
+        hole.text = plain.empty() ? "A known hole in " + software + " on port " + std::to_string(found.port) + "."
+                                  : "A known hole in its " + plain + ", " + software + ".";
+        if (hole.used) {
+            hole.text += " Attackers are known to use it.";
+        }
+        device.holes.push_back(std::move(hole));
+    }
+    std::stable_sort(device.holes.begin(), device.holes.end(), [](const DashHole& left, const DashHole& right) {
+        if (left.used != right.used) {
+            return left.used;
+        }
+        return left.score > right.score;
+    });
+    if (device.holes.size() > kDashMaxHoles) {
+        device.holes.resize(kDashMaxHoles);
+    }
+    device.more_holes = std::max<int32_t>(0, known - static_cast<int32_t>(device.holes.size()));
 }
 
 class DeviceList {
@@ -487,6 +733,9 @@ DashOverview dashboard_overview(const HomeData& home, const ToolsData& tools, co
         entry->device.router = entry->device.router || scanned.router;
         entry->device.checked = true;
         entry->open = scanned.open;
+        entry->banners = scanned.banners;
+        entry->verdicts = scanned.verdicts;
+        entry->found = scanned.holes;
         if (overview.checking) {
             note_seen(*entry, 0);
         } else if (checked_minutes >= 0) {
@@ -512,15 +761,22 @@ DashOverview dashboard_overview(const HomeData& home, const ToolsData& tools, co
             note_seen(*entry, heard.age_s);
         }
     }
-    if (tools.ports.state == ToolState::Done) {
-        if (Entry* entry = list.get(tools.ports.target, std::string())) {
+    // The Ports page's scan counts when it was started after the health
+    // check, or when the check did not scan that device: it then replaces
+    // what the check said about it.
+    const PortRun& ports = tools.ports;
+    const bool ports_scanned_by_check =
+        std::any_of(health.devices.begin(), health.devices.end(),
+                    [&ports](const HealthDevice& scanned) { return scanned.address == ports.target; });
+    const bool ports_count = ports.state == ToolState::Done && is_ipv4_text(ports.target) &&
+                             (tools.latest_check == ToolKind::Ports || !ports_scanned_by_check);
+    if (ports_count) {
+        if (Entry* entry = list.get(ports.target, std::string())) {
             entry->device.checked = true;
-            for (const uint16_t port : tools.ports.open) {
-                if (std::find(entry->open.begin(), entry->open.end(), port) == entry->open.end()) {
-                    entry->open.push_back(port);
-                }
-            }
-            std::sort(entry->open.begin(), entry->open.end());
+            entry->open = ports.open;
+            entry->banners = ports.banners;
+            entry->verdicts = ports.verdicts;
+            entry->found = ports.findings;
         }
     }
     if (hotspot) {
@@ -532,6 +788,8 @@ DashOverview dashboard_overview(const HomeData& home, const ToolsData& tools, co
             note_names(*entry, client.name, std::string());
             note_seen(*entry, 0);
             entry->device.wireless = true;
+            entry->device.hotspot = true;
+            entry->device.blocked = client.blocked;
             entry->device.is_new = entry->device.is_new || client.is_new;
         }
     }
@@ -559,15 +817,22 @@ DashOverview dashboard_overview(const HomeData& home, const ToolsData& tools, co
     // alerts, the newest first.
     std::vector<Candidate> candidates;
     std::vector<HealthFinding> findings = health.findings;
-    if (tools.ports.state == ToolState::Done && is_ipv4_text(tools.ports.target)) {
+    if (ports_count) {
         HealthHost host;
-        host.address = tools.ports.target;
-        host.router = tools.ports.target == home.gateway_address;
+        host.address = ports.target;
+        host.router = ports.target == home.gateway_address;
         if (Entry* entry = list.find(host.address, std::string())) {
             host.name = entry->name;
             host.kind = entry->kind;
         }
-        std::vector<HealthFinding> extra = host_findings(host, tools.ports, std::numeric_limits<int32_t>::max());
+        // The newer scan replaces what the check found on the device's
+        // ports; UPnP heard over SSDP stays (a port scan can't hear it).
+        findings.erase(std::remove_if(findings.begin(), findings.end(),
+                                      [&host](const HealthFinding& finding) {
+                                          return finding.address == host.address && finding.issue != HealthIssue::Upnp;
+                                      }),
+                       findings.end());
+        std::vector<HealthFinding> extra = host_findings(host, ports, std::numeric_limits<int32_t>::max());
         for (HealthFinding& finding : extra) {
             const bool known = std::any_of(findings.begin(), findings.end(), [&finding](const HealthFinding& other) {
                 return other.address == finding.address && other.issue == finding.issue && other.port == finding.port;
@@ -591,6 +856,7 @@ DashOverview dashboard_overview(const HomeData& home, const ToolsData& tools, co
         candidates.push_back(health_candidate(finding, list, health_time, entry ? entry->holes : 0));
     }
     std::vector<std::pair<WatchAlertKind, std::string>> alerted;
+    std::vector<std::pair<std::string, DashIssue>> watch_issues;  // a device's id, an issue about it
     for (const WatchAlert& alert : watch.run.alerts) {
         Candidate candidate = watch_candidate(alert, list);
         const std::pair<WatchAlertKind, std::string> key{alert.kind, candidate.subject.key};
@@ -598,6 +864,11 @@ DashOverview dashboard_overview(const HomeData& home, const ToolsData& tools, co
             continue;
         }
         alerted.push_back(key);
+        if (!candidate.subject.device.empty()) {
+            DashIssue issue = watch_issue(alert);
+            issue.tier = candidate.tier;
+            watch_issues.emplace_back(candidate.subject.device, std::move(issue));
+        }
         if (alert.kind == WatchAlertKind::NewDevice) {
             if (Entry* entry = list.find(alert.address, alert.hardware)) {
                 entry->device.is_new = true;
@@ -649,6 +920,8 @@ DashOverview dashboard_overview(const HomeData& home, const ToolsData& tools, co
             }
         }
         device.services = services_text(entry);
+        device.kind = entry.kind;
+        fill_page(device, entry, findings, watch_issues);
         if (device.tier == FindingTier::Fix) {
             device.tag = entry.holes > 0 ? std::to_string(entry.holes) + (entry.holes == 1 ? " hole" : " holes") : "Fix";
         } else if (device.tier == FindingTier::Look) {
@@ -680,7 +953,10 @@ DashOverview dashboard_overview(const HomeData& home, const ToolsData& tools, co
         } else {
             ++counts.unchecked;
         }
+        counts.device_new += entry.device.is_new ? 1 : 0;
+        counts.hotspot += entry.device.hotspot ? 1 : 0;
     }
+    overview.list_date = tools.list_date;
 
     std::vector<Entry>& entries = list.entries();
     std::stable_sort(entries.begin(), entries.end(), [](const Entry& left, const Entry& right) {
@@ -741,6 +1017,17 @@ HealthFinding sample_finding(HealthIssue issue,
     return finding;
 }
 
+ServiceFinding sample_hole(uint16_t port, FindingKind kind, const char* name, const char* version, const char* cve, int32_t score) {
+    ServiceFinding finding;
+    finding.port = port;
+    finding.kind = kind;
+    finding.name = name;
+    finding.version = version;
+    finding.cve = cve;
+    finding.score = score;
+    return finding;
+}
+
 WatchAlert sample_alert(WatchAlertKind kind, const char* time, const char* address, const char* hardware, int32_t count) {
     WatchAlert alert;
     alert.kind = kind;
@@ -769,6 +1056,21 @@ DashSample sample_dashboard() {
     health.finished = "07:44";
     HealthDevice router = sample_device("10.0.0.1", "", "router", {53, 80, 443});
     router.router = true;
+    router.banners = {{80, "lighttpd/1.4.59"}};
+    // The Smart TV's page as in the design: an old remote login with two
+    // holes, and a web page on software that gets no more fixes.
+    HealthDevice tv = sample_device("10.0.0.43", "Smart TV", "", {22, 8009, 8080});
+    tv.banners = {{22, "dropbear_2015.67"}, {8080, "Jetty(9.2.14.v20151106)"}};
+    PortVerdict tv_login;
+    tv_login.port = 22;
+    tv_login.holes = 2;
+    PortVerdict tv_web;
+    tv_web.port = 8080;
+    tv_web.outdated = true;
+    tv.verdicts = {tv_login, tv_web};
+    tv.holes = {sample_hole(22, FindingKind::Hole, "Dropbear", "2015.67", "CVE-2016-7406", 98),
+                sample_hole(22, FindingKind::Hole, "Dropbear", "2015.67", "CVE-2016-7407", 98),
+                sample_hole(8080, FindingKind::Outdated, "Jetty", "9.2.14", "", -1)};
     HealthDevice own = sample_device("10.0.0.12", "", "", {22});
     own.own = true;
     health.devices = {
@@ -776,7 +1078,7 @@ DashSample sample_dashboard() {
         own,
         sample_device("10.0.0.20", "Desktop", "", {}),
         sample_device("10.0.0.31", "Speaker", "", {7000}),
-        sample_device("10.0.0.43", "Smart TV", "", {22, 8009, 8080}),
+        tv,
         sample_device("10.0.0.52", "Doorbell", "", {443}),
         sample_device("10.0.0.57", "Thermostat", "", {}),
         sample_device("10.0.0.60", "", "printer", {80, 631, 9100}),
@@ -791,6 +1093,8 @@ DashSample sample_dashboard() {
     health.findings = {
         sample_finding(HealthIssue::Holes, RiskLevel::Risk, "2 known holes", "10.0.0.43", "Smart TV 10.0.0.43",
                        "Port 22, Dropbear 2015.67, worst 9.8", 22, 4),
+        sample_finding(HealthIssue::Outdated, RiskLevel::Warning, "Old software", "10.0.0.43", "Smart TV 10.0.0.43",
+                       "Port 8080, Jetty 9.2.14", 8080, 4),
         sample_finding(HealthIssue::RouterPage, RiskLevel::Warning, "Plain router page", "10.0.0.1",
                        "router 10.0.0.1", "Port 80, web page, lighttpd", 80, 0),
         sample_finding(HealthIssue::Service, RiskLevel::Warning, "Remote desktop open", "10.0.0.75", "NAS 10.0.0.75",
@@ -803,8 +1107,9 @@ DashSample sample_dashboard() {
                        "Port 9100, printing", 9100, 7),
     };
     health.findings[0].who = "10.0.0.43";
-    health.findings[1].who = "router";
-    health.findings[4].who = "this device";
+    health.findings[1].who = "10.0.0.43";
+    health.findings[2].who = "router";
+    health.findings[5].who = "this device";
     sort_findings(health.findings);
 
     // Watch is listening; the trap is set with its six fake services.

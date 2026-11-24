@@ -121,6 +121,29 @@ model::HealthDevice health_device(const model::HealthHost& host, const model::Po
     device.router = host.router;
     device.own = host.own;
     device.open = scan.open;
+    const std::size_t banners = std::min(scan.banners.size(), model::kHealthBannersKept);
+    device.banners.assign(scan.banners.begin(), scan.banners.begin() + static_cast<std::ptrdiff_t>(banners));
+    device.verdicts = scan.verdicts;
+    // Each port's worst first: one round over the ports, then the next, so
+    // a device with many holes on one port still shows its other ports'.
+    for (std::size_t round = 0; device.holes.size() < model::kHealthHolesKept; ++round) {
+        bool any = false;
+        uint16_t port = 0;
+        std::size_t place = 0;
+        for (const model::ServiceFinding& finding : scan.findings) {
+            place = finding.port == port ? place + 1 : 0;
+            port = finding.port;
+            if (place == round) {
+                any = true;
+                if (device.holes.size() < model::kHealthHolesKept) {
+                    device.holes.push_back(finding);
+                }
+            }
+        }
+        if (!any) {
+            break;
+        }
+    }
     return device;
 }
 

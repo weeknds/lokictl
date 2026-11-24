@@ -67,6 +67,10 @@ struct ServerOptions {
     // caller and kept until the server's thread has ended; without it every
     // key gets 400.
     KeyQueue* keys{nullptr};
+    // Where POST /api/v1/block puts the paired browser's Block and Allow
+    // requests. Owned by the caller like `keys`; without it every request
+    // gets 400.
+    BlockQueue* blocks{nullptr};
     // The folder of saved reports (report_files.h) that GET /reports lists
     // and GET /report hands out; empty: none (an empty list).
     std::string reports_folder;
@@ -109,6 +113,12 @@ struct ServerOptions {
 //   and the request token in X-LokiCTL-Token (else 403); an unknown name
 //   gets 400, a full queue or too many keys a second 429 (KeyQueue), an
 //   accepted key 204.
+//   POST /api/v1/block with id=<IPv4>&on=1 (block) or on=0 (allow) is
+//   checked like POST /key (Origin 403, cookie 401, request token 403); an
+//   id that is not a dotted IPv4 address or an `on` other than 0 or 1 gets
+//   400, a full BlockQueue 429, a queued request 204. Whether it applies
+//   (a device on LokiCTL's own hotspot) is for the UI thread to decide; the
+//   page sees the result in the next status.
 //   GET /reports needs the cookie (else 401) and lists the saved reports
 //   as JSON, {"reports":[{"name":"lokictl-....html","bytes":N},...]}, the
 //   newest first. GET /report?name=<name> needs the cookie too and hands

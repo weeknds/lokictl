@@ -325,11 +325,13 @@ code: open the address in Safari or Chrome on the same network and type
 the code. Nothing to install, and nothing comes from the internet.
 
 On a phone you get large titles and a tab bar (Home, Devices, Security,
-Tools, Modes); on a computer, a sidebar with every page. Home shows your
-network, the mode, the internet, the VPN and the battery for now; the
-other pages fill in with coming updates. **Cardputer screen** shows the
-Cardputer's screen and lets you press its keys, and lists the saved
-reports for download.
+Tools, Modes); on a computer, a sidebar with every page. Home says
+whether your network is OK and what to fix first. Devices lists every
+device with search and filters; a device's page says what it runs, its
+known security holes and how to fix them in plain steps, and a device on
+LokiCTL's hotspot can be blocked there. The other pages fill in with
+coming updates. **Cardputer screen** shows the Cardputer's screen and
+lets you press its keys, and lists the saved reports for download.
 
 Remote view is off every time LokiCTL starts, a `REMOTE` tag shows while
 someone is connected, and `7` on its row also lets devices on LokiCTL's

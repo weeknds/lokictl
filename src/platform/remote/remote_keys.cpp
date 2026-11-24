@@ -9,6 +9,8 @@
 #include "linux_input.h"
 #include "lvgl.h"
 
+#include <utility>
+
 namespace platform::remote {
 namespace {
 
@@ -90,6 +92,56 @@ void KeyQueue::clear() {
     keys_.clear();
     window_start_ms_ = 0;
     window_count_ = 0;
+}
+
+bool BlockQueue::push(BlockRequest request) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (requests_.size() >= kMaxWaiting) {
+        return false;
+    }
+    requests_.push_back(std::move(request));
+    return true;
+}
+
+bool BlockQueue::pop(BlockRequest& request) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (requests_.empty()) {
+        return false;
+    }
+    request = std::move(requests_.front());
+    requests_.pop_front();
+    return true;
+}
+
+void BlockQueue::clear() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    requests_.clear();
+}
+
+bool dotted_ipv4(std::string_view text) {
+    int parts = 0;
+    std::size_t at = 0;
+    while (parts < 4) {
+        std::size_t end = at;
+        int value = 0;
+        while (end < text.size() && end - at < 4 && text[end] >= '0' && text[end] <= '9') {
+            value = value * 10 + (text[end] - '0');
+            ++end;
+        }
+        const std::size_t digits = end - at;
+        if (digits == 0 || digits > 3 || value > 255 || (digits > 1 && text[at] == '0')) {
+            return false;
+        }
+        ++parts;
+        if (parts == 4) {
+            return end == text.size();
+        }
+        if (end >= text.size() || text[end] != '.') {
+            return false;
+        }
+        at = end + 1;
+    }
+    return false;
 }
 
 } // namespace platform::remote

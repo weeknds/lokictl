@@ -57,22 +57,33 @@ struct DashboardParts {
 //  "mode":{"id":"router","name":"Router","hotspot":true,"hotspot_devices":3,
 //          "hotspot_name":"LokiCTL-7F","vpn":"off","vpn_reply_s":null,
 //          "kill_switch":false,"keep":false},
+//  "block":{"failures":0,"message":""},
 //  "traffic":{"down_kbps":1200,"up_kbps":80,"history":[[1100,70],...]},
 //  "counts":{"devices":12,"security":1},
 //  "overview":{"checked":true,"checking":false,"checked_at":"21:44",
 //              "fix":1,"look":2,"know":2,"total":12,"device_fix":1,
-//              "device_look":2,"fine":9,"unchecked":0,
+//              "device_look":2,"fine":9,"unchecked":0,"device_new":2,"hotspot":3,
+//              "list_date":"2026-11-23",
 //              "things":[{"tier":"fix","icon":"shield","title":"...","hint":"...",
 //                         "action":"...","fix":"...","device":"10.0.0.43","time":"21:40"}],
 //              "devices":[{"id":"10.0.0.43","name":"Smart TV","address":"10.0.0.43",
 //                          "ring":"cable","router":false,"new":false,"checked":true,
-//                          "tier":"fix","tag":"2 holes","services":"...","seen":"now"}]},
+//                          "tier":"fix","tag":"2 holes","services":"...","seen":"now",
+//                          "kind":"","hotspot":false,"blocked":false,
+//                          "ports":[{"port":22,"name":"Remote login","version":"Dropbear 2015.67",
+//                                    "tier":"fix","tag":"2 holes"}],"more_ports":0,
+//                          "holes":[{"port":22,"cve":"CVE-2016-7406","score":98,"used":false,
+//                                    "text":"..."}],"more_holes":0,
+//                          "issues":[{"tier":"fix","title":"2 security holes","about":"...",
+//                                     "steps":["...","..."],"port":22}]}]},
 //  "watch":{"on":true,"trap":true,"trap_ports":6,"feed":[{"time":"21:42","text":"..."}]}}
 //
 // "link" is "wifi", "cable" or "none"; "internet" is internet_name();
 // "id" is "client", "router", "share" or "vpn"; "vpn" is vpn_state_name();
 // "tier" is finding_tier_name(); "ring" is "cable" or "wireless"; "total"
-// counts every device, also those the list leaves out.
+// counts every device, also those the list leaves out; "score" is in
+// tenths, null when not known; "block" is HomeData::block_failures and
+// block_message.
 std::string dashboard_status_json(const HomeData& home, const DashboardParts& parts = DashboardParts());
 
 } // namespace model

@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <deque>
 #include <mutex>
+#include <string>
 #include <string_view>
 
 namespace platform::remote {
@@ -52,5 +53,35 @@ private:
     int64_t window_start_ms_{0};
     int window_count_{0};
 };
+
+// The Block and Allow requests of a paired browser (POST /api/v1/block):
+// which device (its IPv4 address on the hotspot, dotted) and whether to
+// block it or let it through again. The server's thread adds them, the UI
+// thread takes them, both through the mutex. At most kMaxWaiting wait; the
+// UI thread decides whether each one applies.
+struct BlockRequest {
+    std::string address;
+    bool block{true};
+};
+
+class BlockQueue {
+public:
+    static constexpr std::size_t kMaxWaiting = 4;
+
+    // Server thread. False when kMaxWaiting requests wait already.
+    bool push(BlockRequest request);
+    // UI thread: the oldest waiting request. Returns false when none waits.
+    bool pop(BlockRequest& request);
+    // Forgets the waiting requests.
+    void clear();
+
+private:
+    std::mutex mutex_;
+    std::deque<BlockRequest> requests_;
+};
+
+// True for an IPv4 address written as four decimal numbers of 0 to 255
+// joined by dots, without leading zeros ("10.42.0.11").
+bool dotted_ipv4(std::string_view text);
 
 } // namespace platform::remote

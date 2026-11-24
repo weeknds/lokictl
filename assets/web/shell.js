@@ -11,6 +11,7 @@
 import { h, Component } from "./preact.module.js";
 import { icon, logo, networkName, modeLine, internetWords } from "./ui.js";
 import { HomePhone, HomeDesk } from "./home.js";
+import { DevicesList, DevicePage, deviceName } from "./devices.js";
 
 // Every page: its #/name, its title, the icon, and the sentence its empty
 // state says until its contents arrive.
@@ -141,11 +142,16 @@ class TopBar extends Component {
     clearTimeout(this.timer);
   }
 
-  render({ page, status }) {
+  render({ page, status, sub }) {
     return h(
       "header",
       { class: "top" },
-      h("div", { class: "crumb" }, networkName(status) + " / ", h("b", null, page.title)),
+      h(
+        "div",
+        { class: "crumb" },
+        networkName(status) + " / ",
+        sub ? [h("a", { class: "crumb-link", href: "#/" + page.id }, page.title), " / ", h("b", null, sub)] : h("b", null, page.title)
+      ),
       h(
         "button",
         { class: "cmd", type: "button", onClick: this.onCommand, "aria-describedby": this.state.hint ? "cmd-hint" : undefined },
@@ -232,7 +238,22 @@ function EmptyPage({ page }) {
 
 // ---------- The whole frame ----------
 
-export function Shell({ route, status, lost }) {
+// What a page shows: Home, the Devices list or one device, or for now
+// the page's empty state.
+function PageBody({ page, sub, status }) {
+  if (page.id === "home") {
+    return [
+      h(HomePhone, { status, head: h(HomeHead, { status }) }),
+      h(HomeDesk, { status, head: h("h1", { class: "sr" }, networkName(status) + " overview") }),
+    ];
+  }
+  if (page.id === "devices") {
+    return sub ? h(DevicePage, { status, id: sub }) : h(DevicesList, { status });
+  }
+  return h(EmptyPage, { page });
+}
+
+export function Shell({ route, sub, status, lost }) {
   const page = findPage(route);
   return h(
     "div",
@@ -241,21 +262,12 @@ export function Shell({ route, status, lost }) {
     h(
       "div",
       { class: "main" },
-      h(TopBar, { page, status }),
+      h(TopBar, { page, status, sub: sub ? deviceName(status, sub) || sub : "" }),
       h(
         "main",
         { class: "content", id: "content" },
         h(Banner, { lost }),
-        h(
-          "div",
-          { class: "page", key: page.id },
-          page.id === "home"
-            ? [
-                h(HomePhone, { status, head: h(HomeHead, { status }) }),
-                h(HomeDesk, { status, head: h("h1", { class: "sr" }, networkName(status) + " overview") }),
-              ]
-            : h(EmptyPage, { page })
-        )
+        h("div", { class: "page", key: page.id + "/" + sub }, h(PageBody, { page, sub, status }))
       )
     ),
     h(TabBar, { current: page.id })

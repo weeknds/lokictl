@@ -490,7 +490,18 @@ struct HealthDevice {
     bool router{false};          // the uplink's router
     bool own{false};             // the Cardputer itself
     std::vector<uint16_t> open;  // its open ports, ascending
+    // What its ports said and what the check against the list of known
+    // holes found (as PortRun keeps them), for the web dashboard's device
+    // page: at most kHealthBannersKept banners and kHealthHolesKept
+    // findings (the worst of each port first, as PortRun::findings).
+    std::vector<PortBanner> banners;
+    std::vector<PortVerdict> verdicts;
+    std::vector<ServiceFinding> holes;
 };
+
+// What a health check keeps of each device's scan (HealthDevice).
+constexpr std::size_t kHealthBannersKept = 8;
+constexpr std::size_t kHealthHolesKept = 6;
 
 bool operator==(const HealthDevice& left, const HealthDevice& right);
 bool operator!=(const HealthDevice& left, const HealthDevice& right);
@@ -648,6 +659,7 @@ struct ToolsData {
     LeakRun leak;
     SigninRun signin;
     ToolKind latest{ToolKind::Listen};  // Listen or Probe: the Discover run started last
+    ToolKind latest_check{ToolKind::Health};  // Health or Ports: the device check started last
     uint64_t sent{0};
     // The date of the installed list of known security holes
     // (vuln_list.h), "2026-11-23"; empty when the app finds no list.

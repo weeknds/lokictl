@@ -57,6 +57,60 @@ private:
     bool first_{true};
 };
 
+// A device's page: its services, holes and issues.
+void write_page(Fields& item, std::string& out, const DashDevice& device) {
+    item.key("ports") += '[';
+    for (std::size_t index = 0; index < device.ports.size(); ++index) {
+        const DashPort& port = device.ports[index];
+        if (index > 0) {
+            out += ',';
+        }
+        Fields entry(out);
+        entry.number("port", port.port);
+        entry.text("name", port.name);
+        entry.text("version", port.version);
+        entry.word("tier", finding_tier_name(port.tier));
+        entry.text("tag", port.tag);
+    }
+    out += ']';
+    item.number("more_ports", device.more_ports);
+    item.key("holes") += '[';
+    for (std::size_t index = 0; index < device.holes.size(); ++index) {
+        const DashHole& hole = device.holes[index];
+        if (index > 0) {
+            out += ',';
+        }
+        Fields entry(out);
+        entry.number("port", hole.port);
+        entry.text("cve", hole.cve);
+        entry.key("score") += number_or_null(hole.score);
+        entry.boolean("used", hole.used);
+        entry.text("text", hole.text);
+    }
+    out += ']';
+    item.number("more_holes", device.more_holes);
+    item.key("issues") += '[';
+    for (std::size_t index = 0; index < device.issues.size(); ++index) {
+        const DashIssue& issue = device.issues[index];
+        if (index > 0) {
+            out += ',';
+        }
+        Fields entry(out);
+        entry.word("tier", finding_tier_name(issue.tier));
+        entry.text("title", issue.title);
+        entry.text("about", issue.about);
+        std::string& steps = entry.key("steps");
+        steps += '[';
+        for (std::size_t step = 0; step < issue.steps.size(); ++step) {
+            steps += step > 0 ? "," : "";
+            steps += json_text(issue.steps[step]);
+        }
+        steps += ']';
+        entry.number("port", issue.port);
+    }
+    out += ']';
+}
+
 void write_overview(std::string& out, const DashOverview& overview) {
     Fields fields(out);
     fields.boolean("checked", overview.checked);
@@ -71,6 +125,9 @@ void write_overview(std::string& out, const DashOverview& overview) {
     fields.number("device_look", counts.device_look);
     fields.number("fine", counts.fine);
     fields.number("unchecked", counts.unchecked);
+    fields.number("device_new", counts.device_new);
+    fields.number("hotspot", counts.hotspot);
+    fields.text("list_date", overview.list_date);
     fields.key("things") += '[';
     for (std::size_t index = 0; index < overview.things.size(); ++index) {
         const DashThing& thing = overview.things[index];
@@ -106,6 +163,10 @@ void write_overview(std::string& out, const DashOverview& overview) {
         item.text("tag", device.tag);
         item.text("services", device.services);
         item.text("seen", device.seen);
+        item.text("kind", device.kind);
+        item.boolean("hotspot", device.hotspot);
+        item.boolean("blocked", device.blocked);
+        write_page(item, out, device);
     }
     out += ']';
 }
@@ -140,6 +201,11 @@ void write_status(std::string& out, const HomeData& home, const DashboardParts& 
         mode.key("vpn_reply_s") += home.vpn.state == VpnState::On ? number_or_null(home.vpn.reply_seconds) : "null";
         mode.boolean("kill_switch", home.vpn.kill_switch);
         mode.boolean("keep", parts.keep_mode);
+    }
+    {
+        Fields block(root.key("block"));
+        block.number("failures", home.block_failures);
+        block.text("message", home.block_message);
     }
     {
         Fields traffic(root.key("traffic"));
@@ -199,7 +265,7 @@ void TrafficLog::push(int32_t down_kbps, int32_t up_kbps) {
 
 std::string dashboard_status_json(const HomeData& home, const DashboardParts& parts) {
     std::string out;
-    out.reserve(1024 + parts.overview.devices.size() * 200 + parts.overview.things.size() * 220);
+    out.reserve(1024 + parts.overview.devices.size() * 400 + parts.overview.things.size() * 220);
     write_status(out, home, parts);
     out += '\n';
     return out;
