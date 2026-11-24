@@ -608,6 +608,13 @@ the project layout.
 - [docs/remote.md](docs/remote.md): Remote view and how it is kept private
 - [docs/fonts.md](docs/fonts.md): the bundled fonts
 
+## Support
+
+LokiCTL is free and stays free. If it is useful to you, you can buy me a
+coffee on [Ko-fi](https://ko-fi.com/weeknds). It helps pay for test gear,
+so new features get tried on real hardware. Bug reports and ideas are just
+as welcome: open an issue on GitHub.
+
 ## License and credits
 
 LokiCTL is released under the MIT license, see [LICENSE](LICENSE).
