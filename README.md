@@ -311,8 +311,8 @@ Save one with `8` on Health, `R` on Watch or Discover, or the command
 `report`. Each report is two files in `~/Documents/LokiCTL/reports/`:
 `lokictl-<date>-<time>.html` and a table of the devices,
 `lokictl-<date>-<time>-devices.csv`, which opens in a spreadsheet. Only
-your user can read them. To get them onto a PC, open Remote view: its
-Cardputer screen page lists the saved reports for download. The report
+your user can read them. To get them onto a PC, open Remote view: the
+dashboard's Reports page lists the saved reports for download. The report
 needs nothing from the internet, runs no scripts and prints well. It
 holds what devices on your network said about themselves, so treat it as
 private.
@@ -337,8 +337,10 @@ the VPN. Tools runs ping, name lookups, traces, port scans, speed tests
 and the Wi-Fi survey on the Cardputer, and the Watch and trap page turns
 Watch and the trap on and off and shows their alerts. The Map page fills
 in with a coming update. **Cardputer screen** shows the Cardputer's
-screen and lets you press its keys, and lists the saved reports for
-download.
+screen and lets you press its keys. **⌘K** (Ctrl+K), or the search button
+on a phone, finds a page, a device or an action and takes the
+Cardputer's own commands such as `ping 9.9.9.9`; anything that scans or
+switches asks first, as its button does.
 
 Remote view is off every time LokiCTL starts, a `REMOTE` tag shows while
 someone is connected, and `7` on its row also lets devices on LokiCTL's

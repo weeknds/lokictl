@@ -569,6 +569,10 @@ void check_server() {
         {"/devices.js", "text/javascript; charset=utf-8"},
         {"/security.js", "text/javascript; charset=utf-8"},
         {"/modes.js", "text/javascript; charset=utf-8"},
+        {"/tools.js", "text/javascript; charset=utf-8"},
+        {"/watch.js", "text/javascript; charset=utf-8"},
+        {"/palette.js", "text/javascript; charset=utf-8"},
+        {"/screen.js", "text/javascript; charset=utf-8"},
         {"/preact.module.js", "text/javascript; charset=utf-8"},
         {"/icon.svg", "image/svg+xml"},
         {"/fonts/Inter-Regular.ttf", "font/ttf"},
@@ -607,10 +611,10 @@ void check_server() {
         expect(answer.status == 401, std::string(path) + " without a session: 401");
         expect_policy(answer, std::string(path) + " 401");
     }
+    // The screen page is the dashboard's #/screen now: no page of its own.
     const Answer screen = ask(port, get(host, "/screen"));
-    expect(screen.status == 200 && contains(screen.body, "X-LokiCTL-Token"), "GET /screen: the screen page, sending the token");
-    expect_policy(screen, "GET /screen", true);
-    expect(contains(screen.header("Content-Security-Policy"), "frame-ancestors 'none'"), "GET /screen: its own policy");
+    expect(screen.status == 404, "GET /screen: no page of its own (404)");
+    expect_policy(screen, "GET /screen");
 
     // Pair, then the session and the status.
     const Answer paired = ask(port, post(host, "/pair", "code=" + code));

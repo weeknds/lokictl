@@ -52,7 +52,7 @@ const PICTURES = [
   [/speaker|sonos|homepod|echo|airplay|audio/i, "speaker"],
 ];
 
-function pictureOf(device) {
+export function pictureOf(device) {
   if (device.router) return "router";
   const text = (device.kind || "") + " " + (device.name || "");
   for (const [pattern, name] of PICTURES) {

@@ -988,20 +988,6 @@ a.btn-ghost:hover { color: var(--t1); background: rgba(255, 255, 255, .09); }
     border-radius: 5px;
     padding: 1px 6px;
   }
-  .cmd-hint {
-    position: absolute;
-    right: 24px;
-    top: 46px;
-    z-index: 5;
-    width: 340px;
-    padding: 10px 12px;
-    border-radius: 10px;
-    background: var(--s2);
-    border: 1px solid var(--line2);
-    box-shadow: var(--shadow-card);
-    color: var(--t2);
-    font-size: 13px;
-  }
   .content { padding: 24px; }
   .page-title { font-size: 30px; line-height: 36px; font-weight: 750; letter-spacing: -.03em; }
   .page-sub { margin-top: 6px; font-size: 15px; color: var(--t2); display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
@@ -1214,6 +1200,205 @@ a.btn-ghost:hover { color: var(--t1); background: rgba(255, 255, 255, .09); }
   .tool-card .group { max-width: 720px; }
   .tool-card .chan-box { max-width: 560px; }
   .tool-rates { max-width: 560px; }
+}
+
+/* ---------- Command palette and the phone's search button ---------- */
+
+/* The page's contents take the focus after the palette opened a page. */
+.content:focus { outline: none; box-shadow: none; }
+.main { position: relative; }
+.find-btn {
+  position: absolute;
+  z-index: 5;
+  top: calc(16px + var(--safe-top));
+  right: 10px;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 22px;
+  border: 1px solid var(--line);
+  background: var(--fill-ghost);
+  color: var(--t1);
+  cursor: pointer;
+}
+.content .large-title, .content > .banner, .content > .toast { margin-right: 52px; }
+.back ~ .large-title { margin-right: 0; }
+html.pal-open { overflow: hidden; }
+.pal-back {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: calc(8px + var(--safe-top)) 8px 8px;
+  background: rgba(0, 0, 0, .55);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+}
+.pal {
+  width: 100%;
+  max-width: 640px;
+  max-height: calc(100vh - 16px - var(--safe-top));
+  max-height: calc(100dvh - 16px - var(--safe-top));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 20px;
+  background: linear-gradient(180deg, var(--s2) 0%, var(--card-low) 100%);
+  border: 1px solid var(--line2);
+  box-shadow: var(--shadow-card);
+}
+.pal-head { display: flex; align-items: center; gap: 10px; flex: none; padding: 4px 6px 4px 16px; border-bottom: 1px solid var(--line); color: var(--t3); }
+.pal-field {
+  flex: 1;
+  min-width: 0;
+  height: 50px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--t1);
+  font-family: var(--sans);
+  font-size: 16px;
+}
+.pal-field::placeholder { color: var(--t3); }
+.pal-field:focus, .pal-field:focus-visible { outline: none; box-shadow: none; }
+.pal-close {
+  flex: none;
+  min-width: 44px;
+  height: 44px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 10px;
+  background: none;
+  color: var(--or);
+  font-size: 16px;
+  cursor: pointer;
+}
+.pal-esc { display: none; }
+.pal-note { flex: none; padding: 10px 16px; border-bottom: 1px solid var(--line); font-size: 14px; color: var(--warn); }
+.pal-list { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 2px 6px 8px; scrollbar-width: thin; scrollbar-color: var(--s3) transparent; }
+.pal-list:empty { display: none; }
+.pal-sec { padding: 12px 10px 6px; font-size: 13px; font-weight: 600; color: var(--t3); }
+.pal-opt { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 6px 10px; border-radius: 12px; cursor: pointer; }
+.pal-opt.on { background: var(--fill-selected); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04); }
+.pal-tile { width: 30px; height: 30px; flex: none; display: flex; align-items: center; justify-content: center; border-radius: 9px; background: var(--s3); color: var(--t2); }
+.pal-opt.on .pal-tile { color: var(--t1); }
+.pal-text { flex: 1; min-width: 0; }
+.pal-text b, .pal-text span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pal-text b { font-size: 16px; font-weight: 600; letter-spacing: -.01em; }
+.pal-text span { margin-top: 1px; font-size: 13.5px; color: var(--t2); }
+.pal-text span.mono { font-size: 12.5px; color: var(--t3); }
+.pal-text .pal-why { color: var(--warn); }
+.pal-enter { display: none; flex: none; color: var(--t3); }
+.pal-none { padding: 18px 16px 22px; font-size: 15px; color: var(--t2); }
+.pal-foot { display: none; }
+
+/* ---------- The Cardputer screen ---------- */
+
+.scr-grid { margin-top: 16px; }
+.scr-device {
+  padding: 12px 12px 10px;
+  border-radius: 22px;
+  background: var(--device-body);
+  border: 1px solid var(--line2);
+  box-shadow: 0 24px 48px -24px rgba(0, 0, 0, .9), inset 0 1px 0 rgba(255, 255, 255, .06);
+}
+/* The screen takes typing while it has the focus: the design's focus ring
+   says so, as on the pairing code. */
+.scr-panel { border: 2px solid transparent; border-radius: 11px; cursor: text; }
+.scr-panel:focus, .scr-panel:focus-visible { outline: none; border-color: var(--or); box-shadow: var(--halo); }
+.scr-canvas { display: block; width: 100%; height: auto; aspect-ratio: 320 / 170; border-radius: 8px; background: var(--device-screen); image-rendering: pixelated; }
+.scr-canvas.stale { opacity: .4; }
+.scr-soft { position: relative; height: 44px; margin-top: 8px; }
+.cap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  height: 44px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line2);
+  border-bottom-width: 2px;
+  background: linear-gradient(180deg, var(--kbd-top), var(--kbd-bottom));
+  color: var(--t1);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+.cap:active { transform: translateY(1px); border-bottom-width: 1px; }
+.cap .mono { font-size: 16px; }
+.sk { position: absolute; top: 0; width: 44px; transform: translateX(-50%); }
+.sk:active { transform: translate(-50%, 1px); }
+.sk-4 { left: 15.31%; }
+.sk-5 { left: 32.81%; }
+.sk-6 { left: 50.31%; }
+.sk-7 { left: 67.81%; }
+.sk-8 { left: 85.31%; }
+.scr-pad { display: grid; grid-template-columns: repeat(3, 52px) 1fr 96px; grid-template-rows: repeat(2, 48px); gap: 8px; margin-top: 14px; }
+.scr-pad .cap { width: 100%; height: 100%; }
+.k-esc { grid-area: 1 / 1; }
+.k-up { grid-area: 1 / 2; }
+.k-help { grid-area: 1 / 5; }
+.k-left { grid-area: 2 / 1; }
+.k-down { grid-area: 2 / 2; }
+.k-right { grid-area: 2 / 3; }
+.k-enter { grid-area: 2 / 5; }
+.scr-state { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; margin: 14px 4px 0; font-size: 14px; line-height: 19px; color: var(--t2); }
+.scr-state p { flex: 1; min-width: 12em; }
+.live.warn { color: var(--warn); }
+.live.warn i { background: var(--warn); }
+.scr-notes { margin-top: 20px; padding: 14px 16px 6px; border-radius: 16px; background: var(--s1); border: 1px solid var(--line); box-shadow: var(--shadow-group); }
+.scr-notes-title { margin-bottom: 8px; font-size: 13px; font-weight: 600; color: var(--t3); }
+.scr-notes p { margin-bottom: 10px; font-size: 15px; line-height: 21px; color: var(--t2); }
+
+@media (min-width: 900px) {
+  .find-btn { display: none; }
+  .content .large-title, .content > .banner, .content > .toast { margin-right: 0; }
+  .pal-back { padding: 12vh 24px 24px; }
+  .pal { max-height: min(560px, 76vh); border-radius: 18px; }
+  .pal-head { padding: 2px 12px 2px 16px; }
+  .pal-field { height: 52px; }
+  .pal-cancel { display: none; }
+  .pal-close { min-width: 0; height: 32px; padding: 0 2px; }
+  .pal-esc { display: inline-block; margin-left: 0; }
+  .pal-sec { padding: 10px 10px 4px; font-size: 12px; }
+  .pal-opt { gap: 10px; min-height: 44px; padding: 4px 10px; border-radius: 10px; }
+  .pal-tile { width: 28px; height: 28px; border-radius: 8px; }
+  .pal-text { display: flex; align-items: baseline; gap: 10px; }
+  .pal-text b { flex: none; max-width: 62%; font-size: 14px; }
+  .pal-text span { flex: 1; min-width: 0; margin-top: 0; font-size: 13px; color: var(--t3); }
+  .pal-text span.mono { font-size: 12px; }
+  .pal-opt.on .pal-enter { display: inline-flex; }
+  .pal-foot { display: flex; align-items: center; gap: 16px; flex: none; padding: 10px 16px; border-top: 1px solid var(--line); font-size: 12px; color: var(--t3); }
+  .pal-foot .kbd { margin: 0 4px 0 0; padding: 0 5px; }
+  .pal-foot-end { margin-left: auto; }
+  .pal-none { font-size: 14px; }
+
+  .scr-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px; align-items: start; margin-top: 20px; }
+  .scr-main, .scr-notes {
+    min-width: 0;
+    border-radius: 18px;
+    background: linear-gradient(180deg, var(--s2) 0%, var(--card-low) 100%);
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow-card);
+  }
+  .scr-main { grid-column: span 8; padding: 20px; }
+  .scr-notes { grid-column: span 4; margin-top: 0; padding: 16px 18px 8px; }
+  /* 640 px of screen: exactly twice the Cardputer's pixels. */
+  .scr-device { max-width: 668px; margin: 0 auto; }
+  .scr-pad { max-width: 668px; margin: 14px auto 0; grid-template-columns: repeat(3, 48px) 1fr 88px; grid-template-rows: repeat(2, 44px); }
+  .scr-pad .cap, .sk { height: 44px; border-radius: 9px; font-size: 13.5px; }
+  .scr-soft { height: 44px; }
+  .scr-state { max-width: 668px; margin: 14px auto 0; font-size: 13.5px; }
+  .scr-notes-title { margin-bottom: 10px; font-size: 14.5px; font-weight: 650; color: var(--t1); }
+  .scr-notes p { font-size: 14px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

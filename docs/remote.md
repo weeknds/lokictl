@@ -65,12 +65,28 @@ internet.
   fills the drawing too, so you can hold it next to the real screen),
   **Continue**, and **Where is the code?**. A wrong code says so; 5 wrong
   codes switch Remote view off, as below.
-- **On a phone** (narrower than 900 px): a large title, the page, and a tab
-  bar at the bottom: Home, Devices, Security, Tools and Modes.
+- **On a phone** (narrower than 900 px): a large title with a search
+  button beside it, the page, and a tab bar at the bottom: Home, Devices,
+  Security, Tools and Modes.
 - **On a computer** (900 px and wider): a sidebar with every page (Overview,
   Devices, Security, Watch and trap, Map, then Modes and VPN, Tools,
   Reports and Cardputer screen) and the Cardputer's battery and address at
-  the bottom, and a top bar that shows where you are.
+  the bottom, and a top bar that shows where you are, with the search
+  field.
+- **Find a device or run a command.** **⌘K** (**Ctrl+K** on Windows and
+  Linux), the top bar's search field or the phone's search button opens
+  one search field over the page. It finds pages, tools, devices (by
+  name, address or service) and actions, and takes the Cardputer's own
+  `:` commands: `ping 9.9.9.9`, `dns example.com`, `trace router`,
+  `ports nas` (`router`, `this` or a device's name stand for its
+  address), `mode share`, `vpn on`, `health`, `leak`, `watch`. Up and
+  Down pick, Enter opens, Esc (or Cancel) closes and puts you back where
+  you were. It never does more than a press of the page's own button: it
+  opens the page, and Ping, a name lookup and Trace run as if typed there
+  and Run pressed, while a health check, a port scan, a mode switch and
+  the VPN first ask the same question as their buttons. `theme`, `scan`,
+  `probe` and the Wi-Fi, Status, Settings, Sign-in and Talk pages stay on
+  the Cardputer.
 - **Home** (Overview on a computer) answers "is my network OK?" first: a
   verdict (`1 thing to fix`, then the one thing as a link, then
   `2 more worth a look · 9 look fine`), a picture of the devices around
@@ -185,16 +201,21 @@ browser keeps for a week.
 
 ## The screen page
 
-The **Cardputer screen** page (`/screen`) shows the Cardputer's screen,
-scaled to fit the window, with a key
-pad under it laid out like the device: keys **4** to **8** right under the
-screen, then **ESC**, the arrows, **Enter** and **Help**. Clicking a key
-presses it on the Cardputer.
+The **Cardputer screen** page of the dashboard (`#/screen`, in the
+sidebar on a computer and on Home on a phone) shows the Cardputer's
+screen, scaled to fit (exactly twice its size on a large window), drawn
+like the device with its keys: **4** to **8** right under the screen,
+then **ESC**, the arrows, **Enter** and **Help**. Clicking or tapping a
+key presses it on the Cardputer.
 
-While the screen shows, typing on the computer's keyboard types on the
-Cardputer: letters, digits and other printable characters, **Enter**,
-**Esc**, **Backspace**, the arrow keys, and **F1** for help. A key held down
-counts once, and shortcuts with Ctrl or Cmd stay with the browser. Each key
+While the screen itself has the focus (it does when the page opens on a
+computer, and after a click on it; an orange ring shows it), typing on
+the computer's keyboard types on the Cardputer: letters, digits and other
+printable characters, **Enter**, **Esc**, **Backspace**, the arrow keys,
+and **F1** for help. **Tab** leaves the screen, so the rest of the page
+works with the keyboard as usual, and nothing typed in the search field
+goes to the Cardputer. A key held down counts once, and shortcuts with
+Ctrl or Cmd stay with the browser. Each key
 goes through the same steps as a key pressed on the Cardputer: when its
 screen has dimmed, the first key only wakes it; keys 4 to 8 press the soft
 keys and F, X, Z and C move like arrows, except while a page is waiting for
@@ -220,10 +241,9 @@ the page asks for the new code.
 
 ### Reports
 
-Under the key pad, **Reports** lists the reports saved on the Cardputer
-(see the README), the newest first, as download links. The list is read
-when the page shows; **Show saved reports** reads it again. A report is
-handed out as a download, never shown as part of this page.
+The **Reports** page lists the reports saved on the Cardputer (see the
+README), the newest first, as download links. A report is handed out as a
+download, never shown as part of a page.
 
 ### From the command line
 
@@ -327,10 +347,8 @@ nothing else on the device.
   `Content-Security-Policy`. The dashboard's is `default-src 'self';
   object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors
   'none'`: scripts, styles, fonts and pictures only from the Cardputer,
-  nothing inline and no frames. The one exception is the screen page
-  (`/screen`), which still has its script and style inside the page and is
-  allowed exactly that, pictures from the server's answers and requests to
-  the server itself, until it moves into the dashboard.
+  nothing inline and no frames, also on the Cardputer screen page, which
+  draws the pictures on a canvas.
 - **Only the dashboard's own files.** Its page, style, scripts, icon and
   the two Inter fonts come from a fixed list of addresses, each mapped to
   one installed file (`/usr/share/lokictl/web` and
@@ -376,8 +394,7 @@ form too; the code from the Cardputer's screen still guards it.
 
 | Request | Answer |
 |---|---|
-| `GET /`, `/app.css`, `/app.js`, `/pair.js`, `/shell.js`, `/ui.js`, `/home.js`, `/devices.js`, `/security.js`, `/modes.js`, `/tools.js`, `/watch.js`, `/preact.module.js`, `/icon.svg`, `/fonts/Inter-Regular.ttf`, `/fonts/Inter-SemiBold.ttf` | the dashboard's files, no session needed (`404` when the file is not installed) |
-| `GET /screen` | the screen page (`text/html`, with its own `Content-Security-Policy`) |
+| `GET /`, `/app.css`, `/app.js`, `/pair.js`, `/shell.js`, `/ui.js`, `/home.js`, `/devices.js`, `/security.js`, `/modes.js`, `/tools.js`, `/watch.js`, `/palette.js`, `/screen.js`, `/preact.module.js`, `/icon.svg`, `/fonts/Inter-Regular.ttf`, `/fonts/Inter-SemiBold.ttf` | the dashboard's files, no session needed (`404` when the file is not installed) |
 | `POST /pair` with the form body `code=NNNNNN` | `200` and the session cookie; `403` for a wrong code; `409` while a browser is paired |
 | `GET /api/v1/session` with the cookie | `200` with `{"token":"<request token>"}`; `401` without the cookie |
 | `GET /api/v1/status` with the cookie | `200` with what the home page knows, as JSON (below); `503` before the app handed any over; `401` without the cookie |

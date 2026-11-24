@@ -10,7 +10,7 @@
 // follows the status. It asks before each switch and before a new password.
 
 import { h, Component } from "./preact.module.js";
-import { icon, post, postFile, getJson, refreshSoon } from "./ui.js";
+import { icon, post, postFile, getJson, refreshSoon, ASK_EVENT, takePageAsk } from "./ui.js";
 
 // How long the page waits for the status to show a request's result.
 const WAIT_MS = 10000;
@@ -235,14 +235,68 @@ export class ModesPage extends Component {
       const running = this.mode().leak && this.mode().leak.state === "running";
       this.send("/api/v1/leak", { run: running ? "0" : "1" }, { kind: "leak", where: "vpn" });
     };
+    this.onAsk = () => this.takeAsk();
   }
 
   componentDidMount() {
+    window.addEventListener(ASK_EVENT, this.onAsk);
     this.follow();
   }
 
   componentWillUnmount() {
     clearTimeout(this.timer);
+    window.removeEventListener(ASK_EVENT, this.onAsk);
+  }
+
+  // A mode tile pressed: the switch's question, or why it can't switch.
+  // `said`: say so also when nothing would happen (the palette asked).
+  pickMode(id, said) {
+    const mode = this.mode();
+    const change = mode.switch || {};
+    const switching = change.state === "switching";
+    const why = (mode.why || {})[id];
+    const tile = TILES.find((t) => t.id === id);
+    if (tileOn(mode) === id) {
+      if (said) this.setState({ msg: { where: "mode", text: tile.name + " is on already.", tone: "" } });
+      return;
+    }
+    if (why && !switching) {
+      this.setState({ msg: { where: "mode", text: why + ".", tone: "warn" } });
+      return;
+    }
+    if (switching || this.state.want) {
+      if (said) this.setState({ msg: { where: "mode", text: "Wait until the switch is done.", tone: "warn" } });
+      return;
+    }
+    this.openAsk({ kind: "mode", mode: id });
+  }
+
+  // A request from the command palette: a mode tile or the VPN switch, as
+  // if pressed here, so the same question comes first.
+  takeAsk() {
+    const status = this.props.status;
+    if (!status || !status.mode || this.state.sending) return;
+    const ask = takePageAsk("modes");
+    if (!ask) return;
+    if (ask.kind === "mode" && TILES.some((t) => t.id === ask.mode)) {
+      this.pickMode(ask.mode, true);
+      return;
+    }
+    if (ask.kind !== "vpn-on" && ask.kind !== "vpn-off") return;
+    const mode = this.mode();
+    const on = !!mode.vpn_active || !!mode.gateway_down;
+    const files = mode.vpn_files || [];
+    let why = "";
+    if ((mode.switch && mode.switch.state === "switching") || this.state.want) why = "Wait until the switch is done.";
+    else if (ask.kind === "vpn-on" && on) why = "The VPN is on already.";
+    else if (ask.kind === "vpn-off" && !on) why = "The VPN is off already.";
+    else if (ask.kind === "vpn-on" && !files.length) why = "Add a VPN file first.";
+    else if (ask.kind === "vpn-on" && (mode.why || {}).vpn) why = mode.why.vpn + ".";
+    if (why) {
+      this.setState({ msg: { where: "vpn", text: why, tone: "warn" } });
+      return;
+    }
+    this.openAsk({ kind: ask.kind });
   }
 
   componentDidUpdate() {
@@ -258,6 +312,7 @@ export class ModesPage extends Component {
   follow() {
     const status = this.props.status;
     if (!status || !status.mode) return;
+    this.takeAsk();
     const mode = status.mode;
     const key = (mode.hotspot ? "on" : "off") + "/" + (mode.hotspot_name || mode.next_hotspot_name) + "/" + switchKey(mode);
     if ((mode.hotspot || this.state.shown) && key !== this.secretKey) {
@@ -465,14 +520,7 @@ export class ModesPage extends Component {
               role: "radio",
               "aria-checked": selected ? "true" : "false",
               "aria-disabled": selected || switching || blocked ? "true" : undefined,
-              onClick: () => {
-                if (blocked) {
-                  this.setState({ msg: { where: "mode", text: why[tile.id] + ".", tone: "warn" } });
-                  return;
-                }
-                if (selected || switching || this.state.want) return;
-                this.openAsk({ kind: "mode", mode: tile.id });
-              },
+              onClick: () => this.pickMode(tile.id, false),
             },
             selected
               ? h(

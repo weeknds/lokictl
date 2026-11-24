@@ -10,7 +10,6 @@
 #include "remote/remote_addresses.h"
 #include "remote/remote_http.h"
 #include "remote/remote_keys.h"
-#include "remote/remote_page.h"
 #include "remote/remote_web.h"
 #include "report.h"
 #include "report_files.h"
@@ -718,17 +717,6 @@ void Server::handle_connection(int fd, int side, const Side& own, Pairing& pairi
         }
         const std::string& folder = file->folder == WebFolder::Web ? options_.web_folder : options_.font_folder;
         send_web_file(fd, folder, *file, wake_read_, now_ms() + kFileSendTimeoutMs);
-        return;
-    }
-
-    if (request.path == "/screen") {
-        if (request.method != "GET") {
-            send_text(fd, 405, "method not allowed\n", wake_read_, deadline, "Allow: GET\r\n");
-            return;
-        }
-        const std::string policy =
-            std::string("Content-Security-Policy: ").append(page_security_policy()).append("\r\n");
-        send_body(fd, 200, "text/html; charset=utf-8", page_html(), wake_read_, deadline, policy);
         return;
     }
 

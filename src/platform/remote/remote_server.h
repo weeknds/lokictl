@@ -101,12 +101,11 @@ struct ServerOptions {
 //   rebinding).
 // - Every answer carries exactly one Content-Security-Policy: the
 //   dashboard's (default_security_policy()) unless the answer names its
-//   own (the screen page, a report).
+//   own (a report).
 // - GET / and the other paths of the web dashboard (find_web_file()) give
 //   its files without a session: they hold nothing private. Fonts may be
-//   kept a week, everything else is no-store.
-//   GET /screen gives the screen page (page_html()) with its own
-//   Content-Security-Policy.
+//   kept a week, everything else is no-store. The screen page is one of
+//   the dashboard's pages (#/screen); GET /screen is an unknown path (404).
 //   POST /pair with code=NNNNNN pairs one browser (see Pairing) and sets
 //   the session cookie (HttpOnly, SameSite=Strict, Path=/).
 //   GET /api/v1/session needs the cookie (else 401) and answers

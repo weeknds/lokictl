@@ -526,7 +526,7 @@ function CardputerPhone({ status }) {
       h("div", { class: "row" }, h("span", { class: "row-key" }, "Address"), h("span", { class: "row-value mono" }, address)),
       h(
         "a",
-        { class: "row icon-row", href: "/screen" },
+        { class: "row icon-row", href: "#/screen" },
         h("span", { class: "tile" }, icon("screen", 18, 2)),
         h("span", { class: "row-text" }, h("b", null, "Cardputer screen"), h("span", null, "See its screen and press its keys")),
         h("span", { class: "chev" }, icon("chevron", 13, 2.4))

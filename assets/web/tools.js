@@ -11,7 +11,7 @@
 // computer: the list beside the open tool.
 
 import { h, Component } from "./preact.module.js";
-import { icon, post, refreshSoon } from "./ui.js";
+import { icon, post, refreshSoon, ASK_EVENT, takePageAsk } from "./ui.js";
 
 // How long the page waits for the status to show that a request took.
 const WAIT_MS = 8000;
@@ -78,7 +78,7 @@ export function findTool(id) {
 
 // ---------- Targets, checked as the Cardputer checks them ----------
 
-function isIpv4(text) {
+export function isIpv4(text) {
   const parts = text.split(".");
   return parts.length === 4 && parts.every((part) => /^(0|[1-9][0-9]{0,2})$/.test(part) && Number(part) <= 255);
 }
@@ -92,7 +92,7 @@ function isLocal(text) {
 
 // Why the Cardputer would refuse `text` for `tool`, in its own words;
 // empty when it takes it.
-function targetError(tool, text, max) {
+export function targetError(tool, text, max) {
   if (!text) return tool === "dns" ? "Type a name first." : "Type an address or a name first.";
   if (tool === "dns" && isIpv4(text)) return "DNS needs a name, not an address.";
   if (tool === "ports") return isLocal(text) ? "" : isIpv4(text) ? "Ports needs a private address." : "Ports needs an IPv4 address.";
@@ -101,7 +101,7 @@ function targetError(tool, text, max) {
   return shape ? "" : "Not a valid target: " + text;
 }
 
-function cleanTarget(text) {
+export function cleanTarget(text) {
   return String(text || "").trim().toLowerCase();
 }
 
@@ -282,9 +282,11 @@ export class ToolsPage extends Component {
       const ask = this.state.ask;
       if (ask) this.send("/api/v1/tool", { run: "ports", target: ask.target, own: "1" }, "ports");
     };
+    this.onAsk = () => this.takeAsk();
   }
 
   componentDidMount() {
+    window.addEventListener(ASK_EVENT, this.onAsk);
     this.follow();
   }
 
@@ -294,6 +296,30 @@ export class ToolsPage extends Component {
 
   componentWillUnmount() {
     clearTimeout(this.timer);
+    window.removeEventListener(ASK_EVENT, this.onAsk);
+  }
+
+  // A request from the command palette for the tool on show: its target
+  // goes into the field, then it runs as a press of Run would (Open ports
+  // asks its question first); only when Run could be pressed now.
+  takeAsk() {
+    const tools = this.tools();
+    if (!tools || this.state.sending) return;
+    const ask = takePageAsk("tools", this.props.sub);
+    if (!ask) return;
+    const tool = ask.sub;
+    const t = tools[tool];
+    if (typeof ask.target === "string") {
+      this.setState({ drafts: Object.assign({}, this.state.drafts, { [tool]: ask.target }), msg: null, ask: null });
+    }
+    if (!ask.run || !t) return;
+    if (t.state === "running") {
+      this.setState({ msg: { tool, text: findTool(tool).name + " is running already.", tone: "warn" } });
+    } else if (!t.can) {
+      this.setState({ msg: { tool, text: (t.why || "It can't start now") + ".", tone: "warn" } });
+    } else {
+      this.run(tool, ask.target);
+    }
   }
 
   tools() {
@@ -328,6 +354,7 @@ export class ToolsPage extends Component {
       this.seenStatus = status;
       if (running || this.state.want) refreshSoon();
     }
+    this.takeAsk();
     const want = this.state.want;
     if (!want) return;
     const t = tools[want.tool] || {};
@@ -349,7 +376,9 @@ export class ToolsPage extends Component {
     this.setState({ drafts: Object.assign({}, this.state.drafts, { [tool]: value }), msg: null, ask: null });
   }
 
-  run(tool) {
+  // Run (or Stop) `tool`, on `typed` when the palette gave a target, else
+  // on the field's.
+  run(tool, typed) {
     const tools = this.tools();
     if (!tools || this.state.sending) return;
     const t = tools[tool];
@@ -361,7 +390,7 @@ export class ToolsPage extends Component {
       this.send("/api/v1/tool", { run: tool }, tool);
       return;
     }
-    const target = cleanTarget(this.draft(tool));
+    const target = cleanTarget(typeof typed === "string" ? typed : this.draft(tool));
     const error = targetError(tool, target, tools.max || 63);
     if (error) {
       this.setState({ msg: { tool, text: error, tone: "warn" } });

@@ -2,13 +2,14 @@
 //
 // SPDX-License-Identifier: MIT
 
-// The dashboard's frame and its pages. On a phone: a large title, the page,
-// and a tab bar (Home, Devices, Security, Tools, Modes). On a computer
-// (900 px and wider): a sidebar with every page, a top bar with where you
-// are and the command bar, and the page. Pages are picked by the address's
-// #/name, so Back and links work as usual.
+// The dashboard's frame and its pages. On a phone: a search button, a
+// large title, the page, and a tab bar (Home, Devices, Security, Tools,
+// Modes). On a computer (900 px and wider): a sidebar with every page, a
+// top bar with where you are and the command bar, and the page. Both open
+// the command palette (⌘K or Ctrl+K on a computer). Pages are picked by
+// the address's #/name, so Back and links work as usual.
 
-import { h, Component } from "./preact.module.js";
+import { h } from "./preact.module.js";
 import { icon, logo, networkName, modeLine, internetWords, askCheck } from "./ui.js";
 import { HomePhone, HomeDesk } from "./home.js";
 import { DevicesList, DevicePage, deviceName } from "./devices.js";
@@ -16,6 +17,8 @@ import { SecurityPage, ReportsPage } from "./security.js";
 import { ModesPage } from "./modes.js";
 import { ToolsPage, findTool } from "./tools.js";
 import { WatchPage } from "./watch.js";
+import { ScreenPage } from "./screen.js";
+import { Palette, openPalette, paletteKeys } from "./palette.js";
 
 // Every page: its #/name, its title, the icon, and the sentence its empty
 // state says until its contents arrive.
@@ -54,11 +57,12 @@ export const PAGES = [
     about: "Ping, look up names, trace a route, check ports, test your speed and survey the Wi-Fi.",
   },
   { id: "reports", title: "Reports", icon: "reports", about: "Download the reports saved on the Cardputer." },
+  { id: "screen", title: "Cardputer screen", icon: "screen", about: "The Cardputer's screen, with its keys." },
 ];
 
 const PHONE_TABS = ["home", "devices", "security", "tools", "modes"];
 const MAIN_NAV = ["home", "devices", "security", "watch", "map"];
-const CONTROL_NAV = ["modes", "tools", "reports"];
+const CONTROL_NAV = ["modes", "tools", "reports", "screen"];
 
 export function findPage(id) {
   return PAGES.find((page) => page.id === id) || PAGES[0];
@@ -104,7 +108,6 @@ function Sidebar({ current, status }) {
     MAIN_NAV.map((id) => h(NavItem, { page: findPage(id), current, counts })),
     h("div", { class: "side-sec" }, "Control"),
     CONTROL_NAV.map((id) => h(NavItem, { page: findPage(id), current, counts })),
-    h("a", { class: "nav", href: "/screen" }, icon("screen", 16, 2), "Cardputer screen"),
     h(
       "div",
       { class: "side-device" },
@@ -130,45 +133,40 @@ function Sidebar({ current, status }) {
   );
 }
 
-class TopBar extends Component {
-  constructor(props) {
-    super(props);
-    this.state = { hint: false };
-    this.timer = 0;
-    this.onCommand = () => {
-      clearTimeout(this.timer);
-      this.setState({ hint: true });
-      this.timer = setTimeout(() => this.setState({ hint: false }), 3500);
-    };
-  }
+function TopBar({ page, status, sub }) {
+  return h(
+    "header",
+    { class: "top" },
+    h(
+      "div",
+      { class: "crumb" },
+      networkName(status) + " / ",
+      sub ? [h("a", { class: "crumb-link", href: "#/" + page.id }, page.title), " / ", h("b", null, sub)] : h("b", null, page.title)
+    ),
+    h(
+      "button",
+      {
+        class: "cmd",
+        type: "button",
+        onClick: openPalette,
+        "aria-haspopup": "dialog",
+        "aria-keyshortcuts": "Meta+K Control+K",
+      },
+      icon("search", 15, 2.2),
+      "Find a device or run a command",
+      h("span", { class: "kbd", "aria-hidden": "true" }, paletteKeys())
+    ),
+    h("a", { class: "btn gh", href: "#/security", onClick: askCheck }, "Check again")
+  );
+}
 
-  componentWillUnmount() {
-    clearTimeout(this.timer);
-  }
-
-  render({ page, status, sub }) {
-    return h(
-      "header",
-      { class: "top" },
-      h(
-        "div",
-        { class: "crumb" },
-        networkName(status) + " / ",
-        sub ? [h("a", { class: "crumb-link", href: "#/" + page.id }, page.title), " / ", h("b", null, sub)] : h("b", null, page.title)
-      ),
-      h(
-        "button",
-        { class: "cmd", type: "button", onClick: this.onCommand, "aria-describedby": this.state.hint ? "cmd-hint" : undefined },
-        icon("search", 15, 2.2),
-        "Find a device or run a command",
-        h("span", { class: "kbd", "aria-hidden": "true" }, "⌘K")
-      ),
-      h("a", { class: "btn gh", href: "#/security", onClick: askCheck }, "Check again"),
-      this.state.hint
-        ? h("p", { id: "cmd-hint", class: "cmd-hint", role: "status" }, "Search and commands come in a later update.")
-        : null
-    );
-  }
+// The phone's way into the command palette, at the top right of every page.
+function FindButton() {
+  return h(
+    "button",
+    { class: "find-btn", type: "button", onClick: openPalette, "aria-haspopup": "dialog", "aria-label": "Find a device or run a command" },
+    icon("search", 20, 2.2)
+  );
 }
 
 function TabBar({ current }) {
@@ -287,6 +285,9 @@ function PageBody({ page, sub, status }) {
   if (page.id === "watch") {
     return h(WatchPage, { status });
   }
+  if (page.id === "screen") {
+    return h(ScreenPage, { status });
+  }
   return h(EmptyPage, { page });
 }
 
@@ -301,9 +302,10 @@ export function Shell({ route, sub, status, lost, toast, onToastClose }) {
       "div",
       { class: "main" },
       h(TopBar, { page, status, sub: sub && page.id === "devices" ? deviceName(status, sub) || sub : tool ? tool.name : "" }),
+      h(FindButton),
       h(
         "main",
-        { class: "content", id: "content" },
+        { class: "content", id: "content", tabIndex: -1 },
         h(Banner, { lost }),
         h(AlertToast, { toast, onClose: onToastClose }),
         // Picking a finding on Security or a tool keeps the page (a check's
@@ -315,6 +317,7 @@ export function Shell({ route, sub, status, lost, toast, onToastClose }) {
         )
       )
     ),
-    h(TabBar, { current: page.id })
+    h(TabBar, { current: page.id }),
+    h(Palette, { status, pages: PAGES })
   );
 }

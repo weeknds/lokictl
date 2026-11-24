@@ -127,6 +127,9 @@ const ICONS = {
     ["path", { d: "M8.2 18H15a3.5 3.5 0 0 0 0-7H9a3.5 3.5 0 0 1 0-7h6.8" }],
   ],
   gauge: [["path", { d: "M4 17a8 8 0 1 1 16 0M12 17l4.5-5.5" }]],
+  up: [["path", { d: "M6 15l6-6 6 6" }]],
+  down: [["path", { d: "M6 9l6 6 6-6" }]],
+  enter: [["path", { d: "M19 5v7a3 3 0 0 1-3 3H6M10 11l-4 4 4 4" }]],
 };
 
 export function icon(name, size = 16, stroke = 2) {
@@ -191,6 +194,40 @@ export function takeCheckAsk() {
   const asked = checkAsked;
   checkAsked = false;
   return asked;
+}
+
+// The command palette's requests for a page: {page, sub, ...} such as
+// {page: "tools", sub: "ping", target: "9.9.9.9"} or {page: "modes",
+// kind: "mode", mode: "router"}. The palette never sends anything itself:
+// it opens the page and leaves the request here, and the page acts on it
+// as on a press of its own button, with the same question first where the
+// button asks one. A request nobody took within 10 s is dropped, so it
+// can't act later by surprise.
+export const ASK_EVENT = "lokictl-ask";
+const ASK_MS = 10000;
+let pageAsk = null;
+
+export function askPage(ask) {
+  pageAsk = Object.assign({ since: Date.now() }, ask);
+  window.dispatchEvent(new Event(ASK_EVENT));
+}
+
+// The request for `page` (and `sub`, when given), once; else null.
+export function takePageAsk(page, sub) {
+  const ask = pageAsk;
+  if (!ask || Date.now() - ask.since > ASK_MS) {
+    pageAsk = null;
+    return null;
+  }
+  if (ask.page !== page || (sub !== undefined && ask.sub !== sub)) return null;
+  pageAsk = null;
+  return ask;
+}
+
+// Whether this browser runs on an Apple device: ⌘ there, Ctrl elsewhere.
+export function isApple() {
+  const platform = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || "";
+  return /mac|iphone|ipad|ipod/i.test(platform);
 }
 
 // A Cardputer that is off or out of reach never answers: give up after 5 s.
