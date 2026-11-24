@@ -1,0 +1,23 @@
+# SPDX-FileCopyrightText: 2026 LokiCTL contributors
+# SPDX-License-Identifier: MIT
+#
+# The Wi-Fi survey with a USB stick: 6 starts the pretend listen, networks
+# and a look-alike come in, the chart catches a kick-off attack, and 5 goes
+# back to the findings.
+#
+# The made-up data sets have no USB stick, so this clip runs on a made-up
+# test folder with a free one, built by survey.setup (scripts/demo-gifs.sh
+# does that by itself). The clock in the title bar is the computer's own.
+1000 --page survey --data live
+# 6 starts the pretend listen; --settle-ms is the time after each key, so
+# the listen has run for (keys x settle) when the picture is taken.
+400 --page survey --data live --keys 6 --settle-ms 300
+300 --page survey --data live --keys 6 --settle-ms {1..6}000
+# 5 swaps to the chart (twice the settle): channel 6 busy, then at 21 s a
+# kick-off attack turns channel 11 red.
+300 --page survey --data live --keys 6,5 --settle-ms 5000
+300 --page survey --data live --keys 6,5 --settle-ms 7500
+300 --page survey --data live --keys 6,5 --settle-ms 10000
+1300 --page survey --data live --keys 6,5 --settle-ms 10500
+# 5 again goes back to the list, findings first (22.5 s).
+2000 --page survey --data live --keys 6,5,5 --settle-ms 7500

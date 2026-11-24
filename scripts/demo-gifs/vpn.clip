@@ -1,0 +1,18 @@
+# SPDX-FileCopyrightText: 2026 LokiCTL contributors
+# SPDX-License-Identifier: MIT
+#
+# On the made-up router, the VPN is switched on, the leak test passes and the kill switch is opened in plain words.
+1000 --page modes
+# down picks VPN (the "home" file), 6 switches it on; one reading lets the switch finish.
+200 --page modes --keys down --settle-ms 300
+500 --page modes --keys down,down --settle-ms 300
+400 --page modes --keys down,down,6 --settle-ms 300
+1300 --page modes --keys down,down,6,data --settle-ms 300
+# 5 opens the leak test, 6 starts the pretend test; --settle-ms is the time after each key.
+500 --page modes --keys down,down,6,data,5 --settle-ms 300
+250 --page modes --keys down,down,6,data,5,6 --settle-ms 150
+300 --page modes --keys down,down,6,data,5,6 --settle-ms 600
+1300 --page modes --keys down,down,6,data,5,6 --settle-ms 1200
+# down picks the kill switch, 5 says what it means.
+250 --page modes --keys down,down,6,data,5,6,down,down,down --settle-ms 2000
+1800 --page modes --keys down,down,6,data,5,6,down,down,down,5 --settle-ms 2000

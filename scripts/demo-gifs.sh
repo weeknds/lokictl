@@ -25,6 +25,10 @@
 # frame per number from A to B, in order. Empty lines and lines starting
 # with # are skipped. "lokictl --help" lists the snapshot options, and
 # --keys takes the key names it lists (including "data", one more reading).
+#
+# A clip that needs a made-up test folder (see docs/data.md) has a
+# scripts/demo-gifs/<name>.setup next to it. The script runs it with an empty
+# folder to fill and points LOKICTL_DATA_ROOT at that folder for that clip.
 
 set -euo pipefail
 
@@ -56,6 +60,8 @@ fail() {
 [ -x "${binary}" ] || fail "No simulator at ${binary}. Build it first: cmake --preset darwin-arm64 && cmake --build --preset darwin-arm64-dbg"
 command -v ffmpeg >/dev/null || fail "ffmpeg is needed (macOS: brew install ffmpeg)"
 
+unset LOKICTL_DATA_ROOT
+clip_root=""
 work="$(mktemp -d)"
 trap 'rm -rf "${work}"' EXIT
 mkdir -p "${out_dir}"
@@ -72,8 +78,13 @@ add_frame() {
   local frame
   frame="$(printf '%s/frame-%04d.png' "${work}" "${number}")"
   # shellcheck disable=SC2086 # the options are split on purpose
-  "${binary}" --snapshot "${raw}" ${options} >/dev/null 2>"${work}/snapshot.err" \
-    || fail "Snapshot failed for '${options}': $(cat "${work}/snapshot.err")"
+  if [ -n "${clip_root}" ]; then
+    LOKICTL_DATA_ROOT="${clip_root}" "${binary}" --snapshot "${raw}" ${options} >/dev/null 2>"${work}/snapshot.err" \
+      || fail "Snapshot failed for '${options}': $(cat "${work}/snapshot.err")"
+  else
+    "${binary}" --snapshot "${raw}" ${options} >/dev/null 2>"${work}/snapshot.err" \
+      || fail "Snapshot failed for '${options}': $(cat "${work}/snapshot.err")"
+  fi
   ffmpeg -v error -y -i "${shell}" -i "${raw}" -filter_complex \
     "[1:v]scale=640:340:flags=neighbor[s];[0:v][s]overlay=${screen_x}:${screen_y}" \
     -frames:v 1 "${frame}"
@@ -86,6 +97,12 @@ make_clip() {
   local name="$1"
   local clip="${clip_dir}/${name}.clip"
   [ -f "${clip}" ] || fail "No clip ${clip}"
+  clip_root=""
+  if [ -f "${clip_dir}/${name}.setup" ]; then
+    clip_root="${work}/root-${name}"
+    mkdir -p "${clip_root}"
+    bash "${clip_dir}/${name}.setup" "${clip_root}" || fail "${name}.setup failed"
+  fi
   : > "${work}/list.txt"
   rm -f "${work}"/frame-*.png
   local count=0 line ms options first last

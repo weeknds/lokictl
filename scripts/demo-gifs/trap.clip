@@ -1,0 +1,21 @@
+# SPDX-FileCopyrightText: 2026 LokiCTL contributors
+# SPDX-License-Identifier: MIT
+#
+# The trap switched on with its fake services, made-up visitors poking at them, then one visit opened.
+700 --page trap
+# 6 sets the trap; --settle-ms is the time since the key.
+1200 --page trap --keys 6
+300 --page trap --keys 6 --settle-ms 1700
+250 --page trap --keys 6 --settle-ms 2400
+300 --page trap --keys 6 --settle-ms 3200
+250 --page trap --keys 6 --settle-ms 4000
+300 --page trap --keys 6 --settle-ms 4700
+250 --page trap --keys 6 --settle-ms 5400
+300 --page trap --keys 6 --settle-ms 6200
+# Each "data" waits one more second (the sample values do not change), so
+# the trap's clock goes on smoothly while "down" picks a visit.
+1200 --page trap --keys 6,data,data,data,data,data,data --settle-ms 1000
+300 --page trap --keys 6,data,data,data,data,data,data,down --settle-ms 1000
+300 --page trap --keys 6,data,data,data,data,data,data,down,down --settle-ms 1000
+# 5 opens the picked visit: who it was, the fake service and what it sent.
+1800 --page trap --keys 6,data,data,data,data,data,data,down,down,5 --settle-ms 1000

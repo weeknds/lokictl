@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 LokiCTL contributors
+# SPDX-License-Identifier: MIT
+#
+# Builds the made-up test folder that survey.clip needs, because none of the
+# made-up data sets has a USB Wi-Fi stick: Wi-Fi joined to a made-up cafe
+# network as the uplink, a free USB stick (ath9k_htc) as wlan1 and a battery
+# at 91 %. scripts/demo-gifs.sh runs it with the folder to fill and points
+# LOKICTL_DATA_ROOT at that folder for this clip only. The folder layout is
+# described under "The Wi-Fi survey" in docs/data.md.
+
+set -euo pipefail
+
+root="${1:?usage: survey.setup <empty folder>}"
+net="${root}/sys/class/net"
+battery="${root}/sys/class/power_supply/battery0"
+
+mkdir -p "${root}/proc/net" "${net}/wlan0/wireless" "${net}/wlan1/wireless" \
+  "${net}/wlan1/device" "${battery}"
+echo 'wlan0 10.20.30.44' > "${root}/addresses"
+printf 'running yes\nlink wlan0 WPA2 72 Harbour-Cafe\n' > "${root}/networkmanager"
+printf 'Iface Destination Gateway Flags RefCnt Use Metric Mask MTU Window IRTT\nwlan0 00000000 011E140A 0003 0 0 600 00000000 0 0 0\n' \
+  > "${root}/proc/net/route"
+printf 'header\nheader\nwlan0: 0000 53. -57. -256 0 0 0 0 0 0\n' > "${root}/proc/net/wireless"
+echo 1 > "${net}/wlan0/carrier"
+echo 1 > "${net}/wlan0/type"
+printf 'DEVTYPE=usb_interface\nDRIVER=ath9k_htc\n' > "${net}/wlan1/device/uevent"
+echo Battery > "${battery}/type"
+echo 91 > "${battery}/capacity"
+echo Discharging > "${battery}/status"
