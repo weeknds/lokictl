@@ -1,0 +1,16 @@
+# SPDX-FileCopyrightText: 2026 LokiCTL contributors
+# SPDX-License-Identifier: MIT
+#
+# Watch starting on the made-up network, alerts coming in, then the newest one opened.
+900 --page watch
+# 6 starts the pretend Watch; --settle-ms is the time since the key.
+300 --page watch --keys 6 --settle-ms 1500
+300 --page watch --keys 6 --settle-ms 2500
+300 --page watch --keys 6 --settle-ms 3500
+300 --page watch --keys 6 --settle-ms 4500
+300 --page watch --keys 6 --settle-ms 5500
+300 --page watch --keys 6 --settle-ms 6500
+300 --page watch --keys 6 --settle-ms 7500
+1200 --page watch --keys 6 --settle-ms 8500
+# 5 opens the picked alert (the newest), with what it means.
+2000 --page watch --keys 6,5 --settle-ms 8500

@@ -1,0 +1,9 @@
+# SPDX-FileCopyrightText: 2026 LokiCTL contributors
+# SPDX-License-Identifier: MIT
+#
+# On the made-up cable set (Client mode), key 4 opens Modes, down picks Router and 6 switches it on.
+1400 --page home --data cable --theme instrument
+600 --page home --data cable --theme instrument --keys 4
+500 --page home --data cable --theme instrument --keys 4,down
+800 --page home --data cable --theme instrument --keys 4,down,6
+2000 --page home --data cable --theme instrument --keys 4,down,6,data

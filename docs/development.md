@@ -149,6 +149,11 @@ building:
 
 `scripts/store-screenshots.sh` makes the four store screenshots in
 `screenshot/store/` this way, from made-up sample data only.
+`scripts/demo-gifs.sh` remakes the README's GIFs in `docs/media/` from
+`scripts/demo-gifs/*.clip` the same way; it needs the simulator built and
+ffmpeg. `node scripts/demo-dashboard.mjs` remakes the phone dashboard one,
+`docs/media/dashboard-phone.gif`; it needs the simulator built, Node.js 22
+or newer, Google Chrome, ffmpeg and port 8780 free.
 
 Options:
 

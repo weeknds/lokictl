@@ -1,0 +1,19 @@
+# SPDX-FileCopyrightText: 2026 LokiCTL contributors
+# SPDX-License-Identifier: MIT
+#
+# The health check: the two-press start, findings filling in, then one risk opened in plain words.
+500 --page health
+1200 --page health --keys 6
+# The second 6 starts the pretend check; --settle-ms is the time after each key.
+250 --page health --keys 6,6 --settle-ms 700
+250 --page health --keys 6,6 --settle-ms 2000
+250 --page health --keys 6,6 --settle-ms 3300
+250 --page health --keys 6,6 --settle-ms 4600
+250 --page health --keys 6,6 --settle-ms 5800
+250 --page health --keys 6,6 --settle-ms 7000
+250 --page health --keys 6,6 --settle-ms 8200
+1300 --page health --keys 6,6 --settle-ms 9000
+# down picks a finding, 5 opens it.
+300 --page health --keys 6,6,down --settle-ms 9000
+600 --page health --keys 6,6,down,down --settle-ms 9000
+2000 --page health --keys 6,6,down,down,5 --settle-ms 9000

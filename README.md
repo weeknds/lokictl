@@ -7,7 +7,7 @@ SPDX-License-Identifier: MIT
 
 A pocket network multitool for the M5Stack CardputerZero.
 
-![LokiCTL's home page in the Constellation theme](screenshot/store/1-home.png)
+![Home page with live speeds, the mode and the devices on the hotspot](docs/media/home.gif)
 
 LokiCTL shows what your network is doing at a glance. It can turn the
 CardputerZero into a small router or hotspot, send traffic through a
@@ -131,6 +131,8 @@ Ping, DNS, Trace and Ports, Z/C steps through a few ready-made targets
 finished). Only one tool runs at a time, and a counter at the bottom shows
 how many packets LokiCTL has sent.
 
+![A port scan of a laptop that finds a serious security hole in its web server and shows the fix](docs/media/ports.gif)
+
 - Ping sends 10 echoes and shows the times and the loss.
 - DNS looks up a name and shows its addresses and the server that answered.
 - Trace shows the route to a host hop by hop, with times and names, up to
@@ -208,6 +210,8 @@ and the cable link. Press `6`, read what it will ask, and press `6` again
 to start; `6` stops it. A run takes a minute or a few, and nothing is
 sent before the second `6`.
 
+![A health check filling in risks and warnings, then one risk with what it means and how to fix it](docs/media/health.gif)
+
 The list shows what it found, the worst first, one line each:
 `Risk Telnet open  router`, `Warn Slow cable link  eth0`. Pick one with
 F/X and press `Enter` or `5` to see what it means and what to do. Use it
@@ -215,6 +219,8 @@ only on networks you own or may test. [docs/checks.md](docs/checks.md)
 lists every check. `8` saves a report (see [Reports](#reports)).
 
 ### Watch
+
+![Watch alerts coming in, then one that says someone may be pretending to be the router](docs/media/watch.gif)
 
 `8` on Tools (or the command `watch`) opens Watch. Press `6` and it keeps
 an eye on your network while LokiCTL is open: it only listens, sends
@@ -263,6 +269,8 @@ in the title bar while it is set. It answers anyone on the networks the
 Cardputer is on, so use it only on networks you own or may test.
 
 ### Discover and Map
+
+![The map filling in with devices around the router during a listen, then the details of each one](docs/media/map.gif)
 
 Discover (`5` on Home) finds the devices on the network the Cardputer is
 on, in up to three steps:
@@ -324,6 +332,8 @@ it on in Settings. The Cardputer then shows an address and a six-digit
 code: open the address in Safari or Chrome on the same network and type
 the code. Nothing to install, and nothing comes from the internet.
 
+![The web dashboard on a phone: Home, Devices, a TV with two security holes and the fix, and Security](docs/media/dashboard-phone.gif)
+
 On a phone you get large titles and a tab bar (Home, Devices, Security,
 Tools, Modes); on a computer, a sidebar with every page. Home says
 whether your network is OK and what to fix first. Devices lists every
@@ -351,6 +361,8 @@ More in [docs/remote.md](docs/remote.md).
 
 Open Modes with `4` on Home, pick a row and press `Enter` or `6`. A tick
 marks what's on.
+
+![Switching from Client to Router on the Modes page, which then shows the hotspot's name and password](docs/media/modes.gif)
 
 - Client is the normal state: the Cardputer joins a Wi-Fi network like
   a phone does. LokiCTL changes nothing.
@@ -436,6 +448,8 @@ does nothing while another tool runs.
 ## Themes
 
 Switch the theme in Settings or with `theme <name>`. Your choice is saved.
+
+![Picking Constellation and then Terminal in Settings, and Home in each theme](docs/media/themes.gif)
 
 - Instrument: warm paper colours, thin ink lines and big numbers.
 - Constellation (the default): dark blue with a lime accent.

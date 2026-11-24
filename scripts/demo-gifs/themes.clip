@@ -1,0 +1,13 @@
+# SPDX-FileCopyrightText: 2026 LokiCTL contributors
+# SPDX-License-Identifier: MIT
+#
+# From Instrument, the Settings page picks Constellation, then Terminal, and the home page follows each time.
+1400 --page home --theme instrument
+500 --page home --theme instrument --keys 6
+400 --page home --theme instrument --keys 6,x
+700 --page home --theme instrument --keys 6,x,enter
+1400 --page home --theme instrument --keys 6,x,enter,esc
+500 --page home --theme instrument --keys 6,x,enter,esc,6
+400 --page home --theme instrument --keys 6,x,enter,esc,6,x
+700 --page home --theme instrument --keys 6,x,enter,esc,6,x,enter
+1800 --page home --theme instrument --keys 6,x,enter,esc,6,x,enter,esc

@@ -1,0 +1,19 @@
+# SPDX-FileCopyrightText: 2026 LokiCTL contributors
+# SPDX-License-Identifier: MIT
+#
+# The map filling in with made-up devices during a listen, then the cursor stepping to them.
+1000 --page map
+# 6 starts the pretend listen; --settle-ms is the time since the key.
+300 --page map --keys 6 --settle-ms 500
+300 --page map --keys 6 --settle-ms 1000
+300 --page map --keys 6 --settle-ms 2000
+300 --page map --keys 6 --settle-ms 3000
+300 --page map --keys 6 --settle-ms 4000
+300 --page map --keys 6 --settle-ms 5000
+300 --page map --keys 6 --settle-ms 6000
+# Each "data" waits one more second (the sample values do not change), so
+# the listen clock goes on smoothly while "right" steps the cursor.
+800 --page map --keys 6,data,data,data,data,data,data,right --settle-ms 1000
+800 --page map --keys 6,data,data,data,data,data,data,right,right --settle-ms 1000
+800 --page map --keys 6,data,data,data,data,data,data,right,right,right --settle-ms 1000
+1800 --page map --keys 6,data,data,data,data,data,data,right,right,right,right --settle-ms 1000

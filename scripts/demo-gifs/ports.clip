@@ -1,0 +1,18 @@
+# SPDX-FileCopyrightText: 2026 LokiCTL contributors
+# SPDX-License-Identifier: MIT
+#
+# Scanning a made-up laptop: the two-press start, the tags, its detail and one hole in plain words.
+500 --page ports --keys c,c,c
+1300 --page ports --keys c,c,c,6
+# The second 6 starts the pretend scan; --settle-ms is the time after each key.
+200 --page ports --keys c,c,c,6,6 --settle-ms 600
+200 --page ports --keys c,c,c,6,6 --settle-ms 1800
+200 --page ports --keys c,c,c,6,6 --settle-ms 3000
+200 --page ports --keys c,c,c,6,6 --settle-ms 4200
+200 --page ports --keys c,c,c,6,6 --settle-ms 5400
+1200 --page ports --keys c,c,c,6,6 --settle-ms 7000
+# 7 opens the device's detail, down scrolls it, 6 opens the hole in view.
+600 --page ports --keys c,c,c,6,6,7 --settle-ms 7000
+200 --page ports --keys c,c,c,6,6,7,down,down,down,down,down --settle-ms 7000
+1200 --page ports --keys c,c,c,6,6,7,down,down,down,down,down,down,down,down,down --settle-ms 7000
+1800 --page ports --keys c,c,c,6,6,7,down,down,down,down,down,down,down,down,down,6 --settle-ms 7000

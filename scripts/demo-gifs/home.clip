@@ -1,0 +1,6 @@
+# SPDX-FileCopyrightText: 2026 LokiCTL contributors
+# SPDX-License-Identifier: MIT
+#
+# The home page with the moving made-up values.
+250 --page home --data demo --data-steps {0..22}
+1800 --page home --data demo --data-steps 23
