@@ -81,11 +81,12 @@ private:
 };
 
 // The paired browser's other requests: start or stop a health check
-// (POST /api/v1/check), save a new report (POST /api/v1/report), and the
+// (POST /api/v1/check), save a new report (POST /api/v1/report), the
 // Modes page's controls (POST /api/v1/mode, /vpn, /hotspot, /keep and
-// /leak). The server's thread adds them, the UI thread takes them, both
-// through the mutex. At most kMaxWaiting wait; the UI thread decides
-// whether each one applies.
+// /leak) and the Tools and Watch pages' (POST /api/v1/tool, /lan, /survey,
+// /watch and /trap). The server's thread adds them, the UI thread takes
+// them, both through the mutex. At most kMaxWaiting wait; the UI thread
+// decides whether each one applies.
 enum class Action : int32_t {
     StartCheck,
     StopCheck,
@@ -100,11 +101,22 @@ enum class Action : int32_t {
     KeepOff,
     StartLeak,
     StopLeak,
+    ToolRun,         // tool: "ping", "dns", "trace", "ports" or "speed"; text: the target (empty for speed)
+    ToolStop,        // tool: the one to stop, only while it runs
+    LanTest,         // text: the address to test against
+    LanStop,
+    SurveyStart,
+    SurveyStop,
+    WatchStart,
+    WatchStop,
+    TrapStart,
+    TrapStop,
 };
 
 struct ActionRequest {
     Action action{Action::SaveReport};
     std::string text; // decoded already; checked by the UI thread
+    std::string tool; // ToolRun and ToolStop: the tool's name; else empty
 };
 
 class ActionQueue {
@@ -112,7 +124,7 @@ public:
     static constexpr std::size_t kMaxWaiting = 4;
 
     // Server thread. False when kMaxWaiting requests wait already.
-    bool push(Action action, std::string text = {});
+    bool push(Action action, std::string text = {}, std::string tool = {});
     // UI thread: the oldest waiting request. Returns false when none waits.
     bool pop(ActionRequest& request);
     // Forgets the waiting requests.

@@ -28,6 +28,7 @@ class RemotePanel;
 
 namespace platform::remote {
 class ActionQueue;
+struct ActionRequest;
 class BlockQueue;
 class HandOffSource;
 class KeyQueue;
@@ -131,6 +132,22 @@ namespace app {
 // "... keep mode on (off) asked ...", "... leak test asked ..." and "...
 // leak test stop asked ...".
 //
+// The Tools and Watch pages' requests (POST /api/v1/tool, /lan, /survey,
+// /watch, /trap) wait in the same queue and go the way those pages' keys
+// go, behind the gates of dashboard_tools.h that the status reports as
+// "can"/"why": a tool only as `:ping <target>` would start it
+// (tool_command_refusal(), model::valid_tool_target(); the target becomes
+// the page's typed one; Speed uses its set server), a stop only for the
+// named tool while it runs, the LAN test only as the LAN page allows (the
+// server side stays on the Cardputer: it listens only while its page is
+// shown), the survey only with a free stick, Watch only with an uplink, the
+// trap on or off. Log lines name the request, never a target or an
+// address: "remote view: <tool> asked from the browser", "... <tool> from
+// the browser not started (<why>)", "... <tool> stop asked ...", "... LAN
+// test asked ...", "... survey asked ...", "... Watch asked ...",
+// "... trap asked ..." and their stops. The status's "tools" object comes
+// from dashboard_tools_json().
+//
 // GET /api/v1/hotspot: the hotspot's name (the running one while Router or
 // Share runs, else the one it starts with), its password and the QR code
 // of HotspotScreen::join_text(), made by LVGL's own QR encoder (byte mode,
@@ -191,6 +208,8 @@ private:
     void apply_blocks();
     // Applies the dashboard's waiting health check and report requests.
     void apply_actions();
+    // Starts or stops one of the Tools page's tools (POST /api/v1/tool).
+    void apply_tool(const platform::remote::ActionRequest& request);
 
     viewmodel::BaseViewModel& view_model_;
     std::unique_ptr<view::widgets::RemotePanel> panel_;

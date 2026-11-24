@@ -119,6 +119,14 @@ const ICONS = {
   file: [["path", { d: "M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5" }]],
   drop: [["path", { d: "M12 3.5s6 6.4 6 10.5a6 6 0 0 1-12 0c0-4.1 6-10.5 6-10.5z" }]],
   plus: [["path", { d: "M12 5v14M5 12h14" }]],
+  x: [["path", { d: "M6 6l12 12M18 6L6 18" }]],
+  pulse: [["path", { d: "M2.5 12h4l2.5-6 5 12 2.5-6h5" }]],
+  route: [
+    ["circle", { cx: 6, cy: 18, r: 2.2 }],
+    ["circle", { cx: 18, cy: 6, r: 2.2 }],
+    ["path", { d: "M8.2 18H15a3.5 3.5 0 0 0 0-7H9a3.5 3.5 0 0 1 0-7h6.8" }],
+  ],
+  gauge: [["path", { d: "M4 17a8 8 0 1 1 16 0M12 17l4.5-5.5" }]],
 };
 
 export function icon(name, size = 16, stroke = 2) {

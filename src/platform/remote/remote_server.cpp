@@ -52,6 +52,19 @@ constexpr std::size_t kFileChunk = 16 * 1024;
 constexpr off_t kWebFileMax = 2 * 1024 * 1024;
 constexpr uint32_t kLoopback = 0x7F000001U; // 127.0.0.1
 constexpr const char* kCookieName = "lokictl_session";
+// The tools the browser may start by name (POST /api/v1/tool), and the
+// longest target it may send for them (model::kToolTargetMax).
+constexpr std::string_view kBrowserTools[] = {"ping", "dns", "trace", "ports", "speed"};
+constexpr std::size_t kMaxTargetBytes = 63;
+
+bool browser_tool(std::string_view name) {
+    for (const std::string_view tool : kBrowserTools) {
+        if (tool == name) {
+            return true;
+        }
+    }
+    return false;
+}
 
 #if defined(MSG_NOSIGNAL)
 constexpr int kSendFlags = MSG_NOSIGNAL;
@@ -791,7 +804,8 @@ void Server::handle_connection(int fd, int side, const Side& own, Pairing& pairi
 
     if (request.path == "/api/v1/check" || request.path == "/api/v1/report" || request.path == "/api/v1/mode" ||
         request.path == "/api/v1/vpn" || request.path == "/api/v1/hotspot" || request.path == "/api/v1/keep" ||
-        request.path == "/api/v1/leak") {
+        request.path == "/api/v1/leak" || request.path == "/api/v1/tool" || request.path == "/api/v1/lan" ||
+        request.path == "/api/v1/survey" || request.path == "/api/v1/watch" || request.path == "/api/v1/trap") {
         if (!accept_change(fd, request, side, own, pairing, now, deadline)) {
             return;
         }
@@ -799,6 +813,7 @@ void Server::handle_connection(int fd, int side, const Side& own, Pairing& pairi
         bool valid = true;
         Action action = Action::SaveReport;
         std::string text;
+        std::string tool;
         bool found = false;
         if (request.path == "/api/v1/check") {
             const std::string run = form_value(body, "run");
@@ -839,12 +854,51 @@ void Server::handle_connection(int fd, int side, const Side& own, Pairing& pairi
             const std::string run = form_value(body, "run");
             action = run == "1" ? Action::StartLeak : Action::StopLeak;
             valid = run == "1" || run == "0";
+        } else if (request.path == "/api/v1/tool") {
+            // run=<tool>&target=<target> (Ports also own=1, the page's
+            // "own network only" confirmation; Speed no target), or
+            // stop=<tool>. Only the Tools page's own tools.
+            const std::string stop = form_value(body, "stop", &found);
+            if (found) {
+                action = Action::ToolStop;
+                tool = stop;
+                valid = browser_tool(tool);
+            } else {
+                action = Action::ToolRun;
+                tool = form_value(body, "run");
+                bool has_target = false;
+                const std::string target = form_value(body, "target", &has_target);
+                valid = browser_tool(tool) && form_decode(target, text) && text.size() <= kMaxTargetBytes &&
+                        (tool == "speed" ? !has_target : !text.empty()) &&
+                        (tool != "ports" || form_value(body, "own") == "1");
+            }
+        } else if (request.path == "/api/v1/lan") {
+            // test=<IPv4> or stop=1. The Cardputer as the server stays on
+            // the Cardputer: it listens only while its LAN page is shown.
+            text = form_value(body, "test", &found);
+            if (found) {
+                action = Action::LanTest;
+                valid = dotted_ipv4(text);
+            } else {
+                action = Action::LanStop;
+                valid = form_value(body, "stop") == "1";
+            }
+        } else if (request.path == "/api/v1/survey") {
+            const std::string run = form_value(body, "run");
+            action = run == "1" ? Action::SurveyStart : Action::SurveyStop;
+            valid = run == "1" || run == "0";
+        } else if (request.path == "/api/v1/watch" || request.path == "/api/v1/trap") {
+            const bool watch = request.path == "/api/v1/watch";
+            const std::string on = form_value(body, "on");
+            action = on == "1" ? (watch ? Action::WatchStart : Action::TrapStart)
+                               : (watch ? Action::WatchStop : Action::TrapStop);
+            valid = on == "1" || on == "0";
         }
         if (!valid || !options_.actions) {
             send_text(fd, 400, "bad request\n", wake_read_, deadline);
             return;
         }
-        if (!options_.actions->push(action, std::move(text))) {
+        if (!options_.actions->push(action, std::move(text), std::move(tool))) {
             send_text(fd, 429, "too many requests\n", wake_read_, deadline);
             return;
         }

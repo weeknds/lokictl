@@ -90,6 +90,9 @@ struct DashboardParts {
     std::string vpn_pick;     // the WireGuard file a VPN request would use (BaseViewModel::vpn_file())
     bool vpn_add{false};      // a WireGuard file may be added from the browser
     DashLeak leak;
+    // The Tools and Watch pages' object (app::dashboard_tools_json()), as
+    // JSON text; written as "tools" when it is not empty.
+    std::string tools_json;
 };
 
 // The web dashboard's GET /api/v1/status: what the app already knows, as
@@ -136,7 +139,8 @@ struct DashboardParts {
 //                                    "text":"..."}],"more_holes":0,
 //                          "issues":[{"tier":"fix","title":"2 security holes","about":"...",
 //                                     "steps":["...","..."],"port":22}]}]},
-//  "watch":{"on":true,"trap":true,"trap_ports":6,"feed":[{"time":"21:42","text":"..."}]}}
+//  "watch":{"on":true,"trap":true,"trap_ports":6,"feed":[{"time":"21:42","text":"..."}]},
+//  "tools":{...}}
 //
 // "link" is "wifi", "cable" or "none"; "internet" is internet_name();
 // "id" is "client", "router", "share" or "vpn"; "vpn" is vpn_state_name();
@@ -154,7 +158,9 @@ struct DashboardParts {
 // a check finished; "tier" is finding_tier_name(); "ring" is "cable" or
 // "wireless"; "total" counts every device, also those the list leaves out;
 // "score" is in tenths, null when not known; "block" is
-// HomeData::block_failures and block_message.
+// HomeData::block_failures and block_message; "feed" is the newest 5 of
+// DashOverview::watch_lines; "tools" is DashboardParts::tools_json as it
+// is (left out when empty).
 std::string dashboard_status_json(const HomeData& home, const DashboardParts& parts = DashboardParts());
 
 } // namespace model

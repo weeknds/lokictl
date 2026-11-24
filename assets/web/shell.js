@@ -14,6 +14,8 @@ import { HomePhone, HomeDesk } from "./home.js";
 import { DevicesList, DevicePage, deviceName } from "./devices.js";
 import { SecurityPage, ReportsPage } from "./security.js";
 import { ModesPage } from "./modes.js";
+import { ToolsPage, findTool } from "./tools.js";
+import { WatchPage } from "./watch.js";
 
 // Every page: its #/name, its title, the icon, and the sentence its empty
 // state says until its contents arrive.
@@ -49,7 +51,7 @@ export const PAGES = [
     id: "tools",
     title: "Tools",
     icon: "tools",
-    about: "Ping, look up names, trace a route, check ports and test your speed.",
+    about: "Ping, look up names, trace a route, check ports, test your speed and survey the Wi-Fi.",
   },
   { id: "reports", title: "Reports", icon: "reports", about: "Download the reports saved on the Cardputer." },
 ];
@@ -196,6 +198,24 @@ function Banner({ lost }) {
   );
 }
 
+// A new Watch alert, when the browser can't show it as a notification.
+function AlertToast({ toast, onClose }) {
+  if (!toast) return null;
+  return h(
+    "div",
+    { class: "toast", role: "status" },
+    h("span", { class: "dot warn", "aria-hidden": "true" }),
+    h(
+      "span",
+      { class: "toast-text" },
+      h("b", null, toast.count > 1 ? toast.count + " new alerts" : "New alert"),
+      h("span", null, toast.text + " · ", h("span", { class: "mono" }, toast.time))
+    ),
+    h("a", { class: "toast-link", href: "#/watch", onClick: onClose }, "Open"),
+    h("button", { type: "button", class: "toast-x", onClick: onClose, "aria-label": "Close" }, icon("x", 18, 2.2))
+  );
+}
+
 // ---------- Pages ----------
 
 function SampleTag({ status }) {
@@ -261,11 +281,18 @@ function PageBody({ page, sub, status }) {
   if (page.id === "modes") {
     return h(ModesPage, { status });
   }
+  if (page.id === "tools") {
+    return h(ToolsPage, { status, sub });
+  }
+  if (page.id === "watch") {
+    return h(WatchPage, { status });
+  }
   return h(EmptyPage, { page });
 }
 
-export function Shell({ route, sub, status, lost }) {
+export function Shell({ route, sub, status, lost, toast, onToastClose }) {
   const page = findPage(route);
+  const tool = page.id === "tools" ? findTool(sub) : null;
   return h(
     "div",
     { class: "shell" },
@@ -273,13 +300,19 @@ export function Shell({ route, sub, status, lost }) {
     h(
       "div",
       { class: "main" },
-      h(TopBar, { page, status, sub: sub && page.id === "devices" ? deviceName(status, sub) || sub : "" }),
+      h(TopBar, { page, status, sub: sub && page.id === "devices" ? deviceName(status, sub) || sub : tool ? tool.name : "" }),
       h(
         "main",
         { class: "content", id: "content" },
         h(Banner, { lost }),
-        // Picking a finding on Security keeps the page (and a check's progress) as it is.
-        h("div", { class: "page", key: page.id === "security" ? page.id : page.id + "/" + sub }, h(PageBody, { page, sub, status }))
+        h(AlertToast, { toast, onClose: onToastClose }),
+        // Picking a finding on Security or a tool keeps the page (a check's
+        // progress, a typed target) as it is.
+        h(
+          "div",
+          { class: "page", key: page.id === "security" || page.id === "tools" ? page.id : page.id + "/" + sub },
+          h(PageBody, { page, sub, status })
+        )
       )
     ),
     h(TabBar, { current: page.id })

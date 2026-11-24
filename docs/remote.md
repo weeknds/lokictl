@@ -137,8 +137,33 @@ internet.
   While the kill switch holds hotspot devices back with the VPN down, a
   card offers **Turn the VPN on again** and **Turn the VPN off**. Last,
   **Keep this mode running** is the Settings row of the same name.
-- The other pages say what they will show; their contents come in later
-  updates.
+- **Tools** lists Ping, Look up a name, Trace route, Open ports,
+  Internet speed, LAN speed and the Wi-Fi survey, and Watch and trap. On
+  a phone each tool opens on its own page; a computer shows the list
+  beside the open tool. Each tool runs on the Cardputer the way its own
+  page (or its `:` command) runs it, with the same rules: one tool at a
+  time (the page says which one runs), a target it takes (typed, or one
+  of the quick picks such as **Router**), and the Cardputer's own texts
+  for the results. **Open ports** asks first, as the Cardputer does:
+  `Only devices you own or may test.` **Internet speed** says how much
+  data it uses. **LAN speed** tests against a device that runs `iperf3
+  -s`; the Cardputer as the server stays on the Cardputer, because it
+  listens only while its LAN page is shown. The **Wi-Fi survey** needs a
+  free USB Wi-Fi stick and shows
+  how busy each channel is (the best of 1, 6 and 11 in green, a kick-off
+  attack in red), what it found and the networks heard.
+- **Watch and trap** (from Tools or Home on a phone) turns Watch and the
+  trap on and off, the same as `6` on their pages. Watch's alerts show
+  with their time, who they are about and, on a tap, what they mean; the
+  trap shows its fake ports and who touched them, with what they sent.
+  **Tell me about new alerts** works for this browser only, while a
+  dashboard page is open and in front (a page in the background asks
+  the Cardputer for nothing). Browsers allow notifications only on secure
+  pages, and the Cardputer's address is a plain `http://` one, so on most
+  phones and computers new alerts show at the top of the page and as a
+  count in the tab's title instead (the page says so).
+- The Map page says what it will show; its contents come in a later
+  update.
 - **The findings are worked out once, on the Cardputer**, and every page
   shows the same numbers. One *thing* per device (or the Wi-Fi, the cable
   link, the network), at its worst finding: **Fix soon** (a risk of the
@@ -351,7 +376,7 @@ form too; the code from the Cardputer's screen still guards it.
 
 | Request | Answer |
 |---|---|
-| `GET /`, `/app.css`, `/app.js`, `/pair.js`, `/shell.js`, `/ui.js`, `/home.js`, `/devices.js`, `/security.js`, `/modes.js`, `/preact.module.js`, `/icon.svg`, `/fonts/Inter-Regular.ttf`, `/fonts/Inter-SemiBold.ttf` | the dashboard's files, no session needed (`404` when the file is not installed) |
+| `GET /`, `/app.css`, `/app.js`, `/pair.js`, `/shell.js`, `/ui.js`, `/home.js`, `/devices.js`, `/security.js`, `/modes.js`, `/tools.js`, `/watch.js`, `/preact.module.js`, `/icon.svg`, `/fonts/Inter-Regular.ttf`, `/fonts/Inter-SemiBold.ttf` | the dashboard's files, no session needed (`404` when the file is not installed) |
 | `GET /screen` | the screen page (`text/html`, with its own `Content-Security-Policy`) |
 | `POST /pair` with the form body `code=NNNNNN` | `200` and the session cookie; `403` for a wrong code; `409` while a browser is paired |
 | `GET /api/v1/session` with the cookie | `200` with `{"token":"<request token>"}`; `401` without the cookie |
@@ -362,6 +387,7 @@ form too; the code from the Cardputer's screen still guards it.
 | `POST /api/v1/check` with the form body `run=1&own=1` (start a health check; `own=1` is the page's "own network only" confirmation) or `run=0` (stop it), the cookie, `Origin` and `X-LokiCTL-Token` as for `/key` | `204` when the request was queued; `400` for any other body; `401` without the cookie; `403` without that `Origin` or with a wrong or missing token; `429` when 4 requests wait. The Cardputer starts a check only when its Health page could (a private IPv4 network, no tool running) and stops only a running health check; the next status shows the result |
 | `POST /api/v1/report`, with the cookie, `Origin` and `X-LokiCTL-Token` as for `/key` | `204` when the request was queued (same refusals as `/api/v1/check`). The Cardputer saves a new report, at most one every 10 seconds; it then shows in `GET /reports` |
 | `POST /api/v1/mode` with `mode=client`, `router` or `share`; `POST /api/v1/vpn` with `on=1`, `on=0` or `file=<name>`; `POST /api/v1/hotspot` with `name=<name>` (empty: the Cardputer's own name) or `password=new`; `POST /api/v1/keep` with `on=1` or `on=0`; `POST /api/v1/leak` with `run=1` or `run=0`; each with the cookie, `Origin` and `X-LokiCTL-Token` as for `/key`. Values are form-encoded as a browser sends them | `204` when the request was queued; `400` for any other body; `401`, `403` and `429` as for `/api/v1/check`. The Cardputer applies it the way its Modes, Hotspot and Leak pages do, with their rules (not while a switch runs, not the mode that is on, a valid name, a listed file, no other tool for the leak test); the next status shows the result |
+| `POST /api/v1/tool` with `run=<tool>&target=<target>` (`ping`, `dns`, `trace` or `ports`; Ports also needs `own=1`, the page's "own network only" answer) or `run=speed` (no target), or `stop=<tool>`; `POST /api/v1/lan` with `test=<IPv4>` or `stop=1`; `POST /api/v1/survey` with `run=1` or `run=0`; `POST /api/v1/watch` and `POST /api/v1/trap` with `on=1` or `on=0`; each with the cookie, `Origin` and `X-LokiCTL-Token` as for `/key` | `204` when the request was queued; `400` for any other body (another tool, a target over 63 bytes); `401`, `403` and `429` as for `/api/v1/check`. The Cardputer applies it the way its Tools, LAN, Survey, Watch and Trap pages do, with their rules (`can` and `why` in the status); the next status shows the result |
 | `GET /api/v1/hotspot` with the cookie | `200` with `{"name":"LokiCTL-7F3A","password":"...","qr":{"size":29,"rows":["fe0b3f8",...]}}`: the hotspot's name and password and its join code, one row of hex digits a line (the first module in the highest bit), `qr` `null` without a password; `503` before the app handed any over; `401` without the cookie |
 | `POST /api/v1/vpn/file?name=<name>` with the WireGuard file as the body (at most 16 KB), the cookie, `Origin` and `X-LokiCTL-Token` as for `/key` | `200` with `{"name":"home","server":"vpn.example.com"}` once saved; `400` with `{"error":"<why>"}` for a bad name (1 to 32 letters, digits, `.`, `_` or `-`) or a file that is not a usable WireGuard file; `409` with the reason when the name is taken, 16 files are there or the Cardputer has no VPN folder (made-up data); `413` above 16 KB; `401` and `403` as for `/key` |
 | `GET /reports` with the cookie | `200` with the saved reports as JSON, the newest first, at most 40: `{"reports":[{"name":"lokictl-20261123-075130.html","bytes":21000},...]}`; `401` without the cookie |
@@ -434,7 +460,46 @@ since Remote view started; `things` (at most 32) and `devices` (at most
                                     "about":"This version has known security holes ...",
                                     "steps":["Open the device's settings ...","..."],"port":22}]}]},
  "watch":{"on":true,"trap":true,"trap_ports":6,
-          "feed":[{"time":"21:42","text":"Someone scanned the Cardputer from 10.0.0.75"}]}}
+          "feed":[{"time":"21:42",
+                   "text":"Someone scanned the Cardputer from 10.0.0.75"}]},
+ "tools":{"running":"","router":"10.0.0.1","max":63,
+          "data_note":"Uses up to 100 MB of data",
+          "presets":{"ping":["9.9.9.9","1.1.1.1"],
+                     "dns":["example.com","wikipedia.org"]},
+          "ping":{"state":"done","can":true,"why":"","line":"Done","tone":"ok",
+                  "target":"9.9.9.9","address":"9.9.9.9",
+                  "counts":"10 sent · 10 received · 0% lost",
+                  "times":"min 8.80 · avg 11.8 · max 13.1 ms",
+                  "replies":[{"seq":6,"text":"12.4","tone":""}]},
+          "dns":{"state":"idle",...,"server":"","time_ms":-1,"addresses":[]},
+          "trace":{"state":"idle",...,"hops":[{"n":"1","address":"10.0.0.1",
+                   "address_tone":"","name":"router","time":"1.2ms",
+                   "time_tone":""}]},
+          "ports":{"state":"idle",...,"counts":"","asked":0,"total":0,
+                   "open":[{"port":22,"text":"22 ssh","plain":"remote login",
+                            "said":"OpenSSH_9.6","tag":"Check",
+                            "tag_tone":"warn"}]},
+          "speed":{"state":"idle",...,"server":"","phase":"connect",
+                   "down":"--","up":"--","down_bytes":"0 kB","up_bytes":"0 kB",
+                   "down_samples":[],"up_samples":[]},
+          "lan":{"state":"idle","mode":"client",...,"down":"--","up":"--",
+                 "down_samples":[],"up_samples":[]},
+          "survey":{"state":"idle",...,"stick":"wlan1","frames":0,
+                    "networks_seen":0,"best":0,
+                    "channels":[{"level":0,"load":"","networks":0,
+                                 "kickoffs":0}],
+                    "findings":[],"networks":[],"more_networks":0},
+          "watch":{"state":"running",...,"raised":3,
+                   "alerts":[{"time":"21:42","name":"Scan on you",
+                              "text":"Someone scanned the Cardputer from ...",
+                              "who":"10.0.0.75","fact":"Tried 20 ports",
+                              "about":"...","serious":true}]},
+          "trap":{"state":"idle",...,"helper":"","raised":0,
+                  "ports":[{"port":21,"name":"File transfer (FTP)",
+                            "state":"off"}],
+                  "hits":[{"time":"13:05","who":"10.0.0.75","from_port":51000,
+                           "port":23,"word":"login",
+                           "name":"Remote login (Telnet)","sent":"root"}]}}}
 ```
 
 `tier` is `fix`, `look`, `know` or `ok`; `device_fix + device_look + fine
@@ -467,6 +532,20 @@ runs or while a finished test still describes the VPN; `verdict` `pass`,
 `fail`, `unknown`, `info` or `waiting`). Nothing secret is in the
 status. While the Cardputer shows made-up data (the simulator) and no tool
 has run, the findings are made up too and `sample` is `true`.
+
+`tools` holds the Tools and Watch pages' parts. Each has its `state` (as
+`check`), its page's status `line` and its colour (`tone`: `muted`, `ok`,
+`warn`, `bad` or empty), `can` and `why` (whether it may start now, in its
+page's words), and its results in the Cardputer's own texts: Ping's last 5
+replies and counts, the name's addresses, the trace's hops, the open ports
+with what they said and their tag, the rates in Mbit/s (`down`, `up`) and
+the half-second samples in kbit/s. `running` names the tool that runs.
+The survey has 13 channels (`level` 0 to 100 against the busiest,
+`load`), its findings and up to 24 networks, the strongest first. Watch has
+up to 30 alerts and `raised` (all raised in the run); the trap its 6 fake
+ports and up to 30 visits. The states always come from the real runs;
+while the findings are made up, the lists of Watch and the trap are too.
+The status's `feed` keeps Watch's newest 5.
 
 Frame numbers grow only when the screen changed, so a viewer that sends the
 last number it got receives a picture only when there is a new one. On the

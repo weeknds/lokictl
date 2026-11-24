@@ -332,9 +332,13 @@ known security holes and how to fix them in plain steps, and a device on
 LokiCTL's hotspot can be blocked there. Security lists what to fix first,
 with plain steps, runs a health check of your own network from the
 browser (after the same question as on the Cardputer, with progress and
-Stop) and downloads reports. The other pages fill in with
-coming updates. **Cardputer screen** shows the Cardputer's screen and
-lets you press its keys, and lists the saved reports for download.
+Stop) and downloads reports. Modes switches Client, Router and Share and
+the VPN. Tools runs ping, name lookups, traces, port scans, speed tests
+and the Wi-Fi survey on the Cardputer, and the Watch and trap page turns
+Watch and the trap on and off and shows their alerts. The Map page fills
+in with a coming update. **Cardputer screen** shows the Cardputer's
+screen and lets you press its keys, and lists the saved reports for
+download.
 
 Remote view is off every time LokiCTL starts, a `REMOTE` tag shows while
 someone is connected, and `7` on its row also lets devices on LokiCTL's

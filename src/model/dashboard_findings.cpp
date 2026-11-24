@@ -898,7 +898,7 @@ DashOverview dashboard_overview(const HomeData& home, const ToolsData& tools, co
         candidates.push_back(std::move(candidate));
     }
     for (const WatchAlert& alert : watch.run.alerts) {
-        if (overview.watch_lines.size() >= 5) {
+        if (overview.watch_lines.size() >= kDashWatchLines) {
             break;
         }
         overview.watch_lines.push_back(watch_line(alert, list));

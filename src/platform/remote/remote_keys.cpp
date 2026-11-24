@@ -118,12 +118,12 @@ void BlockQueue::clear() {
     requests_.clear();
 }
 
-bool ActionQueue::push(Action action, std::string text) {
+bool ActionQueue::push(Action action, std::string text, std::string tool) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (actions_.size() >= kMaxWaiting) {
         return false;
     }
-    actions_.push_back({action, std::move(text)});
+    actions_.push_back({action, std::move(text), std::move(tool)});
     return true;
 }
 

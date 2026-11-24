@@ -4,12 +4,15 @@
 
 // The dashboard's start: is this browser paired? Then the frame and its
 // pages, with the status asked for every 2 s while the page is visible and
-// not at all while it is hidden. Otherwise the pairing screen.
+// not at all while it is hidden. Otherwise the pairing screen. New Watch
+// alerts (when this browser asked for them) become notifications, or a
+// note at the top of the page and a count in the tab's title.
 
 import { h, render, Component } from "./preact.module.js";
 import { getJson, setToken, REFRESH_EVENT } from "./ui.js";
 import { Pair } from "./pair.js";
 import { Shell, findPage } from "./shell.js";
+import { newAlerts, announce } from "./watch.js";
 
 const POLL_MS = 2000;
 const RETRY_MS = 3000;
@@ -23,7 +26,7 @@ function routeFromHash() {
   const parts = location.hash.replace(/^#\/?/, "").split("?")[0].split("/");
   const route = findPage(parts[0] || "home").id;
   let sub = "";
-  if ((route === "devices" || route === "security") && parts[1]) {
+  if ((route === "devices" || route === "security" || route === "tools") && parts[1]) {
     try {
       sub = decodeURIComponent(parts[1]);
     } catch (err) {
@@ -38,13 +41,14 @@ class App extends Component {
     super();
     // "start": asking whether this browser is paired; then "pair" or "shell".
     const where = routeFromHash();
-    this.state = { view: "start", route: where.route, sub: where.sub, status: null, lost: false, message: "", bad: false };
+    this.state = { view: "start", route: where.route, sub: where.sub, status: null, lost: false, message: "", bad: false, toast: null };
+    this.onToastClose = () => this.setState({ toast: null });
     this.timer = 0;
     this.asking = false;
     this.onHash = () => {
       const { route, sub } = routeFromHash();
       if (route !== this.state.route || sub !== this.state.sub) {
-        this.setState({ route, sub });
+        this.setState({ route, sub, toast: route === "watch" ? null : this.state.toast });
         window.scrollTo(0, 0);
       }
     };
@@ -78,7 +82,9 @@ class App extends Component {
 
   componentDidUpdate() {
     const page = findPage(this.state.route);
-    document.title = this.state.view === "shell" ? page.title + " · LokiCTL" : "Connect · LokiCTL";
+    const toast = this.state.toast;
+    const count = toast ? "(" + toast.count + ") " : "";
+    document.title = this.state.view === "shell" ? count + page.title + " · LokiCTL" : "Connect · LokiCTL";
   }
 
   // The session's request token: there is one only when this browser is
@@ -126,7 +132,14 @@ class App extends Component {
         return;
       }
       if (answer.status === 200 && answer.data) {
-        this.setState({ status: answer.data, lost: false });
+        const fresh = newAlerts(answer.data);
+        let toast = this.state.toast;
+        // On the Watch page itself the new alerts are in front already.
+        if (fresh.length && this.state.route !== "watch" && !announce(fresh)) {
+          const count = (toast ? toast.count : 0) + fresh.length;
+          toast = { count, text: fresh[0].text, time: fresh[0].time };
+        }
+        this.setState({ status: answer.data, lost: false, toast });
       }
     } catch (err) {
       this.setState({ lost: true });
@@ -136,12 +149,12 @@ class App extends Component {
     this.schedule(next);
   }
 
-  render(props, { view, route, sub, status, lost, message, bad }) {
+  render(props, { view, route, sub, status, lost, message, bad, toast }) {
     if (view === "pair") {
       return h(Pair, { message, bad, onPaired: this.onPaired });
     }
     if (view === "shell") {
-      return h(Shell, { route, sub, status, lost });
+      return h(Shell, { route, sub, status, lost, toast, onToastClose: this.onToastClose });
     }
     return null;
   }

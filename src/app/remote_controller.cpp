@@ -10,6 +10,7 @@
 #include "base_viewmodel.h"
 #include "command_bar.h"
 #include "dashboard_status.h"
+#include "dashboard_tools.h"
 #include "health_check.h"
 #include "linux_input.h"
 #include "logger.h"
@@ -715,8 +716,125 @@ void RemoteController::apply_actions() {
                     view_model_.request_tool_stop();
                 }
                 break;
+            case platform::remote::Action::ToolRun:
+            case platform::remote::Action::ToolStop:
+                apply_tool(request);
+                break;
+            case platform::remote::Action::LanTest: {
+                // The LAN page's key 6 on its test side.
+                const std::string refusal = browser_lan_refusal(view_model_);
+                if (!refusal.empty() || !browser_lan_target(request.text, view_model_)) {
+                    LOG_INFO("remote view: LAN test from the browser not started ({})",
+                             refusal.empty() ? "not an address it takes" : refusal);
+                    break;
+                }
+                LOG_INFO("remote view: LAN test asked from the browser");
+                view_model_.request_lan(viewmodel::BaseViewModel::LanRequest::Test, request.text);
+                break;
+            }
+            case platform::remote::Action::LanStop:
+                // The test side only, as the LAN page's key 6 stops only
+                // its own side: the server stays the Cardputer's.
+                if (view_model_.lan().state == model::ToolState::Running &&
+                    view_model_.lan().mode == model::LanMode::Client) {
+                    LOG_INFO("remote view: LAN stop asked from the browser");
+                    view_model_.request_lan(viewmodel::BaseViewModel::LanRequest::Stop);
+                }
+                break;
+            case platform::remote::Action::SurveyStart:
+                // The Survey page's key 6: only with a free USB Wi-Fi stick.
+                if (view_model_.survey().state != model::ToolState::Running &&
+                    browser_survey_refusal(view_model_).empty()) {
+                    LOG_INFO("remote view: survey asked from the browser");
+                    view_model_.set_survey_scroll(0);
+                    view_model_.request_survey(viewmodel::BaseViewModel::SurveyRequest::Start);
+                }
+                break;
+            case platform::remote::Action::SurveyStop:
+                if (view_model_.survey().state == model::ToolState::Running) {
+                    LOG_INFO("remote view: survey stop asked from the browser");
+                    view_model_.request_survey(viewmodel::BaseViewModel::SurveyRequest::Stop);
+                }
+                break;
+            case platform::remote::Action::WatchStart:
+                // The Watch page's key 6: only with a usable uplink.
+                if (view_model_.watch().run.state != model::ToolState::Running &&
+                    browser_watch_refusal(view_model_).empty()) {
+                    LOG_INFO("remote view: Watch asked from the browser");
+                    view_model_.set_watch_selection(0);
+                    view_model_.set_watch_detail(false);
+                    view_model_.request_watch(viewmodel::BaseViewModel::WatchRequest::Start);
+                }
+                break;
+            case platform::remote::Action::WatchStop:
+                if (view_model_.watch().run.state == model::ToolState::Running) {
+                    LOG_INFO("remote view: Watch stop asked from the browser");
+                    view_model_.request_watch(viewmodel::BaseViewModel::WatchRequest::Stop);
+                }
+                break;
+            case platform::remote::Action::TrapStart:
+                // The Trap page's key 6.
+                if (view_model_.trap().state != model::ToolState::Running) {
+                    LOG_INFO("remote view: trap asked from the browser");
+                    view_model_.set_trap_selection(0);
+                    view_model_.set_trap_detail(false);
+                    view_model_.request_trap(viewmodel::BaseViewModel::TrapRequest::Start);
+                }
+                break;
+            case platform::remote::Action::TrapStop:
+                if (view_model_.trap().state == model::ToolState::Running) {
+                    LOG_INFO("remote view: trap stop asked from the browser");
+                    view_model_.request_trap(viewmodel::BaseViewModel::TrapRequest::Stop);
+                }
+                break;
         }
     }
+}
+
+void RemoteController::apply_tool(const platform::remote::ActionRequest& request) {
+    // Only the Tools page's own tools, by name.
+    constexpr model::ToolKind kKinds[] = {model::ToolKind::Ping, model::ToolKind::Dns, model::ToolKind::Trace,
+                                          model::ToolKind::Ports, model::ToolKind::Speed};
+    const model::ToolKind* found = nullptr;
+    for (const model::ToolKind& kind : kKinds) {
+        if (request.tool == model::tool_name(kind)) {
+            found = &kind;
+        }
+    }
+    if (!found) {
+        return;
+    }
+    const model::ToolKind kind = *found;
+    if (request.action == platform::remote::Action::ToolStop) {
+        // Only that tool: another may run, started on the Cardputer.
+        if (model::tool_state(view_model_.tools(), kind) == model::ToolState::Running) {
+            LOG_INFO("remote view: {} stop asked from the browser", model::tool_name(kind));
+            view_model_.request_tool_stop();
+        }
+        return;
+    }
+    // As `:ping <target>`: the same refusals, the target checked the same
+    // way and kept as the page's typed one; Speed uses its set server. The
+    // browser's own-network confirmation stands for the Ports page's
+    // second 6.
+    const std::string refusal = browser_tool_refusal(kind, view_model_);
+    const bool speed = kind == model::ToolKind::Speed;
+    if (!refusal.empty() || (!speed && !model::valid_tool_target(kind, request.text))) {
+        LOG_INFO("remote view: {} from the browser not started ({})", model::tool_name(kind),
+                 refusal.empty() ? "not a target it takes" : refusal);
+        return;
+    }
+    LOG_INFO("remote view: {} asked from the browser", model::tool_name(kind));
+    if (speed) {
+        view_model_.request_tool_run(kind, view_model_.speed_server());
+        return;
+    }
+    view_model_.set_tool_typed_target(kind, request.text);
+    view_model_.set_tool_target(kind, viewmodel::BaseViewModel::kToolTargetTyped);
+    if (kind == model::ToolKind::Trace) {
+        view_model_.set_trace_scroll(viewmodel::BaseViewModel::kTraceFollow);
+    }
+    view_model_.request_tool_run(kind, request.text);
 }
 
 void RemoteController::hand_over_status() {
@@ -729,6 +847,7 @@ void RemoteController::hand_over_status() {
     const model::WatchData& watch = view_model_.watch();
     traffic_.push(home.down_kbps, home.up_kbps);
     model::DashboardParts parts;
+    model::DashSample sample;
     // Made-up home data and no tool run yet: the made-up findings, so the
     // dashboard shows what it is for (the page marks it as sample data).
     const bool made_up = home.sample && home.uplink_kind != model::LinkKind::None &&
@@ -738,7 +857,7 @@ void RemoteController::hand_over_status() {
                          tools.ports.state == model::ToolState::Idle &&
                          watch.run.state == model::ToolState::Idle;
     if (made_up) {
-        model::DashSample sample = model::sample_dashboard();
+        sample = model::sample_dashboard();
         sample.tools.list_date = tools.list_date;
         parts.overview = model::dashboard_overview(home, sample.tools, sample.watch);
         parts.watching = sample.watch.run.state == model::ToolState::Running;
@@ -762,6 +881,9 @@ void RemoteController::hand_over_status() {
     parts.vpn_pick = view_model_.vpn_file();
     parts.vpn_add = !vpn_folder_.empty();
     parts.leak = model::dashboard_leak(home, tools);
+    // The Tools and Watch pages: the real runs, with the made-up Watch and
+    // trap lists while the findings are made up.
+    parts.tools_json = dashboard_tools_json(view_model_, made_up ? &sample : nullptr, parts.overview.watch_lines);
     std::string json = model::dashboard_status_json(home, parts);
     if (json != status_json_) {
         status_json_ = json;

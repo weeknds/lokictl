@@ -141,6 +141,15 @@ struct ServerOptions {
 //   (empty: the default name) or password=new; POST /api/v1/keep with on=1
 //   or on=0; POST /api/v1/leak with run=1 or run=0. Values are decoded
 //   (form_decode()); anything else gets 400, a full queue 429.
+//   The Tools and Watch pages' controls are checked like POST /key too and
+//   queue one ActionRequest each (204): POST /api/v1/tool with
+//   run=<tool>&target=<target> (a tool of ping, dns, trace, ports and
+//   speed; the target decoded, 1 to 63 bytes; ports also needs own=1, the
+//   page's "own network only" confirmation; speed takes no target) or
+//   stop=<tool>; POST /api/v1/lan with test=<IPv4> or stop=1;
+//   POST /api/v1/survey with run=1 or run=0; POST /api/v1/watch and POST
+//   /api/v1/trap with on=1 or on=0. Anything else gets 400 (also any other
+//   tool name), a full queue 429.
 //   GET /api/v1/hotspot needs the cookie (else 401) and answers the JSON
 //   the app handed over (set_hotspot_json(): the hotspot's name, password
 //   and QR code), or 503 before the first.

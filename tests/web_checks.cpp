@@ -775,6 +775,75 @@ void check_server() {
     }
     ActionRequest left_over;
     expect(!actions.pop(left_over), "nothing queued by the bad bodies");
+
+    // The Tools and Watch pages' controls: the same three checks, then each body.
+    struct ToolControl {
+        const char* path;
+        const char* body;
+        Action action;
+        const char* text;
+        const char* tool;
+    };
+    const ToolControl tool_controls[] = {
+        {"/api/v1/tool", "run=ping&target=9.9.9.9", Action::ToolRun, "9.9.9.9", "ping"},
+        {"/api/v1/tool", "run=dns&target=example.com", Action::ToolRun, "example.com", "dns"},
+        {"/api/v1/tool", "run=trace&target=1.1.1.1", Action::ToolRun, "1.1.1.1", "trace"},
+        {"/api/v1/tool", "run=ports&target=10.0.0.1&own=1", Action::ToolRun, "10.0.0.1", "ports"},
+        {"/api/v1/tool", "run=speed", Action::ToolRun, "", "speed"},
+        {"/api/v1/tool", "stop=ping", Action::ToolStop, "", "ping"},
+        {"/api/v1/lan", "test=10.0.0.5", Action::LanTest, "10.0.0.5", ""},
+        {"/api/v1/lan", "stop=1", Action::LanStop, "", ""},
+        {"/api/v1/survey", "run=1", Action::SurveyStart, "", ""},
+        {"/api/v1/survey", "run=0", Action::SurveyStop, "", ""},
+        {"/api/v1/watch", "on=1", Action::WatchStart, "", ""},
+        {"/api/v1/watch", "on=0", Action::WatchStop, "", ""},
+        {"/api/v1/trap", "on=1", Action::TrapStart, "", ""},
+        {"/api/v1/trap", "on=0", Action::TrapStop, "", ""},
+    };
+    for (const ToolControl& control : tool_controls) {
+        const std::string what = std::string("POST ") + control.path + " " + control.body;
+        expect(ask(port, post(host, control.path, control.body, cookie + with_token)).status == 403,
+               what + " without Origin: 403");
+        expect(ask(port, post(host, control.path, control.body, origin + with_token)).status == 401,
+               what + " without the cookie: 401");
+        expect(ask(port, post(host, control.path, control.body, origin + cookie)).status == 403,
+               what + " without the token: 403");
+        ActionRequest nothing;
+        expect(!actions.pop(nothing), what + ": nothing queued by the refusals");
+        expect(ask(port, post(host, control.path, control.body, origin + cookie + with_token)).status == 204,
+               what + ": 204");
+        ActionRequest taken;
+        expect(actions.pop(taken) && taken.action == control.action && taken.text == control.text &&
+                   taken.tool == control.tool && !actions.pop(nothing),
+               what + ": queued as asked");
+    }
+    const std::string long_target = "run=ping&target=" + std::string(64, 'a');
+    for (const auto& [path, body] : std::vector<std::pair<std::string, std::string>>{
+             {"/api/v1/tool", "run=health&target=eth0"},
+             {"/api/v1/tool", "run=leak&target=lokivpn0"},
+             {"/api/v1/tool", "run=listen&target=eth0"},
+             {"/api/v1/tool", "run=ports&target=10.0.0.1"},
+             {"/api/v1/tool", "run=ports&target=10.0.0.1&own=0"},
+             {"/api/v1/tool", "run=ping"},
+             {"/api/v1/tool", "run=ping&target="},
+             {"/api/v1/tool", "run=speed&target=example.com"},
+             {"/api/v1/tool", "run=dns&target=a%0Ab"},
+             {"/api/v1/tool", long_target},
+             {"/api/v1/tool", "stop=health"},
+             {"/api/v1/tool", ""},
+             {"/api/v1/lan", "test=example.com"},
+             {"/api/v1/lan", "serve=10.0.0.12"},
+             {"/api/v1/lan", ""},
+             {"/api/v1/lan", "stop=0"},
+             {"/api/v1/survey", "run=2"},
+             {"/api/v1/watch", "on="},
+             {"/api/v1/trap", "on=yes"},
+         }) {
+        expect(ask(port, post(host, path, body, origin + cookie + with_token)).status == 400,
+               "POST " + path + " " + body + ": 400");
+    }
+    expect(!actions.pop(left_over), "nothing queued by the bad tool bodies");
+    expect(ask(port, get(host, "/api/v1/tool", cookie)).status == 405, "GET /api/v1/tool: 405");
     expect(ask(port, get(host, "/api/v1/mode", cookie)).status == 405, "GET /api/v1/mode: 405");
     for (std::size_t index = 0; index < ActionQueue::kMaxWaiting; ++index) {
         ask(port, post(host, "/api/v1/keep", "on=1", origin + cookie + with_token));

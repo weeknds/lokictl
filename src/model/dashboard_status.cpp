@@ -363,7 +363,9 @@ void write_status(std::string& out, const HomeData& home, const DashboardParts& 
         watch.number("trap_ports", parts.trap_ports);
         std::string& feed = watch.key("feed");
         feed += '[';
-        for (std::size_t index = 0; index < parts.overview.watch_lines.size(); ++index) {
+        // The newest few: the Watch page has its own list in "tools".
+        constexpr std::size_t kFeedLines = 5;
+        for (std::size_t index = 0; index < parts.overview.watch_lines.size() && index < kFeedLines; ++index) {
             if (index > 0) {
                 feed += ',';
             }
@@ -372,6 +374,9 @@ void write_status(std::string& out, const HomeData& home, const DashboardParts& 
             line.text("text", parts.overview.watch_lines[index]);
         }
         feed += ']';
+    }
+    if (!parts.tools_json.empty()) {
+        root.key("tools") += parts.tools_json;
     }
 }
 

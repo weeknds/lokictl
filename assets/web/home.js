@@ -493,7 +493,7 @@ function WatchPhone({ status }) {
   const watch = status.watch || {};
   const feed = (watch.feed || []).slice(0, 3);
   return [
-    h("div", { class: "sec" }, h("span", null, "Watch"), h(LiveTag, { on: watch.on })),
+    h("div", { class: "sec" }, h("span", null, "Watch ", h(LiveTag, { on: watch.on })), h("a", { class: "sec-link", href: "#/watch" }, "Open")),
     h(
       "div",
       { class: "group" },
@@ -508,7 +508,7 @@ function WatchPhone({ status }) {
 }
 
 function watchEmpty(watch) {
-  return watch.on ? "Nothing heard yet." : "Watch is off. Start it from Tools on the Cardputer.";
+  return watch.on ? "Nothing heard yet." : "Watch is off. Turn it on under Watch and trap.";
 }
 
 function LiveTag({ on }) {

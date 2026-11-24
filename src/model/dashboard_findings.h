@@ -143,6 +143,9 @@ struct DashCounts {
     int32_t hotspot{0};    // devices on LokiCTL's own hotspot (DashDevice::hotspot)
 };
 
+// DashOverview::watch_lines holds at most this many: the Watch page's list.
+constexpr std::size_t kDashWatchLines = 30;
+
 struct DashOverview {
     bool checked{false};     // a health check has finished
     bool checking{false};    // a health check runs now
@@ -150,7 +153,7 @@ struct DashOverview {
     int32_t took_s{-1};      // how long it took, in seconds; -1 when none finished
     std::vector<DashThing> things;    // the worst first; at most kDashMaxThings
     std::vector<DashDevice> devices;  // the worst first, then by address; at most kDashMaxDevices
-    std::vector<std::string> watch_lines;  // Watch's newest alerts in plain words, at most 5
+    std::vector<std::string> watch_lines;  // Watch's newest alerts in plain words, at most kDashWatchLines
     std::vector<std::string> watch_times;  // their local times, "21:42"
     std::string list_date;  // the date of the list of known holes the versions were checked against; empty when none
     DashCounts counts;

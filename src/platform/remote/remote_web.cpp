@@ -26,6 +26,8 @@ constexpr WebFile kFiles[] = {
     {"/devices.js", WebFolder::Web, "devices.js", kScript, kNoStore},
     {"/security.js", WebFolder::Web, "security.js", kScript, kNoStore},
     {"/modes.js", WebFolder::Web, "modes.js", kScript, kNoStore},
+    {"/tools.js", WebFolder::Web, "tools.js", kScript, kNoStore},
+    {"/watch.js", WebFolder::Web, "watch.js", kScript, kNoStore},
     {"/preact.module.js", WebFolder::Web, "preact.module.js", kScript, kNoStore},
     {"/icon.svg", WebFolder::Web, "icon.svg", "image/svg+xml", kNoStore},
     {"/fonts/Inter-Regular.ttf", WebFolder::Fonts, "Inter-Regular.ttf", "font/ttf", kWeek},
