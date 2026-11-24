@@ -6,7 +6,7 @@
 
 cmake_minimum_required(VERSION 3.31)
 
-project(lokictl VERSION 0.1.0 LANGUAGES C CXX)
+project(lokictl VERSION 0.1.1 LANGUAGES C CXX)
 
 # Application identity. This block and the project() line above are the only
 # places where the build names the app: targets, install paths, package
