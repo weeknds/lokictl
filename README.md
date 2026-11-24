@@ -550,7 +550,7 @@ and reports contain what devices on the network said about themselves, so
 treat them as private. Your WireGuard file never leaves the device.
 
 LokiCTL is an independent project. It is not affiliated with or endorsed
-by M5Stack or Flipper Devices.
+by M5Stack.
 
 ## Building
 
