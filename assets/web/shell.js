@@ -9,9 +9,10 @@
 // #/name, so Back and links work as usual.
 
 import { h, Component } from "./preact.module.js";
-import { icon, logo, networkName, modeLine, internetWords } from "./ui.js";
+import { icon, logo, networkName, modeLine, internetWords, askCheck } from "./ui.js";
 import { HomePhone, HomeDesk } from "./home.js";
 import { DevicesList, DevicePage, deviceName } from "./devices.js";
+import { SecurityPage, ReportsPage } from "./security.js";
 
 // Every page: its #/name, its title, the icon, and the sentence its empty
 // state says until its contents arrive.
@@ -70,8 +71,8 @@ function NavItem({ page, current, counts }) {
   const on = page.id === current;
   const count = counts && counts[page.id];
   let end = null;
-  if (page.id === "security" && count) {
-    end = h("span", { class: "nav-badge", "aria-label": count + " to fix soon" }, count);
+  if (page.id === "security") {
+    end = count ? h("span", { class: "nav-badge", "aria-label": count + " to fix soon" }, count) : null;
   } else if (typeof count === "number") {
     end = h("span", { class: "nav-count" }, count);
   }
@@ -159,7 +160,7 @@ class TopBar extends Component {
         "Find a device or run a command",
         h("span", { class: "kbd", "aria-hidden": "true" }, "⌘K")
       ),
-      h("a", { class: "btn gh", href: "#/security" }, "Check again"),
+      h("a", { class: "btn gh", href: "#/security", onClick: askCheck }, "Check again"),
       this.state.hint
         ? h("p", { id: "cmd-hint", class: "cmd-hint", role: "status" }, "Search and commands come in a later update.")
         : null
@@ -238,8 +239,8 @@ function EmptyPage({ page }) {
 
 // ---------- The whole frame ----------
 
-// What a page shows: Home, the Devices list or one device, or for now
-// the page's empty state.
+// What a page shows: Home, the Devices list or one device, Security (with
+// a finding picked), Reports, or for now the page's empty state.
 function PageBody({ page, sub, status }) {
   if (page.id === "home") {
     return [
@@ -249,6 +250,12 @@ function PageBody({ page, sub, status }) {
   }
   if (page.id === "devices") {
     return sub ? h(DevicePage, { status, id: sub }) : h(DevicesList, { status });
+  }
+  if (page.id === "security") {
+    return h(SecurityPage, { status, sub });
+  }
+  if (page.id === "reports") {
+    return h(ReportsPage, { status });
   }
   return h(EmptyPage, { page });
 }
@@ -262,12 +269,13 @@ export function Shell({ route, sub, status, lost }) {
     h(
       "div",
       { class: "main" },
-      h(TopBar, { page, status, sub: sub ? deviceName(status, sub) || sub : "" }),
+      h(TopBar, { page, status, sub: sub && page.id === "devices" ? deviceName(status, sub) || sub : "" }),
       h(
         "main",
         { class: "content", id: "content" },
         h(Banner, { lost }),
-        h("div", { class: "page", key: page.id + "/" + sub }, h(PageBody, { page, sub, status }))
+        // Picking a finding on Security keeps the page (and a check's progress) as it is.
+        h("div", { class: "page", key: page.id === "security" ? page.id : page.id + "/" + sub }, h(PageBody, { page, sub, status }))
       )
     ),
     h(TabBar, { current: page.id })

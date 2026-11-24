@@ -25,6 +25,12 @@ function deviceHref(id) {
   return id ? "#/devices/" + encodeURIComponent(id) : "#/security";
 }
 
+// A thing's link: its device's page, else the thing on Security.
+function thingHref(thing) {
+  if (thing.device) return deviceHref(thing.device);
+  return thing.id ? "#/security/" + encodeURIComponent(thing.id) : "#/security";
+}
+
 const TIER_WORD = { fix: "Fix soon", look: "Worth a look", know: "Good to know" };
 const TILE = { fix: "bad", look: "warn", know: "know" };
 const THING_ICON = { shield: "alert", lock: "unlock", screen: "display", wifi: "wifi", cable: "cable", eye: "watch" };
@@ -77,7 +83,7 @@ function subText(ov) {
 }
 
 function thingLink(top, ov) {
-  if (top) return { text: top.action, href: deviceHref(top.device) };
+  if (top) return { text: top.action, href: thingHref(top) };
   if (ov && !ov.checked && !ov.checking) return { text: "Run a health check", href: "#/security" };
   return null;
 }
@@ -412,7 +418,7 @@ function AttentionPhone({ ov }) {
         ? list.map((thing, i) =>
             h(
               "a",
-              { key: i, class: "row icon-row", href: deviceHref(thing.device) },
+              { key: i, class: "row icon-row", href: thingHref(thing) },
               h(ThingTile, { thing, size: 18 }),
               h("span", { class: "row-text" }, h("b", null, thing.title), h("span", null, thingHint(thing))),
               h("span", { class: "chev" }, icon("chevron", 13, 2.4))
@@ -443,7 +449,7 @@ function BlocksPhone({ ov }) {
     fix
       ? h(
           "a",
-          { class: "blk or", href: deviceHref(v.top.device) },
+          { class: "blk or", href: thingHref(v.top) },
           icon("wrench", 22, 2),
           h("span", null, h("b", null, v.top.fix), h("small", null, "Step by step"))
         )
@@ -572,7 +578,7 @@ function HeroDesk({ status, ov }) {
       h(
         "div",
         { class: "acts" },
-        fix ? h("a", { class: "btn or lg", href: deviceHref(v.top.device) }, "See the fix") : null,
+        fix ? h("a", { class: "btn or lg", href: thingHref(v.top) }, "See the fix") : null,
         h("a", { class: "btn gh lg", href: "#/devices" }, "All devices")
       )
     ),
@@ -591,7 +597,7 @@ function AttentionDesk({ ov }) {
       ? list.map((thing, i) =>
           h(
             "a",
-            { key: i, class: "att-row", href: deviceHref(thing.device) },
+            { key: i, class: "att-row", href: thingHref(thing) },
             h(ThingTile, { thing, size: 17 }),
             h("span", { class: "rt" }, h("b", null, thing.title), h("span", null, thingHint(thing))),
             thing.time ? h("span", { class: "t" }, thing.time) : null

@@ -53,6 +53,9 @@ struct Candidate {
     std::string action;
     std::string fix;
     std::string time;
+    std::string about;               // what it means (DashIssue::about)
+    std::vector<std::string> steps;  // what to do (DashIssue::steps)
+    std::string where;               // "10.0.0.43 · port 22", "Your Wi-Fi"
 };
 
 std::string upper_first(std::string text) {
@@ -249,10 +252,15 @@ DashIssue health_issue(const HealthFinding& finding) {
         case HealthIssue::OpenWifi:
         case HealthIssue::WepWifi:
         case HealthIssue::WpaWifi:
+            issue.title = finding.title;
+            issue.steps = {with_full_stop(health_fix(finding)), "You find this in your router's settings page or its app.",
+                           again};
+            return issue;
         case HealthIssue::LookAlike:
         case HealthIssue::SlowCable:
             issue.title = finding.title;
-            break;
+            issue.steps = {with_full_stop(health_fix(finding)), again};
+            return issue;
     }
     issue.steps = {with_full_stop(health_fix(finding)), "You find this in the device's settings page or its app.", again};
     return issue;
@@ -531,6 +539,14 @@ Candidate health_candidate(const HealthFinding& finding, DeviceList& list, const
     const std::string& label = candidate.subject.label;
     const std::string& object = candidate.subject.object;
     candidate.fix = "Fix " + object;
+    DashIssue issue = health_issue(finding);
+    candidate.about = std::move(issue.about);
+    candidate.steps = std::move(issue.steps);
+    if (finding.address.empty()) {
+        candidate.where = label;
+    } else {
+        candidate.where = finding.address + (finding.port > 0 ? " · port " + std::to_string(finding.port) : std::string());
+    }
     switch (finding.issue) {
         case HealthIssue::Service:
             candidate.icon = "screen";
@@ -664,6 +680,10 @@ Candidate watch_candidate(const WatchAlert& alert, DeviceList& list) {
     }
     candidate.action = candidate.title;
     candidate.fix = "Look at " + candidate.subject.object;
+    DashIssue issue = watch_issue(alert);
+    candidate.about = std::move(issue.about);
+    candidate.steps = std::move(issue.steps);
+    candidate.where = alert.address.empty() ? candidate.subject.label : alert.address;
     return candidate;
 }
 
@@ -715,6 +735,7 @@ DashOverview dashboard_overview(const HomeData& home, const ToolsData& tools, co
     overview.checking = health.state == ToolState::Running;
     overview.checked = health.state == ToolState::Done;
     overview.checked_at = health.finished;
+    overview.took_s = overview.checked ? health.elapsed_s : -1;
     const bool wifi_uplink = home.uplink_kind == LinkKind::Wifi;
     const bool hotspot = home.ap_active && is_hotspot_mode(home.mode);
 
@@ -898,6 +919,7 @@ DashOverview dashboard_overview(const HomeData& home, const ToolsData& tools, co
             }
         }
         DashThing thing;
+        thing.id = worst->subject.key;
         thing.tier = worst->tier;
         thing.icon = worst->icon;
         thing.title = worst->title;
@@ -906,6 +928,19 @@ DashOverview dashboard_overview(const HomeData& home, const ToolsData& tools, co
         thing.fix = worst->fix;
         thing.device = worst->subject.device;
         thing.time = worst->time;
+        thing.about = worst->about;
+        thing.steps = worst->steps;
+        thing.where = worst->where;
+        // The subject's other findings, by title, in the order found.
+        for (const Candidate& other : candidates) {
+            if (thing.also.size() >= kDashMaxAlso) {
+                break;
+            }
+            if (other.subject.key == thing.id && other.title != thing.title &&
+                std::find(thing.also.begin(), thing.also.end(), other.title) == thing.also.end()) {
+                thing.also.push_back(other.title);
+            }
+        }
         overview.things.push_back(std::move(thing));
     }
     std::stable_sort(overview.things.begin(), overview.things.end(),

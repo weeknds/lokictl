@@ -113,4 +113,38 @@ HealthCounts health_counts(const std::vector<HealthFinding>& findings);
 // left out); "Nothing found" without any.
 std::string health_summary(const HealthCounts& counts);
 
+// ---------- Starting a check ----------
+
+// Whether a health check may start now. The Health page and the web
+// dashboard ask the same gate, so both refuse the same networks.
+enum class HealthGate : int32_t {
+    Open = 0,    // it may start
+    Running,     // a health check runs now
+    OtherTool,   // another tool runs (one tool at a time)
+    NoNetwork,   // no uplink with a valid interface name
+    NoAddress,   // the uplink has no IPv4 address yet
+    NotPrivate,  // the uplink's address is not a private one
+};
+
+struct HealthStart {
+    HealthGate gate{HealthGate::NoNetwork};
+    std::string interface_name;  // the uplink a check runs on; empty when there is none
+    std::string asks;            // what the sweep asks, "10.0.0.1-254"; empty unless the address is private
+};
+
+// The uplink a check runs on: HomeData::uplink_name when it is a valid
+// interface name, else empty.
+std::string health_uplink(const HomeData& home);
+// The uplink's address when it is a private IPv4 address (10.0.0.0/8,
+// 172.16.0.0/12 or 192.168.0.0/16), else empty: a check only runs there.
+std::string health_home_address(const HomeData& home);
+// The gate, the uplink and what the sweep asks (a check sweeps the
+// address's /24).
+HealthStart health_start(const HomeData& home, const ToolsData& tools);
+// Why the gate is closed, in a few words for a person ("Join a network
+// first"); empty for Open.
+std::string health_gate_text(HealthGate gate, const ToolsData& tools);
+// What runs instead of a health check, in a few words: "Ping is running".
+const char* other_tool_text(const ToolsData& data);
+
 } // namespace model

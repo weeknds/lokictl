@@ -329,7 +329,10 @@ Tools, Modes); on a computer, a sidebar with every page. Home says
 whether your network is OK and what to fix first. Devices lists every
 device with search and filters; a device's page says what it runs, its
 known security holes and how to fix them in plain steps, and a device on
-LokiCTL's hotspot can be blocked there. The other pages fill in with
+LokiCTL's hotspot can be blocked there. Security lists what to fix first,
+with plain steps, runs a health check of your own network from the
+browser (after the same question as on the Cardputer, with progress and
+Stop) and downloads reports. The other pages fill in with
 coming updates. **Cardputer screen** shows the Cardputer's screen and
 lets you press its keys, and lists the saved reports for download.
 

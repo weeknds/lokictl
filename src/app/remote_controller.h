@@ -27,6 +27,7 @@ class RemotePanel;
 }
 
 namespace platform::remote {
+class ActionQueue;
 class BlockQueue;
 class HandOffSource;
 class KeyQueue;
@@ -101,6 +102,18 @@ namespace app {
 // view: block asked from the browser" or "... allow asked ..." (never an
 // address).
 //
+// The Security page's requests (POST /api/v1/check, POST /api/v1/report)
+// wait in a third queue, emptied the same way. A start applies only when
+// the Health page's gate is open (model::health_start(): a valid uplink
+// with a private IPv4 address, no tool running) and goes the way the
+// Health page's second 6 goes, on the uplink; a stop only while the health
+// check is the tool that runs; a report save through
+// BaseViewModel::request_report(), at most one in 10 s. The status's
+// "check" object (model::dashboard_check()) always comes from the real
+// run. Log lines: "remote view: health check asked from the browser", "...
+// health check stop asked ...", "... health check from the browser not
+// started (<why>)" and "... report asked from the browser".
+//
 // Create it after the ThemeEngine and the view model, and destroy it
 // before them.
 class RemoteController {
@@ -148,6 +161,8 @@ private:
     void press_waiting_key();
     // Applies the dashboard's waiting Block and Allow requests.
     void apply_blocks();
+    // Applies the dashboard's waiting health check and report requests.
+    void apply_actions();
 
     viewmodel::BaseViewModel& view_model_;
     std::unique_ptr<view::widgets::RemotePanel> panel_;
@@ -155,6 +170,7 @@ private:
     // Declared before the servers: their threads may use it until they end.
     std::unique_ptr<platform::remote::KeyQueue> keys_;
     std::unique_ptr<platform::remote::BlockQueue> blocks_;
+    std::unique_ptr<platform::remote::ActionQueue> actions_;
     std::unique_ptr<platform::remote::Server> server_;   // the one that runs
     std::unique_ptr<platform::remote::Server> retiring_; // told to stop, not yet ended
     platform::remote::HandOffSource* hand_off_{nullptr}; // owned by server_ (desktop)
@@ -182,6 +198,8 @@ private:
     std::string status_json_;       // the last JSON handed to server_
     uint32_t status_built_{0};      // lv_tick_get() when it was last built
     model::TrafficLog traffic_;     // the dashboard's last minute of traffic, while a server runs
+    bool report_asked_{false};      // the dashboard asked for a report since the start
+    uint32_t report_asked_at_{0};   // lv_tick_get() when it last did
 };
 
 } // namespace app

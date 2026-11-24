@@ -71,6 +71,10 @@ struct ServerOptions {
     // requests. Owned by the caller like `keys`; without it every request
     // gets 400.
     BlockQueue* blocks{nullptr};
+    // Where POST /api/v1/check and POST /api/v1/report put the paired
+    // browser's requests. Owned by the caller like `keys`; without it every
+    // request gets 400.
+    ActionQueue* actions{nullptr};
     // The folder of saved reports (report_files.h) that GET /reports lists
     // and GET /report hands out; empty: none (an empty list).
     std::string reports_folder;
@@ -119,6 +123,13 @@ struct ServerOptions {
 //   400, a full BlockQueue 429, a queued request 204. Whether it applies
 //   (a device on LokiCTL's own hotspot) is for the UI thread to decide; the
 //   page sees the result in the next status.
+//   POST /api/v1/check with run=1&own=1 (start a health check; own=1 is
+//   the page's "own network only" confirmation) or run=0 (stop it), and
+//   POST /api/v1/report (save a new report; the body is not read) are
+//   checked like POST /key too; any other check body gets 400, a full
+//   ActionQueue 429, a queued request 204. Whether it applies is for the
+//   UI thread to decide; the page sees the result in the next status or
+//   the next GET /reports.
 //   GET /reports needs the cookie (else 401) and lists the saved reports
 //   as JSON, {"reports":[{"name":"lokictl-....html","bytes":N},...]}, the
 //   newest first. GET /report?name=<name> needs the cookie too and hands

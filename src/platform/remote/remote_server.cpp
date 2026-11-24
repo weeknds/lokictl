@@ -719,6 +719,52 @@ void Server::handle_connection(int fd, int side, const Side& own, Pairing& pairi
         return;
     }
 
+    if (request.path == "/api/v1/check" || request.path == "/api/v1/report") {
+        if (request.method != "POST") {
+            send_text(fd, 405, "method not allowed\n", wake_read_, deadline, "Allow: POST\r\n");
+            return;
+        }
+        // Checked as POST /key is: the page's origin, then the session,
+        // then the request token.
+        if (request.origin != "http://" + own.host) {
+            send_text(fd, 403, "wrong origin\n", wake_read_, deadline);
+            return;
+        }
+        const Pairing::Change change =
+            side != paired_side_ ? Pairing::Change::NoSession
+                                 : pairing.check_change(cookie_value(request.cookie, kCookieName), request.token, now);
+        if (change == Pairing::Change::NoSession) {
+            send_text(fd, 401, "pair first\n", wake_read_, deadline);
+            return;
+        }
+        if (change == Pairing::Change::WrongToken) {
+            send_text(fd, 403, "wrong token\n", wake_read_, deadline);
+            return;
+        }
+        Action action = Action::SaveReport;
+        if (request.path == "/api/v1/check") {
+            const std::string run = form_value(body, "run");
+            if (run == "1" && form_value(body, "own") == "1") {
+                action = Action::StartCheck;
+            } else if (run == "0") {
+                action = Action::StopCheck;
+            } else {
+                send_text(fd, 400, "bad request\n", wake_read_, deadline);
+                return;
+            }
+        }
+        if (!options_.actions) {
+            send_text(fd, 400, "bad request\n", wake_read_, deadline);
+            return;
+        }
+        if (!options_.actions->push(action)) {
+            send_text(fd, 429, "too many requests\n", wake_read_, deadline);
+            return;
+        }
+        send_all(fd, response_head(204, {}, 0), wake_read_, deadline);
+        return;
+    }
+
     if (request.path == "/pair") {
         if (request.method != "POST") {
             send_text(fd, 405, "method not allowed\n", wake_read_, deadline, "Allow: POST\r\n");

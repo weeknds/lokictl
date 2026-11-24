@@ -8,6 +8,7 @@
 
 #include "base_viewmodel.h"
 #include "dashboard_status.h"
+#include "health_check.h"
 #include "linux_input.h"
 #include "logger.h"
 #include "mode_switch.h"
@@ -57,6 +58,9 @@ constexpr uint32_t kMessageMs = 4000;
 
 // How often the dashboard's status JSON is built again at most.
 constexpr uint32_t kStatusPeriodMs = 1000;
+
+// The dashboard saves at most one report in this time.
+constexpr uint32_t kReportGapMs = 10000;
 
 // Why the server ended, for the log.
 const char* stop_text(StopReason reason) {
@@ -136,6 +140,7 @@ RemoteController::RemoteController(view::ThemeEngine& theme_engine,
       mark_(std::make_unique<view::widgets::RemoteMark>(lv_layer_top(), theme_engine)),
       keys_(std::make_unique<platform::remote::KeyQueue>()),
       blocks_(std::make_unique<platform::remote::BlockQueue>()),
+      actions_(std::make_unique<platform::remote::ActionQueue>()),
       web_folder_(std::move(web_folder)),
       font_folder_(std::move(font_folder)) {
     panel_->build();
@@ -343,12 +348,14 @@ void RemoteController::switch_on() {
     message_shown_ = false;
     keys_->clear();
     blocks_->clear();
+    actions_->clear();
     set_hotspot(false, false);
     hotspot_open_seen_ = false;
 
     platform::remote::ServerOptions options;
     options.keys = keys_.get();
     options.blocks = blocks_.get();
+    options.actions = actions_.get();
     options.reports_folder = platform::report_folder();
     options.web_folder = web_folder_;
     options.font_folder = font_folder_;
@@ -385,6 +392,7 @@ void RemoteController::switch_off() {
     hand_off_ = nullptr;
     run_key_timer(false);
     blocks_->clear();
+    actions_->clear();
     set_hotspot(false, false);
     hotspot_open_seen_ = false;
     if (panel_) {
@@ -547,6 +555,7 @@ void RemoteController::poll() {
             hand_off_frame();
         }
         apply_blocks();
+        apply_actions();
         hand_over_status();
     }
 
@@ -585,6 +594,48 @@ void RemoteController::apply_blocks() {
     }
 }
 
+void RemoteController::apply_actions() {
+    platform::remote::Action action = platform::remote::Action::SaveReport;
+    while (actions_->pop(action)) {
+        if (!server_) {
+            continue;
+        }
+        switch (action) {
+            case platform::remote::Action::StartCheck: {
+                // The Health page's own gate; the browser's confirmation
+                // stands for the page's second 6.
+                const model::HealthStart start = model::health_start(view_model_.home(), view_model_.tools());
+                if (start.gate != model::HealthGate::Open) {
+                    LOG_INFO("remote view: health check from the browser not started ({})",
+                             model::health_gate_text(start.gate, view_model_.tools()));
+                    break;
+                }
+                LOG_INFO("remote view: health check asked from the browser");
+                view_model_.set_health_selection(0);
+                view_model_.set_health_detail(false);
+                view_model_.request_tool_run(model::ToolKind::Health, start.interface_name);
+                break;
+            }
+            case platform::remote::Action::StopCheck:
+                // Only the health check: another tool may run, started on the Cardputer.
+                if (view_model_.tools().health.state == model::ToolState::Running) {
+                    LOG_INFO("remote view: health check stop asked from the browser");
+                    view_model_.request_tool_stop();
+                }
+                break;
+            case platform::remote::Action::SaveReport:
+                if (report_asked_ && lv_tick_elaps(report_asked_at_) < kReportGapMs) {
+                    break;
+                }
+                report_asked_ = true;
+                report_asked_at_ = lv_tick_get();
+                LOG_INFO("remote view: report asked from the browser");
+                view_model_.request_report();
+                break;
+        }
+    }
+}
+
 void RemoteController::hand_over_status() {
     if (!server_ || (!status_json_.empty() && lv_tick_elaps(status_built_) < kStatusPeriodMs)) {
         return;
@@ -617,6 +668,8 @@ void RemoteController::hand_over_status() {
         parts.trap_on = trap.state == model::ToolState::Running;
         parts.trap_ports = parts.trap_on ? model::trap_open_ports(trap) : 0;
     }
+    // The health check as it really runs, also while the findings are made up.
+    parts.check = model::dashboard_check(home, tools);
     parts.keep_mode = view_model_.keep_mode();
     parts.traffic = traffic_.samples();
     std::string json = model::dashboard_status_json(home, parts);

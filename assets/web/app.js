@@ -17,12 +17,13 @@ const REFRESH_MS = 700;
 const ENDED = "Your session ended. Type the new code from the Cardputer.";
 
 // "#/devices/10.0.0.43": the page ("devices") and what it shows (one
-// device, by its id); the sub-path is empty for the page itself.
+// device, by its id; on Security one finding, by its id); the sub-path is
+// empty for the page itself.
 function routeFromHash() {
   const parts = location.hash.replace(/^#\/?/, "").split("?")[0].split("/");
   const route = findPage(parts[0] || "home").id;
   let sub = "";
-  if (route === "devices" && parts[1]) {
+  if ((route === "devices" || route === "security") && parts[1]) {
     try {
       sub = decodeURIComponent(parts[1]);
     } catch (err) {

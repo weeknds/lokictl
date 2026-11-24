@@ -8,6 +8,7 @@
 
 #include "dashboard_findings.h"
 #include "home_data.h"
+#include "tool_data.h"
 
 #include <array>
 #include <cstddef>
@@ -34,10 +35,30 @@ private:
     std::vector<std::array<int32_t, 2>> samples_;
 };
 
+// The health check as the Security page shows it and may start it: always
+// the real run (never the made-up one of sample_dashboard()), and the same
+// gate as the Health page (health_start()).
+struct DashCheck {
+    ToolState state{ToolState::Idle};
+    HealthStep step{HealthStep::Sweep};
+    int32_t asked{0};      // addresses asked of `total`
+    int32_t total{0};
+    int32_t scanned{0};    // devices scanned of `hosts`
+    int32_t hosts{0};
+    int32_t elapsed_s{0};
+    std::string reason;    // why it failed, a few lowercase words; empty unless Failed
+    bool can{false};       // a check may start now
+    std::string why;       // why not (health_gate_text()); empty when it may
+    std::string asks;      // what the sweep asks, "10.0.0.1-254"; empty when not known
+};
+
+DashCheck dashboard_check(const HomeData& home, const ToolsData& tools);
+
 // What the dashboard shows besides the home data: the findings, Watch and
 // the trap, the keep-mode setting and the traffic log.
 struct DashboardParts {
     DashOverview overview;
+    DashCheck check;
     bool watching{false};    // Watch is listening
     bool trap_on{false};     // the trap runs
     int32_t trap_ports{0};   // its fake services that are open
@@ -60,12 +81,17 @@ struct DashboardParts {
 //  "block":{"failures":0,"message":""},
 //  "traffic":{"down_kbps":1200,"up_kbps":80,"history":[[1100,70],...]},
 //  "counts":{"devices":12,"security":1},
-//  "overview":{"checked":true,"checking":false,"checked_at":"21:44",
+//  "check":{"state":"running","step":"sweep","asked":120,"total":254,"scanned":0,
+//           "hosts":0,"elapsed_s":12,"reason":"","can":false,"why":"A health check is running",
+//           "asks":"10.0.0.1-254","max_devices":32,"max_ports":50},
+//  "overview":{"checked":true,"checking":false,"checked_at":"21:44","took_s":94,
 //              "fix":1,"look":2,"know":2,"total":12,"device_fix":1,
 //              "device_look":2,"fine":9,"unchecked":0,"device_new":2,"hotspot":3,
 //              "list_date":"2026-11-23",
-//              "things":[{"tier":"fix","icon":"shield","title":"...","hint":"...",
-//                         "action":"...","fix":"...","device":"10.0.0.43","time":"21:40"}],
+//              "things":[{"id":"10.0.0.43","tier":"fix","icon":"shield","title":"...","hint":"...",
+//                         "action":"...","fix":"...","device":"10.0.0.43","time":"21:40",
+//                         "about":"...","steps":["...","..."],"where":"10.0.0.43 · port 22",
+//                         "also":["..."]}],
 //              "devices":[{"id":"10.0.0.43","name":"Smart TV","address":"10.0.0.43",
 //                          "ring":"cable","router":false,"new":false,"checked":true,
 //                          "tier":"fix","tag":"2 holes","services":"...","seen":"now",
@@ -80,10 +106,13 @@ struct DashboardParts {
 //
 // "link" is "wifi", "cable" or "none"; "internet" is internet_name();
 // "id" is "client", "router", "share" or "vpn"; "vpn" is vpn_state_name();
-// "tier" is finding_tier_name(); "ring" is "cable" or "wireless"; "total"
-// counts every device, also those the list leaves out; "score" is in
-// tenths, null when not known; "block" is HomeData::block_failures and
-// block_message.
+// "state" is "idle", "running", "done", "stopped" or "failed"; "step" is
+// "sweep" or "ports"; "max_devices" and "max_ports" are what one check
+// scans at most (kHealthMaxHosts, common_ports()); "took_s" is null until
+// a check finished; "tier" is finding_tier_name(); "ring" is "cable" or
+// "wireless"; "total" counts every device, also those the list leaves out;
+// "score" is in tenths, null when not known; "block" is
+// HomeData::block_failures and block_message.
 std::string dashboard_status_json(const HomeData& home, const DashboardParts& parts = DashboardParts());
 
 } // namespace model

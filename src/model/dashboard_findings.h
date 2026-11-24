@@ -45,11 +45,15 @@ constexpr std::size_t kDashMaxDevices = 64;
 constexpr std::size_t kDashMaxPorts = 8;
 constexpr std::size_t kDashMaxHoles = 4;
 constexpr std::size_t kDashMaxIssues = 4;
+// The most other findings a thing names (DashThing::also).
+constexpr std::size_t kDashMaxAlso = 4;
 
 // One thing to know about: everything found about one subject (a device,
 // the Wi-Fi, the cable link, the network), at its worst finding's tier,
 // in that finding's words.
 struct DashThing {
+    std::string id;      // its subject, one per thing: a device's id, "own", "wifi", "cable", "network"
+                         // (or an address the device list does not have)
     FindingTier tier{FindingTier::Know};
     std::string icon;    // "shield", "lock", "screen", "wifi", "cable" or "eye"
     std::string title;   // "Smart TV has 2 security holes"
@@ -58,6 +62,14 @@ struct DashThing {
     std::string fix;     // the phone's fix button: "Fix Smart TV"
     std::string device;  // DashDevice::id of the device it is about; empty for the rest
     std::string time;    // local time it was found, "21:40"; empty when not known
+    // The Security page's detail of the worst finding: what it means, 1 to
+    // 3 plain numbered steps, and who it is about ("10.0.0.43 · port 22",
+    // "Your Wi-Fi"); then the subject's other findings by title (at most
+    // kDashMaxAlso).
+    std::string about;
+    std::vector<std::string> steps;
+    std::string where;
+    std::vector<std::string> also;
 };
 
 // One open service of a device, for its page.
@@ -135,6 +147,7 @@ struct DashOverview {
     bool checked{false};     // a health check has finished
     bool checking{false};    // a health check runs now
     std::string checked_at;  // when the last one finished, "21:44"; empty when not known
+    int32_t took_s{-1};      // how long it took, in seconds; -1 when none finished
     std::vector<DashThing> things;    // the worst first; at most kDashMaxThings
     std::vector<DashDevice> devices;  // the worst first, then by address; at most kDashMaxDevices
     std::vector<std::string> watch_lines;  // Watch's newest alerts in plain words, at most 5

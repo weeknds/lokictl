@@ -135,35 +135,6 @@ int32_t summary_tone(const model::HealthRun& run, const model::HealthCounts& cou
     return run.state == model::ToolState::Done ? tools::kToneSuccess : tools::kToneAccent;
 }
 
-// What the status line says while another tool runs.
-const char* other_tool_text(const model::ToolsData& data) {
-    if (data.ping.state == model::ToolState::Running) {
-        return "Ping is running";
-    }
-    if (data.dns.state == model::ToolState::Running) {
-        return "DNS lookup is running";
-    }
-    if (data.trace.state == model::ToolState::Running) {
-        return "Trace is running";
-    }
-    if (data.listen.state == model::ToolState::Running) {
-        return "Discover is listening";
-    }
-    if (data.probe.state == model::ToolState::Running) {
-        return "Discover is probing";
-    }
-    if (data.speed.state == model::ToolState::Running) {
-        return "Speed test is running";
-    }
-    if (data.leak.state == model::ToolState::Running) {
-        return "Leak test is running";
-    }
-    if (data.signin.state == model::ToolState::Running) {
-        return "Sign-in check is running";
-    }
-    return "Port scan is running";
-}
-
 } // namespace
 
 HealthScreen::HealthScreen(viewmodel::BaseViewModel& view_model,
@@ -217,19 +188,11 @@ view::widgets::SoftKeySet HealthScreen::soft_keys() {
 }
 
 std::string HealthScreen::uplink() const {
-    const std::string& name = view_model().home().uplink_name;
-    return model::valid_interface_name(name) ? name : std::string();
+    return model::health_uplink(view_model().home());
 }
 
 std::string HealthScreen::home_address() const {
-    const std::string& address = view_model().home().uplink_address;
-    if (!model::is_ipv4_text(address)) {
-        return {};
-    }
-    const int first = std::stoi(address);
-    const int second = std::stoi(address.substr(address.find('.') + 1));
-    const bool home = first == 10 || (first == 172 && second >= 16 && second <= 31) || (first == 192 && second == 168);
-    return home ? address : std::string();
+    return model::health_home_address(view_model().home());
 }
 
 bool HealthScreen::checking() const {
@@ -721,7 +684,7 @@ void HealthScreen::refresh_status() {
     if (confirming_) {
         status = {"Nothing sent yet", tools::kToneMuted};
     } else if (!checking() && model::tool_running(data)) {
-        status = {other_tool_text(data), tools::kToneMuted};
+        status = {model::other_tool_text(data), tools::kToneMuted};
     }
     const bool sent_changed = set_text_if_changed(sent_, sent_shown_, std::to_string(data.sent));
     if (set_text_if_changed(status_, status_shown_, status.text) || sent_changed) {

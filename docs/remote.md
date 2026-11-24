@@ -93,10 +93,29 @@ internet.
   serious (a word, the score such as `9.8 of 10` and a 10-step meter) and
   the official number. Holes are found by the version a service reports,
   checked against LokiCTL's built-in list. `Check again` leads to
-  Security. A device on LokiCTL's own hotspot has **Block** (it stays
-  connected but can't use the hotspot) or **Allow**, the same as `8` on
-  the Cardputer's Devices page; the page shows the result, or why it
-  failed.
+  Security and asks there. A device on LokiCTL's own hotspot has
+  **Block** (it stays connected but can't use the hotspot) or **Allow**,
+  the same as `8` on the Cardputer's Devices page; the page shows the
+  result, or why it failed.
+- **Security** gives one verdict sentence (`1 thing to fix and 2 worth a
+  look. The other 9 devices look fine.`), when the last check ran and how
+  long it took, then what was found in three groups with their counts:
+  `Fix soon`, `Worth a look` and `Good to know`. Picking one shows what it
+  means, numbered steps to fix it, anything else found about the same
+  device, and its known holes. On a phone a finding about a device opens
+  that device's page. **Check again** (also in the top bar, and on a
+  device's page) first asks the same question as the Cardputer: what the
+  check will ask (`10.0.0.1 to 10.0.0.254`, then 50 common ports on up to
+  32 devices) and `Only check networks you own or may test.` **Check my
+  network** then starts it on the Cardputer, the same check as `6` twice
+  on its Health page, with the same rules: a private home network only,
+  and not while another tool runs (the page says why when it can't). The
+  page shows where the check is (`Finding devices, 120 of 254`, then
+  `Checking device 3 of 12`) and **Stop** ends it. The findings fill in
+  as it goes. **Download report** saves a new report on the Cardputer and
+  downloads its page; the saved reports are listed below it, each with
+  its page and its devices table.
+- **Reports** lists the same saved reports, with **Download a new report**.
 - The other pages say what they will show; their contents come in later
   updates.
 - **The findings are worked out once, on the Cardputer**, and every page
@@ -252,9 +271,12 @@ nothing else on the device.
   in an `X-LokiCTL-Token` header. Pairing makes that token (another 128
   random bits, apart from the cookie's), and only the paired browser can
   read it (`GET /api/v1/session`), so another web site open in the same
-  browser can't send keys or anything else. Today that is the keys: at
-  most 16 wait and at most 20 are taken a second; more get 429. Keys never
-  go to the log.
+  browser can't send keys or anything else. Today that is the keys (at
+  most 16 wait and at most 20 are taken a second; more get 429), Block and
+  Allow on the hotspot, starting or stopping a health check (a start
+  carries the page's own-network confirmation, and the Cardputer starts
+  one only where its Health page could) and saving a report (at most one
+  every 10 seconds). Keys and addresses never go to the log.
 - **Locked-down pages.** Every answer carries exactly one
   `Content-Security-Policy`. The dashboard's is `default-src 'self';
   object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors
@@ -298,7 +320,7 @@ form too; the code from the Cardputer's screen still guards it.
 
 | Request | Answer |
 |---|---|
-| `GET /`, `/app.css`, `/app.js`, `/pair.js`, `/shell.js`, `/ui.js`, `/home.js`, `/devices.js`, `/preact.module.js`, `/icon.svg`, `/fonts/Inter-Regular.ttf`, `/fonts/Inter-SemiBold.ttf` | the dashboard's files, no session needed (`404` when the file is not installed) |
+| `GET /`, `/app.css`, `/app.js`, `/pair.js`, `/shell.js`, `/ui.js`, `/home.js`, `/devices.js`, `/security.js`, `/preact.module.js`, `/icon.svg`, `/fonts/Inter-Regular.ttf`, `/fonts/Inter-SemiBold.ttf` | the dashboard's files, no session needed (`404` when the file is not installed) |
 | `GET /screen` | the screen page (`text/html`, with its own `Content-Security-Policy`) |
 | `POST /pair` with the form body `code=NNNNNN` | `200` and the session cookie; `403` for a wrong code; `409` while a browser is paired |
 | `GET /api/v1/session` with the cookie | `200` with `{"token":"<request token>"}`; `401` without the cookie |
@@ -306,6 +328,8 @@ form too; the code from the Cardputer's screen still guards it.
 | `GET /screen.png?since=N` with the cookie | `204` while frame N is still the current one, otherwise `200` with the screen as a 320x170 PNG and `X-Frame: M`, the number of that frame; `401` without the cookie |
 | `POST /key` with the form body `k=<name>`, the cookie, `Origin: http://<address>:8780` and `X-LokiCTL-Token` | `204` when the key was taken; `400` for an unknown name; `401` without the cookie; `403` without that `Origin` or with a wrong or missing token; `429` when 16 keys wait or 20 came in the last second |
 | `POST /api/v1/block` with the form body `id=<IPv4>&on=1` (block) or `on=0` (allow), the cookie, `Origin` and `X-LokiCTL-Token` as for `/key` | `204` when the request was queued; `400` for an id that is not an IPv4 address or another `on`; `401` without the cookie; `403` without that `Origin` or with a wrong or missing token; `429` when 4 requests wait. The Cardputer applies it only to a device on its own hotspot right now; the next status shows the result |
+| `POST /api/v1/check` with the form body `run=1&own=1` (start a health check; `own=1` is the page's "own network only" confirmation) or `run=0` (stop it), the cookie, `Origin` and `X-LokiCTL-Token` as for `/key` | `204` when the request was queued; `400` for any other body; `401` without the cookie; `403` without that `Origin` or with a wrong or missing token; `429` when 4 requests wait. The Cardputer starts a check only when its Health page could (a private IPv4 network, no tool running) and stops only a running health check; the next status shows the result |
+| `POST /api/v1/report`, with the cookie, `Origin` and `X-LokiCTL-Token` as for `/key` | `204` when the request was queued (same refusals as `/api/v1/check`). The Cardputer saves a new report, at most one every 10 seconds; it then shows in `GET /reports` |
 | `GET /reports` with the cookie | `200` with the saved reports as JSON, the newest first, at most 40: `{"reports":[{"name":"lokictl-20261123-075130.html","bytes":21000},...]}`; `401` without the cookie |
 | `GET /report?name=<name>` with the cookie | `200` with that file as a download (`text/html` or `text/csv`); `404` for a name that is not a report's or a file that can't be read; `401` without the cookie |
 | anything else | `404` for another path, `405` for another method |
@@ -338,15 +362,22 @@ since Remote view started; `things` (at most 32) and `devices` (at most
  "block":{"failures":0,"message":""},
  "traffic":{"down_kbps":1200,"up_kbps":80,"history":[[1100,70],[1200,80]]},
  "counts":{"devices":12,"security":1},
- "overview":{"checked":true,"checking":false,"checked_at":"21:44",
+ "check":{"state":"idle","step":"sweep","asked":0,"total":0,"scanned":0,"hosts":0,
+          "elapsed_s":0,"reason":"","can":true,"why":"","asks":"10.0.0.1-254",
+          "max_devices":32,"max_ports":50},
+ "overview":{"checked":true,"checking":false,"checked_at":"21:44","took_s":94,
              "fix":1,"look":2,"know":2,"total":12,"device_fix":1,
              "device_look":2,"fine":9,"unchecked":0,"device_new":2,"hotspot":3,
              "list_date":"2026-11-23",
-             "things":[{"tier":"fix","icon":"shield",
+             "things":[{"id":"10.0.0.43","tier":"fix","icon":"shield",
                         "title":"Smart TV has 2 security holes",
                         "hint":"update the device's software",
                         "action":"Update Smart TV","fix":"Fix Smart TV",
-                        "device":"10.0.0.43","time":"21:44"}],
+                        "device":"10.0.0.43","time":"21:44",
+                        "about":"This version has known security holes ...",
+                        "steps":["Open the device's settings ...","..."],
+                        "where":"10.0.0.43 · port 22",
+                        "also":["Smart TV runs old software"]}],
              "devices":[{"id":"10.0.0.43","name":"Smart TV","address":"10.0.0.43",
                          "ring":"cable","router":false,"new":false,"checked":true,
                          "tier":"fix","tag":"2 holes",
@@ -371,10 +402,20 @@ open services (`more_ports` more), 4 holes (`score` in tenths, `used` when
 attackers are known to use it; a version a vendor built, such as Debian's,
 gets no holes here, only a `May need updates` issue) and 4 issues, the
 worst first. For a device both the health check and the Ports page
-scanned, the one started last counts. `block` holds how many blocks or
-allows failed since the start and the last failure's words. While the
-Cardputer shows made-up data (the simulator) and no tool has run, the
-findings are made up too and `sample` is `true`.
+scanned, the one started last counts. Each thing has an `id` of its own
+(a device's id, or `wifi`, `cable`, `network`, `own`), what its worst
+finding means, 1 to 3 steps, who it is about (`where`) and up to 4 other
+findings about the same subject (`also`). `check` is the health check as
+it really runs, also while the findings are made up: `state` is `idle`,
+`running`, `done`, `stopped` or `failed` (`reason` then says why), `step`
+is `sweep` (finding devices, `asked` of `total` addresses) or `ports`
+(`scanned` of `hosts` devices); `can` says whether one may start now and
+`why` why not, in the Health page's words; `asks` is what the sweep asks.
+`took_s` is how long the last finished check took, `null` before one.
+`block` holds how many blocks or allows failed since the start and the
+last failure's words. While the Cardputer shows made-up data (the
+simulator) and no tool has run, the findings are made up too and
+`sample` is `true`.
 
 Frame numbers grow only when the screen changed, so a viewer that sends the
 last number it got receives a picture only when there is a new one. On the

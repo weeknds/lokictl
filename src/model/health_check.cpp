@@ -479,4 +479,89 @@ std::string health_summary(const HealthCounts& counts) {
     return text.empty() ? std::string("Nothing found") : text;
 }
 
+std::string health_uplink(const HomeData& home) {
+    return valid_interface_name(home.uplink_name) ? home.uplink_name : std::string();
+}
+
+std::string health_home_address(const HomeData& home) {
+    uint32_t address = 0;
+    if (!parse_ipv4(home.uplink_address, address)) {
+        return {};
+    }
+    const uint32_t first = address >> 24;
+    const uint32_t second = (address >> 16) & 0xffu;
+    const bool home_network = first == 10 || (first == 172 && second >= 16 && second <= 31) ||
+                              (first == 192 && second == 168);
+    return home_network ? home.uplink_address : std::string();
+}
+
+HealthStart health_start(const HomeData& home, const ToolsData& tools) {
+    HealthStart start;
+    start.interface_name = health_uplink(home);
+    const std::string address = health_home_address(home);
+    if (!address.empty()) {
+        start.asks = address.substr(0, address.rfind('.') + 1) + "1-254";
+    }
+    if (tools.health.state == ToolState::Running) {
+        start.gate = HealthGate::Running;
+    } else if (tool_running(tools)) {
+        start.gate = HealthGate::OtherTool;
+    } else if (start.interface_name.empty()) {
+        start.gate = HealthGate::NoNetwork;
+    } else if (!is_ipv4_text(home.uplink_address)) {
+        start.gate = HealthGate::NoAddress;
+    } else if (address.empty()) {
+        start.gate = HealthGate::NotPrivate;
+    } else {
+        start.gate = HealthGate::Open;
+    }
+    return start;
+}
+
+std::string health_gate_text(HealthGate gate, const ToolsData& tools) {
+    switch (gate) {
+        case HealthGate::Open:
+            return {};
+        case HealthGate::Running:
+            return "A health check is running";
+        case HealthGate::OtherTool:
+            return other_tool_text(tools);
+        case HealthGate::NoNetwork:
+            return "Join a network first";
+        case HealthGate::NoAddress:
+            return "No IPv4 address yet";
+        case HealthGate::NotPrivate:
+            return "Not a private home network, so the check stays off";
+    }
+    return {};
+}
+
+const char* other_tool_text(const ToolsData& data) {
+    if (data.ping.state == ToolState::Running) {
+        return "Ping is running";
+    }
+    if (data.dns.state == ToolState::Running) {
+        return "DNS lookup is running";
+    }
+    if (data.trace.state == ToolState::Running) {
+        return "Trace is running";
+    }
+    if (data.listen.state == ToolState::Running) {
+        return "Discover is listening";
+    }
+    if (data.probe.state == ToolState::Running) {
+        return "Discover is probing";
+    }
+    if (data.speed.state == ToolState::Running) {
+        return "Speed test is running";
+    }
+    if (data.leak.state == ToolState::Running) {
+        return "Leak test is running";
+    }
+    if (data.signin.state == ToolState::Running) {
+        return "Sign-in check is running";
+    }
+    return "Port scan is running";
+}
+
 } // namespace model

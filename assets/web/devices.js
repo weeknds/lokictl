@@ -9,7 +9,7 @@
 // into groups, it never counts again.
 
 import { h, Component } from "./preact.module.js";
-import { icon, post, refreshSoon } from "./ui.js";
+import { icon, post, refreshSoon, askCheck } from "./ui.js";
 
 // ---------- Words ----------
 
@@ -21,13 +21,13 @@ export function deviceHref(id) {
   return "#/devices/" + encodeURIComponent(id);
 }
 
-const TIER_WORD = { fix: "Fix soon", look: "Worth a look", know: "Good to know", ok: "Fine" };
-const TIER_PILL = { fix: "p-bad", look: "p-warn", know: "p-know" };
-const TIER_TILE = { fix: "bad", look: "warn", know: "know" };
+export const TIER_WORD = { fix: "Fix soon", look: "Worth a look", know: "Good to know", ok: "Fine" };
+export const TIER_PILL = { fix: "p-bad", look: "p-warn", know: "p-know" };
+export const TIER_TILE = { fix: "bad", look: "warn", know: "know" };
 
 // The pill of a device or a service: the status colour of its tier, blue
 // for New, plain for the rest.
-function pillClass(tier, tag) {
+export function pillClass(tier, tag) {
   if (tier === "fix" || tier === "look") return TIER_PILL[tier];
   if (tag === "New") return "p-new";
   if (tier === "know" && tag !== "OK") return "p-know";
@@ -69,7 +69,7 @@ function linkWord(device) {
 
 // "2026-11-23" as "23 Nov 2026".
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-function dateWords(text) {
+export function dateWords(text) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text || "");
   if (!m || +m[2] < 1 || +m[2] > 12) return "";
   return +m[3] + " " + MONTHS[+m[2] - 1] + " " + m[1];
@@ -413,7 +413,7 @@ class BlockControl extends Component {
   }
 }
 
-function Steps({ steps }) {
+export function Steps({ steps }) {
   return h(
     "ol",
     { class: "steps" },
@@ -427,7 +427,7 @@ function Meter({ cells }) {
   return h("span", { class: "meter", "aria-hidden": "true" }, out);
 }
 
-function Hole({ hole }) {
+export function Hole({ hole }) {
   const sev = severity(hole.score);
   return h(
     "div",
@@ -444,7 +444,7 @@ function Hole({ hole }) {
   );
 }
 
-function holesNote(device, ov) {
+export function holesNote(device, ov) {
   const parts = [];
   if (device.more_holes > 0) parts.push(device.more_holes + plural(device.more_holes, " more known hole", " more known holes") + " not listed here.");
   const date = dateWords(ov.list_date);
@@ -526,7 +526,7 @@ class AlertPhone extends Component {
                 open ? "Show less" : "Fix it step by step"
               )
             : null,
-          h("a", { class: "bp gh" + (more ? "" : " wide"), href: "#/security" }, "Check again")
+          h("a", { class: "bp gh" + (more ? "" : " wide"), href: "#/security", onClick: askCheck }, "Check again")
         ),
       ];
     }
@@ -544,7 +544,7 @@ class AlertPhone extends Component {
             : "LokiCTL hasn't scanned this device yet. A health check shows what it runs and whether anything needs fixing."
         )
       ),
-      h("div", { class: "acts-p" }, h("a", { class: "bp gh wide", href: "#/security" }, checked ? "Check again" : "Run a health check")),
+      h("div", { class: "acts-p" }, h("a", { class: "bp gh wide", href: "#/security", onClick: askCheck }, checked ? "Check again" : "Run a health check")),
     ];
   }
 }
@@ -613,7 +613,7 @@ function DetailDesk({ device }) {
           ),
           top.about ? h("p", { class: "detail-about" }, top.about) : null,
           top.steps.length ? [h("h3", { class: "h3" }, "How to fix it"), h(Steps, { steps: top.steps })] : null,
-          h("div", { class: "acts-d" }, h("a", { class: "btn or lg", href: "#/security" }, "I've fixed it, check again")),
+          h("div", { class: "acts-d" }, h("a", { class: "btn or lg", href: "#/security", onClick: askCheck }, "I've fixed it, check again")),
         ]
       : [
           h("h2", { class: "detail-title" }, device.checked ? "Nothing to fix" : "Not checked yet"),
@@ -624,7 +624,7 @@ function DetailDesk({ device }) {
               ? "The last check found nothing to fix on this device."
               : "LokiCTL hasn't scanned this device yet. A health check shows what it runs and whether anything needs fixing."
           ),
-          h("div", { class: "acts-d" }, h("a", { class: "btn gh lg", href: "#/security" }, device.checked ? "Check again" : "Run a health check")),
+          h("div", { class: "acts-d" }, h("a", { class: "btn gh lg", href: "#/security", onClick: askCheck }, device.checked ? "Check again" : "Run a health check")),
         ],
     others.length
       ? [

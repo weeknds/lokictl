@@ -47,6 +47,8 @@
 
 namespace {
 
+using platform::remote::Action;
+using platform::remote::ActionQueue;
 using platform::remote::BlockQueue;
 using platform::remote::BlockRequest;
 using platform::remote::KeyQueue;
@@ -317,6 +319,52 @@ void check_findings() {
                contains(page_json, "\"block\":{\"failures\":1,\"message\":\"Block failed: helper not installed\"}"),
            "status JSON: a blocked hotspot device and the last block failure");
 
+    // The Security page: each thing has an id, its own explanation and
+    // steps, and who it is about; the health check and its gate.
+    const model::DashThing& top = overview.things[0];
+    expect(top.id == "10.0.0.43" && !top.about.empty() && top.steps.size() == 3 &&
+               top.where == "10.0.0.43 · port 22" && overview.took_s == 94,
+           "security: the worst thing's id, explanation, steps and where, and how long the check took");
+    bool ids_unique = true;
+    for (std::size_t one = 0; one < overview.things.size(); ++one) {
+        for (std::size_t other = one + 1; other < overview.things.size(); ++other) {
+            ids_unique = ids_unique && overview.things[one].id != overview.things[other].id;
+        }
+        ids_unique = ids_unique && !overview.things[one].id.empty() && !overview.things[one].steps.empty();
+    }
+    expect(ids_unique, "security: every thing has its own id and steps");
+    model::ToolsData idle;
+    const model::DashCheck open = model::dashboard_check(home, idle);
+    expect(open.can && open.why.empty() && open.asks == "10.0.0.1-254" && open.state == model::ToolState::Idle,
+           "security: a check may start on the sample's private network");
+    model::ToolsData pinging;
+    pinging.ping.state = model::ToolState::Running;
+    const model::DashCheck busy = model::dashboard_check(home, pinging);
+    expect(!busy.can && busy.why == "Ping is running", "security: no check while another tool runs");
+    model::ToolsData checking;
+    checking.health.state = model::ToolState::Running;
+    checking.health.asked = 120;
+    checking.health.total = 254;
+    const model::DashCheck running = model::dashboard_check(home, checking);
+    expect(!running.can && running.state == model::ToolState::Running && running.asked == 120,
+           "security: a running check, and none started over it");
+    model::HomeData public_home = home;
+    public_home.uplink_address = "203.0.113.7";
+    expect(!model::dashboard_check(public_home, idle).can &&
+               model::health_start(public_home, idle).gate == model::HealthGate::NotPrivate,
+           "security: no check on a network that is not a private one");
+    model::HomeData no_uplink = home;
+    no_uplink.uplink_name = "eth0; rm";
+    expect(model::health_start(no_uplink, idle).gate == model::HealthGate::NoNetwork,
+           "security: no check without a valid uplink");
+    page_parts.check = running;
+    const std::string check_json = model::dashboard_status_json(blocked_home, page_parts);
+    expect(contains(check_json, "\"check\":{\"state\":\"running\",\"step\":\"sweep\",\"asked\":120,\"total\":254,") &&
+               contains(check_json, "\"can\":false,\"why\":\"A health check is running\",\"asks\":\"10.0.0.1-254\",\"max_devices\":32,\"max_ports\":50}") &&
+               contains(check_json, "\"took_s\":94,") && contains(check_json, "\"id\":\"10.0.0.43\",\"tier\":\"fix\"") &&
+               contains(check_json, "\"where\":\"10.0.0.43 · port 22\",\"also\":["),
+           "status JSON: the check object and a thing's detail");
+
     // The traffic log keeps the last minute.
     model::TrafficLog log;
     for (int32_t second = 0; second < 75; ++second) {
@@ -430,11 +478,13 @@ void check_server() {
 
     KeyQueue keys;
     BlockQueue blocks;
+    ActionQueue actions;
     ServerOptions options;
     options.loopback_only = true;
     options.port = 18780;
     options.keys = &keys;
     options.blocks = &blocks;
+    options.actions = &actions;
     options.web_folder = WEB_DIR;
     options.font_folder = FONTS_DIR;
     Server server(options, std::make_unique<StillFrames>());
@@ -464,6 +514,7 @@ void check_server() {
         {"/ui.js", "text/javascript; charset=utf-8"},
         {"/home.js", "text/javascript; charset=utf-8"},
         {"/devices.js", "text/javascript; charset=utf-8"},
+        {"/security.js", "text/javascript; charset=utf-8"},
         {"/preact.module.js", "text/javascript; charset=utf-8"},
         {"/icon.svg", "image/svg+xml"},
         {"/fonts/Inter-Regular.ttf", "font/ttf"},
@@ -573,6 +624,46 @@ void check_server() {
     expect(ask(port, post(host, "/api/v1/block", block, origin + cookie + with_token)).status == 429,
            "POST /api/v1/block with a full queue: 429");
     blocks.clear();
+
+    // A health check and a report: Origin, session and request token, as a key.
+    const std::string start_check = "run=1&own=1";
+    const Answer check_no_origin = ask(port, post(host, "/api/v1/check", start_check, cookie + with_token));
+    expect(check_no_origin.status == 403, "POST /api/v1/check without Origin: 403");
+    expect_policy(check_no_origin, "POST /api/v1/check 403");
+    expect(ask(port, post(host, "/api/v1/check", start_check, origin + with_token)).status == 401,
+           "POST /api/v1/check without the cookie: 401");
+    expect(ask(port, post(host, "/api/v1/check", start_check, origin + cookie)).status == 403,
+           "POST /api/v1/check without the token: 403");
+    expect(ask(port, post(host, "/api/v1/check", "run=1", origin + cookie + with_token)).status == 400,
+           "POST /api/v1/check without the own-network confirmation: 400");
+    expect(ask(port, post(host, "/api/v1/check", "run=2&own=1", origin + cookie + with_token)).status == 400,
+           "POST /api/v1/check with a bad run: 400");
+    expect(ask(port, get(host, "/api/v1/check", cookie)).status == 405, "GET /api/v1/check: 405");
+    expect(ask(port, get(host, "/api/v1/report", cookie)).status == 405, "GET /api/v1/report: 405");
+    Action refused = Action::SaveReport;
+    expect(!actions.pop(refused), "nothing queued by the refused requests");
+    const Answer started = ask(port, post(host, "/api/v1/check", start_check, origin + cookie + with_token));
+    expect(started.status == 204, "POST /api/v1/check with Origin, cookie, token and confirmation: 204");
+    expect_policy(started, "POST /api/v1/check 204");
+    expect(ask(port, post(host, "/api/v1/check", "run=0", origin + cookie + with_token)).status == 204,
+           "POST /api/v1/check run=0: 204");
+    expect(ask(port, post(host, "/api/v1/report", "", cookie + with_token)).status == 403,
+           "POST /api/v1/report without Origin: 403");
+    expect(ask(port, post(host, "/api/v1/report", "save=1", origin + cookie + with_token)).status == 204,
+           "POST /api/v1/report with Origin, cookie and token: 204");
+    Action first = Action::SaveReport;
+    Action second = Action::SaveReport;
+    Action third = Action::StartCheck;
+    Action none = Action::StartCheck;
+    expect(actions.pop(first) && first == Action::StartCheck && actions.pop(second) && second == Action::StopCheck &&
+               actions.pop(third) && third == Action::SaveReport && !actions.pop(none),
+           "the start, the stop and the report were queued, in order");
+    for (std::size_t index = 0; index < ActionQueue::kMaxWaiting; ++index) {
+        ask(port, post(host, "/api/v1/report", "save=1", origin + cookie + with_token));
+    }
+    expect(ask(port, post(host, "/api/v1/check", start_check, origin + cookie + with_token)).status == 429,
+           "POST /api/v1/check with a full queue: 429");
+    actions.clear();
 
     server.request_stop();
     server.join();

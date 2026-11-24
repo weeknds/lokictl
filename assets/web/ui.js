@@ -164,6 +164,23 @@ export function refreshSoon() {
   window.dispatchEvent(new Event(REFRESH_EVENT));
 }
 
+// "Check again" anywhere: the link opens the Security page, and this asks
+// it to show the own-network confirmation. The ask waits here until the
+// Security page takes it (at once when it is open, else as it opens).
+export const CHECK_EVENT = "lokictl-check";
+let checkAsked = false;
+
+export function askCheck() {
+  checkAsked = true;
+  window.dispatchEvent(new Event(CHECK_EVENT));
+}
+
+export function takeCheckAsk() {
+  const asked = checkAsked;
+  checkAsked = false;
+  return asked;
+}
+
 // A Cardputer that is off or out of reach never answers: give up after 5 s.
 function limit() {
   return typeof AbortSignal !== "undefined" && AbortSignal.timeout ? AbortSignal.timeout(5000) : undefined;

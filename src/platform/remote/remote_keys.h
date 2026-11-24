@@ -80,6 +80,33 @@ private:
     std::deque<BlockRequest> requests_;
 };
 
+// The paired browser's other requests: start or stop a health check
+// (POST /api/v1/check) and save a new report (POST /api/v1/report). The
+// server's thread adds them, the UI thread takes them, both through the
+// mutex. At most kMaxWaiting wait; the UI thread decides whether each one
+// applies.
+enum class Action : int32_t {
+    StartCheck,
+    StopCheck,
+    SaveReport,
+};
+
+class ActionQueue {
+public:
+    static constexpr std::size_t kMaxWaiting = 4;
+
+    // Server thread. False when kMaxWaiting requests wait already.
+    bool push(Action action);
+    // UI thread: the oldest waiting request. Returns false when none waits.
+    bool pop(Action& action);
+    // Forgets the waiting requests.
+    void clear();
+
+private:
+    std::mutex mutex_;
+    std::deque<Action> actions_;
+};
+
 // True for an IPv4 address written as four decimal numbers of 0 to 255
 // joined by dots, without leading zeros ("10.42.0.11").
 bool dotted_ipv4(std::string_view text);

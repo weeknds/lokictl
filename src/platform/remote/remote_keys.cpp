@@ -118,6 +118,30 @@ void BlockQueue::clear() {
     requests_.clear();
 }
 
+bool ActionQueue::push(Action action) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (actions_.size() >= kMaxWaiting) {
+        return false;
+    }
+    actions_.push_back(action);
+    return true;
+}
+
+bool ActionQueue::pop(Action& action) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (actions_.empty()) {
+        return false;
+    }
+    action = actions_.front();
+    actions_.pop_front();
+    return true;
+}
+
+void ActionQueue::clear() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    actions_.clear();
+}
+
 bool dotted_ipv4(std::string_view text) {
     int parts = 0;
     std::size_t at = 0;

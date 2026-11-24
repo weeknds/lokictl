@@ -6,6 +6,7 @@
 
 #include "dashboard_status.h"
 
+#include "health_check.h"
 #include "report.h"
 
 #include <cstdint>
@@ -21,6 +22,17 @@ const char* mode_id(NetMode mode) {
         case NetMode::Vpn: return "vpn";
     }
     return "client";
+}
+
+const char* state_word(ToolState state) {
+    switch (state) {
+        case ToolState::Idle: return "idle";
+        case ToolState::Running: return "running";
+        case ToolState::Done: return "done";
+        case ToolState::Stopped: return "stopped";
+        case ToolState::Failed: return "failed";
+    }
+    return "idle";
 }
 
 const char* flag(bool value) {
@@ -111,11 +123,29 @@ void write_page(Fields& item, std::string& out, const DashDevice& device) {
     out += ']';
 }
 
+void write_check(std::string& out, const DashCheck& check) {
+    Fields fields(out);
+    fields.word("state", state_word(check.state));
+    fields.word("step", check.step == HealthStep::Ports ? "ports" : "sweep");
+    fields.number("asked", check.asked);
+    fields.number("total", check.total);
+    fields.number("scanned", check.scanned);
+    fields.number("hosts", check.hosts);
+    fields.number("elapsed_s", check.elapsed_s);
+    fields.text("reason", check.reason);
+    fields.boolean("can", check.can);
+    fields.text("why", check.why);
+    fields.text("asks", check.asks);
+    fields.number("max_devices", static_cast<int32_t>(kHealthMaxHosts));
+    fields.number("max_ports", static_cast<int32_t>(common_ports().size()));
+}
+
 void write_overview(std::string& out, const DashOverview& overview) {
     Fields fields(out);
     fields.boolean("checked", overview.checked);
     fields.boolean("checking", overview.checking);
     fields.text("checked_at", overview.checked_at);
+    fields.key("took_s") += number_or_null(overview.took_s);
     const DashCounts& counts = overview.counts;
     fields.number("fix", counts.fix);
     fields.number("look", counts.look);
@@ -135,6 +165,7 @@ void write_overview(std::string& out, const DashOverview& overview) {
             out += ',';
         }
         Fields item(out);
+        item.text("id", thing.id);
         item.word("tier", finding_tier_name(thing.tier));
         item.text("icon", thing.icon);
         item.text("title", thing.title);
@@ -143,6 +174,22 @@ void write_overview(std::string& out, const DashOverview& overview) {
         item.text("fix", thing.fix);
         item.text("device", thing.device);
         item.text("time", thing.time);
+        item.text("about", thing.about);
+        std::string& steps = item.key("steps");
+        steps += '[';
+        for (std::size_t step = 0; step < thing.steps.size(); ++step) {
+            steps += step > 0 ? "," : "";
+            steps += json_text(thing.steps[step]);
+        }
+        steps += ']';
+        item.text("where", thing.where);
+        std::string& also = item.key("also");
+        also += '[';
+        for (std::size_t other = 0; other < thing.also.size(); ++other) {
+            also += other > 0 ? "," : "";
+            also += json_text(thing.also[other]);
+        }
+        also += ']';
     }
     out += ']';
     fields.key("devices") += '[';
@@ -230,6 +277,7 @@ void write_status(std::string& out, const HomeData& home, const DashboardParts& 
         counts.number("devices", parts.overview.counts.devices);
         counts.number("security", parts.overview.counts.fix);
     }
+    write_check(root.key("check"), parts.check);
     write_overview(root.key("overview"), parts.overview);
     {
         Fields watch(root.key("watch"));
@@ -263,9 +311,31 @@ void TrafficLog::push(int32_t down_kbps, int32_t up_kbps) {
     samples_.push_back({down_kbps < 0 ? 0 : down_kbps, up_kbps < 0 ? 0 : up_kbps});
 }
 
+DashCheck dashboard_check(const HomeData& home, const ToolsData& tools) {
+    DashCheck check;
+    const HealthRun& run = tools.health;
+    check.state = run.state;
+    check.step = run.step;
+    check.asked = run.asked;
+    check.total = run.total;
+    check.scanned = run.scanned;
+    check.hosts = run.hosts;
+    check.elapsed_s = run.elapsed_s;
+    if (run.state == ToolState::Failed) {
+        check.reason = run.error == ToolError::NotAllowed ? std::string("the sweep isn't allowed here")
+                       : run.reason.empty()                ? std::string("check failed")
+                                                           : run.reason;
+    }
+    const HealthStart start = health_start(home, tools);
+    check.can = start.gate == HealthGate::Open;
+    check.why = health_gate_text(start.gate, tools);
+    check.asks = start.asks;
+    return check;
+}
+
 std::string dashboard_status_json(const HomeData& home, const DashboardParts& parts) {
     std::string out;
-    out.reserve(1024 + parts.overview.devices.size() * 400 + parts.overview.things.size() * 220);
+    out.reserve(1280 + parts.overview.devices.size() * 400 + parts.overview.things.size() * 700);
     write_status(out, home, parts);
     out += '\n';
     return out;
