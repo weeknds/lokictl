@@ -1072,6 +1072,19 @@ std::string csv_field(std::string_view text) {
     return "\"" + clean + "\"";
 }
 
+std::string json_text(std::string_view text) {
+    return "\"" + cleaned(text, [](std::string& out, char character) {
+               switch (character) {
+                   case '"': out += "\\\""; break;
+                   case '\\': out += "\\\\"; break;
+                   case '<': out += "\\u003c"; break;
+                   case '>': out += "\\u003e"; break;
+                   case '&': out += "\\u0026"; break;
+                   default: out += character; break;
+               }
+           }) + "\"";
+}
+
 std::string report_html(const ReportSource& source) {
     const std::vector<DiscoverDevice> devices = discover_devices(source.tools.listen, source.tools.probe);
     std::string out;

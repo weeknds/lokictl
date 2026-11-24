@@ -779,7 +779,7 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override,
     // Remote view: off at every start; the Settings row switches it on.
     // Declared after the theme engine and the view model, so it is
     // destroyed before them.
-    RemoteController remote(theme_engine, view_model);
+    RemoteController remote(theme_engine, view_model, assets.resolve("web").string(), assets.resolve("fonts").string());
 
     bool running = true;
     auto* quit_observer = lv_subject_add_observer(view_model.quit_requested_subject(),

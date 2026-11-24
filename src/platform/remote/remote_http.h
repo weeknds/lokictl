@@ -27,8 +27,13 @@ struct HttpRequest {
     std::string host;            // the Host header; empty when there is none
     std::string origin;          // the Origin header; empty when there is none
     std::string cookie;          // the Cookie header(s), joined by "; "
+    std::string token;           // the X-LokiCTL-Token header; empty when there is none
     std::size_t content_length{0};
 };
+
+// The header that carries the dashboard's request token (see
+// Pairing::request_token()) on every state-changing request.
+constexpr std::string_view kTokenHeader = "X-LokiCTL-Token";
 
 enum class HeadResult {
     Incomplete,  // the empty line has not arrived yet
@@ -42,7 +47,8 @@ enum class HeadResult {
 // `head_size` is the number of bytes of the head; the body follows. Refuses
 // anything unusual: a target that is not a plain path, a version other
 // than HTTP/1.0 or 1.1, a line without CRLF, folded or repeated Host,
-// Origin or Content-Length headers, and any Transfer-Encoding.
+// Origin, Content-Length or X-LokiCTL-Token headers, and any
+// Transfer-Encoding.
 HeadResult parse_request_head(std::string_view data, HttpRequest& request, std::size_t& head_size);
 
 // The value of `name` in "a=1&b=2" (a query or a form body), without any
@@ -57,14 +63,22 @@ std::string cookie_value(std::string_view header, std::string_view name);
 // anything else.
 bool parse_decimal(std::string_view text, uint64_t& value);
 
+// The Content-Security-Policy of every answer that brings none of its own:
+// the dashboard's. Files from the server itself only, nothing inline, no
+// plugins, no frames, forms only to the server.
+std::string_view default_security_policy();
+
 // The start of an answer: the status line, the headers every answer has
-// (Content-Type, Content-Length, Connection: close, Cache-Control:
-// no-store, X-Content-Type-Options: nosniff, Referrer-Policy: no-referrer,
-// X-Frame-Options: DENY), then `extra_headers` (each line ending in CRLF)
-// and the empty line.
+// (Content-Type, Content-Length, Connection: close, Cache-Control (no-store
+// unless `cache_control` says otherwise), X-Content-Type-Options: nosniff,
+// Referrer-Policy: no-referrer, X-Frame-Options: DENY), then
+// `extra_headers` (each line ending in CRLF), the default
+// Content-Security-Policy unless `extra_headers` names one, and the empty
+// line. So every answer carries exactly one policy.
 std::string response_head(int status,
                           std::string_view content_type,
                           std::size_t content_length,
-                          std::string_view extra_headers = {});
+                          std::string_view extra_headers = {},
+                          std::string_view cache_control = "no-store");
 
 } // namespace platform::remote

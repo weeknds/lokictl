@@ -10,10 +10,12 @@
 
 namespace platform::remote {
 
-// The one web page of Remote view (GET /): a form for the code, then the
-// screen with a key pad laid out like the device, typing from the
+// The screen page of Remote view (GET /screen): a form for the code, then
+// the screen with a key pad laid out like the device, typing from the
 // computer's keyboard, and the saved reports as download links.
 // Everything is in the page itself; it loads nothing from anywhere else.
+// It is the one page with inline script and style, under its own policy,
+// until the dashboard's own "Cardputer screen" page takes its place.
 std::string_view page_html();
 
 // The Content-Security-Policy the page is served with: only its own inline

@@ -5,10 +5,10 @@ SPDX-License-Identifier: MIT
 
 # Remote view
 
-Remote view shows the Cardputer's screen in a web browser on another
-computer on the same network, and lets you press its keys from there. It is
-**off at every start** and is never saved: you switch it on yourself, each
-time, on the Settings page.
+Remote view opens LokiCTL's web dashboard in a browser on a phone or a
+computer on the same network, and shows the Cardputer's screen there with
+its keys. It is **off at every start** and is never saved: you switch it on
+yourself, each time, on the Settings page.
 
 ## Using it
 
@@ -17,11 +17,13 @@ time, on the Settings page.
 2. A panel shows the address to open, for example
    `Open http://10.0.0.12:8780`, a six-digit code such as `482 913`, and the
    time left to use it (2 minutes).
-3. Open that address in a browser on the other computer and type the code.
+3. Open that address in a browser on the phone or computer and type the
+   code.
 4. Once paired the panel goes away, the row reads `viewed` and the browser
-   shows the screen (see "The page" below). While the browser stays paired,
-   a `REMOTE` tag in the top-left corner of every page tells anyone holding
-   the Cardputer that its screen is being viewed.
+   shows the dashboard (see "The dashboard" below); its **Cardputer screen**
+   page shows the screen (see "The screen page"). While the browser stays
+   paired, a `REMOTE` tag in the top-left corner of every page tells anyone
+   holding the Cardputer that its screen is being viewed.
 5. To stop, press Enter or key 6 (`Off`) on the row again. Quitting the app
    stops it too.
 
@@ -53,9 +55,41 @@ goes on for the other network. If the browser paired through the hotspot
 address and that address goes away (the hotspot stopped, or you pressed
 `-AP`), Remote view switches itself off.
 
-## The page
+## The dashboard
 
-The page shows the Cardputer's screen, scaled to fit the window, with a key
+The address opens the dashboard. It works in Safari and Chrome on phones
+and computers, with nothing to install, and loads nothing from the
+internet.
+
+- **Connect.** A drawing of the Cardputer, six boxes for the code (typing
+  fills the drawing too, so you can hold it next to the real screen),
+  **Continue**, and **Where is the code?**. A wrong code says so; 5 wrong
+  codes switch Remote view off, as below.
+- **On a phone** (narrower than 900 px): a large title, the page, and a tab
+  bar at the bottom: Home, Devices, Security, Tools and Modes.
+- **On a computer** (900 px and wider): a sidebar with every page (Overview,
+  Devices, Security, Watch and trap, Map, then Modes and VPN, Tools,
+  Reports and Cardputer screen) and the Cardputer's battery and address at
+  the bottom, and a top bar that shows where you are.
+- **Home** shows the network's name, the mode, whether the internet works,
+  the VPN, the battery and the Cardputer's address, and opens the
+  Cardputer screen. The other pages say what they will show; their
+  contents come in later updates.
+
+While the page is visible it asks the Cardputer for news every 2 seconds;
+while it is hidden it asks nothing. When the Cardputer stops answering, a
+line says `No answer from the Cardputer. Trying again...` and the page
+tries every 3 seconds. When the session ended, the page asks for the new
+code.
+
+On Apple devices the dashboard uses the system font. Elsewhere the
+Cardputer serves its own Inter font (Regular and SemiBold), which the
+browser keeps for a week.
+
+## The screen page
+
+The **Cardputer screen** page (`/screen`) shows the Cardputer's screen,
+scaled to fit the window, with a key
 pad under it laid out like the device: keys **4** to **8** right under the
 screen, then **ESC**, the arrows, **Enter** and **Help**. Clicking a key
 presses it on the Cardputer.
@@ -97,12 +131,15 @@ handed out as a download, never shown as part of this page.
 ### From the command line
 
 `curl` can do the same (replace the address and code). A key needs the
-`Origin` header the page's browser sends:
+`Origin` header the page's browser sends and the session's request token:
 
 ```sh
 curl -c jar.txt -d code=482913 http://10.0.0.12:8780/pair
+curl -b jar.txt http://10.0.0.12:8780/api/v1/session    # {"token":"<32 hex digits>"}
+curl -b jar.txt http://10.0.0.12:8780/api/v1/status
 curl -b jar.txt -o screen.png http://10.0.0.12:8780/screen.png
-curl -b jar.txt -H 'Origin: http://10.0.0.12:8780' -d k=c54 http://10.0.0.12:8780/key
+curl -b jar.txt -H 'Origin: http://10.0.0.12:8780' -H 'X-LokiCTL-Token: <token>' \
+     -d k=c54 http://10.0.0.12:8780/key
 curl -b jar.txt http://10.0.0.12:8780/reports
 curl -b jar.txt -O -J 'http://10.0.0.12:8780/report?name=lokictl-20261123-075130.html'
 ```
@@ -176,14 +213,30 @@ nothing else on the device.
 - **No DNS rebinding.** Every request must name the server by its address
   and port in the `Host` header; anything else gets 421. A web page on the
   internet can't reach the server through a name that points at it.
-- **Keys only from the page.** A key needs the session cookie and an
-  `Origin` header naming the server itself (`http://<address>:8780`), so
-  another web site open in the same browser can't send keys. At most 16 keys
-  wait and at most 20 are taken a second; more get 429. Keys never go to the
-  log.
-- **A locked-down page.** The page loads nothing from anywhere else. Its
-  `Content-Security-Policy` allows only its own script and style, pictures
-  from the server's answers and requests to the server itself.
+- **Changes only from the page.** Every request that changes something is
+  a `POST`. Apart from `POST /pair`, which makes the session and is guarded
+  by the code, each one needs the session cookie, an `Origin` header naming the
+  server itself (`http://<address>:8780`) and the session's request token
+  in an `X-LokiCTL-Token` header. Pairing makes that token (another 128
+  random bits, apart from the cookie's), and only the paired browser can
+  read it (`GET /api/v1/session`), so another web site open in the same
+  browser can't send keys or anything else. Today that is the keys: at
+  most 16 wait and at most 20 are taken a second; more get 429. Keys never
+  go to the log.
+- **Locked-down pages.** Every answer carries exactly one
+  `Content-Security-Policy`. The dashboard's is `default-src 'self';
+  object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors
+  'none'`: scripts, styles, fonts and pictures only from the Cardputer,
+  nothing inline and no frames. The one exception is the screen page
+  (`/screen`), which still has its script and style inside the page and is
+  allowed exactly that, pictures from the server's answers and requests to
+  the server itself, until it moves into the dashboard.
+- **Only the dashboard's own files.** Its page, style, scripts, icon and
+  the two Inter fonts come from a fixed list of addresses, each mapped to
+  one installed file (`/usr/share/lokictl/web` and
+  `/usr/share/lokictl/fonts`); no other file can be asked for. They are
+  handed out before pairing (the connect screen needs them) and hold
+  nothing private; everything else needs the session.
 - **Reports by name only.** A report is read only by a name exactly like
   the ones LokiCTL makes (`lokictl-<date>-<time>.html` or
   `...-devices.csv`), only from the reports folder, never through a link
@@ -195,6 +248,8 @@ nothing else on the device.
 - **Small, strict requests.** One request per connection, a request head of
   at most 2 KB, a body of at most 64 bytes and 2 seconds to send them. The
   server runs on its own thread, so the device's screen never waits for it.
+  On the device a connection is only taken once its request starts to
+  arrive, so a browser's spare connections never hold the others up.
 - **Nothing private in the log.** The log holds states and counts only;
   never the code, the session token or an address.
 
@@ -211,10 +266,13 @@ form too; the code from the Cardputer's screen still guards it.
 
 | Request | Answer |
 |---|---|
-| `GET /` | the web page (`text/html`, with its `Content-Security-Policy`) |
+| `GET /`, `/app.css`, `/app.js`, `/pair.js`, `/shell.js`, `/ui.js`, `/preact.module.js`, `/icon.svg`, `/fonts/Inter-Regular.ttf`, `/fonts/Inter-SemiBold.ttf` | the dashboard's files, no session needed (`404` when the file is not installed) |
+| `GET /screen` | the screen page (`text/html`, with its own `Content-Security-Policy`) |
 | `POST /pair` with the form body `code=NNNNNN` | `200` and the session cookie; `403` for a wrong code; `409` while a browser is paired |
+| `GET /api/v1/session` with the cookie | `200` with `{"token":"<request token>"}`; `401` without the cookie |
+| `GET /api/v1/status` with the cookie | `200` with what the home page knows, as JSON (below); `503` before the app handed any over; `401` without the cookie |
 | `GET /screen.png?since=N` with the cookie | `204` while frame N is still the current one, otherwise `200` with the screen as a 320x170 PNG and `X-Frame: M`, the number of that frame; `401` without the cookie |
-| `POST /key` with the form body `k=<name>`, the cookie and `Origin: http://<address>:8780` | `204` when the key was taken; `400` for an unknown name; `401` without the cookie; `403` without that `Origin`; `429` when 16 keys wait or 20 came in the last second |
+| `POST /key` with the form body `k=<name>`, the cookie, `Origin: http://<address>:8780` and `X-LokiCTL-Token` | `204` when the key was taken; `400` for an unknown name; `401` without the cookie; `403` without that `Origin` or with a wrong or missing token; `429` when 16 keys wait or 20 came in the last second |
 | `GET /reports` with the cookie | `200` with the saved reports as JSON, the newest first, at most 40: `{"reports":[{"name":"lokictl-20261123-075130.html","bytes":21000},...]}`; `401` without the cookie |
 | `GET /report?name=<name>` with the cookie | `200` with that file as a download (`text/html` or `text/csv`); `404` for a name that is not a report's or a file that can't be read; `401` without the cookie |
 | anything else | `404` for another path, `405` for another method |
@@ -224,9 +282,24 @@ Key names: `c32` to `c126` for a printable ASCII character by its code
 `backspace`, `up`, `down`, `left`, `right` and `help`. Form bodies are not
 decoded, which is why characters go by their code.
 
-Every answer carries `Connection: close`, `Cache-Control: no-store`,
-`X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` and
-`X-Frame-Options: DENY`.
+Every answer carries `Connection: close`, `Cache-Control: no-store` (the
+fonts: `private, max-age=604800`), `X-Content-Type-Options: nosniff`,
+`Referrer-Policy: no-referrer`, `X-Frame-Options: DENY` and one
+`Content-Security-Policy`.
+
+The status (`GET /api/v1/status`) is version 1 and comes from what the
+app already knows; asking for it makes the Cardputer ask the system for
+nothing. Unknown numbers are `null`; texts from the network (the Wi-Fi
+name) are escaped:
+
+```json
+{"v":1,"sample":false,
+ "cardputer":{"address":"10.0.0.12","battery":87,"charging":false},
+ "network":{"name":"Home","link":"wifi","internet":"full"},
+ "mode":{"id":"router","name":"Router","hotspot":true,"hotspot_devices":3,
+         "vpn":"off","kill_switch":false},
+ "traffic":{"down_kbps":1200,"up_kbps":80}}
+```
 
 Frame numbers grow only when the screen changed, so a viewer that sends the
 last number it got receives a picture only when there is a new one. On the
@@ -246,7 +319,8 @@ LOKICTL_REMOTE=on build/darwin-arm64/Debug/lokictl
 ```
 
 Open `http://127.0.0.1:8780` in a browser on the same computer and type the
-code.
+code. The dashboard then shows the simulator's sample data, marked
+`Sample data`. `SDL_VIDEODRIVER=dummy` runs the simulator without a window.
 
 The simulator's pictures, like the device's, show what lies over the page:
 help, messages, the panel and the `REMOTE` tag.

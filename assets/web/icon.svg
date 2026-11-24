@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 28 28">
+<!--
+SPDX-FileCopyrightText: 2026 LokiCTL contributors
+SPDX-License-Identifier: MIT
+-->
+<rect width="28" height="28" rx="8" fill="#FF6A1F"/>
+<g transform="translate(3.5 3.5) scale(.75)" fill="none" stroke="#1C0B02" stroke-width="2.6" stroke-linecap="round">
+<circle cx="8" cy="7.5" r="2.6" fill="#1C0B02"/>
+<circle cx="8" cy="20" r="2.8"/>
+<circle cx="20.5" cy="20" r="2.4" fill="#1C0B02"/>
+<path d="M8 10.5v6.5M11 20h7"/>
+</g>
+</svg>

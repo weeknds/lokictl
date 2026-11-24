@@ -148,6 +148,7 @@ HeadResult parse_request_head(std::string_view data, HttpRequest& request, std::
     bool seen_host = false;
     bool seen_origin = false;
     bool seen_length = false;
+    bool seen_token = false;
     std::size_t position = line_end + 2;
     while (position < head.size()) {
         line_end = head.find("\r\n", position);
@@ -199,6 +200,12 @@ HeadResult parse_request_head(std::string_view data, HttpRequest& request, std::
                 return HeadResult::BodyTooLarge;
             }
             request.content_length = static_cast<std::size_t>(length);
+        } else if (same_name(name, kTokenHeader)) {
+            if (seen_token) {
+                return HeadResult::Bad;
+            }
+            seen_token = true;
+            request.token.assign(value);
         } else if (same_name(name, "transfer-encoding")) {
             return HeadResult::Bad;
         } else if (same_name(name, "cookie")) {
@@ -264,10 +271,15 @@ bool parse_decimal(std::string_view text, uint64_t& value) {
     return true;
 }
 
+std::string_view default_security_policy() {
+    return "default-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
+}
+
 std::string response_head(int status,
                           std::string_view content_type,
                           std::size_t content_length,
-                          std::string_view extra_headers) {
+                          std::string_view extra_headers,
+                          std::string_view cache_control) {
     std::string head = "HTTP/1.1 " + std::to_string(status) + " " + status_text(status) + "\r\n";
     // A 204 answer has no body, so it names neither type nor length.
     if (status != 204) {
@@ -275,13 +287,19 @@ std::string response_head(int status,
         head.append(content_type);
         head += "\r\nContent-Length: " + std::to_string(content_length) + "\r\n";
     }
+    head += "Connection: close\r\nCache-Control: ";
+    head.append(cache_control);
     head +=
-        "Connection: close\r\n"
-        "Cache-Control: no-store\r\n"
+        "\r\n"
         "X-Content-Type-Options: nosniff\r\n"
         "Referrer-Policy: no-referrer\r\n"
         "X-Frame-Options: DENY\r\n";
     head.append(extra_headers);
+    if (extra_headers.find("Content-Security-Policy:") == std::string_view::npos) {
+        head += "Content-Security-Policy: ";
+        head.append(default_security_policy());
+        head += "\r\n";
+    }
     head += "\r\n";
     return head;
 }

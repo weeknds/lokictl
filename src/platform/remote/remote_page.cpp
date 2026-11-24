@@ -14,7 +14,8 @@ constexpr std::string_view kSecurityPolicy =
     "connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
 // The page. Keys go to POST /key as k=<name> (see key_from_name()), one at a
-// time so that typed text keeps its order; pictures come from
+// time so that typed text keeps its order, each with the session's request
+// token (GET /api/v1/session) in X-LokiCTL-Token; pictures come from
 // GET /screen.png?since=<frame>, one request at a time: about every 250 ms
 // for 2 s after a key, then every second, every 2 s once 30 s passed without
 // a key or a new picture, and none while the tab is hidden. When the
@@ -91,7 +92,7 @@ a{color:var(--go)}
 <ul id="reports"></ul>
 </section>
 </div>
-<p class="note">Plain HTTP: use Remote view only on a network you trust.</p>
+<p class="note">Plain HTTP: use Remote view only on a network you trust. <a href="/">Open the dashboard</a></p>
 </main>
 <script>
 "use strict";
@@ -110,7 +111,7 @@ const QUICK = 250, NORMAL = 1000, RESTING = 2000, RETRY = 3000;
 const limit = () => (AbortSignal.timeout ? AbortSignal.timeout(5000) : undefined);
 let state = "probe"; // "probe", then "form" or "live"
 let frame = 0, timer = 0, warnTimer = 0, blobUrl = "", polling = false, quick = false;
-let keys = [], sending = false, lost = false;
+let keys = [], sending = false, lost = false, token = "";
 let lastKey = -1e9, lastChange = 0;
 
 function say(text, bad) {
@@ -137,6 +138,7 @@ function showForm(text, bad) {
   state = "form";
   clearTimeout(timer);
   keys = [];
+  token = "";
   lost = false;
   img.classList.remove("stale");
   view.classList.add("hide");
@@ -292,6 +294,24 @@ form.addEventListener("submit", async (e) => {
   button.disabled = false;
 });
 
+// The session's request token, which every key carries.
+async function getToken() {
+  try {
+    const r = await fetch("/api/v1/session", {cache: "no-store", signal: limit()});
+    if (r.status === 401) {
+      showForm(ENDED, true);
+      return "";
+    }
+    if (r.status === 200) {
+      const data = await r.json();
+      token = data && typeof data.token === "string" ? data.token : "";
+    }
+  } catch (err) {
+    setLost(true);
+  }
+  return token;
+}
+
 // Keys go one at a time, so they arrive in the order they were pressed.
 function press(name) {
   if (state !== "live") return;
@@ -307,16 +327,23 @@ async function pump() {
   if (sending) return;
   sending = true;
   while (keys.length && state === "live") {
+    if (!token && !(await getToken())) {
+      keys = [];
+      break;
+    }
     const k = keys.shift();
     try {
-      const r = await fetch("/key", {method: "POST", headers: FORM, body: "k=" + k,
-        referrerPolicy: "same-origin", signal: limit()});
+      const r = await fetch("/key", {method: "POST", headers: {...FORM, "X-LokiCTL-Token": token},
+        body: "k=" + k, referrerPolicy: "same-origin", signal: limit()});
       if (r.status === 401) {
         sending = false;
         showForm(ENDED, true);
         return;
       }
-      if (r.status === 429) {
+      if (r.status === 403) {
+        token = "";
+        warn("The Cardputer did not take a key. Try again.");
+      } else if (r.status === 429) {
         keys = [];
         warn("Too many keys at once. Slow down a little.");
       } else if (r.status !== 204) {

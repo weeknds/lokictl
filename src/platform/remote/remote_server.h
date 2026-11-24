@@ -70,26 +70,45 @@ struct ServerOptions {
     // The folder of saved reports (report_files.h) that GET /reports lists
     // and GET /report hands out; empty: none (an empty list).
     std::string reports_folder;
+    // The folders of the web dashboard's files and of the app's fonts (see
+    // remote_web.h); a file that is not there gets 404.
+    std::string web_folder;
+    std::string font_folder;
 };
 
 // The Remote view server: a small HTTP/1.1 server on its own thread, never
 // the UI thread. One connection at a time, one request per connection
 // (Connection: close), a head of at most 2 KB, a body of at most 64 bytes
-// and 2 s to send them.
+// and 2 s to send them. On Linux a connection is only taken once its
+// request has started to arrive (TCP_DEFER_ACCEPT), so a browser's spare
+// connection never holds up the others.
 //
 // - It binds the one address above, never 0.0.0.0, and closes a connection
 //   from any other peer at once, before reading anything.
 // - A Host header other than "<address>:<port>" gets 421 (this stops DNS
 //   rebinding).
-// - GET / gives the web page (page_html()) with its Content-Security-Policy.
+// - Every answer carries exactly one Content-Security-Policy: the
+//   dashboard's (default_security_policy()) unless the answer names its
+//   own (the screen page, a report).
+// - GET / and the other paths of the web dashboard (find_web_file()) give
+//   its files without a session: they hold nothing private. Fonts may be
+//   kept a week, everything else is no-store.
+//   GET /screen gives the screen page (page_html()) with its own
+//   Content-Security-Policy.
 //   POST /pair with code=NNNNNN pairs one browser (see Pairing) and sets
 //   the session cookie (HttpOnly, SameSite=Strict, Path=/).
+//   GET /api/v1/session needs the cookie (else 401) and answers
+//   {"token":"<request token>"}: the page sends that token in the
+//   X-LokiCTL-Token header with every state-changing request.
+//   GET /api/v1/status needs the cookie (else 401) and answers the JSON the
+//   app handed over (set_status_json()), or 503 before the first.
 //   GET /screen.png?since=N needs the cookie (else 401) and answers 204
 //   while frame N is current, else the screen as a PNG with X-Frame: M.
 //   POST /key with k=<name> (key_from_name()) needs an Origin header of
-//   exactly "http://<address>:<port>" (else 403) and the cookie (else 401);
-//   an unknown name gets 400, a full queue or too many keys a second 429
-//   (KeyQueue), an accepted key 204.
+//   exactly "http://<address>:<port>" (else 403), the cookie (else 401)
+//   and the request token in X-LokiCTL-Token (else 403); an unknown name
+//   gets 400, a full queue or too many keys a second 429 (KeyQueue), an
+//   accepted key 204.
 //   GET /reports needs the cookie (else 401) and lists the saved reports
 //   as JSON, {"reports":[{"name":"lokictl-....html","bytes":N},...]}, the
 //   newest first. GET /report?name=<name> needs the cookie too and hands
@@ -139,6 +158,10 @@ public:
     // server's thread acts on it within about a second.
     void set_hotspot_interface(const std::string& interface_name);
 
+    // The JSON that GET /api/v1/status answers. Safe from any thread; the
+    // app hands over a new one only when it changed.
+    void set_status_json(std::string json);
+
     // The steady clock in milliseconds, as the status uses it.
     static int64_t now_ms();
 
@@ -181,6 +204,9 @@ private:
 
     mutable std::mutex status_mutex_;
     ServerStatus status_;
+
+    mutable std::mutex json_mutex_;
+    std::string status_json_;
 };
 
 } // namespace platform::remote

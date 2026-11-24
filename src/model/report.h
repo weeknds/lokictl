@@ -53,4 +53,9 @@ std::string html_text(std::string_view text);
 // spreadsheet never reads it as a formula).
 std::string csv_field(std::string_view text);
 
+// One JSON string, with its quotes: " and \ escaped, < > & as \u escapes
+// (so it is safe even inside a page), control characters a space, and
+// bytes that are not UTF-8 the replacement character.
+std::string json_text(std::string_view text);
+
 } // namespace model

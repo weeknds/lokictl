@@ -118,9 +118,9 @@ Z/C jump between sections.
 ### Settings
 
 `6` on Home. Pick the theme, switch screen dimming on or off, turn on
-[Remote view](#remote-view), and choose whether the network mode keeps
-running after you quit LokiCTL ("Keep mode after quitting", off by
-default).
+[Remote view](#remote-view-and-the-web-dashboard), and choose whether
+the network mode keeps running after you quit LokiCTL ("Keep mode after
+quitting", off by default).
 
 ### Tools
 
@@ -311,21 +311,30 @@ Save one with `8` on Health, `R` on Watch or Discover, or the command
 `report`. Each report is two files in `~/Documents/LokiCTL/reports/`:
 `lokictl-<date>-<time>.html` and a table of the devices,
 `lokictl-<date>-<time>-devices.csv`, which opens in a spreadsheet. Only
-your user can read them. To get them onto a PC, open Remote view: its page
-lists the saved reports for download. The page needs nothing from the
-internet, runs no scripts and prints well. It holds what devices on your
-network said about themselves, so treat it as private.
+your user can read them. To get them onto a PC, open Remote view: its
+Cardputer screen page lists the saved reports for download. The report
+needs nothing from the internet, runs no scripts and prints well. It
+holds what devices on your network said about themselves, so treat it as
+private.
 
-### Remote view
+### Remote view and the web dashboard
 
-Remote view shows the Cardputer's screen in a web browser on another
-computer on the same network, and you can press its keys from there. Turn
-it on in Settings. The screen then shows an address and a six-digit code
-that you type into the browser. It's off every time LokiCTL starts, a
-`REMOTE` tag shows while someone is watching, and `7` on its row also lets
-devices on LokiCTL's own hotspot in. Its page also lists the saved
-reports for download. It uses plain HTTP, so only use it on networks you
-trust. More in [docs/remote.md](docs/remote.md).
+Remote view opens LokiCTL's web dashboard on your phone or computer. Turn
+it on in Settings. The Cardputer then shows an address and a six-digit
+code: open the address in Safari or Chrome on the same network and type
+the code. Nothing to install, and nothing comes from the internet.
+
+On a phone you get large titles and a tab bar (Home, Devices, Security,
+Tools, Modes); on a computer, a sidebar with every page. Home shows your
+network, the mode, the internet, the VPN and the battery for now; the
+other pages fill in with coming updates. **Cardputer screen** shows the
+Cardputer's screen and lets you press its keys, and lists the saved
+reports for download.
+
+Remote view is off every time LokiCTL starts, a `REMOTE` tag shows while
+someone is connected, and `7` on its row also lets devices on LokiCTL's
+own hotspot in. It uses plain HTTP, so only use it on networks you trust.
+More in [docs/remote.md](docs/remote.md).
 
 ## Modes
 
@@ -598,6 +607,9 @@ LokiCTL is released under the MIT license, see [LICENSE](LICENSE).
   catalog (CC0 1.0). This product uses the NVD API but is not endorsed or
   certified by the NVD. Details are in
   [docs/third-party/vulnerability-data.md](docs/third-party/vulnerability-data.md).
+- The web dashboard uses [Preact](https://preactjs.com) (MIT), copied
+  unchanged into `assets/web/`; its notice is in
+  [docs/third-party/preact-license.txt](docs/third-party/preact-license.txt).
 - Fonts: Space Grotesk, Inter, IBM Plex Mono, Geist Mono and JetBrains
   Mono, under the SIL Open Font License 1.1. Icons: Phosphor Icons (MIT).
   The licenses are in [assets/fonts/](assets/fonts/LICENSE.txt).

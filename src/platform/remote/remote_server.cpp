@@ -11,6 +11,7 @@
 #include "remote/remote_http.h"
 #include "remote/remote_keys.h"
 #include "remote/remote_page.h"
+#include "remote/remote_web.h"
 #include "report_files.h"
 
 #include <arpa/inet.h>
@@ -18,8 +19,10 @@
 #include <chrono>
 #include <fcntl.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <poll.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include <cstring>
@@ -36,7 +39,14 @@ constexpr int64_t kRequestTimeoutMs = 2000;
 constexpr int64_t kFileSendTimeoutMs = 10000;
 constexpr int64_t kAddressCheckMs = 2000;
 constexpr int kIdlePollMs = 1000;
-constexpr int kListenBacklog = 4;
+// A browser opens several connections at once for the dashboard's files.
+constexpr int kListenBacklog = 16;
+// Linux takes a connection only once data arrived, or after this long.
+constexpr int kDeferAcceptSeconds = 2;
+// A file of the dashboard is sent in pieces of this size, so a font never
+// sits in memory whole; files above kWebFileMax are not sent.
+constexpr std::size_t kFileChunk = 16 * 1024;
+constexpr off_t kWebFileMax = 2 * 1024 * 1024;
 constexpr uint32_t kLoopback = 0x7F000001U; // 127.0.0.1
 constexpr const char* kCookieName = "lokictl_session";
 
@@ -87,6 +97,12 @@ int open_listener(uint32_t address, uint16_t port, int& error) {
     set_cloexec_nonblocking(fd);
     int on = 1;
     ::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
+#if defined(TCP_DEFER_ACCEPT)
+    // A spare connection a browser opens ahead of time sends nothing; it
+    // would hold the one-at-a-time server for the whole 2 s timeout.
+    int defer = kDeferAcceptSeconds;
+    ::setsockopt(fd, IPPROTO_TCP, TCP_DEFER_ACCEPT, &defer, sizeof(defer));
+#endif
 
     sockaddr_in bind_address{};
     bind_address.sin_family = AF_INET;
@@ -175,6 +191,43 @@ void send_text(int fd, int status, std::string_view text, int wake_fd, int64_t d
     send_body(fd, status, "text/plain; charset=utf-8", text, wake_fd, deadline_ms, extra_headers);
 }
 
+// Sends one file of the web dashboard from `folder`, read and sent a piece
+// at a time; 404 when it is missing, not a plain file or too large.
+void send_web_file(int fd, const std::string& folder, const WebFile& file, int wake_fd, int64_t deadline_ms) {
+    int source = -1;
+    if (!folder.empty()) {
+        const std::string path = folder + "/" + std::string(file.name);
+#if defined(O_CLOEXEC)
+        source = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);
+#else
+        source = ::open(path.c_str(), O_RDONLY);
+#endif
+    }
+    struct stat info {};
+    if (source < 0 || ::fstat(source, &info) != 0 || !S_ISREG(info.st_mode) || info.st_size > kWebFileMax) {
+        if (source >= 0) {
+            ::close(source);
+        }
+        send_text(fd, 404, "not found\n", wake_fd, deadline_ms);
+        return;
+    }
+    std::size_t left = static_cast<std::size_t>(info.st_size);
+    bool sending = send_all(fd, response_head(200, file.content_type, left, {}, file.cache_control), wake_fd, deadline_ms);
+    char chunk[kFileChunk];
+    while (sending && left > 0) {
+        const ssize_t got = ::read(source, chunk, left < sizeof(chunk) ? left : sizeof(chunk));
+        if (got < 0 && errno == EINTR) {
+            continue;
+        }
+        if (got <= 0) {
+            break; // the file got shorter: the browser sees a cut-off answer
+        }
+        left -= static_cast<std::size_t>(got);
+        sending = send_all(fd, std::string_view(chunk, static_cast<std::size_t>(got)), wake_fd, deadline_ms);
+    }
+    ::close(source);
+}
+
 } // namespace
 
 Server::Server(ServerOptions options, std::unique_ptr<FrameSource> frames)
@@ -254,6 +307,11 @@ ServerStatus Server::status() const {
 void Server::set_hotspot_interface(const std::string& interface_name) {
     std::lock_guard<std::mutex> lock(hotspot_mutex_);
     hotspot_interface_ = interface_name;
+}
+
+void Server::set_status_json(std::string json) {
+    std::lock_guard<std::mutex> lock(json_mutex_);
+    status_json_ = std::move(json);
 }
 
 void Server::finish(StopReason reason) {
@@ -539,7 +597,17 @@ void Server::handle_connection(int fd, int side, const Side& own, Pairing& pairi
         return;
     }
 
-    if (request.path == "/") {
+    if (const WebFile* file = find_web_file(request.path)) {
+        if (request.method != "GET") {
+            send_text(fd, 405, "method not allowed\n", wake_read_, deadline, "Allow: GET\r\n");
+            return;
+        }
+        const std::string& folder = file->folder == WebFolder::Web ? options_.web_folder : options_.font_folder;
+        send_web_file(fd, folder, *file, wake_read_, now_ms() + kFileSendTimeoutMs);
+        return;
+    }
+
+    if (request.path == "/screen") {
         if (request.method != "GET") {
             send_text(fd, 405, "method not allowed\n", wake_read_, deadline, "Allow: GET\r\n");
             return;
@@ -547,6 +615,31 @@ void Server::handle_connection(int fd, int side, const Side& own, Pairing& pairi
         const std::string policy =
             std::string("Content-Security-Policy: ").append(page_security_policy()).append("\r\n");
         send_body(fd, 200, "text/html; charset=utf-8", page_html(), wake_read_, deadline, policy);
+        return;
+    }
+
+    if (request.path == "/api/v1/session" || request.path == "/api/v1/status") {
+        if (request.method != "GET") {
+            send_text(fd, 405, "method not allowed\n", wake_read_, deadline, "Allow: GET\r\n");
+            return;
+        }
+        if (side != paired_side_ || !pairing.check_token(cookie_value(request.cookie, kCookieName), now)) {
+            send_text(fd, 401, "pair first\n", wake_read_, deadline);
+            return;
+        }
+        std::string json;
+        if (request.path == "/api/v1/session") {
+            // The request token is 32 hex digits: nothing to escape.
+            json = "{\"token\":\"" + pairing.request_token() + "\"}\n";
+        } else {
+            std::lock_guard<std::mutex> lock(json_mutex_);
+            json = status_json_;
+        }
+        if (json.empty()) {
+            send_text(fd, 503, "no data yet\n", wake_read_, deadline);
+            return;
+        }
+        send_body(fd, 200, "application/json; charset=utf-8", json, wake_read_, deadline);
         return;
     }
 
@@ -562,8 +655,17 @@ void Server::handle_connection(int fd, int side, const Side& own, Pairing& pairi
             send_text(fd, 403, "wrong origin\n", wake_read_, deadline);
             return;
         }
-        if (side != paired_side_ || !pairing.check_token(cookie_value(request.cookie, kCookieName), now)) {
+        // The session first, so a page whose session ended learns to pair
+        // again; then the request token, which only the page can know.
+        const Pairing::Change change =
+            side != paired_side_ ? Pairing::Change::NoSession
+                                 : pairing.check_change(cookie_value(request.cookie, kCookieName), request.token, now);
+        if (change == Pairing::Change::NoSession) {
             send_text(fd, 401, "pair first\n", wake_read_, deadline);
+            return;
+        }
+        if (change == Pairing::Change::WrongToken) {
+            send_text(fd, 403, "wrong token\n", wake_read_, deadline);
             return;
         }
         uint32_t key = 0;

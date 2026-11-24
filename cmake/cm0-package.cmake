@@ -67,6 +67,12 @@ install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/assets/images/"
     FILES_MATCHING
     PATTERN "${APP_ICON_NAME}*.png"
 )
+# The web dashboard's page, style, scripts and icon, which Remote view
+# serves (the fonts come from the fonts folder above).
+install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/assets/web/"
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/${APP_NAME}/web"
+    PATTERN ".DS_Store" EXCLUDE
+)
 # The list of known security holes and outdated versions the Ports page
 # checks against (made by scripts/vulndb/build.py).
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/assets/data/"
@@ -118,6 +124,10 @@ install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/docs/third-party/lvgl-bundled.txt"
     DESTINATION "${CMAKE_INSTALL_DOCDIR}"
 )
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/docs/third-party/vulnerability-data.md"
+    DESTINATION "${CMAKE_INSTALL_DOCDIR}"
+)
+# Preact, the web dashboard's page library (assets/web/preact.module.js).
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/docs/third-party/preact-license.txt"
     DESTINATION "${CMAKE_INSTALL_DOCDIR}"
 )
 

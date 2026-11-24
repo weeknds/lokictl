@@ -38,6 +38,10 @@ bool equal_in_constant_time(std::string_view a, std::string_view b);
 // - One browser at a time: while one is paired, try_code() answers Busy and
 //   that does not count as a wrong code.
 // - A paired browser that sends nothing for kViewerIdleMs ends the session.
+// - Pairing makes two tokens: the session token (the HttpOnly cookie, which
+//   page scripts never see) and the request token, which the page asks for
+//   (GET /api/v1/session) and sends in the X-LokiCTL-Token header with
+//   every state-changing request (check_change()).
 // A session that ended stays ended; a new code needs a new Pairing.
 class Pairing {
 public:
@@ -50,6 +54,13 @@ public:
         Wrong,  // a wrong code; the session goes on
         Busy,   // a browser is paired already; not counted
         Ended,  // the session ended (this attempt may have ended it)
+    };
+
+    // What check_change() decided.
+    enum class Change {
+        Allowed,    // the paired browser's session and request token
+        NoSession,  // no session, or not this one: answer 401
+        WrongToken, // the session is right, the request token is not: 403
     };
 
     enum class End {
@@ -81,12 +92,22 @@ public:
     // of life from that browser.
     bool check_token(std::string_view token, int64_t now_ms);
 
+    // A state-changing request: `session` is the cookie's token and
+    // `request` the X-LokiCTL-Token header. Only an allowed request counts
+    // as a sign of life.
+    Change check_change(std::string_view session, std::string_view request, int64_t now_ms);
+
+    // The request token of the paired browser; empty while none is paired.
+    // Handed out only to the paired browser.
+    const std::string& request_token() const { return request_token_; }
+
     // Ends the session when its time ran out. Returns ended().
     End check_time(int64_t now_ms);
 
 private:
     std::string code_;
     std::string token_;
+    std::string request_token_;
     int64_t code_deadline_ms_{0};
     int64_t last_seen_ms_{0};
     int wrong_codes_{0};

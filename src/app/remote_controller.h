@@ -79,11 +79,20 @@ namespace app {
 // "remote view: could not start (<why>)"; desktop builds also log "remote
 // view: switched on by LOKICTL_REMOTE; the code goes to standard error".
 //
+// The web dashboard: the server hands out its files from `web_folder` and
+// the Inter fonts from `font_folder` (empty: 404). While a server runs,
+// this controller hands it the JSON of GET /api/v1/status
+// (model::dashboard_status_json()) about once a second, only when it
+// changed; the server thread never reads the view model itself.
+//
 // Create it after the ThemeEngine and the view model, and destroy it
 // before them.
 class RemoteController {
 public:
-    RemoteController(view::ThemeEngine& theme_engine, const viewmodel::BaseViewModel& view_model);
+    RemoteController(view::ThemeEngine& theme_engine,
+                     const viewmodel::BaseViewModel& view_model,
+                     std::string web_folder,
+                     std::string font_folder);
     // Calls stop().
     ~RemoteController();
 
@@ -114,6 +123,8 @@ private:
     void switch_off();
     void poll();
     void hand_off_frame();
+    // Hands the server a new status JSON when a second passed and it changed.
+    void hand_over_status();
     void resume_timer();
     // Runs the key timer only while a browser is paired; stopping it also
     // forgets the waiting keys.
@@ -147,6 +158,10 @@ private:
     uint32_t message_started_{0};
     bool message_shown_{false};
     bool stopped_{false};
+    std::string web_folder_;
+    std::string font_folder_;
+    std::string status_json_;       // the last JSON handed to server_
+    uint32_t status_built_{0};      // lv_tick_get() when it was last built
 };
 
 } // namespace app

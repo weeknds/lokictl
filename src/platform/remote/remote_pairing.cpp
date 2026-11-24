@@ -135,11 +135,13 @@ Pairing::Attempt Pairing::try_code(std::string_view code, int64_t now_ms, std::s
         return count_wrong(now_ms);
     }
     std::string new_token;
-    if (!make_session_token(new_token)) {
+    std::string new_request_token;
+    if (!make_session_token(new_token) || !make_session_token(new_request_token)) {
         end_ = End::NoRandom;
         return Attempt::Ended;
     }
     token_ = new_token;
+    request_token_ = new_request_token;
     token = new_token;
     // Single use: the code is gone once it paired.
     code_.assign(code_.size(), '\0');
@@ -169,6 +171,17 @@ bool Pairing::check_token(std::string_view token, int64_t now_ms) {
     }
     last_seen_ms_ = now_ms;
     return true;
+}
+
+Pairing::Change Pairing::check_change(std::string_view session, std::string_view request, int64_t now_ms) {
+    if (end_ != End::None || token_.empty() || !equal_in_constant_time(session, token_)) {
+        return Change::NoSession;
+    }
+    if (!equal_in_constant_time(request, request_token_)) {
+        return Change::WrongToken;
+    }
+    last_seen_ms_ = now_ms;
+    return Change::Allowed;
 }
 
 Pairing::End Pairing::check_time(int64_t now_ms) {

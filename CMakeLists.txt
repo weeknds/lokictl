@@ -801,7 +801,7 @@ target_link_libraries(${PROJECT_NAME}
 # security holes (tests/vuln_checks.cpp), of Watch's alerts, of the
 # health check's rules, of the leak test's rules, of the sign-in check, of
 # the trap, of the topology frames, of the names hotspot devices look up, of
-# the LAN speed test's iperf3 output and of reports,
+# the LAN speed test's iperf3 output, of reports and of the web dashboard,
 # on the Mac only:
 # build/darwin-arm64/Debug/lokictl_tests, or ctest.
 if(USE_DESKTOP)
@@ -932,6 +932,23 @@ if(USE_DESKTOP)
     target_compile_options(${PROJECT_NAME}_report_tests PRIVATE -fsanitize=address,undefined -fno-sanitize-recover=all)
     target_link_options(${PROJECT_NAME}_report_tests PRIVATE -fsanitize=address,undefined)
     add_test(NAME report_checks COMMAND ${PROJECT_NAME}_report_tests)
+
+    # The web dashboard: no outside URL in any file, no inline script or
+    # style, exactly one Content-Security-Policy on every answer of a real
+    # server on 127.0.0.1:18780, the API and keys behind the session and
+    # the request token, and escaped texts in the status JSON
+    # (tests/web_checks.cpp): build/darwin-arm64/Debug/lokictl_web_tests,
+    # or ctest.
+    add_executable(${PROJECT_NAME}_web_tests tests/web_checks.cpp)
+    target_include_directories(${PROJECT_NAME}_web_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/platform)
+    target_link_libraries(${PROJECT_NAME}_web_tests PRIVATE ${PROJECT_NAME}_platform ${PROJECT_NAME}_model)
+    target_compile_definitions(${PROJECT_NAME}_web_tests
+        PRIVATE
+            USE_DESKTOP=1
+            WEB_DIR="${CMAKE_CURRENT_SOURCE_DIR}/assets/web"
+            FONTS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts"
+    )
+    add_test(NAME web_checks COMMAND ${PROJECT_NAME}_web_tests)
 endif()
 
 # Package deb

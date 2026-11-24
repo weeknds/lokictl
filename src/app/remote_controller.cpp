@@ -7,6 +7,7 @@
 #include "remote_controller.h"
 
 #include "base_viewmodel.h"
+#include "dashboard_status.h"
 #include "linux_input.h"
 #include "logger.h"
 #include "mode_switch.h"
@@ -53,6 +54,9 @@ constexpr uint32_t kKeyPeriodMs = 30;
 
 // How long the panel shows why Remote view could not start.
 constexpr uint32_t kMessageMs = 4000;
+
+// How often the dashboard's status JSON is built again at most.
+constexpr uint32_t kStatusPeriodMs = 1000;
 
 // Why the server ended, for the log.
 const char* stop_text(StopReason reason) {
@@ -123,11 +127,16 @@ void blend_over(lv_draw_buf_t* base, const lv_draw_buf_t* top) {
 
 } // namespace
 
-RemoteController::RemoteController(view::ThemeEngine& theme_engine, const viewmodel::BaseViewModel& view_model)
+RemoteController::RemoteController(view::ThemeEngine& theme_engine,
+                                   const viewmodel::BaseViewModel& view_model,
+                                   std::string web_folder,
+                                   std::string font_folder)
     : view_model_(view_model),
       panel_(std::make_unique<view::widgets::RemotePanel>(lv_layer_top(), theme_engine)),
       mark_(std::make_unique<view::widgets::RemoteMark>(lv_layer_top(), theme_engine)),
-      keys_(std::make_unique<platform::remote::KeyQueue>()) {
+      keys_(std::make_unique<platform::remote::KeyQueue>()),
+      web_folder_(std::move(web_folder)),
+      font_folder_(std::move(font_folder)) {
     panel_->build();
     mark_->build();
 
@@ -338,6 +347,8 @@ void RemoteController::switch_on() {
     platform::remote::ServerOptions options;
     options.keys = keys_.get();
     options.reports_folder = platform::report_folder();
+    options.web_folder = web_folder_;
+    options.font_folder = font_folder_;
     std::unique_ptr<platform::remote::FrameSource> frames;
 #if USE_DESKTOP
     options.loopback_only = true;
@@ -348,6 +359,8 @@ void RemoteController::switch_on() {
     frames = platform::remote::make_framebuffer_source(APP_FRAMEBUFFER_DEVICE);
 #endif
     server_ = std::make_unique<Server>(options, std::move(frames));
+    status_json_.clear();
+    hand_over_status();
     wrong_codes_seen_ = 0;
     listening_seen_ = false;
     paired_seen_ = false;
@@ -528,6 +541,7 @@ void RemoteController::poll() {
         if (server_ && hand_off_) {
             hand_off_frame();
         }
+        hand_over_status();
     }
 
     if (message_shown_ && lv_tick_elaps(message_started_) >= kMessageMs) {
@@ -539,6 +553,18 @@ void RemoteController::poll() {
 
     if (!server_ && !retiring_ && !message_shown_ && timer_) {
         lv_timer_pause(timer_);
+    }
+}
+
+void RemoteController::hand_over_status() {
+    if (!server_ || (!status_json_.empty() && lv_tick_elaps(status_built_) < kStatusPeriodMs)) {
+        return;
+    }
+    status_built_ = lv_tick_get();
+    std::string json = model::dashboard_status_json(view_model_.home());
+    if (json != status_json_) {
+        status_json_ = json;
+        server_->set_status_json(std::move(json));
     }
 }
 
