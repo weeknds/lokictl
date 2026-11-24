@@ -18,10 +18,12 @@
 #include "remote/remote_keys.h"
 #include "remote/remote_server.h"
 #include "report.h"
+#include "wireguard.h"
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/time.h>
 #include <unistd.h>
 
@@ -49,6 +51,7 @@ namespace {
 
 using platform::remote::Action;
 using platform::remote::ActionQueue;
+using platform::remote::ActionRequest;
 using platform::remote::BlockQueue;
 using platform::remote::BlockRequest;
 using platform::remote::KeyQueue;
@@ -168,6 +171,52 @@ void check_json() {
     expect(contains(json, "\"battery\":null"), "status JSON: an unknown battery is null");
     expect(contains(json, "\"v\":1") && contains(json, "\"sample\":true"), "status JSON: version and sample flag");
     expect(!json.empty() && json.back() == '\n' && json[json.size() - 2] == '}', "status JSON: one closed object");
+
+    // The Modes page's fields: the switch, the refusals, the VPN files and
+    // the leak test; never a password or a key.
+    model::HomeData modes = model::sample_home_data();
+    modes.mode = model::NetMode::Router;
+    modes.ap_active = true;
+    modes.mode_switch.state = model::SwitchState::Failed;
+    modes.mode_switch.target = model::NetMode::Share;
+    modes.mode_switch.error = model::SwitchError::ClientFirst;
+    modes.vpn.files = {"home", "tr\"avel"};
+    modes.vpn.kill_switch = true;
+    model::DashboardParts parts;
+    parts.mode_why[1] = "Already in Router mode";
+    parts.hotspot_name = "LokiCTL-7F3A";
+    parts.vpn_pick = "home";
+    parts.vpn_add = true;
+    parts.leak.can = true;
+    const std::string modes_json = model::dashboard_status_json(modes, parts);
+    expect(contains(modes_json, "\"switch\":{\"state\":\"failed\",\"target\":\"share\",\"error\":\"Back to Client first\"}"),
+           "status JSON: a failed switch in the Modes page's words");
+    expect(contains(modes_json, "\"why\":{\"client\":\"\",\"router\":\"Already in Router mode\",\"share\":\"\",\"vpn\":\"\"}"),
+           "status JSON: why each mode can't be asked for");
+    expect(contains(modes_json, "\"next_hotspot_name\":\"LokiCTL-7F3A\",\"vpn_files\":[\"home\",\"tr\\\"avel\"],"
+                                "\"vpn_file\":\"home\",\"vpn_server\":\"\",\"vpn_active\":false,\"gateway_down\":true,"
+                                "\"vpn_add\":true,"),
+           "status JSON: the VPN files, the pick and the gateway down");
+    expect(contains(modes_json, "\"leak\":{\"state\":\"idle\",\"shown\":false,") && contains(modes_json, "\"can\":true,\"why\":\"\"}"),
+           "status JSON: the leak test");
+    expect(!contains(modes_json, "password") && !contains(modes_json, "private"), "status JSON: no password, no key");
+
+    model::ToolsData leak_tools;
+    leak_tools.ping.state = model::ToolState::Running;
+    expect(!model::dashboard_leak(modes, leak_tools).can && model::dashboard_leak(modes, leak_tools).why == "Ping is running",
+           "leak test: not while another tool runs");
+    model::HomeData connecting = modes;
+    connecting.vpn.state = model::VpnState::Connecting;
+    expect(!model::dashboard_leak(connecting, model::ToolsData{}).can, "leak test: not while the VPN connects");
+
+    // Form values as a browser encodes them.
+    using platform::remote::form_decode;
+    std::string decoded;
+    expect(form_decode("My+Net%21%2F%c3%a9", decoded) && decoded == "My Net!/\xC3\xA9", "form_decode: + and %XX");
+    expect(!form_decode("bad%2", decoded) && !form_decode("bad%zz", decoded) && !form_decode("a%0Ab", decoded) &&
+               !form_decode("%7F", decoded),
+           "form_decode: broken escapes and control characters");
+    expect(form_decode("", decoded) && decoded.empty(), "form_decode: empty");
 }
 
 // ---------- The findings ----------
@@ -487,6 +536,10 @@ void check_server() {
     options.actions = &actions;
     options.web_folder = WEB_DIR;
     options.font_folder = FONTS_DIR;
+    const std::filesystem::path vpn_folder =
+        std::filesystem::temp_directory_path() / ("lokictl-web-checks-" + std::to_string(::getpid())) / "wireguard";
+    std::filesystem::remove_all(vpn_folder.parent_path());
+    options.vpn_folder = vpn_folder.string();
     Server server(options, std::make_unique<StillFrames>());
     server.start();
     for (int tries = 0; tries < 100 && server.status().phase == ServerPhase::Starting; ++tries) {
@@ -515,6 +568,7 @@ void check_server() {
         {"/home.js", "text/javascript; charset=utf-8"},
         {"/devices.js", "text/javascript; charset=utf-8"},
         {"/security.js", "text/javascript; charset=utf-8"},
+        {"/modes.js", "text/javascript; charset=utf-8"},
         {"/preact.module.js", "text/javascript; charset=utf-8"},
         {"/icon.svg", "image/svg+xml"},
         {"/fonts/Inter-Regular.ttf", "font/ttf"},
@@ -640,7 +694,7 @@ void check_server() {
            "POST /api/v1/check with a bad run: 400");
     expect(ask(port, get(host, "/api/v1/check", cookie)).status == 405, "GET /api/v1/check: 405");
     expect(ask(port, get(host, "/api/v1/report", cookie)).status == 405, "GET /api/v1/report: 405");
-    Action refused = Action::SaveReport;
+    ActionRequest refused;
     expect(!actions.pop(refused), "nothing queued by the refused requests");
     const Answer started = ask(port, post(host, "/api/v1/check", start_check, origin + cookie + with_token));
     expect(started.status == 204, "POST /api/v1/check with Origin, cookie, token and confirmation: 204");
@@ -651,12 +705,13 @@ void check_server() {
            "POST /api/v1/report without Origin: 403");
     expect(ask(port, post(host, "/api/v1/report", "save=1", origin + cookie + with_token)).status == 204,
            "POST /api/v1/report with Origin, cookie and token: 204");
-    Action first = Action::SaveReport;
-    Action second = Action::SaveReport;
-    Action third = Action::StartCheck;
-    Action none = Action::StartCheck;
-    expect(actions.pop(first) && first == Action::StartCheck && actions.pop(second) && second == Action::StopCheck &&
-               actions.pop(third) && third == Action::SaveReport && !actions.pop(none),
+    ActionRequest first;
+    ActionRequest second;
+    ActionRequest third;
+    ActionRequest none;
+    expect(actions.pop(first) && first.action == Action::StartCheck && actions.pop(second) &&
+               second.action == Action::StopCheck && actions.pop(third) && third.action == Action::SaveReport &&
+               !actions.pop(none),
            "the start, the stop and the report were queued, in order");
     for (std::size_t index = 0; index < ActionQueue::kMaxWaiting; ++index) {
         ask(port, post(host, "/api/v1/report", "save=1", origin + cookie + with_token));
@@ -665,8 +720,137 @@ void check_server() {
            "POST /api/v1/check with a full queue: 429");
     actions.clear();
 
+    // The Modes page's controls: the same three checks, then each body.
+    struct Control {
+        const char* path;
+        const char* body;
+        Action action;
+        const char* text;
+    };
+    const Control controls[] = {
+        {"/api/v1/mode", "mode=router", Action::Mode, "router"},
+        {"/api/v1/mode", "mode=client", Action::Mode, "client"},
+        {"/api/v1/vpn", "on=1", Action::VpnOn, ""},
+        {"/api/v1/vpn", "on=0", Action::VpnOff, ""},
+        {"/api/v1/vpn", "file=my+home%2Dvpn", Action::VpnFile, "my home-vpn"},
+        {"/api/v1/hotspot", "name=Cafe+%26+Co", Action::HotspotName, "Cafe & Co"},
+        {"/api/v1/hotspot", "name=", Action::HotspotName, ""},
+        {"/api/v1/hotspot", "password=new", Action::HotspotPassword, ""},
+        {"/api/v1/keep", "on=1", Action::KeepOn, ""},
+        {"/api/v1/keep", "on=0", Action::KeepOff, ""},
+        {"/api/v1/leak", "run=1", Action::StartLeak, ""},
+        {"/api/v1/leak", "run=0", Action::StopLeak, ""},
+    };
+    for (const Control& control : controls) {
+        const std::string what = std::string("POST ") + control.path + " " + control.body;
+        const Answer no_origin_answer = ask(port, post(host, control.path, control.body, cookie + with_token));
+        expect(no_origin_answer.status == 403, what + " without Origin: 403");
+        expect_policy(no_origin_answer, what + " 403");
+        expect(ask(port, post(host, control.path, control.body, origin + with_token)).status == 401,
+               what + " without the cookie: 401");
+        expect(ask(port, post(host, control.path, control.body, origin + cookie)).status == 403,
+               what + " without the token: 403");
+        ActionRequest nothing;
+        expect(!actions.pop(nothing), what + ": nothing queued by the refusals");
+        const Answer queued = ask(port, post(host, control.path, control.body, origin + cookie + with_token));
+        expect(queued.status == 204, what + ": 204");
+        ActionRequest taken;
+        expect(actions.pop(taken) && taken.action == control.action && taken.text == control.text && !actions.pop(nothing),
+               what + ": queued as asked");
+    }
+    for (const auto& [path, body] : std::vector<std::pair<std::string, std::string>>{
+             {"/api/v1/mode", "mode=vpn"},
+             {"/api/v1/mode", ""},
+             {"/api/v1/vpn", "on=2"},
+             {"/api/v1/vpn", "file="},
+             {"/api/v1/vpn", "file=a%0Ab"},
+             {"/api/v1/hotspot", "password=hunter2"},
+             {"/api/v1/hotspot", "name=bad%2"},
+             {"/api/v1/hotspot", ""},
+             {"/api/v1/keep", "on=yes"},
+             {"/api/v1/leak", "run="},
+         }) {
+        expect(ask(port, post(host, path, body, origin + cookie + with_token)).status == 400,
+               "POST " + path + " " + body + ": 400");
+    }
+    ActionRequest left_over;
+    expect(!actions.pop(left_over), "nothing queued by the bad bodies");
+    expect(ask(port, get(host, "/api/v1/mode", cookie)).status == 405, "GET /api/v1/mode: 405");
+    for (std::size_t index = 0; index < ActionQueue::kMaxWaiting; ++index) {
+        ask(port, post(host, "/api/v1/keep", "on=1", origin + cookie + with_token));
+    }
+    expect(ask(port, post(host, "/api/v1/mode", "mode=share", origin + cookie + with_token)).status == 429,
+           "POST /api/v1/mode with a full queue: 429");
+    actions.clear();
+    const std::string long_name = "name=" + std::string(300, 'a');
+    expect(ask(port, post(host, "/api/v1/hotspot", long_name, origin + cookie + with_token)).status == 413,
+           "a form body above 256 bytes: 413");
+
+    // The hotspot's secrets: only with the session, only what the app handed over.
+    expect(ask(port, get(host, "/api/v1/hotspot")).status == 401, "GET /api/v1/hotspot without the cookie: 401");
+    expect(ask(port, get(host, "/api/v1/hotspot", cookie)).status == 503, "GET /api/v1/hotspot before the app's JSON: 503");
+    server.set_hotspot_json("{\"name\":\"LokiCTL-7F3A\"}\n");
+    const Answer hotspot = ask(port, get(host, "/api/v1/hotspot", cookie));
+    expect(hotspot.status == 200 && hotspot.body == "{\"name\":\"LokiCTL-7F3A\"}\n", "GET /api/v1/hotspot: the app's JSON");
+    expect_policy(hotspot, "GET /api/v1/hotspot");
+
+    // A WireGuard file from the browser.
+    const std::string private_key = "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE=";
+    const std::string public_key = "QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI=";
+    const std::string good = std::string("\xEF\xBB\xBF") + "[Interface]\r\nPrivateKey = " + private_key +
+                             "\r\nAddress = 10.8.0.2/32\r\n\r\n[Peer]\r\nPublicKey = " + public_key +
+                             "\r\nAllowedIPs = 0.0.0.0/0\r\nEndpoint = vpn.example.com:51820\r\n";
+    const std::filesystem::path folder = options.vpn_folder;
+    const auto upload = [&](const std::string& name, const std::string& text, const std::string& extra) {
+        return ask(port, "POST /api/v1/vpn/file?name=" + name + " HTTP/1.1\r\nHost: " + host + "\r\n" + extra +
+                             "Content-Type: text/plain\r\nContent-Length: " + std::to_string(text.size()) + "\r\n\r\n" +
+                             text);
+    };
+    expect(upload("home", good, cookie + with_token).status == 403, "upload without Origin: 403");
+    expect(upload("home", good, origin + with_token).status == 401, "upload without the cookie: 401");
+    expect(upload("home", good, origin + cookie).status == 403, "upload without the token: 403");
+    const Answer too_large = upload("home", std::string(16 * 1024 + 1, '#'), origin + cookie + with_token);
+    expect(too_large.status == 413, "an upload above 16 KiB: 413");
+    const Answer broken = upload("home", "[Interface]\nPrivateKey = nope\n", origin + cookie + with_token);
+    expect(broken.status == 400 && contains(broken.body, "\"error\":\"This isn't a WireGuard file LokiCTL can use (bad PrivateKey).\""),
+           "a broken file: 400 with a plain reason");
+    expect_policy(broken, "upload 400");
+    expect(upload("..%2Fhome", good, origin + cookie + with_token).status == 400 &&
+               upload(".home", good, origin + cookie + with_token).status == 400,
+           "an upload with a bad name: 400");
+    expect(!std::filesystem::exists(folder / "home.conf"), "nothing saved by the refused uploads");
+    const Answer saved = upload("home", good, origin + cookie + with_token);
+    expect(saved.status == 200 && saved.body == "{\"name\":\"home\",\"server\":\"vpn.example.com\"}\n",
+           "a WireGuard file: 200 with its name and server only");
+    struct stat info {};
+    expect(::stat((folder / "home.conf").c_str(), &info) == 0 && (info.st_mode & 0777) == 0600,
+           "the saved file is 0600");
+    expect(read_file(folder / "home.conf") == good.substr(3), "the saved file is the file, without the byte order mark");
+    expect(::stat(folder.c_str(), &info) == 0 && (info.st_mode & 0077) == 0, "the VPN folder is the user's only");
+    const Answer again = upload("home", good, origin + cookie + with_token);
+    expect(again.status == 409 && contains(again.body, "already a VPN file called home"), "the same name again: 409");
+    for (const Answer* answer : {&too_large, &broken, &saved, &again}) {
+        expect(!contains(answer->body, private_key) && !contains(answer->head, private_key) &&
+                   !contains(answer->body, public_key),
+               "no key in any upload answer");
+    }
+    expect(!contains(ask(port, get(host, "/api/v1/status", cookie)).body, private_key), "no key in the status");
+
     server.request_stop();
     server.join();
+
+    // Saving without a folder, and with a full one.
+    std::string server_host;
+    std::string reason;
+    expect(platform::save_wireguard_file({}, "home", good, server_host, reason) == platform::WireGuardSave::NoFolder,
+           "no VPN folder: nothing saved");
+    for (int index = 0; index < 15; ++index) {
+        std::ofstream(folder / ("f" + std::to_string(index) + ".conf")) << "x";
+    }
+    expect(platform::save_wireguard_file(folder, "one-more", good, server_host, reason) == platform::WireGuardSave::Full &&
+               !std::filesystem::exists(folder / "one-more.conf"),
+           "16 files already: nothing saved");
+    std::filesystem::remove_all(folder.parent_path());
 }
 
 } // namespace

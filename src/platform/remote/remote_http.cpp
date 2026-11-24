@@ -52,6 +52,19 @@ bool value_char(char c) {
     return c == '\t' || (c >= 0x20 && c < 0x7F);
 }
 
+int hex_digit(char c) {
+    if (c >= '0' && c <= '9') {
+        return c - '0';
+    }
+    if (c >= 'a' && c <= 'f') {
+        return c - 'a' + 10;
+    }
+    if (c >= 'A' && c <= 'F') {
+        return c - 'A' + 10;
+    }
+    return -1;
+}
+
 std::string_view trim(std::string_view text) {
     while (!text.empty() && (text.front() == ' ' || text.front() == '\t')) {
         text.remove_prefix(1);
@@ -196,7 +209,7 @@ HeadResult parse_request_head(std::string_view data, HttpRequest& request, std::
                 return HeadResult::Bad;
             }
             seen_length = true;
-            if (length > kMaxBodyBytes) {
+            if (length > body_limit(request)) {
                 return HeadResult::BodyTooLarge;
             }
             request.content_length = static_cast<std::size_t>(length);
@@ -216,6 +229,10 @@ HeadResult parse_request_head(std::string_view data, HttpRequest& request, std::
         }
     }
     return HeadResult::Complete;
+}
+
+std::size_t body_limit(const HttpRequest& request) {
+    return request.method == "POST" && request.path == kUploadPath ? kMaxUploadBytes : kMaxBodyBytes;
 }
 
 std::string form_value(std::string_view text, std::string_view name, bool* found) {
@@ -238,6 +255,35 @@ std::string form_value(std::string_view text, std::string_view name, bool* found
         text.remove_prefix(amp + 1);
     }
     return {};
+}
+
+bool form_decode(std::string_view text, std::string& value) {
+    std::string result;
+    result.reserve(text.size());
+    for (std::size_t index = 0; index < text.size(); ++index) {
+        char c = text[index];
+        if (c == '+') {
+            c = ' ';
+        } else if (c == '%') {
+            if (index + 2 >= text.size()) {
+                return false;
+            }
+            const int high = hex_digit(text[index + 1]);
+            const int low = hex_digit(text[index + 2]);
+            if (high < 0 || low < 0) {
+                return false;
+            }
+            c = static_cast<char>(high * 16 + low);
+            index += 2;
+        }
+        const auto byte = static_cast<unsigned char>(c);
+        if (byte < 0x20 || byte == 0x7F) {
+            return false;
+        }
+        result += c;
+    }
+    value = std::move(result);
+    return true;
 }
 
 std::string cookie_value(std::string_view header, std::string_view name) {

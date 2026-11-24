@@ -21,6 +21,7 @@
 #include "page_registry.h"
 #include "power_controller.h"
 #include "remote_controller.h"
+#include "wireguard.h"
 #include "screen_manager.h"
 #include "snapshot.h"
 #include "base_viewmodel.h"
@@ -778,8 +779,23 @@ int Application::run_interactive(std::optional<view::ThemeId> theme_override,
 
     // Remote view: off at every start; the Settings row switches it on.
     // Declared after the theme engine and the view model, so it is
-    // destroyed before them.
-    RemoteController remote(theme_engine, view_model, assets.resolve("web").string(), assets.resolve("fonts").string());
+    // destroyed before them. The dashboard adds WireGuard files to the
+    // folder the live source lists them from; the simulator only to a test
+    // folder (LOKICTL_DATA_ROOT), never to the computer's own settings.
+    std::string vpn_folder;
+    if (data_source == platform::DataSourceKind::Live) {
+#if USE_DESKTOP
+        if (!data_root.empty()) {
+            vpn_folder = platform::wireguard_folder(data_root, true).string();
+        }
+#else
+        vpn_folder = platform::wireguard_folder(std::filesystem::path(data_root.empty() ? "/" : data_root),
+                                                !data_root.empty())
+                         .string();
+#endif
+    }
+    RemoteController remote(theme_engine, view_model, assets.resolve("web").string(), assets.resolve("fonts").string(),
+                            vpn_folder);
 
     bool running = true;
     auto* quit_observer = lv_subject_add_observer(view_model.quit_requested_subject(),

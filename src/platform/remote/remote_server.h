@@ -8,6 +8,7 @@
 
 #include "remote/remote_addresses.h"
 #include "remote/remote_frames.h"
+#include "remote/remote_http.h"
 #include "remote/remote_keys.h"
 #include "remote/remote_pairing.h"
 
@@ -82,12 +83,15 @@ struct ServerOptions {
     // remote_web.h); a file that is not there gets 404.
     std::string web_folder;
     std::string font_folder;
+    // The WireGuard folder (wireguard_folder()) that POST /api/v1/vpn/file
+    // saves into; empty: none (every file gets 409).
+    std::string vpn_folder;
 };
 
 // The Remote view server: a small HTTP/1.1 server on its own thread, never
 // the UI thread. One connection at a time, one request per connection
-// (Connection: close), a head of at most 2 KB, a body of at most 64 bytes
-// and 2 s to send them. On Linux a connection is only taken once its
+// (Connection: close), a head of at most 2 KB, a body of at most 256 bytes
+// (a WireGuard file to kUploadPath: 16 KiB) and 2 s to send them. On Linux a connection is only taken once its
 // request has started to arrive (TCP_DEFER_ACCEPT), so a browser's spare
 // connection never holds up the others.
 //
@@ -130,6 +134,24 @@ struct ServerOptions {
 //   ActionQueue 429, a queued request 204. Whether it applies is for the
 //   UI thread to decide; the page sees the result in the next status or
 //   the next GET /reports.
+//   The Modes page's controls are checked like POST /key too, and each
+//   queues one ActionRequest (204) for the UI thread to decide on:
+//   POST /api/v1/mode with mode=client|router|share; POST /api/v1/vpn with
+//   on=1 or on=0, or file=<name>; POST /api/v1/hotspot with name=<name>
+//   (empty: the default name) or password=new; POST /api/v1/keep with on=1
+//   or on=0; POST /api/v1/leak with run=1 or run=0. Values are decoded
+//   (form_decode()); anything else gets 400, a full queue 429.
+//   GET /api/v1/hotspot needs the cookie (else 401) and answers the JSON
+//   the app handed over (set_hotspot_json(): the hotspot's name, password
+//   and QR code), or 503 before the first.
+//   POST /api/v1/vpn/file?name=<name> carries a WireGuard file as its body
+//   (at most kMaxUploadBytes, else 413), checked like POST /key. The server
+//   thread itself saves it (save_wireguard_file()) into `vpn_folder` and
+//   answers 200 {"name":"<name>","server":"<host>"}, or 400 (a bad name, not
+//   a WireGuard file), 409 (the name is taken, the folder is full, no
+//   folder) or 500 (not written) with {"error":"<plain reason>"}. Nothing
+//   of the file is answered or logged, and the request's buffer is wiped
+//   whichever way a request ends.
 //   GET /reports needs the cookie (else 401) and lists the saved reports
 //   as JSON, {"reports":[{"name":"lokictl-....html","bytes":N},...]}, the
 //   newest first. GET /report?name=<name> needs the cookie too and hands
@@ -182,6 +204,9 @@ public:
     // The JSON that GET /api/v1/status answers. Safe from any thread; the
     // app hands over a new one only when it changed.
     void set_status_json(std::string json);
+    // The JSON that GET /api/v1/hotspot answers (it holds the hotspot's
+    // password). Safe from any thread, like set_status_json().
+    void set_hotspot_json(std::string json);
 
     // The steady clock in milliseconds, as the status uses it.
     static int64_t now_ms();
@@ -206,6 +231,13 @@ private:
     // through it.
     bool update_hotspot_side(Side (&sides)[kSideCount], const std::string& wanted, const Pairing& pairing);
     void handle_connection(int fd, int side, const Side& own, Pairing& pairing, FrameCache& frames);
+    // The checks of every state-changing request, in this order: POST only
+    // (405), the page's origin (403), the session (401), the request token
+    // (403). Sends the refusal itself; true when the request may go on.
+    bool accept_change(int fd, const HttpRequest& request, int side, const Side& own, Pairing& pairing, int64_t now,
+                       int64_t deadline);
+    // POST /api/v1/vpn/file once accepted: saves the file and answers.
+    void save_vpn_file(int fd, const HttpRequest& request, std::string_view body, int64_t deadline);
     void publish(const Pairing& pairing);
     void publish_hotspot_url(const std::string& url);
     void finish(StopReason reason);
@@ -228,6 +260,7 @@ private:
 
     mutable std::mutex json_mutex_;
     std::string status_json_;
+    std::string hotspot_json_;
 };
 
 } // namespace platform::remote

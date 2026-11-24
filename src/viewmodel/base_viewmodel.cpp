@@ -341,6 +341,18 @@ void BaseViewModel::step_vpn_file(int32_t step) {
     bump(vpn_file_subject_);
 }
 
+bool BaseViewModel::select_vpn_file(const std::string& name) {
+    const std::vector<std::string>& files = home().vpn.files;
+    if (std::find(files.begin(), files.end(), name) == files.end()) {
+        return false;
+    }
+    if (name != vpn_file()) {
+        vpn_file_ = name;
+        bump(vpn_file_subject_);
+    }
+    return true;
+}
+
 lv_subject_t* BaseViewModel::vpn_file_subject() {
     return vpn_file_subject_.native();
 }

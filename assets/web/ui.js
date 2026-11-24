@@ -115,6 +115,10 @@ const ICONS = {
     ["circle", { cx: 12, cy: 14, r: 3 }],
     ["circle", { cx: 12, cy: 7.5, r: 1 }],
   ],
+  vpn: [["path", { d: "M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM9 12l2 2 4-4" }]],
+  file: [["path", { d: "M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5" }]],
+  drop: [["path", { d: "M12 3.5s6 6.4 6 10.5a6 6 0 0 1-12 0c0-4.1 6-10.5 6-10.5z" }]],
+  plus: [["path", { d: "M12 5v14M5 12h14" }]],
 };
 
 export function icon(name, size = 16, stroke = 2) {
@@ -224,6 +228,31 @@ export async function post(path, fields) {
     signal: limit(),
   });
   return r.status;
+}
+
+// A file sent as it is (a WireGuard file to add): POST with the request
+// token. Answers {status, data}: data is the parsed JSON answer, else null.
+// A network failure or timeout throws.
+export async function postFile(path, text) {
+  const headers = { "Content-Type": "text/plain; charset=utf-8" };
+  if (token) {
+    headers[TOKEN_HEADER] = token;
+  }
+  const r = await fetch(path, {
+    method: "POST",
+    headers,
+    body: text,
+    cache: "no-store",
+    credentials: "same-origin",
+    signal: limit(),
+  });
+  let data = null;
+  try {
+    data = await r.json();
+  } catch (err) {
+    data = null;
+  }
+  return { status: r.status, data };
 }
 
 // ---------- Plain words for the status ----------

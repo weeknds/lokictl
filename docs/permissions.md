@@ -257,13 +257,16 @@ themselves.
 The VPN mode reads WireGuard client files (`.conf`) from
 `~/.config/lokictl/wireguard/`. LokiCTL creates the folder at its first
 start and makes it and the files in it readable by you only (0700 and
-0600). Only a file's name and its server are ever shown, and neither is
-logged. The keys stay in the file and in NetworkManager's in-memory profile
-(`LokiCTL VPN`, interface `lokiwg0`), which is deleted when you turn the
-tunnel off or LokiCTL quits. Lines such as `PreUp` and `PostUp` are
-ignored, so nothing in a file is ever run. When the file names DNS servers
-and sends all traffic through the tunnel, only those servers are used while
-it runs. The file never leaves the device.
+0600). A file added from the web dashboard (Remote view's Modes page, at
+most 16 KB) is checked first and saved as a new file of mode 0600; it is
+never sent back to the browser. Only a file's name and its server are ever
+shown, and neither is logged. The keys stay in the file and in
+NetworkManager's in-memory profile (`LokiCTL VPN`, interface `lokiwg0`),
+which is deleted when you turn the tunnel off or LokiCTL quits. Lines such
+as `PreUp` and `PostUp` are ignored, so nothing in a file is ever run.
+When the file names DNS servers and sends all traffic through the tunnel,
+only those servers are used while it runs. The file never leaves the
+device.
 
 ## Files LokiCTL writes
 

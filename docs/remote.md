@@ -116,6 +116,27 @@ internet.
   downloads its page; the saved reports are listed below it, each with
   its page and its devices table.
 - **Reports** lists the same saved reports, with **Download a new report**.
+- **Modes** (Modes and VPN on a computer) has three tiles, Client, Router
+  and Share, with a check mark on the one that is on. A tap asks first
+  (`Switch to Router?`, what will happen, **Switch** or **Cancel**), then
+  the Cardputer switches the way its own Modes page does, with the same
+  rules: what it refuses shows under the tiles in its own words (`Plug in
+  a cable first`, `Back to Client first`). When the browser came through
+  the hotspot, the question warns that the page will lose the Cardputer.
+  The hotspot card shows the join code while the hotspot runs (drawn from
+  the Cardputer's own QR code), the name, the password behind **Show**,
+  and **Change**: a new name (empty puts the Cardputer's own name back) or
+  **New password** (a random one, after a question), as on its Hotspot
+  page. The VPN group has the VPN switch (on asks first, as a switch), the
+  **File** to use (a list while no tunnel runs), the **Kill switch** (a
+  state: it turns on by itself when the VPN and the hotspot run together),
+  the **Leak test** with its four lines, and **Add a VPN file from this
+  phone** (or computer): pick a WireGuard `.conf` file of at most 16 KB and
+  the Cardputer checks it and saves it, or says why not (too large, not a
+  WireGuard file with the reason, the name is taken, 16 files already).
+  While the kill switch holds hotspot devices back with the VPN down, a
+  card offers **Turn the VPN on again** and **Turn the VPN off**. Last,
+  **Keep this mode running** is the Settings row of the same name.
 - The other pages say what they will show; their contents come in later
   updates.
 - **The findings are worked out once, on the Cardputer**, and every page
@@ -300,12 +321,19 @@ nothing else on the device.
   nothing and can't reach this page. Its own page forbids scripts too, and
   every text from the network in it is escaped.
 - **Small, strict requests.** One request per connection, a request head of
-  at most 2 KB, a body of at most 64 bytes and 2 seconds to send them. The
+  at most 2 KB, a body of at most 256 bytes (a WireGuard file: 16 KB) and 2
+  seconds to send them. The
   server runs on its own thread, so the device's screen never waits for it.
   On the device a connection is only taken once its request starts to
   arrive, so a browser's spare connections never hold the others up.
 - **Nothing private in the log.** The log holds states and counts only;
   never the code, the session token or an address.
+- **VPN keys stay on the Cardputer.** A WireGuard file added from the
+  browser is checked, saved readable by its owner only (mode 0600) and
+  never sent back: answers and the status name only the file and its
+  server. The buffer it arrived in is wiped. The hotspot's password and
+  join code come only from `GET /api/v1/hotspot`, which the Modes page asks
+  for while the hotspot runs or after **Show**, never in the status.
 
 ### What it does not protect against
 
@@ -313,6 +341,9 @@ Remote view uses **plain HTTP**, not HTTPS. Someone who can read the traffic
 on your network (an open Wi-Fi network, or a device on it that captures
 traffic) could see the pictures and copy the session cookie while it is
 valid. Use it on networks you trust, and switch it off when you are done.
+The same goes for a WireGuard file added from the Modes page (its keys
+cross the network once, unencrypted) and the hotspot's password behind
+**Show**: on a network you don't trust, copy the file over SSH instead.
 With `+AP`, everyone who knows the hotspot's password can reach the code
 form too; the code from the Cardputer's screen still guards it.
 
@@ -320,7 +351,7 @@ form too; the code from the Cardputer's screen still guards it.
 
 | Request | Answer |
 |---|---|
-| `GET /`, `/app.css`, `/app.js`, `/pair.js`, `/shell.js`, `/ui.js`, `/home.js`, `/devices.js`, `/security.js`, `/preact.module.js`, `/icon.svg`, `/fonts/Inter-Regular.ttf`, `/fonts/Inter-SemiBold.ttf` | the dashboard's files, no session needed (`404` when the file is not installed) |
+| `GET /`, `/app.css`, `/app.js`, `/pair.js`, `/shell.js`, `/ui.js`, `/home.js`, `/devices.js`, `/security.js`, `/modes.js`, `/preact.module.js`, `/icon.svg`, `/fonts/Inter-Regular.ttf`, `/fonts/Inter-SemiBold.ttf` | the dashboard's files, no session needed (`404` when the file is not installed) |
 | `GET /screen` | the screen page (`text/html`, with its own `Content-Security-Policy`) |
 | `POST /pair` with the form body `code=NNNNNN` | `200` and the session cookie; `403` for a wrong code; `409` while a browser is paired |
 | `GET /api/v1/session` with the cookie | `200` with `{"token":"<request token>"}`; `401` without the cookie |
@@ -330,14 +361,18 @@ form too; the code from the Cardputer's screen still guards it.
 | `POST /api/v1/block` with the form body `id=<IPv4>&on=1` (block) or `on=0` (allow), the cookie, `Origin` and `X-LokiCTL-Token` as for `/key` | `204` when the request was queued; `400` for an id that is not an IPv4 address or another `on`; `401` without the cookie; `403` without that `Origin` or with a wrong or missing token; `429` when 4 requests wait. The Cardputer applies it only to a device on its own hotspot right now; the next status shows the result |
 | `POST /api/v1/check` with the form body `run=1&own=1` (start a health check; `own=1` is the page's "own network only" confirmation) or `run=0` (stop it), the cookie, `Origin` and `X-LokiCTL-Token` as for `/key` | `204` when the request was queued; `400` for any other body; `401` without the cookie; `403` without that `Origin` or with a wrong or missing token; `429` when 4 requests wait. The Cardputer starts a check only when its Health page could (a private IPv4 network, no tool running) and stops only a running health check; the next status shows the result |
 | `POST /api/v1/report`, with the cookie, `Origin` and `X-LokiCTL-Token` as for `/key` | `204` when the request was queued (same refusals as `/api/v1/check`). The Cardputer saves a new report, at most one every 10 seconds; it then shows in `GET /reports` |
+| `POST /api/v1/mode` with `mode=client`, `router` or `share`; `POST /api/v1/vpn` with `on=1`, `on=0` or `file=<name>`; `POST /api/v1/hotspot` with `name=<name>` (empty: the Cardputer's own name) or `password=new`; `POST /api/v1/keep` with `on=1` or `on=0`; `POST /api/v1/leak` with `run=1` or `run=0`; each with the cookie, `Origin` and `X-LokiCTL-Token` as for `/key`. Values are form-encoded as a browser sends them | `204` when the request was queued; `400` for any other body; `401`, `403` and `429` as for `/api/v1/check`. The Cardputer applies it the way its Modes, Hotspot and Leak pages do, with their rules (not while a switch runs, not the mode that is on, a valid name, a listed file, no other tool for the leak test); the next status shows the result |
+| `GET /api/v1/hotspot` with the cookie | `200` with `{"name":"LokiCTL-7F3A","password":"...","qr":{"size":29,"rows":["fe0b3f8",...]}}`: the hotspot's name and password and its join code, one row of hex digits a line (the first module in the highest bit), `qr` `null` without a password; `503` before the app handed any over; `401` without the cookie |
+| `POST /api/v1/vpn/file?name=<name>` with the WireGuard file as the body (at most 16 KB), the cookie, `Origin` and `X-LokiCTL-Token` as for `/key` | `200` with `{"name":"home","server":"vpn.example.com"}` once saved; `400` with `{"error":"<why>"}` for a bad name (1 to 32 letters, digits, `.`, `_` or `-`) or a file that is not a usable WireGuard file; `409` with the reason when the name is taken, 16 files are there or the Cardputer has no VPN folder (made-up data); `413` above 16 KB; `401` and `403` as for `/key` |
 | `GET /reports` with the cookie | `200` with the saved reports as JSON, the newest first, at most 40: `{"reports":[{"name":"lokictl-20261123-075130.html","bytes":21000},...]}`; `401` without the cookie |
 | `GET /report?name=<name>` with the cookie | `200` with that file as a download (`text/html` or `text/csv`); `404` for a name that is not a report's or a file that can't be read; `401` without the cookie |
 | anything else | `404` for another path, `405` for another method |
 
 Key names: `c32` to `c126` for a printable ASCII character by its code
 (`c97` is `a`, `c46` is `.`, `c54` is the key 6), and `esc`, `enter`,
-`backspace`, `up`, `down`, `left`, `right` and `help`. Form bodies are not
-decoded, which is why characters go by their code.
+`backspace`, `up`, `down`, `left`, `right` and `help`. A key's body is not
+decoded, which is why characters go by their code; the Modes page's names
+and files are (`+` and `%XX`, no control characters).
 
 Every answer carries `Connection: close`, `Cache-Control: no-store` (the
 fonts: `private, max-age=604800`), `X-Content-Type-Options: nosniff`,
@@ -358,7 +393,14 @@ since Remote view started; `things` (at most 32) and `devices` (at most
  "network":{"name":"Home","link":"wifi","internet":"full"},
  "mode":{"id":"router","name":"Router","hotspot":true,"hotspot_devices":3,
          "hotspot_name":"LokiCTL-7F","vpn":"off","vpn_reply_s":null,
-         "kill_switch":false,"keep":false},
+         "kill_switch":false,"keep":false,
+         "switch":{"state":"failed","target":"share","error":"Back to Client first"},
+         "why":{"client":"","router":"Already in Router mode","share":"","vpn":""},
+         "next_hotspot_name":"LokiCTL-7F","vpn_files":["home","travel"],
+         "vpn_file":"home","vpn_server":"","vpn_active":false,"gateway_down":false,
+         "vpn_add":true,
+         "leak":{"state":"idle","shown":false,"fails":0,"unknown":0,"lines":[],
+                 "reason":"","can":true,"why":""}},
  "block":{"failures":0,"message":""},
  "traffic":{"down_kbps":1200,"up_kbps":80,"history":[[1100,70],[1200,80]]},
  "counts":{"devices":12,"security":1},
@@ -413,9 +455,18 @@ is `sweep` (finding devices, `asked` of `total` addresses) or `ports`
 `why` why not, in the Health page's words; `asks` is what the sweep asks.
 `took_s` is how long the last finished check took, `null` before one.
 `block` holds how many blocks or allows failed since the start and the
-last failure's words. While the Cardputer shows made-up data (the
-simulator) and no tool has run, the findings are made up too and
-`sample` is `true`.
+last failure's words. In `mode`, `switch` is the last switch asked for
+(`state` `idle`, `switching` or `failed`, `error` the Modes page's words
+for a failed one), `why` says why each mode can't be asked for now (the
+`:mode` command's words), `next_hotspot_name` is the name Router and Share
+start with, `vpn_file` the tunnel's file while `vpn_active` (else the one a
+VPN switch would use) and `vpn_server` its server, `gateway_down` the kill
+switch holding hotspot devices back without the VPN, `vpn_add` whether a
+WireGuard file may be added, and `leak` the leak test (`lines` while it
+runs or while a finished test still describes the VPN; `verdict` `pass`,
+`fail`, `unknown`, `info` or `waiting`). Nothing secret is in the
+status. While the Cardputer shows made-up data (the simulator) and no tool
+has run, the findings are made up too and `sample` is `true`.
 
 Frame numbers grow only when the screen changed, so a viewer that sends the
 last number it got receives a picture only when there is a new one. On the
@@ -451,3 +502,13 @@ LOKICTL_REMOTE=on LOKICTL_REPORT_DIR=$PWD/build/reports build/darwin-arm64/Debug
 
 The simulator never opens a hotspot address: key 7 changes the row there,
 but the server stays on `127.0.0.1` only.
+
+The simulator adds WireGuard files from the Modes page only to a test
+folder, with the `live` source on `LOKICTL_DATA_ROOT`, so it never writes
+into your own settings; with made-up data it says why it can't:
+
+```sh
+mkdir -p build/vpn-root
+LOKICTL_REMOTE=on LOKICTL_DATA_ROOT=$PWD/build/vpn-root build/darwin-arm64/Debug/lokictl --data live
+# files land in build/vpn-root/wireguard/
+```

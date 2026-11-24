@@ -7,6 +7,7 @@
 #include "dashboard_status.h"
 
 #include "health_check.h"
+#include "leak_check.h"
 #include "report.h"
 
 #include <cstdint>
@@ -33,6 +34,34 @@ const char* state_word(ToolState state) {
         case ToolState::Failed: return "failed";
     }
     return "idle";
+}
+
+const char* verdict_word(LeakVerdict verdict) {
+    switch (verdict) {
+        case LeakVerdict::Waiting: return "waiting";
+        case LeakVerdict::Pass: return "pass";
+        case LeakVerdict::Fail: return "fail";
+        case LeakVerdict::Unknown: return "unknown";
+        case LeakVerdict::Info: return "info";
+    }
+    return "waiting";
+}
+
+// A failed switch in the Modes page's words; empty unless it failed.
+std::string switch_words(const ModeSwitch& change) {
+    if (change.state != SwitchState::Failed) {
+        return {};
+    }
+    switch (change.error) {
+        case SwitchError::NoCable: return "Plug in a cable first";
+        case SwitchError::NoWifi: return "Join a Wi-Fi network first";
+        case SwitchError::ClientFirst: return "Back to Client first";
+        case SwitchError::NotAllowed: return "Not allowed: permission missing";
+        case SwitchError::Failed:
+        case SwitchError::None:
+            break;
+    }
+    return "Failed: " + (change.reason.empty() ? std::string("unknown error") : change.reason);
 }
 
 const char* flag(bool value) {
@@ -248,6 +277,54 @@ void write_status(std::string& out, const HomeData& home, const DashboardParts& 
         mode.key("vpn_reply_s") += home.vpn.state == VpnState::On ? number_or_null(home.vpn.reply_seconds) : "null";
         mode.boolean("kill_switch", home.vpn.kill_switch);
         mode.boolean("keep", parts.keep_mode);
+        {
+            Fields change(mode.key("switch"));
+            change.word("state", switch_state_name(home.mode_switch.state));
+            change.word("target", mode_id(home.mode_switch.target));
+            change.text("error", switch_words(home.mode_switch));
+        }
+        {
+            Fields why(mode.key("why"));
+            for (std::size_t index = 0; index < static_cast<std::size_t>(kNetModeCount); ++index) {
+                why.text(mode_id(static_cast<NetMode>(index)), parts.mode_why[index]);
+            }
+        }
+        const bool vpn_active = home.vpn.state != VpnState::Off || home.mode == NetMode::Vpn;
+        mode.text("next_hotspot_name", parts.hotspot_name);
+        std::string& files = mode.key("vpn_files");
+        files += '[';
+        for (std::size_t index = 0; index < home.vpn.files.size(); ++index) {
+            files += index > 0 ? "," : "";
+            files += json_text(home.vpn.files[index]);
+        }
+        files += ']';
+        mode.text("vpn_file", vpn_active ? home.vpn.file : parts.vpn_pick);
+        mode.text("vpn_server", vpn_active ? home.vpn.server : std::string());
+        mode.boolean("vpn_active", vpn_active);
+        mode.boolean("gateway_down", home.vpn.kill_switch && home.vpn.state == VpnState::Off && home.ap_active);
+        mode.boolean("vpn_add", parts.vpn_add);
+        {
+            const DashLeak& leak = parts.leak;
+            Fields test(mode.key("leak"));
+            test.word("state", state_word(leak.state));
+            test.boolean("shown", leak.shown);
+            test.number("fails", leak.fails);
+            test.number("unknown", leak.unknown);
+            std::string& lines = test.key("lines");
+            lines += '[';
+            for (std::size_t index = 0; index < leak.lines.size(); ++index) {
+                if (index > 0) {
+                    lines += ',';
+                }
+                Fields line(lines);
+                line.text("text", leak.lines[index].first);
+                line.word("verdict", verdict_word(leak.lines[index].second));
+            }
+            lines += ']';
+            test.text("reason", leak.reason);
+            test.boolean("can", leak.can);
+            test.text("why", leak.why);
+        }
     }
     {
         Fields block(root.key("block"));
@@ -331,6 +408,36 @@ DashCheck dashboard_check(const HomeData& home, const ToolsData& tools) {
     check.why = health_gate_text(start.gate, tools);
     check.asks = start.asks;
     return check;
+}
+
+DashLeak dashboard_leak(const HomeData& home, const ToolsData& tools) {
+    DashLeak leak;
+    const LeakRun& run = tools.leak;
+    leak.state = run.state;
+    if (run.state == ToolState::Failed) {
+        leak.reason = run.reason.empty() ? std::string("test failed") : run.reason;
+    }
+    // As the Leak page: a finished run shows only while it still describes
+    // the VPN as it is.
+    leak.shown = (run.state == ToolState::Done || run.state == ToolState::Stopped) &&
+                 leak_run_current(run, leak_local(home));
+    if (leak.shown || run.state == ToolState::Running) {
+        for (std::size_t index = 0; index < kLeakCheckCount; ++index) {
+            const LeakLine line = leak_line(run, static_cast<LeakCheck>(index));
+            leak.lines.emplace_back(line.text, line.verdict);
+        }
+        leak.fails = leak_fail_count(run);
+        leak.unknown = leak_unknown_count(run);
+    }
+    if (run.state == ToolState::Running) {
+        leak.why = "The leak test is running";
+    } else if (tool_running(tools)) {
+        leak.why = other_tool_text(tools);
+    } else if (home.vpn.state == VpnState::Connecting) {
+        leak.why = "The VPN is connecting";
+    }
+    leak.can = leak.why.empty();
+    return leak;
 }
 
 std::string dashboard_status_json(const HomeData& home, const DashboardParts& parts) {

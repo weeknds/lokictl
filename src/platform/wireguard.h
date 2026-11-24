@@ -95,6 +95,36 @@ bool valid_wireguard_name(const std::string& name);
 // most model::kVpnMaxFiles. A missing folder has none. Never throws.
 std::vector<std::string> list_wireguard_files(const std::filesystem::path& folder);
 
+// The longest name a file added from the web dashboard may have.
+constexpr std::size_t kWireGuardUploadNameMax = 32;
+
+// True for the name of a file added from the web dashboard: 1 to
+// kWireGuardUploadNameMax letters, digits, '.', '_' or '-', not starting
+// with '.'.
+bool valid_upload_name(std::string_view name);
+
+// What save_wireguard_file() did.
+enum class WireGuardSave {
+    Saved,
+    NoFolder,     // there is no WireGuard folder to save into
+    BadName,      // not a name valid_upload_name() takes
+    TooLarge,     // more than kWireGuardMaxFileBytes
+    NotWireGuard, // parse_wireguard_config() refused it; `reason` says why
+    NameTaken,    // "<name>.conf" is there already
+    Full,         // model::kVpnMaxFiles files are there already
+    Failed,       // the folder or the file could not be written
+};
+
+// Checks `text` (a WireGuard client file a browser sent; a UTF-8 byte
+// order mark at its start is dropped) with parse_wireguard_config() and
+// saves it as "<folder>/<name>.conf": a new file (never over another one or
+// through a link) of mode 0600, in a folder prepared by
+// prepare_wireguard_folder(). On Saved, `server` is the first peer's host
+// (WireGuardPeer::endpoint_host). The keys it read are wiped; nothing of
+// `text` is logged or kept. Never throws.
+WireGuardSave save_wireguard_file(const std::filesystem::path& folder, std::string_view name,
+                                  std::string_view text, std::string& server, std::string& reason);
+
 // Reads "<folder>/<name>.conf" (a regular file of at most
 // kWireGuardMaxFileBytes) into `config`. Returns an empty string, or a
 // short fixed reason ("file not found", "file too large", or one of

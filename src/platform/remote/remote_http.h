@@ -14,9 +14,12 @@
 namespace platform::remote {
 
 // The limits of one request: the head (request line and headers, up to and
-// including the empty line) and the body.
+// including the empty line) and the body. Only a POST to kUploadPath may
+// carry the larger body: a WireGuard file of at most 16 KiB.
 constexpr std::size_t kMaxHeadBytes = 2048;
-constexpr std::size_t kMaxBodyBytes = 64;
+constexpr std::size_t kMaxBodyBytes = 256;
+constexpr std::size_t kMaxUploadBytes = 16 * 1024;
+constexpr std::string_view kUploadPath = "/api/v1/vpn/file";
 
 // One HTTP/1.x request as the server reads it. Only the headers the server
 // uses are kept.
@@ -40,8 +43,12 @@ enum class HeadResult {
     Complete,    // `request` and `head_size` are set
     Bad,         // not a request this server reads: answer 400
     TooLarge,    // the head is longer than kMaxHeadBytes: answer 431
-    BodyTooLarge // Content-Length above kMaxBodyBytes: answer 413
+    BodyTooLarge // Content-Length above the body's limit: answer 413
 };
+
+// The largest body `request` may carry: kMaxUploadBytes for a POST to
+// kUploadPath, kMaxBodyBytes for anything else.
+std::size_t body_limit(const HttpRequest& request);
 
 // Reads the head at the start of `data` (what arrived so far). On Complete,
 // `head_size` is the number of bytes of the head; the body follows. Refuses
@@ -54,6 +61,11 @@ HeadResult parse_request_head(std::string_view data, HttpRequest& request, std::
 // The value of `name` in "a=1&b=2" (a query or a form body), without any
 // decoding; empty when it is missing. `found` says whether it was there.
 std::string form_value(std::string_view text, std::string_view name, bool* found = nullptr);
+
+// Decodes a form value as a browser encodes it: "+" is a space and "%XX"
+// one byte. Returns false for a '%' without two hex digits after it and for
+// a decoded byte below 0x20 or 0x7F (a control character).
+bool form_decode(std::string_view text, std::string& value);
 
 // The value of the cookie `name` in a Cookie header ("a=1; b=2"); empty
 // when it is missing.

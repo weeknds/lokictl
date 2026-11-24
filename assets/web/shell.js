@@ -13,6 +13,7 @@ import { icon, logo, networkName, modeLine, internetWords, askCheck } from "./ui
 import { HomePhone, HomeDesk } from "./home.js";
 import { DevicesList, DevicePage, deviceName } from "./devices.js";
 import { SecurityPage, ReportsPage } from "./security.js";
+import { ModesPage } from "./modes.js";
 
 // Every page: its #/name, its title, the icon, and the sentence its empty
 // state says until its contents arrive.
@@ -240,7 +241,7 @@ function EmptyPage({ page }) {
 // ---------- The whole frame ----------
 
 // What a page shows: Home, the Devices list or one device, Security (with
-// a finding picked), Reports, or for now the page's empty state.
+// a finding picked), Reports, Modes, or for now the page's empty state.
 function PageBody({ page, sub, status }) {
   if (page.id === "home") {
     return [
@@ -256,6 +257,9 @@ function PageBody({ page, sub, status }) {
   }
   if (page.id === "reports") {
     return h(ReportsPage, { status });
+  }
+  if (page.id === "modes") {
+    return h(ModesPage, { status });
   }
   return h(EmptyPage, { page });
 }

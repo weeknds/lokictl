@@ -364,7 +364,9 @@ marks what's on.
 - VPN sends the Cardputer's traffic through a WireGuard tunnel
   (`lokiwg0`). Copy a WireGuard client file (the `.conf` that VPN providers
   and routers hand out) into `~/.config/lokictl/wireguard/`, for example
-  with `scp`. With more than one file, Z/C on the VPN row picks one. `6`
+  with `scp`, or add it from the web dashboard's Modes page with **Add a
+  VPN file from this phone**. With more than one file, Z/C on the VPN row
+  picks one. `6`
   turns the tunnel on and off. Lines like `PostUp` in the file are ignored,
   so nothing in it ever runs.
 - VPN gateway is VPN together with Router or Share, switched on in

@@ -12,7 +12,9 @@
 #include "remote/remote_keys.h"
 #include "remote/remote_page.h"
 #include "remote/remote_web.h"
+#include "report.h"
 #include "report_files.h"
+#include "wireguard.h"
 
 #include <arpa/inet.h>
 #include <cerrno>
@@ -25,6 +27,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cstring>
 #include <string_view>
 #include <system_error>
@@ -314,6 +317,11 @@ void Server::set_status_json(std::string json) {
     status_json_ = std::move(json);
 }
 
+void Server::set_hotspot_json(std::string json) {
+    std::lock_guard<std::mutex> lock(json_mutex_);
+    hotspot_json_ = std::move(json);
+}
+
 void Server::finish(StopReason reason) {
     {
         std::lock_guard<std::mutex> lock(status_mutex_);
@@ -540,12 +548,102 @@ StopReason Server::serve(Side (&sides)[kSideCount]) {
     }
 }
 
+bool Server::accept_change(int fd, const HttpRequest& request, int side, const Side& own, Pairing& pairing,
+                           int64_t now, int64_t deadline) {
+    if (request.method != "POST") {
+        send_text(fd, 405, "method not allowed\n", wake_read_, deadline, "Allow: POST\r\n");
+        return false;
+    }
+    // Only the page itself may change something: the browser names the
+    // page's origin. Checked before the cookie, so a refused request is no
+    // sign of life.
+    if (request.origin != "http://" + own.host) {
+        send_text(fd, 403, "wrong origin\n", wake_read_, deadline);
+        return false;
+    }
+    // The session first, so a page whose session ended learns to pair
+    // again; then the request token, which only the page can know.
+    const Pairing::Change change =
+        side != paired_side_ ? Pairing::Change::NoSession
+                             : pairing.check_change(cookie_value(request.cookie, kCookieName), request.token, now);
+    if (change == Pairing::Change::NoSession) {
+        send_text(fd, 401, "pair first\n", wake_read_, deadline);
+        return false;
+    }
+    if (change == Pairing::Change::WrongToken) {
+        send_text(fd, 403, "wrong token\n", wake_read_, deadline);
+        return false;
+    }
+    return true;
+}
+
+void Server::save_vpn_file(int fd, const HttpRequest& request, std::string_view body, int64_t deadline) {
+    const std::string name = form_value(request.query, "name");
+    std::string server;
+    std::string reason;
+    const WireGuardSave saved = save_wireguard_file(options_.vpn_folder, name, body, server, reason);
+    int status = 200;
+    std::string error;
+    switch (saved) {
+        case WireGuardSave::Saved:
+            break;
+        case WireGuardSave::NoFolder:
+            status = 409;
+            error = "VPN files can only be added on the Cardputer itself, not to sample data.";
+            break;
+        case WireGuardSave::BadName:
+            status = 400;
+            error = "Give the file a name of up to 32 letters, digits, dots, dashes or underscores.";
+            break;
+        case WireGuardSave::TooLarge:
+            status = 413;
+            error = "This file is too large for a WireGuard file (16 KB at most).";
+            break;
+        case WireGuardSave::NotWireGuard:
+            status = 400;
+            error = "This isn't a WireGuard file LokiCTL can use (" + reason + ").";
+            break;
+        case WireGuardSave::NameTaken:
+            status = 409;
+            error = "There is already a VPN file called " + name + ". Rename yours and try again.";
+            break;
+        case WireGuardSave::Full:
+            status = 409;
+            error = "The Cardputer already holds 16 VPN files, the most it lists.";
+            break;
+        case WireGuardSave::Failed:
+            status = 500;
+            error = "The Cardputer couldn't save the file. Try again.";
+            break;
+    }
+    // The name is a checked one (valid_upload_name()) and the host a checked
+    // name or address; json_text() escapes them anyway.
+    const std::string json = status == 200
+                                 ? "{\"name\":" + model::json_text(name) + ",\"server\":" + model::json_text(server) + "}\n"
+                                 : "{\"error\":" + model::json_text(error) + "}\n";
+    send_body(fd, status, "application/json; charset=utf-8", json, wake_read_, deadline);
+}
+
 void Server::handle_connection(int fd, int side, const Side& own, Pairing& pairing, FrameCache& frames) {
     const int64_t deadline = now_ms() + kRequestTimeoutMs;
 
     // Read the head, then the body, never more than both limits together.
+    // The buffer is taken once at its largest, so it never moves and leaves
+    // no copy behind; a WireGuard file may pass through it, so whatever came
+    // in is wiped whichever way the request ends.
     std::string data;
-    data.reserve(kMaxHeadBytes + kMaxBodyBytes);
+    data.reserve(kMaxHeadBytes + kMaxUploadBytes);
+    struct Wipe {
+        std::string& text;
+        ~Wipe() {
+            // Bytes past the size were read in too (see the loop below).
+            text.resize(text.capacity());
+            volatile char* bytes = &text[0];
+            for (std::size_t index = 0; index < text.size(); ++index) {
+                bytes[index] = 0;
+            }
+        }
+    } wipe{data};
     HttpRequest request;
     std::size_t head_size = 0;
     bool have_head = false;
@@ -572,11 +670,14 @@ void Server::handle_connection(int fd, int side, const Side& own, Pairing& pairi
             break;
         }
 
-        char chunk[512];
-        const std::size_t room = kMaxHeadBytes + kMaxBodyBytes - data.size();
-        const ssize_t got = ::recv(fd, chunk, room < sizeof(chunk) ? room : sizeof(chunk), 0);
+        // Straight into the buffer, at most up to the end of this request.
+        const std::size_t most = have_head ? head_size + request.content_length : kMaxHeadBytes + kMaxBodyBytes;
+        const std::size_t room = std::min<std::size_t>(most - data.size(), 4096);
+        const std::size_t had = data.size();
+        data.resize(had + room);
+        const ssize_t got = ::recv(fd, &data[had], room, 0);
+        data.resize(had + (got > 0 ? static_cast<std::size_t>(got) : 0));
         if (got > 0) {
-            data.append(chunk, static_cast<std::size_t>(got));
             continue;
         }
         if (got == 0) {
@@ -618,7 +719,8 @@ void Server::handle_connection(int fd, int side, const Side& own, Pairing& pairi
         return;
     }
 
-    if (request.path == "/api/v1/session" || request.path == "/api/v1/status") {
+    if (request.path == "/api/v1/session" || request.path == "/api/v1/status" ||
+        (request.path == "/api/v1/hotspot" && request.method == "GET")) {
         if (request.method != "GET") {
             send_text(fd, 405, "method not allowed\n", wake_read_, deadline, "Allow: GET\r\n");
             return;
@@ -633,7 +735,7 @@ void Server::handle_connection(int fd, int side, const Side& own, Pairing& pairi
             json = "{\"token\":\"" + pairing.request_token() + "\"}\n";
         } else {
             std::lock_guard<std::mutex> lock(json_mutex_);
-            json = status_json_;
+            json = request.path == "/api/v1/status" ? status_json_ : hotspot_json_;
         }
         if (json.empty()) {
             send_text(fd, 503, "no data yet\n", wake_read_, deadline);
@@ -644,28 +746,7 @@ void Server::handle_connection(int fd, int side, const Side& own, Pairing& pairi
     }
 
     if (request.path == "/key") {
-        if (request.method != "POST") {
-            send_text(fd, 405, "method not allowed\n", wake_read_, deadline, "Allow: POST\r\n");
-            return;
-        }
-        // Only the page itself may send keys: the browser names the page's
-        // origin. Checked before the cookie, so a refused request is no
-        // sign of life.
-        if (request.origin != "http://" + own.host) {
-            send_text(fd, 403, "wrong origin\n", wake_read_, deadline);
-            return;
-        }
-        // The session first, so a page whose session ended learns to pair
-        // again; then the request token, which only the page can know.
-        const Pairing::Change change =
-            side != paired_side_ ? Pairing::Change::NoSession
-                                 : pairing.check_change(cookie_value(request.cookie, kCookieName), request.token, now);
-        if (change == Pairing::Change::NoSession) {
-            send_text(fd, 401, "pair first\n", wake_read_, deadline);
-            return;
-        }
-        if (change == Pairing::Change::WrongToken) {
-            send_text(fd, 403, "wrong token\n", wake_read_, deadline);
+        if (!accept_change(fd, request, side, own, pairing, now, deadline)) {
             return;
         }
         uint32_t key = 0;
@@ -682,25 +763,7 @@ void Server::handle_connection(int fd, int side, const Side& own, Pairing& pairi
     }
 
     if (request.path == "/api/v1/block") {
-        if (request.method != "POST") {
-            send_text(fd, 405, "method not allowed\n", wake_read_, deadline, "Allow: POST\r\n");
-            return;
-        }
-        // Checked as POST /key is: the page's origin, then the session,
-        // then the request token.
-        if (request.origin != "http://" + own.host) {
-            send_text(fd, 403, "wrong origin\n", wake_read_, deadline);
-            return;
-        }
-        const Pairing::Change change =
-            side != paired_side_ ? Pairing::Change::NoSession
-                                 : pairing.check_change(cookie_value(request.cookie, kCookieName), request.token, now);
-        if (change == Pairing::Change::NoSession) {
-            send_text(fd, 401, "pair first\n", wake_read_, deadline);
-            return;
-        }
-        if (change == Pairing::Change::WrongToken) {
-            send_text(fd, 403, "wrong token\n", wake_read_, deadline);
+        if (!accept_change(fd, request, side, own, pairing, now, deadline)) {
             return;
         }
         BlockRequest block;
@@ -719,29 +782,24 @@ void Server::handle_connection(int fd, int side, const Side& own, Pairing& pairi
         return;
     }
 
-    if (request.path == "/api/v1/check" || request.path == "/api/v1/report") {
-        if (request.method != "POST") {
-            send_text(fd, 405, "method not allowed\n", wake_read_, deadline, "Allow: POST\r\n");
+    if (request.path == kUploadPath) {
+        if (accept_change(fd, request, side, own, pairing, now, deadline)) {
+            save_vpn_file(fd, request, body, deadline);
+        }
+        return;
+    }
+
+    if (request.path == "/api/v1/check" || request.path == "/api/v1/report" || request.path == "/api/v1/mode" ||
+        request.path == "/api/v1/vpn" || request.path == "/api/v1/hotspot" || request.path == "/api/v1/keep" ||
+        request.path == "/api/v1/leak") {
+        if (!accept_change(fd, request, side, own, pairing, now, deadline)) {
             return;
         }
-        // Checked as POST /key is: the page's origin, then the session,
-        // then the request token.
-        if (request.origin != "http://" + own.host) {
-            send_text(fd, 403, "wrong origin\n", wake_read_, deadline);
-            return;
-        }
-        const Pairing::Change change =
-            side != paired_side_ ? Pairing::Change::NoSession
-                                 : pairing.check_change(cookie_value(request.cookie, kCookieName), request.token, now);
-        if (change == Pairing::Change::NoSession) {
-            send_text(fd, 401, "pair first\n", wake_read_, deadline);
-            return;
-        }
-        if (change == Pairing::Change::WrongToken) {
-            send_text(fd, 403, "wrong token\n", wake_read_, deadline);
-            return;
-        }
+        // What the body asks, or nothing (400).
+        bool valid = true;
         Action action = Action::SaveReport;
+        std::string text;
+        bool found = false;
         if (request.path == "/api/v1/check") {
             const std::string run = form_value(body, "run");
             if (run == "1" && form_value(body, "own") == "1") {
@@ -749,15 +807,44 @@ void Server::handle_connection(int fd, int side, const Side& own, Pairing& pairi
             } else if (run == "0") {
                 action = Action::StopCheck;
             } else {
-                send_text(fd, 400, "bad request\n", wake_read_, deadline);
-                return;
+                valid = false;
             }
+        } else if (request.path == "/api/v1/mode") {
+            text = form_value(body, "mode");
+            action = Action::Mode;
+            valid = text == "client" || text == "router" || text == "share";
+        } else if (request.path == "/api/v1/vpn") {
+            const std::string on = form_value(body, "on", &found);
+            if (found) {
+                action = on == "1" ? Action::VpnOn : Action::VpnOff;
+                valid = on == "1" || on == "0";
+            } else {
+                action = Action::VpnFile;
+                valid = form_decode(form_value(body, "file", &found), text) && found && !text.empty();
+            }
+        } else if (request.path == "/api/v1/hotspot") {
+            const std::string password = form_value(body, "password", &found);
+            if (found) {
+                action = Action::HotspotPassword;
+                valid = password == "new";
+            } else {
+                action = Action::HotspotName;
+                valid = form_decode(form_value(body, "name", &found), text) && found;
+            }
+        } else if (request.path == "/api/v1/keep") {
+            const std::string on = form_value(body, "on");
+            action = on == "1" ? Action::KeepOn : Action::KeepOff;
+            valid = on == "1" || on == "0";
+        } else if (request.path == "/api/v1/leak") {
+            const std::string run = form_value(body, "run");
+            action = run == "1" ? Action::StartLeak : Action::StopLeak;
+            valid = run == "1" || run == "0";
         }
-        if (!options_.actions) {
+        if (!valid || !options_.actions) {
             send_text(fd, 400, "bad request\n", wake_read_, deadline);
             return;
         }
-        if (!options_.actions->push(action)) {
+        if (!options_.actions->push(action, std::move(text))) {
             send_text(fd, 429, "too many requests\n", wake_read_, deadline);
             return;
         }

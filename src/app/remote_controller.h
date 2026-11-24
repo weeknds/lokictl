@@ -114,6 +114,31 @@ namespace app {
 // health check stop asked ...", "... health check from the browser not
 // started (<why>)" and "... report asked from the browser".
 //
+// The Modes page's requests (POST /api/v1/mode, /vpn, /hotspot, /keep,
+// /leak) wait in the same queue and go the way the Modes, Hotspot, Leak
+// and Settings pages' keys go, with their rules: a mode only when
+// mode_command_refusal() has nothing against it (as `:mode`), VPN off only
+// while the tunnel runs or the kill switch holds devices back, a VPN file
+// only while no tunnel runs and only one of home().vpn.files, a hotspot
+// name only when valid_hotspot_name() takes it (or empty: the default),
+// name and password changes not while a switch runs, the leak test only
+// when the Leak page could start it (model::dashboard_leak()). Anything
+// else is dropped; the page sees the result in the next status. Log lines
+// name the request, never a name, a file or a password: "remote view:
+// <Mode> asked from the browser", "... mode switch from the browser not
+// started (<why>)", "... VPN off asked ...", "... VPN file picked ...",
+// "... hotspot rename asked ...", "... new hotspot password asked ...",
+// "... keep mode on (off) asked ...", "... leak test asked ..." and "...
+// leak test stop asked ...".
+//
+// GET /api/v1/hotspot: the hotspot's name (the running one while Router or
+// Share runs, else the one it starts with), its password and the QR code
+// of HotspotScreen::join_text(), made by LVGL's own QR encoder (byte mode,
+// medium error correction, the smallest version) as rows of hex digits.
+// Handed to the server only when the name or the password changed. WireGuard
+// files the browser adds are saved by the server's thread into
+// `vpn_folder` (empty: none can be added).
+//
 // Create it after the ThemeEngine and the view model, and destroy it
 // before them.
 class RemoteController {
@@ -121,7 +146,8 @@ public:
     RemoteController(view::ThemeEngine& theme_engine,
                      viewmodel::BaseViewModel& view_model,
                      std::string web_folder,
-                     std::string font_folder);
+                     std::string font_folder,
+                     std::string vpn_folder = {});
     // Calls stop().
     ~RemoteController();
 
@@ -152,8 +178,10 @@ private:
     void switch_off();
     void poll();
     void hand_off_frame();
-    // Hands the server a new status JSON when a second passed and it changed.
+    // Hands the server a new status JSON when a second passed and it changed,
+    // and a new hotspot JSON when the name or the password changed.
     void hand_over_status();
+    void hand_over_hotspot();
     void resume_timer();
     // Runs the key timer only while a browser is paired; stopping it also
     // forgets the waiting keys.
@@ -195,6 +223,8 @@ private:
     bool stopped_{false};
     std::string web_folder_;
     std::string font_folder_;
+    std::string vpn_folder_;
+    std::string hotspot_seen_;      // the name and password of the hotspot JSON handed over last
     std::string status_json_;       // the last JSON handed to server_
     uint32_t status_built_{0};      // lv_tick_get() when it was last built
     model::TrafficLog traffic_;     // the dashboard's last minute of traffic, while a server runs

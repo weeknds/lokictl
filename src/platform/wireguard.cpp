@@ -11,12 +11,15 @@
 #include <algorithm>
 #include <arpa/inet.h>
 #include <cctype>
+#include <cerrno>
 #include <cstdlib>
 #include <cstring>
+#include <fcntl.h>
 #include <fstream>
 #include <iterator>
 #include <sys/stat.h>
 #include <system_error>
+#include <unistd.h>
 
 namespace platform {
 namespace {
@@ -495,6 +498,84 @@ std::string read_wireguard_file(const std::filesystem::path& folder, const std::
     std::string reason = parse_wireguard_config(text, config);
     wipe(text);
     return reason;
+}
+
+bool valid_upload_name(std::string_view name) {
+    if (name.empty() || name.size() > kWireGuardUploadNameMax || name.front() == '.') {
+        return false;
+    }
+    return std::all_of(name.begin(), name.end(), [](char character) {
+        return (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') ||
+               (character >= '0' && character <= '9') || character == '.' || character == '_' || character == '-';
+    });
+}
+
+WireGuardSave save_wireguard_file(const std::filesystem::path& folder, std::string_view name,
+                                  std::string_view text, std::string& server, std::string& reason) {
+    server.clear();
+    reason.clear();
+    if (folder.empty()) {
+        return WireGuardSave::NoFolder;
+    }
+    if (!valid_upload_name(name)) {
+        return WireGuardSave::BadName;
+    }
+    if (text.size() > kWireGuardMaxFileBytes) {
+        return WireGuardSave::TooLarge;
+    }
+    constexpr std::string_view kByteOrderMark = "\xEF\xBB\xBF";
+    if (text.substr(0, kByteOrderMark.size()) == kByteOrderMark) {
+        text.remove_prefix(kByteOrderMark.size());
+    }
+    WireGuardConfig config;
+    reason = parse_wireguard_config(text, config);
+    if (!reason.empty()) {
+        clear_wireguard_config(config);
+        return WireGuardSave::NotWireGuard;
+    }
+    const std::string host = config.peers.empty() ? std::string() : config.peers.front().endpoint_host;
+    clear_wireguard_config(config);
+
+    if (!prepare_wireguard_folder(folder)) {
+        return WireGuardSave::Failed;
+    }
+    const std::filesystem::path path = folder / (std::string(name) + std::string(kSuffix));
+    struct stat existing {};
+    if (lstat(path.c_str(), &existing) == 0) {
+        return WireGuardSave::NameTaken;
+    }
+    if (list_wireguard_files(folder).size() >= model::kVpnMaxFiles) {
+        return WireGuardSave::Full;
+    }
+    int flags = O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW;
+#if defined(O_CLOEXEC)
+    flags |= O_CLOEXEC;
+#endif
+    const int fd = ::open(path.c_str(), flags, 0600);
+    if (fd < 0) {
+        return errno == EEXIST ? WireGuardSave::NameTaken : WireGuardSave::Failed;
+    }
+    bool written = ::fchmod(fd, 0600) == 0;
+    std::string_view left = text;
+    while (written && !left.empty()) {
+        const ssize_t wrote = ::write(fd, left.data(), left.size());
+        if (wrote < 0 && errno == EINTR) {
+            continue;
+        }
+        if (wrote <= 0) {
+            written = false;
+            break;
+        }
+        left.remove_prefix(static_cast<std::size_t>(wrote));
+    }
+    written = written && ::fsync(fd) == 0;
+    written = ::close(fd) == 0 && written;
+    if (!written) {
+        ::unlink(path.c_str());
+        return WireGuardSave::Failed;
+    }
+    server = host;
+    return WireGuardSave::Saved;
 }
 
 } // namespace platform

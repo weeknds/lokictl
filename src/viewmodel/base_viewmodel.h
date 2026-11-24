@@ -200,6 +200,10 @@ public:
     // home().vpn.files, going round at either end. Notifies
     // vpn_file_subject() when the pick changes.
     void step_vpn_file(int32_t step);
+    // Picks the file `name` when it is among home().vpn.files (the web
+    // dashboard's File row). Returns false and changes nothing otherwise.
+    // Notifies vpn_file_subject() when the pick changes.
+    bool select_vpn_file(const std::string& name);
     lv_subject_t* vpn_file_subject();
     // The hotspot's password, for the Modes and Hotspot pages to show. The
     // app sets it (from the settings file on the device, a made-up one in

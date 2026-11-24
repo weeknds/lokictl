@@ -6,7 +6,9 @@
 
 #include "remote_controller.h"
 
+#include "application_config.h"
 #include "base_viewmodel.h"
+#include "command_bar.h"
 #include "dashboard_status.h"
 #include "health_check.h"
 #include "linux_input.h"
@@ -18,14 +20,19 @@
 #include "remote/remote_server.h"
 #include "remote/remote_switch.h"
 #include "remote_mark.h"
+#include "hotspot_screen.h"
 #include "remote_panel.h"
+#include "report.h"
 #include "report_files.h"
+#include "src/libs/qrcode/qrcodegen.h"
+#include "wireguard.h"
 
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <utility>
+#include <vector>
 
 #ifndef APP_FRAMEBUFFER_DEVICE
 #define APP_FRAMEBUFFER_DEVICE "/dev/fb0"
@@ -134,7 +141,8 @@ void blend_over(lv_draw_buf_t* base, const lv_draw_buf_t* top) {
 RemoteController::RemoteController(view::ThemeEngine& theme_engine,
                                    viewmodel::BaseViewModel& view_model,
                                    std::string web_folder,
-                                   std::string font_folder)
+                                   std::string font_folder,
+                                   std::string vpn_folder)
     : view_model_(view_model),
       panel_(std::make_unique<view::widgets::RemotePanel>(lv_layer_top(), theme_engine)),
       mark_(std::make_unique<view::widgets::RemoteMark>(lv_layer_top(), theme_engine)),
@@ -142,7 +150,8 @@ RemoteController::RemoteController(view::ThemeEngine& theme_engine,
       blocks_(std::make_unique<platform::remote::BlockQueue>()),
       actions_(std::make_unique<platform::remote::ActionQueue>()),
       web_folder_(std::move(web_folder)),
-      font_folder_(std::move(font_folder)) {
+      font_folder_(std::move(font_folder)),
+      vpn_folder_(std::move(vpn_folder)) {
     panel_->build();
     mark_->build();
 
@@ -359,6 +368,7 @@ void RemoteController::switch_on() {
     options.reports_folder = platform::report_folder();
     options.web_folder = web_folder_;
     options.font_folder = font_folder_;
+    options.vpn_folder = vpn_folder_;
     std::unique_ptr<platform::remote::FrameSource> frames;
 #if USE_DESKTOP
     options.loopback_only = true;
@@ -370,6 +380,7 @@ void RemoteController::switch_on() {
 #endif
     server_ = std::make_unique<Server>(options, std::move(frames));
     status_json_.clear();
+    hotspot_seen_.clear();
     traffic_.clear();
     hand_over_status();
     wrong_codes_seen_ = 0;
@@ -595,12 +606,15 @@ void RemoteController::apply_blocks() {
 }
 
 void RemoteController::apply_actions() {
-    platform::remote::Action action = platform::remote::Action::SaveReport;
-    while (actions_->pop(action)) {
+    platform::remote::ActionRequest request;
+    while (actions_->pop(request)) {
         if (!server_) {
             continue;
         }
-        switch (action) {
+        const model::HomeData& home = view_model_.home();
+        const bool switching = home.mode_switch.state == model::SwitchState::Switching;
+        const bool vpn_active = home.vpn.state != model::VpnState::Off || home.mode == model::NetMode::Vpn;
+        switch (request.action) {
             case platform::remote::Action::StartCheck: {
                 // The Health page's own gate; the browser's confirmation
                 // stands for the page's second 6.
@@ -631,6 +645,75 @@ void RemoteController::apply_actions() {
                 report_asked_at_ = lv_tick_get();
                 LOG_INFO("remote view: report asked from the browser");
                 view_model_.request_report();
+                break;
+            case platform::remote::Action::Mode:
+            case platform::remote::Action::VpnOn: {
+                // The Modes page's key 6, with the `:mode` command's rules.
+                const model::NetMode mode = request.action == platform::remote::Action::VpnOn ? model::NetMode::Vpn
+                                            : request.text == "router"                         ? model::NetMode::Router
+                                            : request.text == "share"                          ? model::NetMode::Share
+                                                                                               : model::NetMode::Client;
+                const std::string refusal = mode_command_refusal(mode, home);
+                if (!refusal.empty()) {
+                    LOG_INFO("remote view: mode switch from the browser not started ({})", refusal);
+                    break;
+                }
+                LOG_INFO("remote view: {} asked from the browser", model::net_mode_name(mode));
+                view_model_.request_mode(mode);
+                break;
+            }
+            case platform::remote::Action::VpnOff:
+                // The Modes page's Off: while the tunnel runs, or while the
+                // kill switch holds hotspot devices back without it.
+                if (!switching && (vpn_active || model::vpn_gateway_down(home.vpn))) {
+                    LOG_INFO("remote view: VPN off asked from the browser");
+                    view_model_.request_vpn_off();
+                }
+                break;
+            case platform::remote::Action::VpnFile:
+                // As Z/C on the VPN row: only while no tunnel runs.
+                if (!vpn_active && view_model_.select_vpn_file(request.text)) {
+                    LOG_INFO("remote view: VPN file picked from the browser");
+                }
+                break;
+            case platform::remote::Action::HotspotName:
+                // As Enter on the Hotspot page: a valid name, or empty for
+                // the default one; not while a switch runs.
+                if (!switching && (request.text.empty() || valid_hotspot_name(request.text)) &&
+                    request.text != view_model_.hotspot_name()) {
+                    LOG_INFO("remote view: hotspot rename asked from the browser");
+                    view_model_.request_hotspot_rename(request.text);
+                }
+                break;
+            case platform::remote::Action::HotspotPassword:
+                // As the Hotspot page's second 6 (the browser asked first).
+                if (!switching) {
+                    LOG_INFO("remote view: new hotspot password asked from the browser");
+                    view_model_.request_new_hotspot_password();
+                }
+                break;
+            case platform::remote::Action::KeepOn:
+            case platform::remote::Action::KeepOff: {
+                const bool on = request.action == platform::remote::Action::KeepOn;
+                if (on != view_model_.keep_mode()) {
+                    LOG_INFO("remote view: keep mode {} asked from the browser", on ? "on" : "off");
+                    view_model_.set_keep_mode(on);
+                }
+                break;
+            }
+            case platform::remote::Action::StartLeak:
+                // The Leak page's gate: no tool running, the tunnel not
+                // being set up.
+                if (model::dashboard_leak(home, view_model_.tools()).can) {
+                    LOG_INFO("remote view: leak test asked from the browser");
+                    view_model_.request_tool_run(model::ToolKind::Leak, platform::kVpnInterface);
+                }
+                break;
+            case platform::remote::Action::StopLeak:
+                if (view_model_.tools().leak.state == model::ToolState::Running) {
+                    LOG_INFO("remote view: leak test stop asked from the browser");
+                    view_model_.request_tool_stop();
+                }
                 break;
         }
     }
@@ -672,11 +755,65 @@ void RemoteController::hand_over_status() {
     parts.check = model::dashboard_check(home, tools);
     parts.keep_mode = view_model_.keep_mode();
     parts.traffic = traffic_.samples();
+    for (std::size_t index = 0; index < parts.mode_why.size(); ++index) {
+        parts.mode_why[index] = mode_command_refusal(static_cast<model::NetMode>(index), home);
+    }
+    parts.hotspot_name = view_model_.hotspot_name();
+    parts.vpn_pick = view_model_.vpn_file();
+    parts.vpn_add = !vpn_folder_.empty();
+    parts.leak = model::dashboard_leak(home, tools);
     std::string json = model::dashboard_status_json(home, parts);
     if (json != status_json_) {
         status_json_ = json;
         server_->set_status_json(std::move(json));
     }
+    hand_over_hotspot();
+}
+
+void RemoteController::hand_over_hotspot() {
+    const model::HomeData& home = view_model_.home();
+    // The name the Hotspot page shows and its code holds.
+    const bool running = model::is_hotspot_mode(home.mode) && home.ap_active;
+    const std::string& name = running && !home.ap_name.empty() ? home.ap_name : view_model_.hotspot_name();
+    const std::string& password = view_model_.hotspot_password();
+    std::string seen = name;
+    seen.append(1, '\0').append(password);
+    if (seen == hotspot_seen_) {
+        return;
+    }
+    hotspot_seen_ = std::move(seen);
+
+    std::string json = "{\"name\":" + model::json_text(name) + ",\"password\":" + model::json_text(password) + ",\"qr\":";
+    const std::string text = screen::HotspotScreen::join_text(name, password);
+    std::vector<uint8_t> code(qrcodegen_BUFFER_LEN_MAX);
+    std::vector<uint8_t> work(qrcodegen_BUFFER_LEN_MAX);
+    // As lv_qrcode_update(): the text's bytes, medium error correction.
+    const bool made = !password.empty() && text.size() <= work.size() &&
+                      (std::memcpy(work.data(), text.data(), text.size()),
+                       qrcodegen_encodeBinary(work.data(), text.size(), code.data(), qrcodegen_Ecc_MEDIUM,
+                                              qrcodegen_VERSION_MIN, qrcodegen_VERSION_MAX, qrcodegen_Mask_AUTO, true));
+    if (!made) {
+        json += "null}\n";
+    } else {
+        // One row of hex digits a line, the first module in the highest bit.
+        static constexpr char kHex[] = "0123456789abcdef";
+        const int size = qrcodegen_getSize(code.data());
+        json += "{\"size\":" + std::to_string(size) + ",\"rows\":[";
+        for (int y = 0; y < size; ++y) {
+            json += y > 0 ? ",\"" : "\"";
+            for (int x = 0; x < size; x += 4) {
+                int digit = 0;
+                for (int bit = 0; bit < 4; ++bit) {
+                    digit = digit * 2 + (x + bit < size && qrcodegen_getModule(code.data(), x + bit, y) ? 1 : 0);
+                }
+                json += kHex[digit];
+            }
+            json += '"';
+        }
+        json += "]}}\n";
+    }
+    std::fill(work.begin(), work.end(), 0);
+    server_->set_hotspot_json(std::move(json));
 }
 
 void RemoteController::hand_off_frame() {
