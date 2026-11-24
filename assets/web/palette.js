@@ -45,7 +45,7 @@ const PAGE_WORDS = {
   security: "security findings holes fix health",
   watch: "watch trap alerts",
   map: "map",
-  modes: "modes mode vpn hotspot client router share leak",
+  modes: "modes mode vpn hotspot client router share laptop link leak",
   tools: "tools",
   reports: "reports report download",
   screen: "screen cardputer remote keys view",
@@ -135,6 +135,7 @@ function actionItems(status) {
     ["client", "Client"],
     ["router", "Router"],
     ["share", "Share"],
+    ["laptop", "Laptop link"],
   ]) {
     if (id === on) continue;
     items.push(

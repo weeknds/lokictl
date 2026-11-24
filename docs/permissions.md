@@ -31,8 +31,10 @@ NetworkManager actions:
 - share the network through a protected (WPA) hotspot
   (`wifi.share.protected`). An open hotspot is not allowed.
 
-The modes (Router, Share, VPN) need these. Router also needs
-`dnsmasq-base` and `nftables`, which the package depends on. Removing the
+The modes (Router, Share, VPN, Laptop link) need these; Laptop link, a
+shared profile on the cable, needs only the first two. Router and Laptop
+link also need `dnsmasq-base` and `nftables`, which the package depends
+on. Removing the
 package removes the rule.
 
 **What that costs.** polkit cannot tell programs apart, so **every program

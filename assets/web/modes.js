@@ -3,9 +3,9 @@
 // SPDX-License-Identifier: MIT
 
 // The Modes page: Client, Router or Share, the hotspot (its QR code, name
-// and password), the VPN (on or off, its file, the kill switch, the leak
-// test, adding a WireGuard file) and whether the mode stays after LokiCTL
-// quits. Every control asks the Cardputer, which applies it the way its own
+// and password), Laptop link (a laptop on the Cardputer's cable port), the
+// VPN (on or off, its file, the kill switch, the leak test, adding a
+// WireGuard file) and whether the mode stays after LokiCTL quits. Every control asks the Cardputer, which applies it the way its own
 // Modes, Hotspot and Leak pages do, with the same rules; the page then
 // follows the status. It asks before each switch and before a new password.
 
@@ -28,18 +28,29 @@ const TILES = [
   { id: "share", name: "Share", hint: "Wi-Fi + hotspot" },
 ];
 
+// Every mode the page can ask for, by its id.
+const NAMES = { client: "Client", router: "Router", share: "Share", laptop: "Laptop link" };
+
 const LEAK_DOT = { pass: "ok", fail: "bad", unknown: "warn" };
 
-// The tile that is on: the VPN alone is Client with the tunnel.
+// The tile that is on: the VPN alone is Client with the tunnel. With
+// Laptop link on, no tile is.
 function tileOn(mode) {
   return mode.id === "vpn" ? "client" : mode.id;
 }
 
-// True when this browser reached the Cardputer through its own hotspot:
-// closing or restarting the hotspot then ends this page's session.
+// True when this browser reached the Cardputer through its own hotspot, or
+// through the cable while Laptop link runs: closing or restarting that
+// side then ends this page's session.
 function viaHotspot(status) {
   const own = status.cardputer && status.cardputer.address;
-  return !status.sample && !!(status.mode && status.mode.hotspot) && !!own && location.hostname !== own;
+  const mode = status.mode || {};
+  return !status.sample && (!!mode.hotspot || mode.id === "laptop") && !!own && location.hostname !== own;
+}
+
+// Where such a browser is connected, in the page's words.
+function sideWord(status) {
+  return status.mode && status.mode.id === "laptop" ? "the cable" : "the hotspot";
 }
 
 // "home" or "home-vpn" from "home-vpn.conf": the name the Cardputer saves
@@ -126,9 +137,17 @@ function Ask({ ask, status, sending, onYes, onNo }) {
       title = "Back to Client?";
       text = mode.hotspot
         ? "The hotspot closes and the devices on it lose the internet. The Cardputer joins Wi-Fi as usual."
+        : mode.id === "laptop"
+        ? "The laptop link stops: the laptop loses the Cardputer on the cable. Then you can plug the cable back into your router."
         : "The Cardputer joins Wi-Fi as usual.";
       if (mode.vpn_active) text += " The VPN goes off too.";
-      losesPage = mode.hotspot;
+      losesPage = mode.hotspot || mode.id === "laptop";
+    } else if (ask.mode === "laptop") {
+      title = "Switch to Laptop link?";
+      text =
+        "The laptop plugged into the Cardputer's cable port gets an address and can use the Cardputer's Wi-Fi for the internet. On the laptop, open " +
+        (mode.laptop_address || "10.42.0.1") +
+        ":8780 in a browser.";
     } else if (ask.mode === "router") {
       title = "Switch to Router?";
       text =
@@ -166,7 +185,7 @@ function Ask({ ask, status, sending, onYes, onNo }) {
           "p",
           { class: "check-own" },
           icon("alert", 18, 2),
-          h("span", null, "You're connected through the hotspot, so this page will lose the Cardputer. Pair again from your own network.")
+          h("span", null, "You're connected through " + sideWord(status) + ", so this page will lose the Cardputer. Pair again from your own network.")
         )
       : null,
     h(
@@ -255,17 +274,17 @@ export class ModesPage extends Component {
     const change = mode.switch || {};
     const switching = change.state === "switching";
     const why = (mode.why || {})[id];
-    const tile = TILES.find((t) => t.id === id);
+    const where = id === "laptop" ? "laptop" : "mode";
     if (tileOn(mode) === id) {
-      if (said) this.setState({ msg: { where: "mode", text: tile.name + " is on already.", tone: "" } });
+      if (said) this.setState({ msg: { where, text: NAMES[id] + " is on already.", tone: "" } });
       return;
     }
     if (why && !switching) {
-      this.setState({ msg: { where: "mode", text: why + ".", tone: "warn" } });
+      this.setState({ msg: { where, text: why + ".", tone: "warn" } });
       return;
     }
     if (switching || this.state.want) {
-      if (said) this.setState({ msg: { where: "mode", text: "Wait until the switch is done.", tone: "warn" } });
+      if (said) this.setState({ msg: { where, text: "Wait until the switch is done.", tone: "warn" } });
       return;
     }
     this.openAsk({ kind: "mode", mode: id });
@@ -278,7 +297,7 @@ export class ModesPage extends Component {
     if (!status || !status.mode || this.state.sending) return;
     const ask = takePageAsk("modes");
     if (!ask) return;
-    if (ask.kind === "mode" && TILES.some((t) => t.id === ask.mode)) {
+    if (ask.kind === "mode" && NAMES[ask.mode]) {
       this.pickMode(ask.mode, true);
       return;
     }
@@ -406,7 +425,8 @@ export class ModesPage extends Component {
     const mode = this.mode();
     if (!ask) return;
     if (ask.kind === "mode") {
-      this.send("/api/v1/mode", { mode: ask.mode }, { kind: "mode", value: ask.mode, from: switchKey(mode), where: "mode" });
+      const where = ask.mode === "laptop" || (ask.mode === "client" && mode.id === "laptop") ? "laptop" : "mode";
+      this.send("/api/v1/mode", { mode: ask.mode }, { kind: "mode", value: ask.mode, from: switchKey(mode), where });
     } else if (ask.kind === "vpn-on" || ask.kind === "vpn-off") {
       const on = ask.kind === "vpn-on";
       this.send("/api/v1/vpn", { on: on ? "1" : "0" }, { kind: ask.kind, from: switchKey(mode), where: "vpn" });
@@ -499,7 +519,9 @@ export class ModesPage extends Component {
     const waiting = this.state.want && this.state.want.kind === "mode" ? this.state.want.value : "";
     const why = mode.why || {};
     let line = null;
-    if (switching) {
+    if (change.target === "laptop") {
+      // Laptop link says it under its own row.
+    } else if (switching) {
       line = h("p", { class: "mode-line", role: "status" }, "Switching…");
     } else if (change.state === "failed" && change.error) {
       line = h("p", { class: "mode-line warn", role: "status" }, change.error);
@@ -536,6 +558,54 @@ export class ModesPage extends Component {
       ),
       line,
       h(Message, { msg: this.state.msg, where: "mode" }),
+    ];
+  }
+
+  // Laptop link: one row with a switch and a plain sentence. On asks to
+  // switch to it, off asks to go back to Client.
+  laptop(mode) {
+    const on = mode.id === "laptop";
+    const change = mode.switch || {};
+    const switching = change.state === "switching";
+    const waiting = !!this.state.want && this.state.want.kind === "mode" && this.state.want.where === "laptop";
+    const why = (mode.why || {}).laptop;
+    let value = ["Off", ""];
+    if (on) value = ["On", "ok"];
+    if ((switching && change.target === "laptop") || waiting) value = ["Switching…", ""];
+    const address = mode.laptop_address || "10.42.0.1";
+    const canToggle = !switching && !this.state.want && (on || !why);
+    const failed = change.state === "failed" && change.target === "laptop" && change.error;
+    return [
+      h("div", { class: "sec" }, h("span", null, "Laptop link")),
+      h(
+        "div",
+        { class: "group" },
+        h(
+          "div",
+          { class: "row icon-row" },
+          h("span", { class: "tile" }, icon("laptop", 17, 1.9)),
+          h(
+            "span",
+            { class: "row-text" },
+            h("b", { id: "laptop-label" }, "Laptop link"),
+            h("span", null, "Share this Cardputer with a laptop on the cable")
+          ),
+          h("span", { class: "row-value " + value[1] }, value[0]),
+          h(Switch, {
+            on,
+            label: "Laptop link",
+            disabled: !canToggle,
+            onClick: () => this.pickMode(on ? "client" : "laptop", false),
+          })
+        )
+      ),
+      failed ? h("p", { class: "mode-line warn", role: "status" }, change.error) : null,
+      h(Message, { msg: this.state.msg, where: "laptop" }),
+      on
+        ? h("p", { class: "note" }, "On the laptop, open " + address + ":8780 in a browser. Go back to Client before you plug the cable into a router again.")
+        : why
+        ? h("p", { class: "note" }, why + ".")
+        : h("p", { class: "note" }, "Plug the cable straight into your laptop. It gets an address, and the dashboard opens at " + address + ":8780."),
     ];
   }
 
@@ -771,6 +841,8 @@ export class ModesPage extends Component {
     const mode = status.mode;
     const question = ask ? h(Ask, { ask, status, sending, onYes: this.onYes, onNo: this.onNo }) : null;
     const askAtMode = ask && (ask.kind === "mode" || ask.kind === "password");
+    // Laptop link's question sits under its own row.
+    const atLaptop = !!ask && ask.kind === "mode" && (ask.mode === "laptop" || (ask.mode === "client" && mode.id === "laptop"));
     return [
       titles,
       h(
@@ -781,9 +853,11 @@ export class ModesPage extends Component {
           { class: "modes-col" },
           h("div", { class: "sec desk-only" }, h("span", null, "Mode")),
           this.tiles(mode),
-          askAtMode && ask.kind === "mode" ? question : null,
+          askAtMode && ask.kind === "mode" && !atLaptop ? question : null,
           this.hotspot(status, mode),
-          askAtMode && ask.kind === "password" ? question : null
+          askAtMode && ask.kind === "password" ? question : null,
+          this.laptop(mode),
+          atLaptop ? question : null
         ),
         h("div", { class: "modes-col" }, ask && !askAtMode ? question : null, this.vpn(status, mode), this.keep(mode))
       ),

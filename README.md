@@ -79,8 +79,8 @@ network map in Constellation and boxed panes in Terminal. The soft keys are
 
 ### Modes, Hotspot and Devices
 
-Modes (`4` on Home) switches between Client, Router, Share and VPN. See
-[Modes](#modes) for what each one does.
+Modes (`4` on Home) switches between Client, Router, Share, VPN and Laptop
+link. See [Modes](#modes) for what each one does.
 
 Hotspot (`7` on Modes) shows a QR code that a phone camera can scan to join
 the hotspot, next to its name, password, channel and how long it has run.
@@ -382,6 +382,13 @@ marks what's on.
   around it, and the page says `VPN down: hotspot devices blocked`. `6` on
   the VPN row reconnects, and `8` turns the VPN off and lets them out
   directly again.
+- Laptop link shares this Cardputer with a laptop on the cable: plug the
+  cable from the Cardputer's Ethernet port straight into the laptop. The
+  laptop gets an address, opens the web dashboard at `10.42.0.1:8780`
+  (Remote view on) and can use the Cardputer's Wi-Fi for the internet. It
+  starts only from Client, with the Cardputer on Wi-Fi and the cable not in
+  a router (`Plug the cable into the laptop first`); go back to Client
+  before you plug the cable into a router again.
 - Leak test (`5` on Modes, or the command `leak`) checks that nothing goes
   around the tunnel: name lookups, IPv6, the public address the internet
   sees and, in the VPN gateway, the kill switch. One line each, like

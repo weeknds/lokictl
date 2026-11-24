@@ -57,6 +57,11 @@ constexpr const char* kHotspotInterface = "wlan0";
 // helper adds and removes it (see add_share_interface()).
 constexpr const char* kShareInterface = "lokiap0";
 
+// Laptop link's cable port: the laptop plugged in here gets an address
+// from LokiCTL's in-memory profile on it (model::kLaptopLinkAddress). Laptop
+// link only ever touches this one.
+constexpr const char* kLaptopInterface = "eth0";
+
 // The hotspot's name until the user renames it: "LokiCTL-" and the last
 // four hex digits of kHotspotInterface's hardware address, in capitals,
 // read from "<root>/sys/class/net/<interface>/address" ("LokiCTL-0000" when
@@ -67,7 +72,11 @@ std::string default_hotspot_name(const std::filesystem::path& root);
 // named `uplink`: "eth0 -> wi-fi ap · nat · dhcp" (with an arrow).
 std::string router_mode_detail(const std::string& uplink);
 
-// Pretends to switch between Client, Router, Share and VPN, so pages can
+// The line that explains Laptop link on the home page:
+// "laptop on eth0 · 10.42.0.1".
+std::string laptop_mode_detail();
+
+// Pretends to switch between Client, Router, Share, VPN and Laptop link, so pages can
 // be pictured and tried where nothing may or can change the network: the
 // made-up sources, test folders, the Mac, snapshots and --print-data. It
 // changes nothing outside this object.
@@ -78,10 +87,12 @@ std::string router_mode_detail(const std::string& uplink);
 // tunnel nor the kill switch is on), Router without a cable uplink fails at
 // once ("Plug in a cable first"), Share without a Wi-Fi uplink too ("Join a
 // Wi-Fi network first"), Router while Share is on and Share while Router
-// is on too ("Back to Client first"), a restart while its mode is not on
-// is ignored, and every other switch (a restart too) shows Switching until
-// the reading after, which ends it as `failure` says (or with the new mode
-// on). The source asks to be read again kPretendTime after a switch starts
+// is on too ("Back to Client first"), Laptop link fails at once as
+// model::laptop_link_refusal() says, Router, Share and VPN while Laptop
+// link is on fail at once too ("Back to Client first"), a restart while
+// its mode is not on is ignored, and every other switch (a restart too)
+// shows Switching until the reading after, which ends it as `failure` says
+// (or with the new mode on). The source asks to be read again kPretendTime after a switch starts
 // (next_delay()), so in a window it takes about a second.
 //
 // The hotspot and the tunnel are pretended apart, as on the device: VPN
@@ -90,8 +101,9 @@ std::string router_mode_detail(const std::string& uplink);
 // finished, what it set replaces the source's own: Router and Share show
 // the made-up hotspot of the sample (model::sample_home_data()) on top of
 // the source's values, under the name the request carried (when it carried
-// one); VPN shows the tunnel on (see show_vpn()) with the request's file
-// and server; VPN off takes the tunnel and the kill switch away and keeps
+// one); Laptop link shows the mode with its line (see show_laptop()); VPN
+// shows the tunnel on (see show_vpn()) with the request's file and server;
+// VPN off takes the tunnel and the kill switch away and keeps
 // the hotspot; Client shows no access point, no clients, no tunnel and no
 // kill switch. The password is never kept.
 class PretendModeSwitch {
@@ -130,7 +142,8 @@ private:
     model::VpnStatus switching_vpn_; // ... the file and server
     // What finished switches set; each replaces the source's own once set.
     bool has_hotspot_{false};
-    model::NetMode hotspot_mode_{model::NetMode::Client}; // Client: no hotspot
+    // Router, Share or Laptop: that mode runs; Client: none of them.
+    model::NetMode hotspot_mode_{model::NetMode::Client};
     std::string name_;               // the hotspot's name; empty keeps the shown one
     bool has_vpn_{false};
     model::VpnStatus vpn_;           // state Off: no tunnel
@@ -149,6 +162,10 @@ void show_router(model::HomeData& data, const std::string& name, const std::stri
 // Share.
 void show_share(model::HomeData& data, const std::string& name, const std::string& security,
                 int32_t channel, int32_t uptime_seconds);
+
+// Shows Laptop link in `data`: the mode and the line that explains it.
+// The uplink is left as it is (the Wi-Fi), and there is no access point.
+void show_laptop(model::HomeData& data);
 
 // Shows Client in `data`: no access point (no name, security or channel),
 // no clients, no uptime, no tunnel (the VPN's files stay).

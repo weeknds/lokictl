@@ -501,6 +501,27 @@ change anything.
   same address; NetworkManager keeps it `connected`. Router while
   Share runs, and Share while Router runs, fail at once with `Back to
   Client first`.
+- **Laptop link** (`NetworkManagerClient::start_laptop()`): for a laptop
+  plugged straight into the cable port. Refused at once while a hotspot,
+  the tunnel or the kill switch is on (`Back to Client first`), unless the
+  kernel's uplink is Wi-Fi (`Join a Wi-Fi network first`, so the
+  Cardputer stays reachable while the cable goes to the laptop), and while
+  the cable is the uplink or `eth0` has no link, a router or an address of
+  another network (`Plug the cable into the laptop first`: sharing on a
+  port that is in a router would hand out addresses there). LokiCTL adds
+  the profile `LokiCTL laptop link` in memory only (autoconnect off): a
+  cable profile on `eth0`, IPv4 shared on the fixed address
+  `10.42.0.1/24` (`model::kLaptopLinkAddress`), IPv6 off, and activates
+  it there. NetworkManager's shared mode hands the laptop an address and
+  passes its traffic on through the Wi-Fi. The cable's own profile
+  (`Wired connection 1`) is never changed or recorded: once LokiCTL's
+  profile is deleted (Client, quit, a failed switch) NetworkManager's
+  autoconnect brings it back. Same 20 s limit (`no laptop link after 20
+  s`). Router, Share and VPN while it runs fail with `Back to Client
+  first`. Remote view opens its second side on `eth0` while it runs (no
+  hotspot-devices switch needed), so the laptop opens the dashboard at
+  `10.42.0.1:8780`. In a test folder a `laptop eth0` line in the stand-in
+  file shows it.
 - **Client** (`start_client()`): deletes every profile of LokiCTL's
   hotspot, then activates the Wi-Fi profile recorded in it on `wlan0`
   (from Share there is none, so nothing more is sent). Afterwards the live
@@ -1868,7 +1889,7 @@ The lines always come in this order:
 | `clock=` | the clock as `HH:MM` |
 | `battery_percent=` | a number from 0 to 100, or `unknown` |
 | `battery_state=` | `charging`, `discharging`, `idle` or `unknown` |
-| `mode=` | `client`, `router`, `share` or `vpn` |
+| `mode=` | `client`, `router`, `share`, `vpn` or `laptop` |
 | `link=` | the kind of link: `none`, `wifi` or `cable` |
 | `interface=` | the uplink's interface, for example `wlan0` |
 | `address=` | the device's address on the uplink |
@@ -1946,6 +1967,7 @@ device NetworkManager manages; see [USB Wi-Fi adapters](#usb-wi-fi-adapters));
 in a `link` line `-` means not known.
 `ap wlan0 WPA2 LokiCTL-1A2B` says LokiCTL's hotspot runs on `wlan0`
 (Router, with that name and security; `ap lokiap0 …` means Share).
+`laptop eth0` says LokiCTL's Laptop link runs on `eth0`.
 `vpn on <file> <server>` (or `vpn connecting …`) says LokiCTL's tunnel
 runs, and `kill-switch on` that the VPN gateway's kill switch is on (it
 stands in for the firewall table), so `ap …` with `kill-switch on` and no

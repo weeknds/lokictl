@@ -17,12 +17,15 @@
 //
 // Every call that changes the network is in the block marked "Actions"
 // below: adding, updating (in memory) and activating the in-memory hotspot
-// profile, adding and activating the in-memory VPN profile, deleting
-// LokiCTL's hotspot and VPN profiles and activating the Wi-Fi profile the
-// hotspot interface was on before. Nothing else is ever added, changed or
-// deleted, and only kHotspotInterface (Router), kShareInterface (Share)
-// and kVpnInterface (VPN, which the service makes for the profile) are
-// touched. The VPN profile's keys are only written, never read back.
+// profile, adding and activating the in-memory VPN profile, adding and
+// activating the in-memory Laptop link profile, deleting LokiCTL's
+// hotspot, VPN and Laptop link profiles and activating the Wi-Fi profile
+// the hotspot interface was on before. Nothing else is ever added, changed
+// or deleted (the cable's own profile is never touched: the service's
+// autoconnect brings it back once Laptop link's profile is gone), and only
+// kHotspotInterface (Router), kShareInterface (Share), kVpnInterface (VPN,
+// which the service makes for the profile) and kLaptopInterface (Laptop
+// link) are touched. The VPN profile's keys are only written, never read back.
 
 #include "network_manager.h"
 
@@ -168,8 +171,18 @@ bool is_vpn_profile(NMConnection* connection) {
     return id != nullptr && std::strcmp(id, kVpnProfile) == 0 && user_data(connection, kStartedKey) != nullptr;
 }
 
+// True for LokiCTL's Laptop link profile: its name and its own user-data
+// mark.
+bool is_laptop_profile(NMConnection* connection) {
+    if (connection == nullptr) {
+        return false;
+    }
+    const char* id = nm_connection_get_id(connection);
+    return id != nullptr && std::strcmp(id, kLaptopProfile) == 0 && user_data(connection, kStartedKey) != nullptr;
+}
+
 bool is_lokictl_profile(NMConnection* connection) {
-    return is_hotspot_profile(connection) || is_vpn_profile(connection);
+    return is_hotspot_profile(connection) || is_vpn_profile(connection) || is_laptop_profile(connection);
 }
 
 // The profiles that pass `test`, as the client knows them now.
@@ -190,7 +203,7 @@ std::vector<NMRemoteConnection*> hotspot_profiles(NMClient* client) {
     return profiles_where(client, is_hotspot_profile);
 }
 
-// Every profile LokiCTL made: hotspot and VPN.
+// Every profile LokiCTL made: hotspot, VPN and Laptop link.
 std::vector<NMRemoteConnection*> lokictl_profiles(NMClient* client) {
     return profiles_where(client, is_lokictl_profile);
 }
@@ -305,6 +318,44 @@ NMConnection* hotspot_profile(const RouterRequest& request, const char* uuid, co
 
     auto* ipv4 = NM_SETTING_IP_CONFIG(nm_setting_ip4_config_new());
     g_object_set(ipv4, NM_SETTING_IP_CONFIG_METHOD, NM_SETTING_IP4_CONFIG_METHOD_SHARED, nullptr);
+    nm_connection_add_setting(connection, NM_SETTING(ipv4));
+    auto* ipv6 = NM_SETTING_IP_CONFIG(nm_setting_ip6_config_new());
+    g_object_set(ipv6, NM_SETTING_IP_CONFIG_METHOD, NM_SETTING_IP6_CONFIG_METHOD_DISABLED, nullptr);
+    nm_connection_add_setting(connection, NM_SETTING(ipv6));
+    return connection;
+}
+
+// LokiCTL's Laptop link profile, with `uuid` and the time now as its start:
+// a cable profile on kLaptopInterface, IPv4 shared on the fixed address
+// model::kLaptopLinkAddress (so the service hands the laptop an address
+// and passes its traffic on through the uplink), IPv6 off, autoconnect
+// off. The caller owns the result.
+NMConnection* laptop_profile(const char* uuid) {
+    NMConnection* connection = nm_simple_connection_new();
+    auto* setting_connection = NM_SETTING_CONNECTION(nm_setting_connection_new());
+    g_object_set(setting_connection,
+                 NM_SETTING_CONNECTION_ID, kLaptopProfile,
+                 NM_SETTING_CONNECTION_UUID, uuid,
+                 NM_SETTING_CONNECTION_TYPE, NM_SETTING_WIRED_SETTING_NAME,
+                 NM_SETTING_CONNECTION_INTERFACE_NAME, kLaptopInterface,
+                 NM_SETTING_CONNECTION_AUTOCONNECT, FALSE,
+                 nullptr);
+    nm_connection_add_setting(connection, NM_SETTING(setting_connection));
+
+    auto* user = NM_SETTING_USER(nm_setting_user_new());
+    const std::string started = std::to_string(wall_clock_seconds());
+    nm_setting_user_set_data(user, kStartedKey, started.c_str(), nullptr);
+    nm_connection_add_setting(connection, NM_SETTING(user));
+
+    nm_connection_add_setting(connection, nm_setting_wired_new());
+
+    auto* ipv4 = NM_SETTING_IP_CONFIG(nm_setting_ip4_config_new());
+    g_object_set(ipv4, NM_SETTING_IP_CONFIG_METHOD, NM_SETTING_IP4_CONFIG_METHOD_SHARED, nullptr);
+    if (NMIPAddress* address = nm_ip_address_new(AF_INET, model::kLaptopLinkAddress,
+                                                 static_cast<guint>(model::kLaptopLinkPrefix), nullptr)) {
+        nm_setting_ip_config_add_address(ipv4, address);
+        nm_ip_address_unref(address);
+    }
     nm_connection_add_setting(connection, NM_SETTING(ipv4));
     auto* ipv6 = NM_SETTING_IP_CONFIG(nm_setting_ip6_config_new());
     g_object_set(ipv6, NM_SETTING_IP_CONFIG_METHOD, NM_SETTING_IP6_CONFIG_METHOD_DISABLED, nullptr);
@@ -444,8 +495,9 @@ struct NetworkManagerClient::Impl {
     bool client_waiting{false};          // a Client switch (or VPN off) waits for its answers
     // Which of LokiCTL's profiles a Client switch deletes, and a failed
     // switch undoes: a VPN switch only touches the tunnel and a hotspot
-    // switch only the hotspot, so the other half of the VPN gateway stays.
-    enum class Scope { All, Hotspot, Vpn };
+    // switch only the hotspot, so the other half of the VPN gateway stays;
+    // a Laptop link switch only its own profile.
+    enum class Scope { All, Hotspot, Vpn, Laptop };
     Scope scope{Scope::All};
     int pending{0};                      // requests sent and not answered yet
     int deletes_pending{0};              // deletes of hotspot profiles not answered yet
@@ -472,6 +524,7 @@ struct NetworkManagerClient::Impl {
     void release_activation();
     bool hotspot_active() const;
     bool vpn_active() const;
+    bool laptop_active() const;
     model::NetMode hotspot_mode() const;
     void add_hotspot(const RouterRequest& request, NMDevice* device, const std::string& restore);
     void add_vpn(const VpnRequest& request);
@@ -702,6 +755,22 @@ void NetworkManagerClient::read(NetworkManagerReading& reading) {
         break;
     }
 
+    // LokiCTL's Laptop link, while its profile is active.
+    for (guint index = 0; actives != nullptr && index < actives->len; ++index) {
+        auto* active = static_cast<NMActiveConnection*>(g_ptr_array_index(actives, index));
+        auto* profile = NM_CONNECTION(nm_active_connection_get_connection(active));
+        if (!is_laptop_profile(profile) || nm_active_connection_get_state(active) != NM_ACTIVE_CONNECTION_STATE_ACTIVATED) {
+            continue;
+        }
+        reading.laptop.active = true;
+        const GPtrArray* active_devices = nm_active_connection_get_devices(active);
+        if (active_devices != nullptr && active_devices->len > 0) {
+            const char* name = nm_device_get_iface(static_cast<NMDevice*>(g_ptr_array_index(active_devices, 0)));
+            reading.laptop.interface_name = name != nullptr ? name : "";
+        }
+        break;
+    }
+
     // LokiCTL's VPN tunnel, while it is being set up or is up. Only the
     // file's name and the server's host are read, from its user data.
     for (guint index = 0; actives != nullptr && index < actives->len; ++index) {
@@ -811,6 +880,11 @@ bool NetworkManagerClient::Impl::hotspot_active() const {
 // True while LokiCTL's VPN profile is active (or being activated).
 bool NetworkManagerClient::Impl::vpn_active() const {
     return any_active(client, is_vpn_profile);
+}
+
+// True while LokiCTL's Laptop link profile is active (or being activated).
+bool NetworkManagerClient::Impl::laptop_active() const {
+    return any_active(client, is_laptop_profile);
 }
 
 // Router or Share while one of LokiCTL's hotspot profiles is active (by its
@@ -1116,6 +1190,58 @@ void NetworkManagerClient::start_vpn(const VpnRequest& request) {
     self.add_vpn(request);
 }
 
+void NetworkManagerClient::start_laptop() {
+    Impl& self = *impl_;
+    if (busy() || self.closing) {
+        return;
+    }
+    self.status = model::ModeSwitch{};
+    self.status.target = model::NetMode::Laptop;
+    NMClient* client = self.client;
+    if (client == nullptr || !nm_client_get_nm_running(client)) {
+        self.fail(model::SwitchError::Failed, "network service not running");
+        return;
+    }
+    NMDevice* device = nm_client_get_device_by_iface(client, kLaptopInterface);
+    if (device == nullptr || !NM_IS_DEVICE_ETHERNET(device)) {
+        self.fail(model::SwitchError::Failed, std::string("no cable port ") + kLaptopInterface);
+        return;
+    }
+    if (self.laptop_active()) {
+        return;  // already on: nothing to do
+    }
+
+    self.switch_started = Clock::now();
+    self.status.state = model::SwitchState::Switching;
+    self.router_waiting = true;
+    self.scope = Impl::Scope::Laptop;
+    self.undo_when_added = false;
+    self.restore_interface = kLaptopInterface;
+
+    g_main_context_push_thread_default(self.context);
+    // Leftovers of LokiCTL's (none is active: checked above).
+    for (NMRemoteConnection* profile : profiles_where(client, is_laptop_profile)) {
+        ++self.pending;
+        nm_remote_connection_delete_async(profile, self.action_cancellable, &Impl::on_leftover_deleted, &self);
+    }
+    char* uuid = nm_utils_uuid_generate();
+    NMConnection* connection = laptop_profile(uuid);
+    g_free(uuid);
+    // In memory only, like the hotspot's: never written to disk, and gone
+    // at the latest when the device starts again. Activating it on the
+    // cable port takes the port over from the cable's own profile, which
+    // is left as it is.
+    GVariantBuilder options;
+    g_variant_builder_init(&options, G_VARIANT_TYPE_VARDICT);
+    g_variant_builder_add(&options, "{sv}", "persist", g_variant_new_string("memory"));
+    self.add_pending = true;
+    ++self.pending;
+    nm_client_add_and_activate_connection2(client, connection, device, nullptr, g_variant_builder_end(&options),
+                                           self.action_cancellable, &Impl::on_router_added, &self);
+    g_main_context_pop_thread_default(self.context);
+    g_object_unref(connection);
+}
+
 void NetworkManagerClient::start_client() {
     Impl& self = *impl_;
     if (busy() || self.closing) {
@@ -1159,9 +1285,10 @@ void NetworkManagerClient::Impl::delete_profiles_and_restore() {
     if (client == nullptr || closing) {
         return;
     }
-    const std::vector<NMRemoteConnection*> profiles = scope == Scope::Hotspot ? hotspot_profiles(client)
-                                                      : scope == Scope::Vpn   ? profiles_where(client, is_vpn_profile)
-                                                                              : lokictl_profiles(client);
+    const std::vector<NMRemoteConnection*> profiles = scope == Scope::Hotspot  ? hotspot_profiles(client)
+                                                      : scope == Scope::Vpn    ? profiles_where(client, is_vpn_profile)
+                                                      : scope == Scope::Laptop ? profiles_where(client, is_laptop_profile)
+                                                                               : lokictl_profiles(client);
     restore_uuid.clear();
     for (NMRemoteConnection* profile : profiles) {
         const char* uuid = user_data(NM_CONNECTION(profile), kRestoreKey);
@@ -1434,8 +1561,9 @@ void NetworkManagerClient::Impl::check_progress() {
     }
     if (router_waiting && Clock::now() - switch_started >= NetworkManagerClient::kSwitchLimit) {
         router_waiting = false;
-        fail(model::SwitchError::Failed,
-             status.target == model::NetMode::Vpn ? "no tunnel after 20 s" : "no hotspot after 20 s");
+        fail(model::SwitchError::Failed, status.target == model::NetMode::Vpn      ? "no tunnel after 20 s"
+                                         : status.target == model::NetMode::Laptop ? "no laptop link after 20 s"
+                                                                                   : "no hotspot after 20 s");
         release_activation();
         device_waiting = false;
         share_request = RouterRequest{};
@@ -1683,6 +1811,8 @@ void NetworkManagerClient::start_share(const RouterRequest& /*request*/) {}
 void NetworkManagerClient::restart_router(const RouterRequest& /*request*/) {}
 
 void NetworkManagerClient::start_vpn(const VpnRequest& /*request*/) {}
+
+void NetworkManagerClient::start_laptop() {}
 
 void NetworkManagerClient::start_client() {}
 

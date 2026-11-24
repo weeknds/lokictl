@@ -228,7 +228,10 @@ Modes page (it stays when it is open already), puts the highlight on the
 mode and asks for the switch as key 6 does, without a question. The bar
 says no only to what key 6 can't do: the mode that is on already (`Already
 in Router mode`), a switch under way, VPN without a WireGuard file (`No
-WireGuard files`). `mode vpn` uses the file the VPN row offers. Everything
+WireGuard files`), Laptop link while its row is drawn off (`Plug the cable
+into the laptop first`, `Join a Wi-Fi network first`, `Back to Client
+first`) and any mode but Client while Laptop link runs (`Back to Client
+first`). `mode vpn` uses the file the VPN row offers. Everything
 else the switch finds out (`Plug in a cable first`, `Back to Client first`,
 ...) shows on the Modes page's status line.
 
@@ -402,17 +405,20 @@ opened and closed and when the theme changes.
 
 ## The Modes page
 
-`modes` switches the device between its modes. It has a title bar, four
+`modes` switches the device between its modes. It has a title bar, five
 rows and a status line, and it is drawn the same way in every theme:
 
-- one row per mode, Client, Router, Share and VPN, each with a short hint
-  and a tick on the mode that is on (it comes from NetworkManager: an
-  active `LokiCTL hotspot` profile means Router, or Share when it runs on
+- one row per mode, Client, Router, Share, VPN and Laptop (link), each with
+  a short hint and a tick on the mode that is on (it comes from
+  NetworkManager: an active `LokiCTL hotspot` profile means Router, or
+  Share when it runs on
   `lokiap0`; an active `LokiCTL VPN` profile means VPN; both together are
   the VPN gateway, and both rows carry a tick). VPN's hint is
   the WireGuard file it would use, with its place among the files
   (`home  ‹ 1/2 ›`), the tunnel's file while one runs, or `no WireGuard
-  files`, and then the row is drawn muted;
+  files`, and then the row is drawn muted. An active `LokiCTL laptop
+  link` profile means Laptop; its row is drawn muted while Laptop link
+  can't start (`model::laptop_link_refusal()`);
 - the status line: `Switching…` while a switch runs; after one
   failed, `Plug in a cable first`, `Join a Wi-Fi network first` or `Back to
   Client first` (warning colour), `Not allowed: permission missing` or
@@ -422,9 +428,13 @@ rows and a status line, and it is drawn the same way in every theme:
   the right, `reply 4 s ago` (or `none` before data came back); while the
   gateway's kill switch is on without a tunnel, `VPN down: hotspot devices
   blocked` (warning colour; a failed reconnect shows its failure for 4 s
-  first, then this line again); with the VPN row highlighted and no files,
-  the folder `~/.config/lokictl/wireguard`, muted; in Client the current
-  link, muted.
+  first, then this line again); while Laptop link runs, `Laptop link on`
+  and, at the right, `address 10.42.0.1`; with the Laptop row highlighted,
+  why it can't start (`Plug the cable into the laptop first`, `Join a
+  Wi-Fi network first` or `Back to Client first`, warning colour) or
+  `Share with a laptop on the cable` (muted); with the VPN row highlighted
+  and no files, the folder `~/.config/lokictl/wireguard`, muted; in Client
+  the current link, muted.
 
 | Key | What it does |
 |---|---|

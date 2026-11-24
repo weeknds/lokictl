@@ -62,14 +62,14 @@ The router view:
 - Right of an upright line, three large numbers with a caption each, on
   one baseline: the number of clients, the download rate and the upload
   rate.
-- One chip per mode (`CLIENT`, `ROUTER`, `SHARE`, `VPN`); the active one is
-  filled with the accent colour.
+- One chip per mode (`CLIENT`, `ROUTER`, `SHARE`, `VPN`, `LAPTOP`); the active
+  one is filled with the accent colour.
 - The access point with its security, and the time the mode has been up.
 - The selected client: its position in a filled tag (`1/3`), its name, its
   address and its signal.
 
 The link view keeps the status strip, the caption `MODE`, the upright
-line, the places of the three numbers and the four chips:
+line, the places of the three numbers and the five chips:
 
 - The big word is `CLIENT`, or `OFFLINE` in the muted colour when there is
   no network.

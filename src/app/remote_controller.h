@@ -188,8 +188,10 @@ private:
     // Allows or stops allowing hotspot devices; logs a change only when
     // `log` is true (a key press, not a switch off).
     void set_hotspot(bool allowed, bool log);
-    // The interface of LokiCTL's own hotspot, from the live mode; empty
-    // when no hotspot runs or the data is made up.
+    // The interface of the second side, from the live mode: LokiCTL's own
+    // hotspot's while hotspot devices are allowed, or the cable port while
+    // Laptop link runs (allowed or not); empty otherwise or when the data
+    // is made up.
     std::string hotspot_interface() const;
     void switch_on();
     void switch_off();

@@ -91,7 +91,7 @@ enum class Action : int32_t {
     StartCheck,
     StopCheck,
     SaveReport,
-    Mode,            // text: "client", "router" or "share"
+    Mode,            // text: "client", "router", "share" or "laptop"
     VpnOn,           // the VPN with the file picked last
     VpnOff,
     VpnFile,         // text: the WireGuard file to pick, by name without ".conf"

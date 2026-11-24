@@ -21,6 +21,7 @@ const char* mode_id(NetMode mode) {
         case NetMode::Router: return "router";
         case NetMode::Share: return "share";
         case NetMode::Vpn: return "vpn";
+        case NetMode::Laptop: return "laptop";
     }
     return "client";
 }
@@ -57,6 +58,7 @@ std::string switch_words(const ModeSwitch& change) {
         case SwitchError::NoWifi: return "Join a Wi-Fi network first";
         case SwitchError::ClientFirst: return "Back to Client first";
         case SwitchError::NotAllowed: return "Not allowed: permission missing";
+        case SwitchError::CableInUse: return "Plug the cable into the laptop first";
         case SwitchError::Failed:
         case SwitchError::None:
             break;
@@ -269,7 +271,7 @@ void write_status(std::string& out, const HomeData& home, const DashboardParts& 
     {
         Fields mode(root.key("mode"));
         mode.word("id", mode_id(home.mode));
-        mode.text("name", net_mode_name(home.mode));
+        mode.text("name", home.mode == NetMode::Laptop ? std::string("Laptop link") : net_mode_name(home.mode));
         mode.boolean("hotspot", hotspot);
         mode.number("hotspot_devices", hotspot ? static_cast<int32_t>(home.clients.size()) : 0);
         mode.text("hotspot_name", hotspot ? home.ap_name : std::string());
@@ -277,6 +279,7 @@ void write_status(std::string& out, const HomeData& home, const DashboardParts& 
         mode.key("vpn_reply_s") += home.vpn.state == VpnState::On ? number_or_null(home.vpn.reply_seconds) : "null";
         mode.boolean("kill_switch", home.vpn.kill_switch);
         mode.boolean("keep", parts.keep_mode);
+        mode.text("laptop_address", kLaptopLinkAddress);
         {
             Fields change(mode.key("switch"));
             change.word("state", switch_state_name(home.mode_switch.state));

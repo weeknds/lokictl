@@ -61,6 +61,14 @@ struct NetworkManagerReading {
     };
     Hotspot hotspot;
 
+    // LokiCTL's Laptop link (the profile kLaptopProfile), while it is
+    // active. Laptop link is on exactly then.
+    struct LaptopLink {
+        bool active{false};
+        std::string interface_name; // kLaptopInterface
+    };
+    LaptopLink laptop;
+
     // LokiCTL's VPN tunnel (the profile kVpnProfile), while it is being set
     // up or is up. Only the file's name and the server's host, from the
     // profile's own user data: its keys and settings are never read.
@@ -91,6 +99,10 @@ constexpr const char* kHotspotProfile = "LokiCTL hotspot";
 // kept in memory, like the hotspot's.
 constexpr const char* kVpnProfile = "LokiCTL VPN";
 
+// The name of LokiCTL's Laptop link profile (on kLaptopInterface). It is
+// only ever kept in memory, like the hotspot's.
+constexpr const char* kLaptopProfile = "LokiCTL laptop link";
+
 // Adds `reading` to `data`, whose uplink the kernel's values have already
 // set. Does nothing when the service is not available, so every value keeps
 // its "not known" value then.
@@ -104,6 +116,8 @@ constexpr const char* kVpnProfile = "LokiCTL VPN";
 // - While the hotspot is active: the mode is Router, with the hotspot's
 //   name, security, channel and uptime (see show_router()); Share instead
 //   when it runs on kShareInterface (see show_share()).
+// - While Laptop link is active (and no hotspot): the mode Laptop (see
+//   show_laptop()).
 // - While the tunnel is being set up or is up: HomeData::vpn's state, file
 //   and server, and the mode VPN while it is up and no hotspot
 //   runs (see show_vpn()); the reply time is left as it is.
@@ -135,13 +149,15 @@ std::string clean_network_name(const std::string& name);
 //   check on|off            the service's internet check (without this line: on)
 //   link <interface> <security|-> <speed_mbps|-> <network name ...>
 //   ap <interface> <security|-> <network name ...>
+//   laptop <interface>
 //   vpn on|connecting <file> [<server>]
 //   kill-switch on|off
 //   fail permission | fail <reason ...>
 // A "link" line adds a Wi-Fi link; "-" means not known, and the name is the
 // rest of the line (it may hold spaces; it may be missing). An "ap" line
 // says LokiCTL's hotspot is active on that interface (Router; Share on
-// kShareInterface). A "vpn" line says LokiCTL's tunnel is up (or being set
+// kShareInterface). A "laptop" line says LokiCTL's Laptop link is active on
+// that interface. A "vpn" line says LokiCTL's tunnel is up (or being set
 // up), made from that file, to that server. A "kill-switch on" line says
 // the VPN gateway's kill switch is on (see NetworkManagerReading::
 // kill_switch). A "fail"
@@ -171,8 +187,9 @@ struct VpnRequest {
 //
 // It reads, and only the action calls below change anything:
 // start_router(), start_share(), restart_router(), start_vpn(),
-// start_client(), stop_vpn() and leave(). They add, update, activate and delete only
-// the in-memory profiles kHotspotProfile and kVpnProfile, and activate
+// start_laptop(), start_client(), stop_vpn() and leave(). They add, update,
+// activate and delete only the in-memory profiles kHotspotProfile,
+// kVpnProfile and kLaptopProfile, and activate
 // only the Wi-Fi profile the hotspot's interface was on before, on that
 // interface (Router only). They never wait:
 // each sends its requests and returns, and the answers are handled by
@@ -264,7 +281,18 @@ public:
     // never the service's own text. Nothing is sent while a tunnel of
     // LokiCTL's is active. The keys are not kept.
     void start_vpn(const VpnRequest& request);
-    // Client: deletes every profile of LokiCTL's (hotspot and VPN), then
+    // Laptop link: adds kLaptopProfile in memory (autoconnect off): a cable
+    // profile on kLaptopInterface, IPv4 shared on model::kLaptopLinkAddress,
+    // IPv6 off, and activates it there, which takes the port over from the
+    // cable's own profile (that profile is never changed or recorded). A
+    // leftover Laptop link profile of LokiCTL's is deleted first. The
+    // switch ends when the profile is active; when it fails, or takes
+    // longer than kSwitchLimit, only the Laptop link profile is deleted,
+    // and the service's autoconnect brings the cable's own profile back.
+    // Nothing is sent while it is active. The caller checks first that
+    // nothing else of LokiCTL's runs and that the cable goes to a laptop.
+    void start_laptop();
+    // Client: deletes every profile of LokiCTL's (hotspot, VPN and Laptop link), then
     // activates the Wi-Fi profile recorded in the hotspot's, if there is
     // one (otherwise the service's own autoconnect picks). The switch ends
     // when the service has answered both. Nothing is sent when there is no
@@ -278,7 +306,7 @@ public:
     // True while an action waits for an answer or a switch runs; the
     // reader then reads every 100 ms.
     bool busy() const;
-    // On the way out: if a profile of LokiCTL's (hotspot or VPN) exists or
+    // On the way out: if a profile of LokiCTL's (hotspot, VPN or Laptop link) exists or
     // is being added, waits for the add to be answered, then switches back to Client
     // as start_client() does and waits until the service has answered, at
     // most `limit` in all. Sends nothing in plain Client. It blocks.

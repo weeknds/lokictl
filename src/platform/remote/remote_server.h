@@ -135,7 +135,7 @@ struct ServerOptions {
 //   the next GET /reports.
 //   The Modes page's controls are checked like POST /key too, and each
 //   queues one ActionRequest (204) for the UI thread to decide on:
-//   POST /api/v1/mode with mode=client|router|share; POST /api/v1/vpn with
+//   POST /api/v1/mode with mode=client|router|share|laptop; POST /api/v1/vpn with
 //   on=1 or on=0, or file=<name>; POST /api/v1/hotspot with name=<name>
 //   (empty: the default name) or password=new; POST /api/v1/keep with on=1
 //   or on=0; POST /api/v1/leak with run=1 or run=0. Values are decoded

@@ -152,6 +152,12 @@ void LiveDataSource::request_vpn(const ModeRequest& request) {
         pretend_.request(pretend);
         return;
     }
+    if (laptop_active_) {
+        // Laptop link goes through Client first.
+        clear_wireguard_config(vpn.config);
+        refuse(model::NetMode::Vpn, model::SwitchError::ClientFirst);
+        return;
+    }
     // With a hotspot on this makes the VPN gateway: the kill switch is
     // armed before the tunnel starts, so hotspot devices never go out
     // around it.
@@ -159,6 +165,44 @@ void LiveDataSource::request_vpn(const ModeRequest& request) {
         network_manager_->start_vpn(vpn);
     }
     clear_wireguard_config(vpn.config);
+}
+
+void LiveDataSource::request_laptop() {
+    if (laptop_active_ || network_manager_->busy()) {
+        return;  // on already, or a switch runs: ignored, as start_laptop() would
+    }
+    if (!hotspot_interface_.empty() || vpn_active_ || blocker_.kill_wanted()) {
+        refuse(model::NetMode::Laptop, model::SwitchError::ClientFirst);
+        return;
+    }
+    // Decided on a fresh look at the kernel: the uplink must be the Wi-Fi,
+    // so the Cardputer stays reachable while the cable goes to the laptop.
+    const NetworkReading uplink = read_network(root_, addresses_file_);
+    if (uplink.kind == model::LinkKind::Cable) {
+        refuse(model::NetMode::Laptop, model::SwitchError::CableInUse);
+        return;
+    }
+    if (uplink.kind != model::LinkKind::Wifi) {
+        refuse(model::NetMode::Laptop, model::SwitchError::NoWifi);
+        return;
+    }
+    // The cable port must have a link and lead to no other network: no
+    // router and no address of its own (a link-local one aside). Sharing
+    // on a port that is in a router would hand out addresses there.
+    const std::vector<model::StatusPort> ports = read_ports(root_, addresses_file_, uplink.interface_name);
+    const auto port = std::find_if(ports.begin(), ports.end(), [](const model::StatusPort& candidate) {
+        return candidate.name == kLaptopInterface && candidate.kind == model::LinkKind::Cable;
+    });
+    if (port == ports.end()) {
+        refuse(model::NetMode::Laptop, model::SwitchError::Failed, std::string("no cable port ") + kLaptopInterface);
+        return;
+    }
+    const bool other_address = !port->ipv4.empty() && port->ipv4.rfind("169.254.", 0) != 0;
+    if (port->state != model::PortState::Connected || !port->router.empty() || other_address) {
+        refuse(model::NetMode::Laptop, model::SwitchError::CableInUse);
+        return;
+    }
+    network_manager_->start_laptop();
 }
 
 void LiveDataSource::request_mode(const ModeRequest& request) {
@@ -169,6 +213,15 @@ void LiveDataSource::request_mode(const ModeRequest& request) {
     }
     if (!changes_network_) {
         pretend_.request(request);
+        return;
+    }
+    if (request.mode == model::NetMode::Laptop) {
+        request_laptop();
+        return;
+    }
+    if (model::is_hotspot_mode(request.mode) && laptop_active_) {
+        // Laptop link goes through Client too.
+        refuse(request.mode, model::SwitchError::ClientFirst);
         return;
     }
     share_removals_ = 0;  // a removal that failed is tried again
@@ -359,6 +412,7 @@ void LiveDataSource::read(model::HomeData& data) {
     apply_usb_wifi_managed(service, data.usb_wifi);
     hotspot_interface_ = service.available && service.hotspot.active ? service.hotspot.interface_name : std::string();
     vpn_active_ = service.available && service.vpn.state != model::VpnState::Off;
+    laptop_active_ = service.available && service.laptop.active;
     read_vpn_reply(data, now);
 
     // The devices on the hotspot. Read before a pretend switch is applied,

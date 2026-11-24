@@ -67,9 +67,9 @@ constexpr int32_t kNumberGap     = 6;   // between a number and its caption
 
 // One chip per mode.
 constexpr int32_t kChipY      = 88;
-constexpr int32_t kChipWidth  = 72;
+constexpr int32_t kChipWidth  = 56;
 constexpr int32_t kChipHeight = 18;
-constexpr int32_t kChipStep   = 76;    // 72 px chip + 4 px gap
+constexpr int32_t kChipStep   = 61;    // 56 px chip + 5 px gap
 
 // The access point line and the selected client's line.
 constexpr int32_t kRightEnd       = 310;  // right-aligned text ends here
@@ -98,7 +98,7 @@ constexpr int32_t kContentWidth  = view::kScreenWidth;
 constexpr int32_t kContentHeight = view::kScreenHeight - view::kSoftKeyBarHeight;
 
 static_assert(kChipStep * (model::kNetModeCount - 1) + kLeftX + kChipWidth == kRightEnd,
-              "the four chips span x 10-310");
+              "the five chips span x 10-310");
 static_assert(kClientY + kClientHeight <= kContentHeight - 2,
               "rows 138-139, right above the soft-key bar, stay empty");
 static_assert(kLeftX + kLinkWidth <= kRightEnd - kLinkSpeedWidth,

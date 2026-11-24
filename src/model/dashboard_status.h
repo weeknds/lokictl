@@ -106,9 +106,10 @@ struct DashboardParts {
 //  "network":{"name":"Home","link":"wifi","internet":"full"},
 //  "mode":{"id":"router","name":"Router","hotspot":true,"hotspot_devices":3,
 //          "hotspot_name":"LokiCTL-7F","vpn":"off","vpn_reply_s":null,
-//          "kill_switch":false,"keep":false,
+//          "kill_switch":false,"keep":false,"laptop_address":"10.42.0.1",
 //          "switch":{"state":"failed","target":"share","error":"Back to Client first"},
-//          "why":{"client":"","router":"Already in Router mode","share":"","vpn":""},
+//          "why":{"client":"","router":"Already in Router mode","share":"","vpn":"",
+//                 "laptop":"Back to Client first"},
 //          "next_hotspot_name":"LokiCTL-7F","vpn_files":["home","travel"],
 //          "vpn_file":"home","vpn_server":"","vpn_active":false,"gateway_down":false,
 //          "vpn_add":true,
@@ -143,7 +144,9 @@ struct DashboardParts {
 //  "tools":{...}}
 //
 // "link" is "wifi", "cable" or "none"; "internet" is internet_name();
-// "id" is "client", "router", "share" or "vpn"; "vpn" is vpn_state_name();
+// "id" is "client", "router", "share", "vpn" or "laptop" (whose "name" is
+// "Laptop link"); "laptop_address" is Laptop link's fixed address
+// (kLaptopLinkAddress); "vpn" is vpn_state_name();
 // "switch" is the last switch the user asked for (HomeData::mode_switch):
 // "state" is switch_state_name(), "error" the Modes page's words for a
 // failed one (empty otherwise); "vpn_file" is the tunnel's file while

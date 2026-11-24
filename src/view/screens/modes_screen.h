@@ -17,9 +17,10 @@ namespace screen {
 
 // The Modes page, opened from the home page (key 4). It switches the device
 // between the modes:
-// - one row per mode, in model::NetMode order: Client, Router, Share and
-//   VPN, each with its name, a short hint and a tick on the mode that is on
-//   (HomeData::mode). VPN's hint is the WireGuard file it would use, with
+// - one row per mode, in model::NetMode order: Client, Router, Share, VPN
+//   and Laptop (link), each with its name, a short hint and a tick on the
+//   mode that is on (HomeData::mode). The Laptop row is drawn switched off
+//   while Laptop link can't start (model::laptop_link_refusal()). VPN's hint is the WireGuard file it would use, with
 //   its place among the files ("home  ‹ 1/2 ›"), the tunnel's file while
 //   one runs, or "no WireGuard files"; without files (and no tunnel) the
 //   row is drawn switched off;
@@ -32,7 +33,10 @@ namespace screen {
 //   blocked" while the gateway's kill switch is on without the tunnel (a
 //   failed switch shows there for kGatewayFailureMs first), the
 //   folder to put files in while the VPN row is highlighted and there are
-//   none, or the current link in Client.
+//   none, "Laptop link on" with its address while Laptop link runs, why
+//   Laptop link can't start ("Plug the cable into the laptop first") or
+//   what it does while its row is highlighted, or the current link in
+//   Client.
 // In the gateway both the hotspot's row and the VPN row carry the tick.
 //
 // Up and down (F/X) move the highlight and stop at the first and the last
@@ -128,7 +132,7 @@ private:
     int32_t shown_use_{-1};       // key 6: 2 Off, 1 Use, 0 switched off, -1 before the first
     int32_t shown_off_{-1};       // key 8: 1 Off (gateway down), 0 unused, -1 before the first
     int32_t shown_vpn_mark_{-1};  // the VPN row's tick in the gateway drawn (1) or not (0) last
-    int32_t shown_vpn_switchable_{-1}; // the VPN row drawn usable (1) or not (0) last
+    int32_t shown_switchable_{-1}; // the rows drawn usable (one bit each, see switchable()) last
     lv_timer_t* failure_timer_{nullptr}; // runs while a failure shows with the gateway down
     bool failure_over_{false};           // that failure has had its time on the status line
 };

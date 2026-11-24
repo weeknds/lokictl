@@ -561,6 +561,7 @@ void DataController::log_mode(const model::HomeData& data) {
                          : data.mode_switch.error == model::SwitchError::NoWifi      ? "no Wi-Fi network"
                          : data.mode_switch.error == model::SwitchError::ClientFirst ? "another mode runs"
                          : data.mode_switch.error == model::SwitchError::NotAllowed  ? "not allowed"
+                         : data.mode_switch.error == model::SwitchError::CableInUse  ? "cable not to a laptop"
                                                                                      : data.mode_switch.reason);
                 break;
             case model::SwitchState::Idle:

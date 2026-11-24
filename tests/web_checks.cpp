@@ -191,8 +191,11 @@ void check_json() {
     const std::string modes_json = model::dashboard_status_json(modes, parts);
     expect(contains(modes_json, "\"switch\":{\"state\":\"failed\",\"target\":\"share\",\"error\":\"Back to Client first\"}"),
            "status JSON: a failed switch in the Modes page's words");
-    expect(contains(modes_json, "\"why\":{\"client\":\"\",\"router\":\"Already in Router mode\",\"share\":\"\",\"vpn\":\"\"}"),
+    expect(contains(modes_json, "\"why\":{\"client\":\"\",\"router\":\"Already in Router mode\",\"share\":\"\",\"vpn\":\"\","
+                                "\"laptop\":\"\"}"),
            "status JSON: why each mode can't be asked for");
+    expect(contains(modes_json, "\"keep\":false,\"laptop_address\":\"10.42.0.1\","),
+           "status JSON: Laptop link's fixed address");
     expect(contains(modes_json, "\"next_hotspot_name\":\"LokiCTL-7F3A\",\"vpn_files\":[\"home\",\"tr\\\"avel\"],"
                                 "\"vpn_file\":\"home\",\"vpn_server\":\"\",\"vpn_active\":false,\"gateway_down\":true,"
                                 "\"vpn_add\":true,"),
@@ -734,6 +737,7 @@ void check_server() {
     const Control controls[] = {
         {"/api/v1/mode", "mode=router", Action::Mode, "router"},
         {"/api/v1/mode", "mode=client", Action::Mode, "client"},
+        {"/api/v1/mode", "mode=laptop", Action::Mode, "laptop"},
         {"/api/v1/vpn", "on=1", Action::VpnOn, ""},
         {"/api/v1/vpn", "on=0", Action::VpnOff, ""},
         {"/api/v1/vpn", "file=my+home%2Dvpn", Action::VpnFile, "my home-vpn"},

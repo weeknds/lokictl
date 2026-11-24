@@ -99,6 +99,8 @@ void apply_network_manager(const NetworkManagerReading& reading, model::HomeData
     } else if (reading.hotspot.active) {
         show_router(data, reading.hotspot.name, reading.hotspot.security, reading.hotspot.channel,
                     reading.hotspot.uptime_seconds);
+    } else if (reading.laptop.active) {
+        show_laptop(data);
     }
 
     data.vpn.kill_switch = reading.kill_switch;
@@ -217,6 +219,12 @@ NetworkManagerReading read_network_manager_file(const std::filesystem::path& pat
             hotspot.security = security == "-" ? std::string() : security;
             hotspot.name = clean_network_name(rest_of_line(fields));
             reading.hotspot = hotspot;
+            continue;
+        }
+        if (key == "laptop") {
+            if (fields >> reading.laptop.interface_name) {
+                reading.laptop.active = true;
+            }
             continue;
         }
         if (key == "vpn") {

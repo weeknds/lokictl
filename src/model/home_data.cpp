@@ -40,12 +40,31 @@ const char* net_mode_name(NetMode mode) {
             return "Share";
         case NetMode::Vpn:
             return "VPN";
+        case NetMode::Laptop:
+            return "Laptop";
     }
     return "Client";
 }
 
 bool is_hotspot_mode(NetMode mode) {
     return mode == NetMode::Router || mode == NetMode::Share;
+}
+
+SwitchError laptop_link_refusal(const HomeData& data) {
+    if (data.mode == NetMode::Laptop) {
+        return SwitchError::None;
+    }
+    if ((data.ap_active && is_hotspot_mode(data.mode)) || data.vpn.state != VpnState::Off ||
+        data.mode == NetMode::Vpn || data.vpn.kill_switch) {
+        return SwitchError::ClientFirst;
+    }
+    if (data.uplink_kind == LinkKind::Cable) {
+        return SwitchError::CableInUse;
+    }
+    if (data.uplink_kind != LinkKind::Wifi) {
+        return SwitchError::NoWifi;
+    }
+    return SwitchError::None;
 }
 
 const char* vpn_state_name(VpnState state) {

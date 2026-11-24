@@ -48,7 +48,13 @@ namespace platform {
 // helper add kShareInterface (on this thread, waiting for it) before
 // start_share() runs the hotspot there on that network's channel; Router
 // while Share runs, and Share while Router runs, are refused ("Back to
-// Client first"). A restart (a new name or password while Router or Share
+// Client first"). Laptop link (start_laptop()) is refused while a
+// hotspot, the tunnel or the kill switch is on ("Back to Client first"),
+// unless the kernel's uplink is Wi-Fi ("Join a Wi-Fi network first"), and
+// while the cable is the uplink, has no link, has a router or an address
+// of another network ("Plug the cable into the laptop first"); Router,
+// Share and VPN are refused while it runs ("Back to Client first").
+// A restart (a new name or password while Router or Share
 // runs) goes to restart_router(). The hotspot's name is the request's, or
 // else default_hotspot_name(). kShareInterface without an active hotspot
 // on it (Share ended or failed, or a killed run left it) is removed through
@@ -247,6 +253,8 @@ private:
     void refuse(model::NetMode target, model::SwitchError error, std::string reason = {});
     // request_mode() for VPN.
     void request_vpn(const ModeRequest& request);
+    // request_mode() for Laptop link, on the device (see the class comment).
+    void request_laptop();
     // Lists the WireGuard files (and, on the device, prepares the folder).
     void read_vpn_files();
     // Puts the time since the tunnel last received data into `data`.
@@ -258,6 +266,7 @@ private:
     bool share_interface_present() const;
     std::string hotspot_interface_;  // where LokiCTL's hotspot ran at the last reading; empty when off
     bool vpn_active_{false};         // LokiCTL's tunnel was being set up or up at the last reading
+    bool laptop_active_{false};      // LokiCTL's Laptop link was active at the last reading
     std::filesystem::path vpn_folder_; // see wireguard_folder(); empty when not known
     std::vector<std::string> vpn_files_; // read with the network
     bool vpn_counted_{false};        // vpn_received_ holds a reading of the tunnel's received bytes

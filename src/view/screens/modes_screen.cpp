@@ -19,17 +19,17 @@ namespace screen {
 namespace {
 
 // Layout of the 320x110 area between the title bar and the soft-key bar:
-// the four rows at the top and the status line under them, all 304 px wide.
+// the five rows at the top and the status line under them, all 304 px wide.
 constexpr int32_t kSideMargin  = 8;
 constexpr int32_t kWidth       = view::kScreenWidth - 2 * kSideMargin;
-constexpr int32_t kListTop     = 2;
-constexpr int32_t kRowHeight   = 19;
+constexpr int32_t kListTop     = 1;
+constexpr int32_t kRowHeight   = 17;
 constexpr int32_t kRowGap      = 1;
 constexpr int32_t kRowCount    = model::kNetModeCount;
 constexpr int32_t kListHeight  = kRowCount * kRowHeight + (kRowCount - 1) * kRowGap;
 constexpr int32_t kHintLeft    = 78;
-constexpr int32_t kStatusTop   = kListTop + kListHeight + 5;
-constexpr int32_t kStatusHeight = 20;
+constexpr int32_t kStatusTop   = kListTop + kListHeight + 3;
+constexpr int32_t kStatusHeight = 17;
 constexpr int32_t kStatusGap   = 8;
 constexpr int32_t kCaptionGap  = 5;
 // The hint ends this far from the row's right end, clear of the tick.
@@ -49,9 +49,11 @@ constexpr const char* kHints[kRowCount] = {
     "share the cable over Wi-Fi",
     "share Wi-Fi as a hotspot",
     "",
+    "share with a laptop by cable",
 };
 
 constexpr int32_t kVpnRow = static_cast<int32_t>(model::NetMode::Vpn);
+constexpr int32_t kLaptopRow = static_cast<int32_t>(model::NetMode::Laptop);
 
 // Where the user puts WireGuard files, as the pages name it.
 constexpr const char* kVpnFolderText = "~/.config/lokictl/wireguard";
@@ -80,13 +82,40 @@ bool gateway_down(const model::HomeData& data) {
 }
 
 // True when the row can ever be used now: Client, Router and Share always;
-// VPN with a file to use, or to turn the tunnel off.
+// VPN with a file to use, or to turn the tunnel off; Laptop link while it
+// may start (model::laptop_link_refusal()) or runs.
 bool switchable(int32_t row, const model::HomeData& data) {
     const auto mode = static_cast<model::NetMode>(row);
     if (mode == model::NetMode::Vpn) {
         return !data.vpn.files.empty() || vpn_active(data);
     }
+    if (mode == model::NetMode::Laptop) {
+        return model::laptop_link_refusal(data) == model::SwitchError::None;
+    }
     return mode == model::NetMode::Client || model::is_hotspot_mode(mode);
+}
+
+// The rows that can be used now (see switchable()), one bit each.
+int32_t switchable_rows(const model::HomeData& data) {
+    int32_t rows = 0;
+    for (int32_t index = 0; index < kRowCount; ++index) {
+        rows |= switchable(index, data) ? (1 << index) : 0;
+    }
+    return rows;
+}
+
+// Why Laptop link can't start, in the status line's words; empty when it can.
+std::string laptop_refusal_text(const model::HomeData& data) {
+    switch (model::laptop_link_refusal(data)) {
+        case model::SwitchError::ClientFirst:
+            return "Back to Client first";
+        case model::SwitchError::CableInUse:
+            return "Plug the cable into the laptop first";
+        case model::SwitchError::NoWifi:
+            return "Join a Wi-Fi network first";
+        default:
+            return {};
+    }
 }
 
 // "4 s ago", "2 min ago"; "none" before any reply.
@@ -313,8 +342,8 @@ void ModesScreen::refresh() {
 
     set_text_if_changed(rows_[static_cast<std::size_t>(kVpnRow)].hint, vpn_hint_shown_, vpn_hint());
 
-    const int32_t vpn_switchable = switchable(kVpnRow, data) ? 1 : 0;
-    if (selected != shown_selected_ || vpn_switchable != shown_vpn_switchable_) {
+    const int32_t rows_switchable = switchable_rows(data);
+    if (selected != shown_selected_ || rows_switchable != shown_switchable_) {
         for (int32_t index = 0; index < kRowCount; ++index) {
             const Row& row = rows_[static_cast<std::size_t>(index)];
             const bool is_selected = index == selected;
@@ -334,7 +363,7 @@ void ModesScreen::refresh() {
             }
         }
         shown_selected_ = selected;
-        shown_vpn_switchable_ = vpn_switchable;
+        shown_switchable_ = rows_switchable;
     }
 
     // The tick on the mode that is on, and in the VPN gateway on the VPN
@@ -440,6 +469,10 @@ void ModesScreen::refresh_status() {
                 left = "Back to Client first";
                 tone = kToneWarning;
                 break;
+            case model::SwitchError::CableInUse:
+                left = "Plug the cable into the laptop first";
+                tone = kToneWarning;
+                break;
             case model::SwitchError::NotAllowed:
                 left = "Not allowed: permission missing";
                 tone = kToneError;
@@ -455,6 +488,14 @@ void ModesScreen::refresh_status() {
         // on again (Use) or off (key 8).
         left = "VPN down: hotspot devices blocked";
         tone = kToneWarning;
+    } else if (selected_row() == kLaptopRow && data.mode != model::NetMode::Laptop) {
+        // Why Laptop link can't start (also over a hotspot or tunnel that
+        // runs), or what it does.
+        left = laptop_refusal_text(data);
+        tone = left.empty() ? kToneMuted : kToneWarning;
+        if (left.empty()) {
+            left = "Share with a laptop on the cable";
+        }
     } else if (model::is_hotspot_mode(data.mode) && data.ap_active &&
                !(selected_row() == kVpnRow && vpn_active(data))) {
         left = data.ap_name.empty() ? std::string("Hotspot on") : data.ap_name;
@@ -469,6 +510,11 @@ void ModesScreen::refresh_status() {
             right = reply_text(data.vpn.reply_seconds);
             caption = "reply";
         }
+    } else if (data.mode == model::NetMode::Laptop) {
+        // Where the laptop finds the Cardputer (and its dashboard).
+        left = "Laptop link on";
+        right = model::kLaptopLinkAddress;
+        caption = "address";
     } else if (selected_row() == kVpnRow && data.vpn.files.empty()) {
         // Where to put them; the row's hint says there are none.
         tone = kToneMuted;

@@ -61,7 +61,8 @@ struct CommandResult {
 CommandResult parse_command(std::string_view line, const model::HomeData& home);
 
 // Why `mode` can't be switched to now, or empty when it can: the Modes
-// page's key 6 rules (not while a switch runs, not the active mode). What
+// page's key 6 rules (not while a switch runs, not the active mode, VPN
+// without files, Laptop link while model::laptop_link_refusal() says no). What
 // only the switch itself finds out (no cable, Back to Client first, ...)
 // shows on the Modes page afterwards.
 std::string mode_command_refusal(model::NetMode mode, const model::HomeData& home);

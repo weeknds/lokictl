@@ -514,6 +514,10 @@ void HotspotScreen::refresh() {
                 message = "Back to Client first";
                 tone = kToneWarning;
                 break;
+            case model::SwitchError::CableInUse:
+                message = "Plug the cable into the laptop first";
+                tone = kToneWarning;
+                break;
             case model::SwitchError::NotAllowed:
                 message = "Not allowed: permission missing";
                 tone = kToneError;

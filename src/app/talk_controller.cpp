@@ -66,6 +66,7 @@ std::string TalkController::hotspot_interface() const {
             return platform::kShareInterface;
         case model::NetMode::Client:
         case model::NetMode::Vpn:
+        case model::NetMode::Laptop:
             break;
     }
     return {};

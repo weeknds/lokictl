@@ -23,11 +23,13 @@ enum class NetMode {
     Router,     // shares its wired uplink through its own access point
     Share,      // shares the Wi-Fi network it joined through its own access point
     Vpn,        // sends its traffic through a VPN tunnel
+    Laptop,     // shares itself and its Wi-Fi with a laptop on its cable port
 };
-constexpr int kNetModeCount = 4;
+constexpr int kNetModeCount = 5;
 
-// The name of a mode as shown on screen: "Client", "Router", "Share" or
-// "VPN". Pages write it in capitals or lowercase as their theme asks.
+// The name of a mode as shown on screen: "Client", "Router", "Share",
+// "VPN" or "Laptop". Pages write it in capitals or lowercase as their
+// theme asks.
 const char* net_mode_name(NetMode mode);
 
 // True for the modes that run LokiCTL's hotspot: Router and Share.
@@ -52,6 +54,7 @@ enum class SwitchError {
     ClientFirst, // Router and Share go through Client: the other one runs
     NotAllowed,  // the system refused: the permission rule is missing
     Failed,      // anything else; ModeSwitch::reason says what
+    CableInUse,  // Laptop link: the cable leads to a router, not to a laptop
 };
 
 // The last switch between modes the user asked for, and where it stands.
@@ -446,5 +449,19 @@ bool operator!=(const HomeData& left, const HomeData& right);
 // HomeData::sample is true, so the page marks them as sample data. The
 // other made-up situations are in home_examples.h.
 HomeData sample_home_data();
+
+// Laptop link's fixed address on the cable port (the hotspot's address
+// too: the two never run together), with its prefix. The laptop gets an
+// address from 10.42.0.0/24 and opens the dashboard here.
+constexpr const char* kLaptopLinkAddress = "10.42.0.1";
+constexpr int32_t kLaptopLinkPrefix = 24;
+
+// Why Laptop link can't start now, from what `data` shows; None when it
+// may (also while it runs). In this order: ClientFirst while a hotspot, a
+// tunnel or the kill switch is on; CableInUse while the cable is the
+// uplink (it leads to a router, and sharing there would hand out
+// addresses on that network); NoWifi without a Wi-Fi uplink, which keeps
+// the Cardputer reachable while the cable goes to the laptop.
+SwitchError laptop_link_refusal(const HomeData& data);
 
 } // namespace model

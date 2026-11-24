@@ -815,7 +815,7 @@ void Server::handle_connection(int fd, int side, const Side& own, Pairing& pairi
         } else if (request.path == "/api/v1/mode") {
             text = form_value(body, "mode");
             action = Action::Mode;
-            valid = text == "client" || text == "router" || text == "share";
+            valid = text == "client" || text == "router" || text == "share" || text == "laptop";
         } else if (request.path == "/api/v1/vpn") {
             const std::string on = form_value(body, "on", &found);
             if (found) {

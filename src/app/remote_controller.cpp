@@ -324,11 +324,16 @@ void RemoteController::set_hotspot(bool allowed, bool log) {
 }
 
 std::string RemoteController::hotspot_interface() const {
-    if (!hotspot_allowed_) {
+    const model::HomeData& home = view_model_.home();
+    if (home.sample) {
         return {};
     }
-    const model::HomeData& home = view_model_.home();
-    if (home.sample || !home.ap_active) {
+    // Laptop link: the cable goes straight to the user's own laptop, so its
+    // side opens without the hotspot-devices switch (the code still guards it).
+    if (home.mode == model::NetMode::Laptop) {
+        return platform::kLaptopInterface;
+    }
+    if (!hotspot_allowed_ || !home.ap_active) {
         return {};
     }
     switch (home.mode) {
@@ -338,6 +343,7 @@ std::string RemoteController::hotspot_interface() const {
             return platform::kShareInterface;
         case model::NetMode::Client:
         case model::NetMode::Vpn:
+        case model::NetMode::Laptop:
             break;
     }
     return {};
@@ -653,6 +659,7 @@ void RemoteController::apply_actions() {
                 const model::NetMode mode = request.action == platform::remote::Action::VpnOn ? model::NetMode::Vpn
                                             : request.text == "router"                         ? model::NetMode::Router
                                             : request.text == "share"                          ? model::NetMode::Share
+                                            : request.text == "laptop"                         ? model::NetMode::Laptop
                                                                                                : model::NetMode::Client;
                 const std::string refusal = mode_command_refusal(mode, home);
                 if (!refusal.empty()) {

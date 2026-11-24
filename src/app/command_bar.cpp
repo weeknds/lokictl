@@ -68,8 +68,9 @@ constexpr model::NetMode kSwitchModes[] = {
     model::NetMode::Router,
     model::NetMode::Share,
     model::NetMode::Vpn,
+    model::NetMode::Laptop,
 };
-constexpr const char* kModeUsage = "Use: mode client|router|share|vpn";
+constexpr const char* kModeUsage = "Use: mode client|router|share|vpn|laptop";
 
 // The words that stand for an address as the target of Ping, Trace and Ports.
 constexpr std::string_view kRouterWord = "router";
@@ -393,6 +394,23 @@ std::string mode_command_refusal(model::NetMode mode, const model::HomeData& hom
     // As the Modes page's VPN row: nothing to use without a file.
     if (mode == model::NetMode::Vpn && home.vpn.files.empty()) {
         return "No WireGuard files";
+    }
+    // Laptop link goes through Client, both ways.
+    if (home.mode == model::NetMode::Laptop && mode != model::NetMode::Client) {
+        return "Back to Client first";
+    }
+    // As the Modes page's Laptop row: drawn off while it can't start.
+    if (mode == model::NetMode::Laptop) {
+        switch (model::laptop_link_refusal(home)) {
+            case model::SwitchError::ClientFirst:
+                return "Back to Client first";
+            case model::SwitchError::CableInUse:
+                return "Plug the cable into the laptop first";
+            case model::SwitchError::NoWifi:
+                return "Join a Wi-Fi network first";
+            default:
+                break;
+        }
     }
     return {};
 }
