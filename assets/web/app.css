@@ -1224,6 +1224,8 @@ a.btn-ghost:hover { color: var(--t1); background: rgba(255, 255, 255, .09); }
   cursor: pointer;
 }
 .content .large-title, .content > .banner, .content > .toast { margin-right: 52px; }
+.content .list-head { margin-right: 52px; }
+.content .list-head .large-title { margin-right: 0; }
 .back ~ .large-title { margin-right: 0; }
 html.pal-open { overflow: hidden; }
 .pal-back {
