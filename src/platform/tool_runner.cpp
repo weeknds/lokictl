@@ -334,9 +334,14 @@ private:
             case model::ToolKind::Speed:
                 keep(pretend_speed_test(elapsed, job_.target, sent, done), latest_.speed);
                 break;
-            case model::ToolKind::Health:
-                keep(pretend_health(health_plan_, elapsed, sent, done), latest_.health);
+            case model::ToolKind::Health: {
+                model::HealthRun run = pretend_health(health_plan_, elapsed, sent, done);
+                if (done && run.state == model::ToolState::Done) {
+                    run.finished = health_clock_now();
+                }
+                keep(std::move(run), latest_.health);
                 break;
+            }
             case model::ToolKind::Leak: {
                 model::LeakRun run = pretend_leak_test(elapsed, job_.leak, leak_without_vpn_, sent, done);
                 if (done && !run.vpn_on && !run.public_address.empty()) {
@@ -2619,6 +2624,7 @@ private:
                     model::host_findings(hosts[index], scan, static_cast<int32_t>(index));
                 run.findings.insert(run.findings.end(), found.begin(), found.end());
                 model::sort_findings(run.findings);
+                run.devices.push_back(health_device(hosts[index], scan));
             }
             run.scanned = static_cast<int32_t>(index + 1);
             run.elapsed_s = seconds();
@@ -2626,6 +2632,7 @@ private:
         }
         run.state = model::ToolState::Done;
         run.elapsed_s = seconds();
+        run.finished = health_clock_now();
         publish(run);
     }
 

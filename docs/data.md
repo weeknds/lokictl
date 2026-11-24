@@ -171,7 +171,8 @@ reader thread.
   it), the network every 5 s and the battery every 10 s. The reader sleeps
   until whichever comes first. That is at most about nineteen wake-ups a
   minute, each a few small file reads, so it costs next to nothing. While
-  the home page is on screen it also reads the traffic once a second (see
+  the home page is on screen (or Remote view is on) it also reads the
+  traffic once a second (see
   [The traffic](#the-traffic)). The network, battery and traffic files are
   read only when their time has come; in between their last reading is
   used again. A block that equals the last
@@ -712,7 +713,9 @@ counters, which every user may read:
   and tells the reader whether the home page, the only page with the
   traffic, is on top (`DataReader::set_traffic_shown()`). The reader wakes
   up at once and hands that on to the source. While another page is open
-  nothing reads the counters, which saves battery.
+  nothing reads the counters, which saves battery. While Remote view is
+  on, the web dashboard shows the traffic too, so the counters are read
+  on every page and with the screen dark.
 - **Once a second.** The rate is the bytes since the reading before, times
   8, over the time between the two readings (measured, not assumed), in
   kbit/s. Each new pair of rates goes into the two histories, the last 24

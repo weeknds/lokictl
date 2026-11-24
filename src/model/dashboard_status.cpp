@@ -32,44 +32,176 @@ std::string number_or_null(int32_t value) {
     return value < 0 ? std::string("null") : std::to_string(value);
 }
 
-} // namespace
+// "name":value pairs in one object, with the commas between them.
+class Fields {
+public:
+    explicit Fields(std::string& out) : out_(out) { out_ += '{'; }
+    ~Fields() { out_ += '}'; }
+    Fields(const Fields&) = delete;
+    Fields& operator=(const Fields&) = delete;
 
-std::string dashboard_status_json(const HomeData& home) {
+    std::string& key(const char* name) {
+        out_ += first_ ? "\"" : ",\"";
+        first_ = false;
+        out_ += name;
+        out_ += "\":";
+        return out_;
+    }
+    void text(const char* name, const std::string& value) { key(name) += json_text(value); }
+    void word(const char* name, const char* value) { key(name).append("\"").append(value).append("\""); }
+    void number(const char* name, int32_t value) { key(name) += std::to_string(value); }
+    void boolean(const char* name, bool value) { key(name) += flag(value); }
+
+private:
+    std::string& out_;
+    bool first_{true};
+};
+
+void write_overview(std::string& out, const DashOverview& overview) {
+    Fields fields(out);
+    fields.boolean("checked", overview.checked);
+    fields.boolean("checking", overview.checking);
+    fields.text("checked_at", overview.checked_at);
+    const DashCounts& counts = overview.counts;
+    fields.number("fix", counts.fix);
+    fields.number("look", counts.look);
+    fields.number("know", counts.know);
+    fields.number("total", counts.devices);
+    fields.number("device_fix", counts.device_fix);
+    fields.number("device_look", counts.device_look);
+    fields.number("fine", counts.fine);
+    fields.number("unchecked", counts.unchecked);
+    fields.key("things") += '[';
+    for (std::size_t index = 0; index < overview.things.size(); ++index) {
+        const DashThing& thing = overview.things[index];
+        if (index > 0) {
+            out += ',';
+        }
+        Fields item(out);
+        item.word("tier", finding_tier_name(thing.tier));
+        item.text("icon", thing.icon);
+        item.text("title", thing.title);
+        item.text("hint", thing.hint);
+        item.text("action", thing.action);
+        item.text("fix", thing.fix);
+        item.text("device", thing.device);
+        item.text("time", thing.time);
+    }
+    out += ']';
+    fields.key("devices") += '[';
+    for (std::size_t index = 0; index < overview.devices.size(); ++index) {
+        const DashDevice& device = overview.devices[index];
+        if (index > 0) {
+            out += ',';
+        }
+        Fields item(out);
+        item.text("id", device.id);
+        item.text("name", device.name);
+        item.text("address", device.address);
+        item.word("ring", device.wireless ? "wireless" : "cable");
+        item.boolean("router", device.router);
+        item.boolean("new", device.is_new);
+        item.boolean("checked", device.checked);
+        item.word("tier", finding_tier_name(device.tier));
+        item.text("tag", device.tag);
+        item.text("services", device.services);
+        item.text("seen", device.seen);
+    }
+    out += ']';
+}
+
+// The whole object, closed when `root` goes out of scope.
+void write_status(std::string& out, const HomeData& home, const DashboardParts& parts) {
     const bool wifi = home.uplink_kind == LinkKind::Wifi;
     const bool hotspot = home.ap_active && is_hotspot_mode(home.mode);
+    Fields root(out);
+    root.number("v", 1);
+    root.boolean("sample", home.sample);
+    {
+        Fields cardputer(root.key("cardputer"));
+        cardputer.text("address", home.uplink_address);
+        cardputer.key("battery") += number_or_null(home.battery_percent);
+        cardputer.boolean("charging", home.battery_state == BatteryState::Charging);
+    }
+    {
+        Fields network(root.key("network"));
+        network.text("name", wifi ? home.wifi_name : std::string());
+        network.word("link", link_kind_name(home.uplink_kind));
+        network.word("internet", internet_name(home.internet));
+    }
+    {
+        Fields mode(root.key("mode"));
+        mode.word("id", mode_id(home.mode));
+        mode.text("name", net_mode_name(home.mode));
+        mode.boolean("hotspot", hotspot);
+        mode.number("hotspot_devices", hotspot ? static_cast<int32_t>(home.clients.size()) : 0);
+        mode.text("hotspot_name", hotspot ? home.ap_name : std::string());
+        mode.word("vpn", vpn_state_name(home.vpn.state));
+        mode.key("vpn_reply_s") += home.vpn.state == VpnState::On ? number_or_null(home.vpn.reply_seconds) : "null";
+        mode.boolean("kill_switch", home.vpn.kill_switch);
+        mode.boolean("keep", parts.keep_mode);
+    }
+    {
+        Fields traffic(root.key("traffic"));
+        traffic.key("down_kbps") += number_or_null(home.down_kbps);
+        traffic.key("up_kbps") += number_or_null(home.up_kbps);
+        std::string& history = traffic.key("history");
+        history += '[';
+        for (std::size_t index = 0; index < parts.traffic.size(); ++index) {
+            if (index > 0) {
+                history += ',';
+            }
+            history.append("[")
+                .append(std::to_string(parts.traffic[index][0]))
+                .append(",")
+                .append(std::to_string(parts.traffic[index][1]))
+                .append("]");
+        }
+        history += ']';
+    }
+    {
+        Fields counts(root.key("counts"));
+        counts.number("devices", parts.overview.counts.devices);
+        counts.number("security", parts.overview.counts.fix);
+    }
+    write_overview(root.key("overview"), parts.overview);
+    {
+        Fields watch(root.key("watch"));
+        watch.boolean("on", parts.watching);
+        watch.boolean("trap", parts.trap_on);
+        watch.number("trap_ports", parts.trap_ports);
+        std::string& feed = watch.key("feed");
+        feed += '[';
+        for (std::size_t index = 0; index < parts.overview.watch_lines.size(); ++index) {
+            if (index > 0) {
+                feed += ',';
+            }
+            Fields line(feed);
+            line.text("time", index < parts.overview.watch_times.size() ? parts.overview.watch_times[index] : "");
+            line.text("text", parts.overview.watch_lines[index]);
+        }
+        feed += ']';
+    }
+}
+
+} // namespace
+
+void TrafficLog::clear() {
+    samples_.clear();
+}
+
+void TrafficLog::push(int32_t down_kbps, int32_t up_kbps) {
+    if (samples_.size() >= kLength) {
+        samples_.erase(samples_.begin(), samples_.begin() + static_cast<std::ptrdiff_t>(samples_.size() - kLength + 1));
+    }
+    samples_.push_back({down_kbps < 0 ? 0 : down_kbps, up_kbps < 0 ? 0 : up_kbps});
+}
+
+std::string dashboard_status_json(const HomeData& home, const DashboardParts& parts) {
     std::string out;
-    out.reserve(384);
-    out += "{\"v\":1,\"sample\":";
-    out += flag(home.sample);
-    out += ",\"cardputer\":{\"address\":";
-    out += json_text(home.uplink_address);
-    out += ",\"battery\":";
-    out += number_or_null(home.battery_percent);
-    out += ",\"charging\":";
-    out += flag(home.battery_state == BatteryState::Charging);
-    out += "},\"network\":{\"name\":";
-    out += json_text(wifi ? home.wifi_name : std::string());
-    out += ",\"link\":\"";
-    out += link_kind_name(home.uplink_kind);
-    out += "\",\"internet\":\"";
-    out += internet_name(home.internet);
-    out += "\"},\"mode\":{\"id\":\"";
-    out += mode_id(home.mode);
-    out += "\",\"name\":";
-    out += json_text(net_mode_name(home.mode));
-    out += ",\"hotspot\":";
-    out += flag(hotspot);
-    out += ",\"hotspot_devices\":";
-    out += std::to_string(hotspot ? home.clients.size() : 0);
-    out += ",\"vpn\":\"";
-    out += vpn_state_name(home.vpn.state);
-    out += "\",\"kill_switch\":";
-    out += flag(home.vpn.kill_switch);
-    out += "},\"traffic\":{\"down_kbps\":";
-    out += number_or_null(home.down_kbps);
-    out += ",\"up_kbps\":";
-    out += number_or_null(home.up_kbps);
-    out += "}}\n";
+    out.reserve(1024 + parts.overview.devices.size() * 200 + parts.overview.things.size() * 220);
+    write_status(out, home, parts);
+    out += '\n';
     return out;
 }
 

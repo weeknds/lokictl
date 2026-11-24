@@ -456,6 +456,7 @@ struct HealthFinding {
     std::string fact;     // the detail's line of facts: "Port 23, remote login", "dnsmasq 2.85, worst 9.8"
     uint16_t port{0};     // the port it is about; 0 for none
     int32_t order{0};     // for sorting: the device's place in the run (links first)
+    std::string address;  // the device's IPv4 address; empty for the Cardputer's links (Wi-Fi, cable)
 };
 
 bool operator==(const HealthFinding& left, const HealthFinding& right);
@@ -480,6 +481,20 @@ struct HealthLocal {
 bool operator==(const HealthLocal& left, const HealthLocal& right);
 bool operator!=(const HealthLocal& left, const HealthLocal& right);
 
+// One device a health check scanned, with what it found open. A text that
+// is not known is empty.
+struct HealthDevice {
+    std::string address;         // IPv4, dotted
+    std::string name;            // its host name
+    std::string kind;            // what it is ("printer", "router")
+    bool router{false};          // the uplink's router
+    bool own{false};             // the Cardputer itself
+    std::vector<uint16_t> open;  // its open ports, ascending
+};
+
+bool operator==(const HealthDevice& left, const HealthDevice& right);
+bool operator!=(const HealthDevice& left, const HealthDevice& right);
+
 // The latest health check. Every packet it sends counts in the Sent count,
 // as the probe's and the port scan's do.
 struct HealthRun {
@@ -495,6 +510,8 @@ struct HealthRun {
     int32_t scanned{0};               // devices scanned so far
     int32_t elapsed_s{0};             // seconds since the run started; stops when it ends
     std::vector<HealthFinding> findings;  // the worst first (health_check.h); at most kHealthMaxFindings
+    std::vector<HealthDevice> devices;    // each device scanned so far, in the order scanned
+    std::string finished;                 // local time the run ended, "21:44"; empty until it is Done
 };
 
 bool operator==(const HealthRun& left, const HealthRun& right);

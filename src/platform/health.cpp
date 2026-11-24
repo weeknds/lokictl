@@ -10,6 +10,8 @@
 #include "probe.h"
 
 #include <algorithm>
+#include <cstdio>
+#include <ctime>
 #include <fstream>
 
 namespace platform {
@@ -100,6 +102,28 @@ void add_ssdp_version(const model::HealthHost& host, model::PortRun& scan, const
     check_port_services(scan, list_path);
 }
 
+std::string health_clock_now() {
+    const std::time_t now = std::time(nullptr);
+    std::tm local{};
+    if (now == static_cast<std::time_t>(-1) || localtime_r(&now, &local) == nullptr) {
+        return {};
+    }
+    char text[8];
+    std::snprintf(text, sizeof(text), "%02d:%02d", local.tm_hour % 24, local.tm_min % 60);
+    return text;
+}
+
+model::HealthDevice health_device(const model::HealthHost& host, const model::PortRun& scan) {
+    model::HealthDevice device;
+    device.address = host.address;
+    device.name = host.name;
+    device.kind = host.kind;
+    device.router = host.router;
+    device.own = host.own;
+    device.open = scan.open;
+    return device;
+}
+
 PretendHealth plan_pretend_health(const std::string& interface_name,
                                   model::HealthLocal local,
                                   const std::vector<model::HeardDevice>& known,
@@ -149,6 +173,7 @@ PretendHealth plan_pretend_health(const std::string& interface_name,
             findings = model::host_findings(hosts[index], scan, static_cast<int32_t>(index));
         }
         plan.found.push_back(std::move(findings));
+        plan.scanned.push_back(health_device(hosts[index], scan));
         plan.host_sent.push_back(sent);
     }
     return plan;
@@ -176,6 +201,7 @@ model::HealthRun pretend_health(const PretendHealth& plan, uint32_t elapsed_ms, 
     const std::size_t finished = std::min<std::size_t>(into / kPretendHealthHostMs, plan.found.size());
     for (std::size_t index = 0; index < finished; ++index) {
         run.findings.insert(run.findings.end(), plan.found[index].begin(), plan.found[index].end());
+        run.devices.push_back(plan.scanned[index]);
         sent += plan.host_sent[index];
     }
     model::sort_findings(run.findings);

@@ -36,6 +36,13 @@ bool parse_network(const std::string& text, uint32_t& network, uint32_t& netmask
 // scan that did not finish is left alone.
 void add_ssdp_version(const model::HealthHost& host, model::PortRun& scan, const std::string& list_path);
 
+// The local time of day now, "21:44" (HealthRun::finished); "" when the
+// system cannot tell it.
+std::string health_clock_now();
+
+// What a health check keeps about `host` once its scan `scan` finished.
+model::HealthDevice health_device(const model::HealthHost& host, const model::PortRun& scan);
+
 // The pretend runner's made-up health check, worked out once as the job
 // starts: the made-up probe of the sample's network (pretend_probe()), the
 // devices it and `known` (the Discover page's list) found, each device's
@@ -47,6 +54,7 @@ struct PretendHealth {
     model::HealthRun swept;                              // the run after the sweep, with the hosts to scan
     uint32_t sweep_sent{0};                              // packets of the sweep
     std::vector<std::vector<model::HealthFinding>> found;  // per device, its findings
+    std::vector<model::HealthDevice> scanned;            // per device, what it has open
     std::vector<uint32_t> host_sent;                     // per device, its packets
 };
 

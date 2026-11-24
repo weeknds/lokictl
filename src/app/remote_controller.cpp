@@ -360,6 +360,7 @@ void RemoteController::switch_on() {
 #endif
     server_ = std::make_unique<Server>(options, std::move(frames));
     status_json_.clear();
+    traffic_.clear();
     hand_over_status();
     wrong_codes_seen_ = 0;
     listening_seen_ = false;
@@ -561,7 +562,35 @@ void RemoteController::hand_over_status() {
         return;
     }
     status_built_ = lv_tick_get();
-    std::string json = model::dashboard_status_json(view_model_.home());
+    const model::HomeData& home = view_model_.home();
+    const model::ToolsData& tools = view_model_.tools();
+    const model::WatchData& watch = view_model_.watch();
+    traffic_.push(home.down_kbps, home.up_kbps);
+    model::DashboardParts parts;
+    // Made-up home data and no tool run yet: the made-up findings, so the
+    // dashboard shows what it is for (the page marks it as sample data).
+    const bool made_up = home.sample && home.uplink_kind != model::LinkKind::None &&
+                         tools.health.state == model::ToolState::Idle &&
+                         tools.listen.state == model::ToolState::Idle &&
+                         tools.probe.state == model::ToolState::Idle &&
+                         tools.ports.state == model::ToolState::Idle &&
+                         watch.run.state == model::ToolState::Idle;
+    if (made_up) {
+        const model::DashSample sample = model::sample_dashboard();
+        parts.overview = model::dashboard_overview(home, sample.tools, sample.watch);
+        parts.watching = sample.watch.run.state == model::ToolState::Running;
+        parts.trap_on = sample.trap.state == model::ToolState::Running;
+        parts.trap_ports = model::trap_open_ports(sample.trap);
+    } else {
+        const model::TrapRun& trap = view_model_.trap();
+        parts.overview = model::dashboard_overview(home, tools, watch);
+        parts.watching = watch.run.state == model::ToolState::Running;
+        parts.trap_on = trap.state == model::ToolState::Running;
+        parts.trap_ports = parts.trap_on ? model::trap_open_ports(trap) : 0;
+    }
+    parts.keep_mode = view_model_.keep_mode();
+    parts.traffic = traffic_.samples();
+    std::string json = model::dashboard_status_json(home, parts);
     if (json != status_json_) {
         status_json_ = json;
         server_->set_status_json(std::move(json));

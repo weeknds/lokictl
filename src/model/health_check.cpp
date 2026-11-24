@@ -254,6 +254,7 @@ std::vector<HealthFinding> host_findings(const HealthHost& host, const PortRun& 
         finding.where = host_where(host);
         finding.fact = std::move(fact);
         finding.port = port;
+        finding.address = host.address;
         findings.push_back(std::move(finding));
     };
 

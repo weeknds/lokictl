@@ -10,6 +10,7 @@
 #include "base_viewmodel.h"
 #include "firewall.h"
 #include "logger.h"
+#include "remote/remote_switch.h"
 
 #include <algorithm>
 #include <chrono>
@@ -63,6 +64,8 @@ DataController::DataController(viewmodel::BaseViewModel& view_model,
     // LVGL calls the observer once right away, so the reader knows the
     // first page before the first reading.
     page_observer_ = lv_subject_add_observer(view_model_.current_page_subject(), page_observer_cb, this);
+    // Remote view's dashboard shows the traffic too, whatever page is on top.
+    remote_observer_ = lv_subject_add_observer(platform::remote::state_subject(), page_observer_cb, this);
     // LVGL calls this observer once right away too; the count it holds then
     // is no request.
     mode_requests_seen_ = lv_subject_get_int(view_model_.mode_request_subject());
@@ -83,6 +86,10 @@ DataController::~DataController() {
     if (page_observer_) {
         lv_observer_remove(page_observer_);
         page_observer_ = nullptr;
+    }
+    if (remote_observer_) {
+        lv_observer_remove(remote_observer_);
+        remote_observer_ = nullptr;
     }
     if (mode_observer_) {
         lv_observer_remove(mode_observer_);
@@ -472,7 +479,8 @@ void DataController::set_screen_dark(bool dark) {
 
 void DataController::update_shown() {
     const model::AppPage page = view_model_.current_page();
-    reader_.set_traffic_shown(!screen_dark_ && page == model::AppPage::Home);
+    const bool remote_view = platform::remote::view_state() != platform::remote::ViewState::Off;
+    reader_.set_traffic_shown((!screen_dark_ && page == model::AppPage::Home) || remote_view);
     reader_.set_details_shown(!screen_dark_ && page == model::AppPage::Status);
     // The health check takes NetworkManager's last scan list as it starts;
     // the survey finds the joined network in it when the cable is the

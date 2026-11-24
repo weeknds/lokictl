@@ -58,6 +58,23 @@ const ICONS = {
     ["rect", { x: 5, y: 11, width: 14, height: 9, rx: 2 }],
     ["path", { d: "M8 11V8a4 4 0 0 1 8 0v3" }],
   ],
+  unlock: [
+    ["rect", { x: 5, y: 11, width: 14, height: 9, rx: 2 }],
+    ["path", { d: "M8 11V8a4 4 0 0 1 7.5-2" }],
+  ],
+  alert: [["path", { d: "M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM12 8v5M12 16.5v.01" }]],
+  display: [
+    ["rect", { x: 3, y: 4, width: 18, height: 12, rx: 2 }],
+    ["path", { d: "M9 20h6" }],
+  ],
+  wifi: [
+    ["path", { d: "M2.5 9a14 14 0 0 1 19 0M6 12.5a9 9 0 0 1 12 0M9.5 16a4 4 0 0 1 5 0" }],
+    ["circle", { cx: 12, cy: 19.2, r: 0.9 }],
+  ],
+  cable: [["path", { d: "M9 3v4M15 3v4M7 7h10v4a5 5 0 0 1-10 0zM12 16v5" }]],
+  check: [["path", { d: "M5 12.5l4.5 4.5L19 7.5" }]],
+  wrench: [["path", { d: "M14.7 6.3a4 4 0 0 0-5.4 5.4L3.5 17.5l3 3 5.8-5.8a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z" }]],
+  refresh: [["path", { d: "M20 12a8 8 0 1 1-2.3-5.6M20 4v4.5h-4.5" }]],
 };
 
 export function icon(name, size = 16, stroke = 2) {

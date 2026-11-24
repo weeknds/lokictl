@@ -9,7 +9,8 @@
 // #/name, so Back and links work as usual.
 
 import { h, Component } from "./preact.module.js";
-import { icon, logo, networkName, modeLine, internetWords, batteryWords } from "./ui.js";
+import { icon, logo, networkName, modeLine, internetWords } from "./ui.js";
+import { HomePhone, HomeDesk } from "./home.js";
 
 // Every page: its #/name, its title, the icon, and the sentence its empty
 // state says until its contents arrive.
@@ -152,6 +153,7 @@ class TopBar extends Component {
         "Find a device or run a command",
         h("span", { class: "kbd", "aria-hidden": "true" }, "⌘K")
       ),
+      h("a", { class: "btn gh", href: "#/security" }, "Check again"),
       this.state.hint
         ? h("p", { id: "cmd-hint", class: "cmd-hint", role: "status" }, "Search and commands come in a later update.")
         : null
@@ -202,88 +204,13 @@ function StatusLine({ status }) {
   return [h("span", { class: "dot " + tone, "aria-hidden": "true" }), h("span", null, line + words)];
 }
 
-// The facts the Home page shows until its full overview arrives.
-function facts(status) {
-  const mode = (status && status.mode) || {};
-  const [internet] = internetWords(status);
-  let modeValue = mode.name || "--";
-  if (mode.hotspot) {
-    const n = mode.hotspot_devices || 0;
-    modeValue += ", " + n + (n === 1 ? " device" : " devices") + " on the hotspot";
-  }
-  let vpn = "Off";
-  if (mode.vpn === "on") vpn = "On";
-  else if (mode.vpn === "connecting") vpn = "Connecting";
-  if (mode.kill_switch) vpn += ", kill switch on";
-  return [
-    ["Mode", modeValue, false],
-    ["Internet", internet, false],
-    ["VPN", vpn, false],
-    ["Battery", batteryWords(status), false],
-    ["Address", (status && status.cardputer && status.cardputer.address) || "--", true],
-  ];
-}
-
-function HomePhone({ status }) {
+// The phone's heading of Home: the network's name and how it is doing.
+function HomeHead({ status }) {
   return h(
-    "div",
-    { class: "phone-only" },
-    h(
-      "header",
-      { class: "phone-head" },
-      h("h1", { class: "large-title" }, networkName(status)),
-      h("div", { class: "meta" }, h(StatusLine, { status }), h(SampleTag, { status }))
-    ),
-    h("div", { class: "sec" }, h("span", null, "Right now")),
-    h(
-      "div",
-      { class: "group" },
-      facts(status).map(([key, value, mono]) =>
-        h("div", { class: "row" }, h("span", { class: "row-key" }, key), h("span", { class: mono ? "row-value mono" : "row-value" }, value))
-      )
-    ),
-    h("div", { class: "sec" }, h("span", null, "Cardputer")),
-    h(
-      "div",
-      { class: "group" },
-      h(
-        "a",
-        { class: "row icon-row", href: "/screen" },
-        h("span", { class: "tile" }, icon("screen", 18, 2)),
-        h("span", { class: "row-text" }, h("b", null, "Cardputer screen"), h("span", null, "See its screen and press its keys")),
-        h("span", { class: "chev" }, icon("chevron", 13, 2.4))
-      )
-    )
-  );
-}
-
-function HomeDesk({ status }) {
-  return h(
-    "div",
-    { class: "desk-only" },
-    h("h1", { class: "page-title" }, networkName(status)),
-    h("div", { class: "page-sub" }, h(StatusLine, { status }), h(SampleTag, { status })),
-    h(
-      "div",
-      { class: "grid" },
-      h(
-        "section",
-        { class: "card span-8", "aria-labelledby": "now-title" },
-        h("div", { class: "card-head" }, h("h2", { id: "now-title" }, "Right now")),
-        facts(status).map(([key, value, mono]) => h("div", { class: "kv" }, h("span", null, key), h("b", { class: mono ? "mono" : "" }, value)))
-      ),
-      h(
-        "section",
-        { class: "card span-4", "aria-labelledby": "screen-title" },
-        h("div", { class: "card-head" }, h("h2", { id: "screen-title" }, "Cardputer screen")),
-        h(
-          "div",
-          { class: "card-body" },
-          h("p", null, "See the Cardputer's screen here and press its keys from your keyboard."),
-          h("a", { class: "btn-ghost", href: "/screen" }, "Open the screen")
-        )
-      )
-    )
+    "header",
+    { class: "phone-head" },
+    h("h1", { class: "large-title" }, networkName(status)),
+    h("div", { class: "meta" }, h(StatusLine, { status }), h(SampleTag, { status }))
   );
 }
 
@@ -322,7 +249,12 @@ export function Shell({ route, status, lost }) {
         h(
           "div",
           { class: "page", key: page.id },
-          page.id === "home" ? [h(HomePhone, { status }), h(HomeDesk, { status })] : h(EmptyPage, { page })
+          page.id === "home"
+            ? [
+                h(HomePhone, { status, head: h(HomeHead, { status }) }),
+                h(HomeDesk, { status, head: h("h1", { class: "sr" }, networkName(status) + " overview") }),
+              ]
+            : h(EmptyPage, { page })
         )
       )
     ),

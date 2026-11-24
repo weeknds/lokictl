@@ -60,6 +60,8 @@ std::string random_hotspot_password();
 // once a second only while it is seen; and the same for the Status page and
 // its details (DataReader::set_details_shown()). While the screen is dark
 // (set_screen_dark()), neither counts as shown, whatever page is on top.
+// While Remote view is on (platform::remote::view_state()), the traffic is
+// read on every page and with the screen dark too, for the dashboard.
 //
 // Switching modes: it follows the view model's mode requests
 // (BaseViewModel::request_mode(), from the Modes page) and hands each to the
@@ -258,6 +260,7 @@ private:
     platform::DataReader reader_;
     lv_timer_t* poll_timer_{nullptr};
     lv_observer_t* page_observer_{nullptr};
+    lv_observer_t* remote_observer_{nullptr};  // Remote view's state (update_shown())
     lv_observer_t* mode_observer_{nullptr};
     int32_t mode_requests_seen_{0};  // the view model's request count handed on last
     lv_observer_t* hotspot_observer_{nullptr};

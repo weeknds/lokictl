@@ -358,7 +358,16 @@ std::string speed_server_host(std::string_view text) {
 bool operator==(const HealthFinding& left, const HealthFinding& right) {
     return left.issue == right.issue && left.level == right.level && left.title == right.title &&
            left.who == right.who && left.where == right.where && left.fact == right.fact &&
-           left.port == right.port && left.order == right.order;
+           left.port == right.port && left.order == right.order && left.address == right.address;
+}
+
+bool operator==(const HealthDevice& left, const HealthDevice& right) {
+    return left.address == right.address && left.name == right.name && left.kind == right.kind &&
+           left.router == right.router && left.own == right.own && left.open == right.open;
+}
+
+bool operator!=(const HealthDevice& left, const HealthDevice& right) {
+    return !(left == right);
 }
 
 bool operator!=(const HealthFinding& left, const HealthFinding& right) {
@@ -381,7 +390,7 @@ bool operator==(const HealthRun& left, const HealthRun& right) {
            left.interface_name == right.interface_name && left.network == right.network &&
            left.step == right.step && left.total == right.total && left.asked == right.asked &&
            left.hosts == right.hosts && left.scanned == right.scanned && left.elapsed_s == right.elapsed_s &&
-           left.findings == right.findings;
+           left.findings == right.findings && left.devices == right.devices && left.finished == right.finished;
 }
 
 bool operator!=(const HealthRun& left, const HealthRun& right) {

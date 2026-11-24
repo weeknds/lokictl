@@ -13,6 +13,7 @@
 // Built on the Mac only, as lokictl_web_tests; exits 1 when a check fails.
 
 #include "dashboard_status.h"
+#include "health_check.h"
 #include "remote/remote_http.h"
 #include "remote/remote_keys.h"
 #include "remote/remote_server.h"
@@ -24,6 +25,7 @@
 #include <sys/time.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cctype>
 #include <chrono>
 #include <cstdio>
@@ -118,7 +120,9 @@ void check_files() {
             expect(!contains(text, opener), name + ": no protocol-relative URL");
         }
         for (std::size_t at = text.find("url("); at != std::string::npos; at = text.find("url(", at + 4)) {
-            expect(text.compare(at, 5, "url(/") == 0, name + ": url() only from the Cardputer");
+            // url(/...) from the Cardputer, or url(#...) inside the page (an SVG gradient).
+            expect(text.compare(at, 5, "url(/") == 0 || text.compare(at, 5, "url(#") == 0,
+                   name + ": url() only from the Cardputer");
         }
     }
     expect(files >= 7, "the web folder holds the dashboard's files");
@@ -159,6 +163,97 @@ void check_json() {
            "status JSON: the Wi-Fi name stays one escaped string");
     expect(contains(json, "\"battery\":null"), "status JSON: an unknown battery is null");
     expect(contains(json, "\"v\":1") && contains(json, "\"sample\":true"), "status JSON: version and sample flag");
+    expect(!json.empty() && json.back() == '\n' && json[json.size() - 2] == '}', "status JSON: one closed object");
+}
+
+// ---------- The findings ----------
+
+bool counts_add_up(const model::DashCounts& counts) {
+    return counts.device_fix + counts.device_look + counts.fine + counts.unchecked == counts.devices;
+}
+
+void check_findings() {
+    // The made-up overview is the design's: 12 devices, 1 to fix, 2 worth
+    // a look, 9 fine.
+    const model::HomeData home = model::sample_home_data();
+    const model::DashSample sample = model::sample_dashboard();
+    const model::DashOverview overview = model::dashboard_overview(home, sample.tools, sample.watch);
+    const model::DashCounts& counts = overview.counts;
+    expect(counts.devices == 12 && counts.fix == 1 && counts.look == 2 && counts.fine == 9 && counts.unchecked == 0,
+           "findings: the sample is 12 devices, 1 to fix, 2 worth a look, 9 fine");
+    expect(counts_add_up(counts), "findings: the sample's device counts add up");
+    expect(overview.checked && overview.checked_at == "07:44", "findings: the sample is checked");
+    expect(!overview.things.empty() && overview.things[0].tier == model::FindingTier::Fix &&
+               overview.things[0].title == "Smart TV has 2 security holes" &&
+               overview.things[0].device == "10.0.0.43",
+           "findings: the worst thing first, in plain words");
+    expect(!overview.devices.empty() && overview.devices[0].tag == "2 holes", "findings: the worst device first, tagged");
+    for (const model::DashDevice& device : overview.devices) {
+        expect(device.address != home.uplink_address, "findings: the Cardputer is not one of the devices");
+    }
+    std::size_t look = 0;
+    for (const model::DashThing& thing : overview.things) {
+        look += thing.tier == model::FindingTier::Look ? 1 : 0;
+    }
+    expect(look == 2, "findings: one thing per subject (the NAS's alerts and its open port are one)");
+
+    // Nothing checked: no device is fine, and the counts still add up.
+    model::HomeData live = model::sample_home_data();
+    live.sample = false;
+    const model::DashOverview fresh = model::dashboard_overview(live, model::ToolsData(), model::WatchData());
+    expect(!fresh.checked && fresh.counts.fine == 0 && fresh.counts.unchecked == 3 && counts_add_up(fresh.counts),
+           "findings: unchecked hotspot devices are not fine");
+
+    // Two hole findings on one device are one thing, its count the tag's;
+    // a Wi-Fi without a password is a thing to fix but not a device.
+    model::ToolsData holes = sample.tools;
+    model::HealthFinding second = holes.health.findings[0];
+    second.port = 8080;
+    second.title = "3 known holes";
+    holes.health.findings.push_back(second);
+    model::HealthFinding wifi;
+    wifi.issue = model::HealthIssue::OpenWifi;
+    wifi.level = model::RiskLevel::Risk;
+    wifi.title = "No Wi-Fi password";
+    wifi.order = -1;
+    holes.health.findings.push_back(wifi);
+    model::sort_findings(holes.health.findings);
+    const model::DashOverview both = model::dashboard_overview(home, holes, sample.watch);
+    std::size_t tv_things = 0;
+    for (const model::DashThing& thing : both.things) {
+        tv_things += thing.device == "10.0.0.43" ? 1 : 0;
+    }
+    const auto tv = std::find_if(both.devices.begin(), both.devices.end(),
+                                 [](const model::DashDevice& device) { return device.id == "10.0.0.43"; });
+    const auto tv_thing = std::find_if(both.things.begin(), both.things.end(),
+                                       [](const model::DashThing& thing) { return thing.device == "10.0.0.43"; });
+    expect(tv_things == 1 && tv != both.devices.end() && tv->tag == "5 holes" && tv_thing != both.things.end() &&
+               tv_thing->title == "Smart TV has 5 security holes",
+           "findings: two hole findings on one device are one thing, counted as its tag");
+    expect(both.counts.fix == 2 && both.counts.device_fix == 1 && counts_add_up(both.counts),
+           "findings: the open Wi-Fi counts as a thing to fix, not as a device");
+
+    // A hostile device name stays one escaped string.
+    model::ToolsData tools = sample.tools;
+    tools.health.devices[2].name = "\"}],\"evil\":\"<img>";
+    model::DashboardParts parts;
+    parts.overview = model::dashboard_overview(home, tools, sample.watch);
+    const std::string json = model::dashboard_status_json(home, parts);
+    expect(contains(json, "\"name\":\"\\\"}],\\\"evil\\\":\\\"\\u003cimg\\u003e\""),
+           "status JSON: a device name stays one escaped string");
+    expect(contains(json, "\"counts\":{\"devices\":12,\"security\":1}"), "status JSON: the sidebar's counts");
+    expect(contains(json, "\"total\":12,") && count_of(json, "\"devices\":") == 2,
+           "status JSON: the overview's count and list have their own names");
+    expect(counts_add_up(parts.overview.counts), "findings: counts add up with a hostile name");
+
+    // The traffic log keeps the last minute.
+    model::TrafficLog log;
+    for (int32_t second = 0; second < 75; ++second) {
+        log.push(second, -1);
+    }
+    expect(log.samples().size() == model::TrafficLog::kLength && log.samples().front()[0] == 15 &&
+               log.samples().back()[1] == 0,
+           "traffic log: the newest 60, unknown as 0");
 }
 
 // ---------- A real server ----------
@@ -287,6 +382,7 @@ void check_server() {
         {"/pair.js", "text/javascript; charset=utf-8"},
         {"/shell.js", "text/javascript; charset=utf-8"},
         {"/ui.js", "text/javascript; charset=utf-8"},
+        {"/home.js", "text/javascript; charset=utf-8"},
         {"/preact.module.js", "text/javascript; charset=utf-8"},
         {"/icon.svg", "image/svg+xml"},
         {"/fonts/Inter-Regular.ttf", "font/ttf"},
@@ -378,6 +474,7 @@ void check_server() {
 int main() {
     check_files();
     check_json();
+    check_findings();
     check_server();
     if (failures) {
         std::printf("%d check(s) failed\n", failures);

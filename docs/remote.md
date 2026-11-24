@@ -71,10 +71,25 @@ internet.
   Devices, Security, Watch and trap, Map, then Modes and VPN, Tools,
   Reports and Cardputer screen) and the Cardputer's battery and address at
   the bottom, and a top bar that shows where you are.
-- **Home** shows the network's name, the mode, whether the internet works,
-  the VPN, the battery and the Cardputer's address, and opens the
-  Cardputer screen. The other pages say what they will show; their
-  contents come in later updates.
+- **Home** (Overview on a computer) answers "is my network OK?" first: a
+  verdict (`1 thing to fix`, then the one thing as a link, then
+  `2 more worth a look · 9 look fine`), a picture of the devices around
+  the Cardputer (an inner ring for devices reached by the cable, an outer
+  one for Wi-Fi; red to fix, and it pulses unless the system asks for
+  less motion; yellow worth a look; white fine), what needs attention,
+  the traffic of the last minute, the mode and VPN, and Watch's newest
+  alerts and the trap. A computer also lists the devices. Before any
+  health check the verdict says `Not checked yet`: a device nobody has
+  checked never counts as fine. The other pages say what they will show;
+  their contents come in later updates.
+- **The findings are worked out once, on the Cardputer**, and every page
+  shows the same numbers. One *thing* per device (or the Wi-Fi, the cable
+  link, the network), at its worst finding: **Fix soon** (a risk of the
+  health check, known holes, a fake router), **Worth a look** (a warning,
+  someone scanning the Cardputer or trying the trap), **Good to know**
+  (information, a new device). They come from the last health check, the
+  Ports page's holes and Watch's alerts; the devices from the health
+  check, Discover and the hotspot.
 
 While the page is visible it asks the Cardputer for news every 2 seconds;
 while it is hidden it asks nothing. When the Cardputer stops answering, a
@@ -266,7 +281,7 @@ form too; the code from the Cardputer's screen still guards it.
 
 | Request | Answer |
 |---|---|
-| `GET /`, `/app.css`, `/app.js`, `/pair.js`, `/shell.js`, `/ui.js`, `/preact.module.js`, `/icon.svg`, `/fonts/Inter-Regular.ttf`, `/fonts/Inter-SemiBold.ttf` | the dashboard's files, no session needed (`404` when the file is not installed) |
+| `GET /`, `/app.css`, `/app.js`, `/pair.js`, `/shell.js`, `/ui.js`, `/home.js`, `/preact.module.js`, `/icon.svg`, `/fonts/Inter-Regular.ttf`, `/fonts/Inter-SemiBold.ttf` | the dashboard's files, no session needed (`404` when the file is not installed) |
 | `GET /screen` | the screen page (`text/html`, with its own `Content-Security-Policy`) |
 | `POST /pair` with the form body `code=NNNNNN` | `200` and the session cookie; `403` for a wrong code; `409` while a browser is paired |
 | `GET /api/v1/session` with the cookie | `200` with `{"token":"<request token>"}`; `401` without the cookie |
@@ -290,16 +305,40 @@ fonts: `private, max-age=604800`), `X-Content-Type-Options: nosniff`,
 The status (`GET /api/v1/status`) is version 1 and comes from what the
 app already knows; asking for it makes the Cardputer ask the system for
 nothing. Unknown numbers are `null`; texts from the network (the Wi-Fi
-name) are escaped:
+name, device names, addresses) are escaped. `history` holds the last
+minute of traffic (down and up, kbit/s, one pair a second, oldest first)
+since Remote view started; `things` (at most 32) and `devices` (at most
+64) come worst first, and `total` counts every device:
 
 ```json
 {"v":1,"sample":false,
  "cardputer":{"address":"10.0.0.12","battery":87,"charging":false},
  "network":{"name":"Home","link":"wifi","internet":"full"},
  "mode":{"id":"router","name":"Router","hotspot":true,"hotspot_devices":3,
-         "vpn":"off","kill_switch":false},
- "traffic":{"down_kbps":1200,"up_kbps":80}}
+         "hotspot_name":"LokiCTL-7F","vpn":"off","vpn_reply_s":null,
+         "kill_switch":false,"keep":false},
+ "traffic":{"down_kbps":1200,"up_kbps":80,"history":[[1100,70],[1200,80]]},
+ "counts":{"devices":12,"security":1},
+ "overview":{"checked":true,"checking":false,"checked_at":"21:44",
+             "fix":1,"look":2,"know":2,"total":12,"device_fix":1,
+             "device_look":2,"fine":9,"unchecked":0,
+             "things":[{"tier":"fix","icon":"shield",
+                        "title":"Smart TV has 2 security holes",
+                        "hint":"update the device's software",
+                        "action":"Update Smart TV","fix":"Fix Smart TV",
+                        "device":"10.0.0.43","time":"21:44"}],
+             "devices":[{"id":"10.0.0.43","name":"Smart TV","address":"10.0.0.43",
+                         "ring":"cable","router":false,"new":false,"checked":true,
+                         "tier":"fix","tag":"2 holes",
+                         "services":"remote login, casting, web page","seen":"2 min"}]},
+ "watch":{"on":true,"trap":true,"trap_ports":6,
+          "feed":[{"time":"21:42","text":"Someone scanned the Cardputer from 10.0.0.75"}]}}
 ```
+
+`tier` is `fix`, `look`, `know` or `ok`; `device_fix + device_look + fine
++ unchecked = total`. While the Cardputer shows made-up data (the
+simulator) and no tool has run, the findings are made up too and
+`sample` is `true`.
 
 Frame numbers grow only when the screen changed, so a viewer that sends the
 last number it got receives a picture only when there is a new one. On the

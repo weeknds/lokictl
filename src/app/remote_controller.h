@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include "dashboard_status.h"
 #include "lvgl.h"
 
 #include <cstdint>
@@ -82,8 +83,12 @@ namespace app {
 // The web dashboard: the server hands out its files from `web_folder` and
 // the Inter fonts from `font_folder` (empty: 404). While a server runs,
 // this controller hands it the JSON of GET /api/v1/status
-// (model::dashboard_status_json()) about once a second, only when it
-// changed; the server thread never reads the view model itself.
+// (model::dashboard_status_json(), with the findings of
+// model::dashboard_overview(), or the made-up ones of
+// model::sample_dashboard() while the home data is made up and no tool has
+// run) about once a second, only when it changed; the server thread never
+// reads the view model itself. It also keeps the last minute of traffic
+// for the dashboard's chart, from the moment the server starts.
 //
 // Create it after the ThemeEngine and the view model, and destroy it
 // before them.
@@ -162,6 +167,7 @@ private:
     std::string font_folder_;
     std::string status_json_;       // the last JSON handed to server_
     uint32_t status_built_{0};      // lv_tick_get() when it was last built
+    model::TrafficLog traffic_;     // the dashboard's last minute of traffic, while a server runs
 };
 
 } // namespace app
