@@ -6,7 +6,7 @@
 
 cmake_minimum_required(VERSION 3.31)
 
-project(lokictl VERSION 0.1.2 LANGUAGES C CXX)
+project(lokictl VERSION 0.1.3 LANGUAGES C CXX)
 
 # Application identity. This block and the project() line above are the only
 # places where the build names the app: targets, install paths, package
@@ -550,7 +550,10 @@ endif()
 # only; the package installs it at APP_HELPER_PATH, where the app runs it to
 # block devices on the hotspot (src/platform/firewall.cpp).
 set(APP_HELPER_NAME "${APP_NAME}-helper")
-set(APP_HELPER_INSTALL_DIR "libexec/${APP_NAME}")
+# Both helpers live in the package's own folder, /usr/lib/<name>/ (Debian's
+# place for a package's private programs; the store accepts no other). It is
+# spelled out because CMAKE_INSTALL_LIBDIR is lib/<multiarch> on Debian.
+set(APP_HELPER_INSTALL_DIR "lib/${APP_NAME}")
 set(APP_HELPER_PATH "/usr/${APP_HELPER_INSTALL_DIR}/${APP_HELPER_NAME}")
 target_compile_definitions(${PROJECT_NAME}_platform PRIVATE APP_HELPER_PATH="${APP_HELPER_PATH}")
 if(NOT USE_DESKTOP)

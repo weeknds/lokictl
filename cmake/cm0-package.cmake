@@ -87,10 +87,18 @@ install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/assets/images/"
 
 # Router and the other modes change NetworkManager's settings, which apps
 # started by the launcher may not do on their own: this polkit rule grants
-# the netdev group the few actions they need (see the file).
+# the netdev group the few actions they need (see the file). The package
+# keeps it in its own folder (APP_POLKIT_RULE_FILE), because the store lets
+# a package install nothing into polkit's folders; postinst links it into
+# /etc/polkit-1/rules.d (APP_POLKIT_RULE_LINK), where polkit reads it, and
+# postrm takes that one link away again (see templates/postinst.in).
+set(APP_POLKIT_RULE_NAME "60-${APP_PACKAGE_NAME}.rules")
+set(APP_POLKIT_RULE_DIR "${CMAKE_INSTALL_DATADIR}/${APP_NAME}/polkit")
+set(APP_POLKIT_RULE_FILE "/usr/${APP_POLKIT_RULE_DIR}/${APP_POLKIT_RULE_NAME}")
+set(APP_POLKIT_RULE_LINK "/etc/polkit-1/rules.d/${APP_POLKIT_RULE_NAME}")
 if(APP_USE_LIBNM)
-    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/config/polkit/60-${APP_PACKAGE_NAME}.rules"
-        DESTINATION "${CMAKE_INSTALL_DATADIR}/polkit-1/rules.d"
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/config/polkit/${APP_POLKIT_RULE_NAME}"
+        DESTINATION "${APP_POLKIT_RULE_DIR}"
     )
 endif()
 
@@ -218,10 +226,12 @@ configure_file(
     @ONLY
 )
 set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${APP_GENERATED_DIR}/conffiles")
-# With the helpers: postinst gives each its capability, prerm removes the
-# firewall table on removal. Strict permissions want them executable.
-if(TARGET ${APP_HELPER_NAME})
-    foreach(script IN ITEMS postinst prerm)
+# postinst gives each helper its capability and links the polkit rule,
+# prerm removes the firewall table on removal, and postrm removes the rule's
+# link. Each part skips what the package does not hold. Strict permissions
+# want them executable.
+if(TARGET ${APP_HELPER_NAME} OR APP_USE_LIBNM)
+    foreach(script IN ITEMS postinst prerm postrm)
         configure_file(
             "${CMAKE_CURRENT_LIST_DIR}/templates/${script}.in"
             "${APP_GENERATED_DIR}/${script}"

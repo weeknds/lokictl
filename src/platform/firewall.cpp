@@ -23,7 +23,7 @@
 #include <unistd.h>
 
 #ifndef APP_HELPER_PATH
-#define APP_HELPER_PATH "/usr/libexec/lokictl/lokictl-helper"
+#define APP_HELPER_PATH "/usr/lib/lokictl/lokictl-helper"
 #endif
 
 namespace platform {

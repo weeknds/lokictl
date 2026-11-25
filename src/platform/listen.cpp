@@ -37,7 +37,7 @@
 #endif
 
 #ifndef APP_CAPTURE_PATH
-#define APP_CAPTURE_PATH "/usr/libexec/lokictl/lokictl-capture"
+#define APP_CAPTURE_PATH "/usr/lib/lokictl/lokictl-capture"
 #endif
 
 namespace platform {

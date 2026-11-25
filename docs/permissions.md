@@ -19,8 +19,7 @@ The [guide](guide.md#permissions) has the short version.
 
 ## The polkit rule
 
-The package installs a polkit rule,
-`/usr/share/polkit-1/rules.d/60-lokictl.rules` (source:
+The package brings a polkit rule, `60-lokictl.rules` (source:
 `config/polkit/60-lokictl.rules`), because apps started by the launcher are
 not an active login session and may not change NetworkManager's settings on
 their own. It lets members of the `netdev` group do exactly three
@@ -34,8 +33,28 @@ NetworkManager actions:
 The modes (Router, Share, VPN, Laptop link) need these; Laptop link, a
 shared profile on the cable, needs only the first two. Router and Laptop
 link also need `dnsmasq-base` and `nftables`, which the package depends
-on. Removing the
-package removes the rule.
+on.
+
+**Where it lives.** The app store lets a package install files only into
+folders named after it, so the rule itself is in the package's own folder,
+`/usr/share/lokictl/polkit/60-lokictl.rules`. polkit only reads rules from
+its own folders, so the package's install script (postinst) puts one
+symbolic link to it into the folder for local rules:
+`/etc/polkit-1/rules.d/60-lokictl.rules`. polkit notices the link and
+loads the rule straight away; no restart is needed. The script makes the
+link again on every install and upgrade, so polkit also reads an updated
+rule. If a file of that name is already there and is not this link, it
+belongs to someone else: the script leaves it alone and says so, and the
+modes may not work until it is moved away. The script makes
+`/etc/polkit-1/rules.d` only if it is missing, and never changes an
+existing one.
+
+Removing the package (`apt remove` or `apt purge`) removes the rule, and the
+package's postrm script then removes the link, only if it is still
+LokiCTL's link to that rule. Nothing else in `/etc/polkit-1/rules.d` is
+touched. Version 0.1.2 and older installed the rule directly as
+`/usr/share/polkit-1/rules.d/60-lokictl.rules`; an upgrade removes that file
+and makes the link in the same step.
 
 **What that costs.** polkit cannot tell programs apart, so **every program
 that a `netdev` member runs gets these three rights, not only LokiCTL**. On
@@ -55,7 +74,7 @@ the package when you don't use the modes.
 Blocking a device, Share's second Wi-Fi interface, the VPN gateway's
 kill switch and the trap's low ports need one right the app itself does not
 have: network administration. The package installs a small helper program for that,
-`/usr/libexec/lokictl/lokictl-helper` (source: `src/helper/lokictl_helper.c`).
+`/usr/lib/lokictl/lokictl-helper` (source: `src/helper/lokictl_helper.c`).
 It is not setuid; the package's install script gives it the single Linux
 capability `CAP_NET_ADMIN` (with `setcap`, from `libcap2-bin`) and lets only
 root and the `netdev` group run it (owner `root:netdev`, mode 0750).
@@ -174,7 +193,7 @@ nothing else.
 The Discover page, Watch and the Map's switch view need a second right:
 hearing the network's raw traffic.
 A second, separate helper does that,
-`/usr/libexec/lokictl/lokictl-capture` (source: `src/helper/lokictl_capture.c`),
+`/usr/lib/lokictl/lokictl-capture` (source: `src/helper/lokictl_capture.c`),
 with the single capability `CAP_NET_RAW`, again not setuid and only for
 root and the `netdev` group. It does one of five fixed commands,
 `discover`, `watch`, `topology`, `names` or `survey`, each with an

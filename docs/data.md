@@ -852,7 +852,7 @@ and everything heard is forgotten. Nothing is written to disk; a report
 holds the names only when the user saves one.
 
 - **The live runner** (device builds) has its own thread and runs
-  `/usr/libexec/lokictl/lokictl-capture names <interface> 1800`: IPv4 UDP
+  `/usr/lib/lokictl/lokictl-capture names <interface> 1800`: IPv4 UDP
   and TCP to port 53 of the interface's own IPv4 address, sent to this
   machine, no fragments (see
   [permissions.md](permissions.md#lokictl-capture-cap_net_raw)). So it
@@ -989,7 +989,7 @@ uplink interface (`HomeData::uplink_name`) for 5 minutes, and sends
 nothing.
 
 - **The live runner** runs the capture helper,
-  `/usr/libexec/lokictl/lokictl-capture discover <interface> 300`
+  `/usr/lib/lokictl/lokictl-capture discover <interface> 300`
   (`platform::CaptureProcess` in `platform/listen.*`), with `posix_spawn`,
   an empty environment, no blocked signals and its standard output on a
   pipe (closed on exec, read without blocking). The helper alone holds
@@ -1340,7 +1340,7 @@ controller's message.
 - **The live runner** (device builds) has its own thread. It reads the
   router's hardware address from `/proc/net/arp` and the IPv6 routers in
   use from `/proc/net/ipv6_route`, then runs
-  `/usr/libexec/lokictl/lokictl-capture watch <interface> 1800` (the same
+  `/usr/lib/lokictl/lokictl-capture watch <interface> 1800` (the same
   `platform::CaptureProcess`, its `watch` filter: ARP, DHCP, TCP SYN
   without ACK sent to the interface's own IPv4 address, IPv6 router
   announcements; never a hotspot device's connection to anywhere else) and reads

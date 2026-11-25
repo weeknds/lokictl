@@ -17,8 +17,21 @@
 #   watch, topology, names, survey), each with a fixed filter, and only
 #   receives.
 # chgrp clears a file capability, so setcap comes last.
+#
+# It also switches on @APP_DISPLAY_NAME@'s polkit rule, which lets the netdev
+# group change NetworkManager's settings for the modes (see the rule). The
+# package keeps the rule in its own folder, and polkit reads rules only
+# from its own folders, so this script puts one symbolic link to it into
+# /etc/polkit-1/rules.d, the folder for local rules. polkit sees the new
+# link and loads the rule at once. A file of that name that is not this
+# link belongs to someone else and is left as it is. postrm takes the link
+# away again when the package is removed.
 
 set -e
+
+# The packaged rule and the one link to it that this script makes.
+rule_file="@APP_POLKIT_RULE_FILE@"
+rule_link="@APP_POLKIT_RULE_LINK@"
 
 # give_right <path> <capability> <what stops working without it>
 give_right() {
@@ -38,9 +51,36 @@ give_right() {
     fi
 }
 
+# link_rule: points $rule_link at $rule_file. The link is made again on
+# every configure, so that polkit also reads a rule an upgrade changed
+# (polkit watches its own folder, not the file the link points to).
+link_rule() {
+    if [ ! -f "$rule_file" ]; then
+        return 0
+    fi
+    if [ -e "$rule_link" ] || [ -L "$rule_link" ]; then
+        if [ ! -L "$rule_link" ] || [ "$(readlink "$rule_link")" != "$rule_file" ]; then
+            echo "@APP_NAME@: $rule_link is not @APP_NAME@'s and stays as it is; the modes may not work" >&2
+            return 0
+        fi
+    fi
+    # The folder comes with polkit; it is made (root:root, 0755) only when
+    # it is missing, and an existing one is never changed.
+    if [ ! -d "${rule_link%/*}" ]; then
+        if ! install -d -m 0755 -o root -g root "${rule_link%/*}"; then
+            echo "@APP_NAME@: could not make ${rule_link%/*}; the modes will not work" >&2
+            return 0
+        fi
+    fi
+    if ! ln -sfn "$rule_file" "$rule_link"; then
+        echo "@APP_NAME@: could not link $rule_link; the modes will not work" >&2
+    fi
+}
+
 if [ "$1" = "configure" ]; then
     give_right "@APP_HELPER_PATH@" cap_net_admin=ep "blocking devices, Share, the kill switch, the trap and the survey"
     give_right "@APP_CAPTURE_PATH@" cap_net_raw=ep "Discover, Watch, the Map's switches, Talk and the survey"
+    link_rule
 fi
 
 exit 0

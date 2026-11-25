@@ -11,7 +11,10 @@
 // network through a protected (WPA) hotspot. An open hotspot is not allowed.
 //
 // polkit cannot tell programs apart, so every process of a netdev member
-// gets these rights, not only LokiCTL. Removing the package removes the rule.
+// gets these rights, not only LokiCTL. The package keeps this file in
+// /usr/share/lokictl/polkit/ and its install script links it into
+// /etc/polkit-1/rules.d/, where polkit reads it. Removing the package
+// removes the link and the rule.
 
 polkit.addRule(function(action, subject) {
     if ((action.id == "org.freedesktop.NetworkManager.network-control" ||

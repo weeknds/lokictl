@@ -1,0 +1,28 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: 2026 LokiCTL contributors
+# SPDX-License-Identifier: MIT
+#
+# On remove and purge, takes away the one file postinst made outside the
+# package's own files, the symbolic link
+#   @APP_POLKIT_RULE_LINK@
+# that switches @APP_DISPLAY_NAME@'s polkit rule on (see postinst). dpkg has
+# already taken the packaged rule away, so without this the link would
+# point at nothing. Only that one link goes, and only while it is still
+# @APP_DISPLAY_NAME@'s (a symbolic link to the packaged rule); a file of that
+# name that belongs to someone else stays, and nothing else in the folder
+# is touched. polkit sees the change and forgets the rule at once.
+# Upgrades keep the link (the new version's postinst makes it again).
+
+set -e
+
+# The one link postinst made, and the packaged rule it points to.
+rule_link="@APP_POLKIT_RULE_LINK@"
+rule_file="@APP_POLKIT_RULE_FILE@"
+
+if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
+    if [ -L "$rule_link" ] && [ "$(readlink "$rule_link")" = "$rule_file" ]; then
+        rm -f "$rule_link"
+    fi
+fi
+
+exit 0

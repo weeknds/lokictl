@@ -1,7 +1,7 @@
 {
   "app_name": "LokiCTL",
   "package_name": "lokictl",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Pocket network multitool for CardputerZero",
 
   "store": {
