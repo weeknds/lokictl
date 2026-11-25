@@ -866,6 +866,11 @@ void RemoteController::hand_over_status() {
     if (made_up) {
         sample = model::sample_dashboard();
         sample.tools.list_date = tools.list_date;
+        // The made-up check is of whatever made-up network is shown.
+        sample.tools.health.interface_name = home.uplink_name;
+        sample.tools.health.network.clear();
+        sample.tools.health.router = home.gateway_address;
+        sample.tools.health.wifi_name = home.wifi_name;
         parts.overview = model::dashboard_overview(home, sample.tools, sample.watch);
         parts.watching = sample.watch.run.state == model::ToolState::Running;
         parts.trap_on = sample.trap.state == model::ToolState::Running;

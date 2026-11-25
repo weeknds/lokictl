@@ -346,9 +346,33 @@ void check_proc_files() {
     std::remove(route_path.c_str());
 }
 
+// An SSDP SERVER line longer than kept loses the word the cut falls in, so a
+// version cut short is never checked as another version; a shorter one is
+// kept whole.
+void check_ssdp_server() {
+    const uint8_t hardware[6] = {0x02, 0x5e, 0x11, 0x7a, 0xd0, 0x01};
+    const auto server_of = [&hardware](const std::string& server) {
+        platform::HeardDevices heard({});
+        const std::string reply = "HTTP/1.1 200 OK\r\nST: upnp:rootdevice\r\nSERVER: " + server + "\r\n\r\n";
+        heard.note_ssdp_reply(hardware, 0x0a000001u, reinterpret_cast<const uint8_t*>(reply.data()), reply.size(), 1);
+        return heard.devices().size() == 1 ? heard.devices()[0].ssdp_server : std::string("(none)");
+    };
+    // 63 characters: the cut at 60 falls in "2.3.7".
+    expect(server_of("Linux/5.15.137-sdkfw-asus-merlin-armv8 UPnP/1.1 MiniUPnPd/2.3.7") ==
+               "Linux/5.15.137-sdkfw-asus-merlin-armv8 UPnP/1.1",
+           "SSDP: a SERVER line cut in its version loses the version");
+    expect(server_of("Linux/4.14 UPnP/1.0 MiniUPnPd/2.3.7") == "Linux/4.14 UPnP/1.0 MiniUPnPd/2.3.7",
+           "SSDP: a short SERVER line is kept whole");
+    // The cut falls just before a space: every word before it stays.
+    const std::string sixty = "Linux/5.4.0-sdkfw-asus-merlin-armv8 UPnP/1.1 MiniUPnPd/2.3.7";
+    expect(sixty.size() == 60 && server_of(sixty + " extra") == sixty,
+           "SSDP: a cut just before a space keeps every word");
+}
+
 } // namespace
 
 int main() {
+    check_ssdp_server();
     check_pretend_network();
     check_scans();
     check_addresses();

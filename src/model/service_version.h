@@ -65,4 +65,16 @@ std::string service_short_text(const ServiceInfo& info);
 // characters only separate the parts.
 int compare_versions(std::string_view left, std::string_view right);
 
+// `said` without its last token (as read_service() splits a text into
+// tokens) and the separators before it: for a line that was cut short, so
+// a version cut short ("1.4.7" of "1.4.76") is not read as another,
+// older version. A text that ends in a separator keeps every token.
+std::string without_last_token(std::string_view said);
+
+// `said` cut to at most `max` characters without a partly cut token: a cut
+// that falls just before a separator keeps every token up to it, any other
+// drops the token it falls in and the separators before it. Trailing
+// spaces go.
+std::string cut_at_token(std::string_view said, std::size_t max);
+
 } // namespace model

@@ -932,10 +932,175 @@ void check_server() {
 
 } // namespace
 
+// A WireGuard file with an Address of one family only is accepted, also
+// when it lists `0.0.0.0/0, ::/0`: the profile turns the other family off,
+// a known limit that the leak test reports (docs/data.md).
+void check_wireguard_families() {
+    const std::string head = "[Interface]\nPrivateKey = QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE=\n";
+    const std::string peer = "\n[Peer]\nPublicKey = QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI=\nAllowedIPs = ";
+    const auto reason = [&](const std::string& addresses, const std::string& allowed) {
+        platform::WireGuardConfig config;
+        const std::string text = head + "Address = " + addresses + "\n" + peer + allowed + "\n";
+        const std::string why = platform::parse_wireguard_config(text, config);
+        platform::clear_wireguard_config(config);
+        return why;
+    };
+    expect(reason("10.8.0.2/32", "0.0.0.0/0").empty(), "wireguard: IPv4 only, all of IPv4");
+    expect(reason("10.8.0.2/32, fd00::2/128", "0.0.0.0/0, ::/0").empty(), "wireguard: both families, all of both");
+    expect(reason("10.8.0.2/32", "10.8.0.0/24, fd00::/64").empty(), "wireguard: a part of IPv6 needs no IPv6 Address");
+    expect(reason("10.8.0.2/32", "0.0.0.0/0, ::/0").empty(),
+           "wireguard: all of IPv6 without an IPv6 Address is accepted");
+    expect(reason("fd00::2/128", "0.0.0.0/0, ::/0").empty(),
+           "wireguard: all of IPv4 without an IPv4 Address is accepted");
+    expect(reason("fd00::2/128", "::/0").empty(), "wireguard: IPv6 only, all of IPv6");
+}
+
+// A health check counts only on the network it checked: on another uplink
+// its devices and findings are not this network's.
+void check_health_network() {
+    const model::HomeData home = model::sample_home_data();
+    const model::DashSample sample = model::sample_dashboard();
+    const auto checked_here = [&sample](const model::HomeData& now) {
+        const model::DashOverview overview = model::dashboard_overview(now, sample.tools, sample.watch);
+        return overview.checked && overview.counts.fine == 9 && counts_add_up(overview.counts);
+    };
+    const auto not_checked = [&sample](const model::HomeData& now, const model::ToolsData& tools) {
+        const model::DashOverview overview = model::dashboard_overview(now, tools, sample.watch);
+        const bool tv = std::any_of(overview.devices.begin(), overview.devices.end(),
+                                    [](const model::DashDevice& device) { return device.name == "Smart TV"; });
+        return !overview.checked && overview.checked_at.empty() && overview.took_s == -1 && overview.counts.fine == 0 &&
+               overview.counts.fix == 0 && !tv && counts_add_up(overview.counts);
+    };
+    expect(checked_here(home), "health network: the check counts on the cable it ran on");
+
+    // Another network (another Wi-Fi, another address and router).
+    model::HomeData cafe = home;
+    cafe.uplink_kind = model::LinkKind::Wifi;
+    cafe.uplink_name = "wlan0";
+    cafe.wifi_name = "Harbour-Cafe";
+    cafe.uplink_address = "192.168.5.20";
+    cafe.gateway_address = "192.168.5.1";
+    expect(not_checked(cafe, sample.tools), "health network: a check of another network does not count");
+    model::ToolsData stopped = sample.tools;
+    stopped.health.state = model::ToolState::Stopped;
+    expect(model::dashboard_check(cafe, stopped).state == model::ToolState::Idle &&
+               model::dashboard_check(home, stopped).state == model::ToolState::Stopped,
+           "health network: the Security page shows a check of another network as none");
+
+    // The same cable, but an address outside the network it swept.
+    model::HomeData moved = home;
+    moved.uplink_address = "10.0.1.12";
+    expect(not_checked(moved, sample.tools), "health network: an address outside the swept network");
+
+    // The same cable and addresses, but another router.
+    model::HomeData other_router = home;
+    other_router.gateway_address = "10.0.0.254";
+    expect(not_checked(other_router, sample.tools), "health network: another router");
+
+    // Two Wi-Fi networks with the same addresses: only the one checked counts.
+    model::ToolsData on_wifi = sample.tools;
+    on_wifi.health.interface_name = "wlan0";
+    on_wifi.health.wifi_name = "Home";
+    model::HomeData home_wifi = home;
+    home_wifi.uplink_kind = model::LinkKind::Wifi;
+    home_wifi.uplink_name = "wlan0";
+    home_wifi.wifi_name = "Home";
+    expect(model::dashboard_overview(home_wifi, on_wifi, sample.watch).checked,
+           "health network: the check counts on the Wi-Fi it ran on");
+    model::HomeData office = home_wifi;
+    office.wifi_name = "Office";
+    expect(not_checked(office, on_wifi), "health network: another Wi-Fi with the same addresses");
+
+    // A check that runs always counts.
+    model::ToolsData running = sample.tools;
+    running.health.state = model::ToolState::Running;
+    expect(model::dashboard_overview(cafe, running, sample.watch).checking,
+           "health network: a running check counts");
+}
+
+// A device that claims the router's address: the alert is about the
+// claimant (its hardware address), never about the real router.
+void check_fake_router() {
+    const model::HomeData home = model::sample_home_data();
+    const model::DashSample sample = model::sample_dashboard();
+    const std::string claimant = "66:66:66:66:66:66";
+    model::WatchData watch = sample.watch;
+    model::WatchAlert alert;
+    alert.kind = model::WatchAlertKind::FakeRouter;
+    alert.time = "07:50";
+    alert.address = home.gateway_address;
+    alert.hardware = claimant;
+    alert.before = "02:1a:2b:3c:00:01";
+    watch.run.alerts.insert(watch.run.alerts.begin(), alert);
+
+    const auto device_of = [](const model::DashOverview& overview, const std::string& id) {
+        return std::find_if(overview.devices.begin(), overview.devices.end(),
+                            [&id](const model::DashDevice& device) { return device.id == id; });
+    };
+    const auto thing_of = [](const model::DashOverview& overview, const std::string& id) {
+        return std::find_if(overview.things.begin(), overview.things.end(),
+                            [&id](const model::DashThing& thing) { return thing.id == id; });
+    };
+    const auto blamed = [](const model::DashDevice& device) {
+        return device.tier == model::FindingTier::Fix ||
+               std::any_of(device.issues.begin(), device.issues.end(), [](const model::DashIssue& issue) {
+                   return issue.title == "Claims to be the router";
+               });
+    };
+
+    // The claimant is not in the list: a thing of its own, by its hardware
+    // address, with no device page; the router stays as it was.
+    model::ToolsData tools = sample.tools;
+    const model::DashOverview unknown = model::dashboard_overview(home, tools, watch);
+    const auto router = device_of(unknown, home.gateway_address);
+    const auto thing = thing_of(unknown, claimant);
+    expect(router != unknown.devices.end() && router->router && !blamed(*router),
+           "fake router: the real router is not blamed");
+    expect(thing != unknown.things.end() && thing->tier == model::FindingTier::Fix && thing->device.empty() &&
+               thing->where == claimant && thing->title == "Another device claims to be the router",
+           "fake router: a thing about the claimant's hardware address");
+    expect(counts_add_up(unknown.counts), "fake router: the counts add up");
+
+    // Discover heard the claimant at the router's address (as it is during
+    // the attack): the router's entry gets that hardware address, and is
+    // still not blamed.
+    model::HeardDevice spoofed;
+    spoofed.hardware_address = claimant;
+    spoofed.address = home.gateway_address;
+    tools.listen.devices = {spoofed};
+    const model::DashOverview heard_there = model::dashboard_overview(home, tools, watch);
+    const auto router_there = device_of(heard_there, home.gateway_address);
+    const auto thing_there = thing_of(heard_there, claimant);
+    expect(router_there != heard_there.devices.end() && !blamed(*router_there) &&
+               thing_there != heard_there.things.end() && thing_there->device.empty(),
+           "fake router: Discover hearing the claimant at the router's address blames no device");
+
+    // Discover knows the claimant at its own address: the alert is on its page.
+    model::HeardDevice own;
+    own.hardware_address = claimant;
+    own.address = "10.0.0.66";
+    tools.listen.devices = {own};
+    const model::DashOverview known = model::dashboard_overview(home, tools, watch);
+    const auto router_known = device_of(known, home.gateway_address);
+    const auto spoofer = device_of(known, "10.0.0.66");
+    const auto thing_known = thing_of(known, "10.0.0.66");
+    expect(router_known != known.devices.end() && !blamed(*router_known),
+           "fake router: the router is not blamed when the claimant is known");
+    expect(spoofer != known.devices.end() && spoofer->tier == model::FindingTier::Fix &&
+               !spoofer->issues.empty() && spoofer->issues[0].title == "Claims to be the router",
+           "fake router: the claimant's own page has the alert");
+    expect(thing_known != known.things.end() && thing_known->device == "10.0.0.66" && thing_known->where == claimant,
+           "fake router: the thing links to the claimant's page");
+    expect(counts_add_up(known.counts), "fake router: the counts add up with the claimant known");
+}
+
 int main() {
     check_files();
     check_json();
     check_findings();
+    check_health_network();
+    check_fake_router();
+    check_wireguard_families();
     check_server();
     if (failures) {
         std::printf("%d check(s) failed\n", failures);

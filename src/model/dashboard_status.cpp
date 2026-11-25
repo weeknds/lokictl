@@ -398,7 +398,9 @@ void TrafficLog::push(int32_t down_kbps, int32_t up_kbps) {
 
 DashCheck dashboard_check(const HomeData& home, const ToolsData& tools) {
     DashCheck check;
-    const HealthRun& run = tools.health;
+    // A check of another network is shown as none, as in the overview.
+    const HealthRun none;
+    const HealthRun& run = health_run_here(tools.health, home) ? tools.health : none;
     check.state = run.state;
     check.step = run.step;
     check.asked = run.asked;

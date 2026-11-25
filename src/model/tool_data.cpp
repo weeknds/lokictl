@@ -391,7 +391,8 @@ bool operator==(const HealthRun& left, const HealthRun& right) {
            left.interface_name == right.interface_name && left.network == right.network &&
            left.step == right.step && left.total == right.total && left.asked == right.asked &&
            left.hosts == right.hosts && left.scanned == right.scanned && left.elapsed_s == right.elapsed_s &&
-           left.findings == right.findings && left.devices == right.devices && left.finished == right.finished;
+           left.findings == right.findings && left.devices == right.devices && left.finished == right.finished &&
+           left.router == right.router && left.wifi_name == right.wifi_name;
 }
 
 bool operator!=(const HealthRun& left, const HealthRun& right) {

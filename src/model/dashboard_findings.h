@@ -167,7 +167,16 @@ struct DashOverview {
 // open ports, services, holes and port findings from the one started last
 // (ToolsData::latest_check), so a newer scan replaces what an older one
 // said; a Ports scan of a device the check did not scan always counts.
+//
+// A health check that has ended counts only while it describes the network
+// the Cardputer is on (health_run_here()); otherwise it counts as none.
 DashOverview dashboard_overview(const HomeData& home, const ToolsData& tools, const WatchData& watch);
+
+// Whether a health check describes the network the Cardputer is on now: a
+// running one does; one that has ended only while the uplink is the one it
+// was started on (the same interface, router and Wi-Fi network, with an
+// address in the network it swept).
+bool health_run_here(const HealthRun& health, const HomeData& home);
 
 // Made-up tool runs, Watch log and trap for the dashboard while the home
 // data is made up (HomeData::sample): a checked home network with 12

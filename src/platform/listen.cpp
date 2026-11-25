@@ -7,6 +7,7 @@
 #include "listen.h"
 
 #include "dns_message.h"
+#include "service_version.h"
 
 #include <algorithm>
 #include <array>
@@ -157,17 +158,19 @@ std::string kind_text(std::string_view text) {
 }
 
 // An SSDP SERVER line as kept: at most model::kSsdpServerMax characters,
-// printable ASCII only (anything else becomes '?').
+// printable ASCII only (anything else becomes '?'). A longer line loses the
+// token the cut falls in, so a version cut short ("MiniUPnPd/2." of
+// "MiniUPnPd/2.3.7") is never checked as another version.
 std::string ssdp_server_text(std::string_view text) {
     std::string server;
     for (const char value : text) {
-        if (server.size() >= model::kSsdpServerMax) {
+        if (server.size() > model::kSsdpServerMax) {
             break;
         }
         const auto character = static_cast<unsigned char>(value);
         server.push_back(character >= 0x20 && character < 0x7f ? value : '?');
     }
-    return server;
+    return model::cut_at_token(server, model::kSsdpServerMax);
 }
 
 // The kinds known from mDNS service types, the surest first: a device

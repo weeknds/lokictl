@@ -6,6 +6,8 @@
 
 #include "service_banner.h"
 
+#include "service_version.h"
+
 #include <algorithm>
 #include <array>
 #include <string_view>
@@ -45,10 +47,11 @@ std::string trimmed(const std::string& text) {
     return text.substr(begin, text.find_last_not_of(' ') - begin + 1);
 }
 
+// At most kBannerKeptMax characters, without a token cut in two: a version
+// cut short would be checked as another, older version.
 std::string capped(std::string text) {
     if (text.size() > kBannerKeptMax) {
-        text.resize(kBannerKeptMax);
-        text = trimmed(text);
+        text = trimmed(cut_at_token(text, kBannerKeptMax));
     }
     return text;
 }
@@ -177,7 +180,8 @@ bool header_line(const uint8_t* data, std::size_t size, std::string_view name, s
                     }
                 }
                 value = trimmed(text);
-                whole = end < size;
+                // A CR at the very end still ends the line (CR LF cut in two).
+                whole = end < size || data[end - 1] == '\r';
                 return true;
             }
         }
@@ -233,8 +237,14 @@ std::string banner_text(BannerProbe probe, const uint8_t* data, std::size_t size
         if (http_answer(data, size, maybe)) {
             std::string server;
             std::string powered;
-            header_line(data, size, "server:", server, whole);
-            header_line(data, size, "x-powered-by:", powered, whole);
+            // A line cut by the end of what was read (kBannerBytesMax) loses
+            // its last token, which may be a version cut short.
+            if (header_line(data, size, "server:", server, whole) && !whole) {
+                server = without_last_token(server);
+            }
+            if (header_line(data, size, "x-powered-by:", powered, whole) && !whole) {
+                powered = without_last_token(powered);
+            }
             if (!server.empty() && !powered.empty()) {
                 server += "; ";
             }

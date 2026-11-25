@@ -323,7 +323,11 @@ marks what's on.
   VPN file from this phone**. With more than one file, Z/C on the VPN row
   picks one. `6`
   turns the tunnel on and off. Lines like `PostUp` in the file are ignored,
-  so nothing in it ever runs.
+  so nothing in it ever runs. If the file has no IPv6 `Address` line, the
+  Cardputer's own IPv6 traffic does not go through the tunnel, even when
+  the file lists `::/0`. Devices on the hotspot are not affected. The leak
+  test says so (`IPv6: NOT through VPN`). To close it, make a new file
+  with IPv6 switched on at your VPN provider.
 - VPN gateway is VPN together with Router or Share, switched on in
   either order. Devices on the hotspot then go out only through the
   tunnel, DNS included. A kill switch in LokiCTL's own firewall table

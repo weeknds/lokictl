@@ -114,6 +114,28 @@ uint64_t address_order(const std::string& text) {
     return (number << 8) | part;
 }
 
+// Whether `address` ("10.0.0.12") is in `network` ("10.0.0.0/24").
+bool in_network(const std::string& address, const std::string& network) {
+    const std::size_t slash = network.find('/');
+    if (slash == std::string::npos || slash + 1 >= network.size() || network.size() - slash - 1 > 2) {
+        return false;
+    }
+    int32_t bits = 0;
+    for (std::size_t index = slash + 1; index < network.size(); ++index) {
+        if (network[index] < '0' || network[index] > '9') {
+            return false;
+        }
+        bits = bits * 10 + (network[index] - '0');
+    }
+    const uint64_t base = address_order(network.substr(0, slash));
+    const uint64_t own = address_order(address);
+    if (bits > 32 || base == std::numeric_limits<uint64_t>::max() || own == std::numeric_limits<uint64_t>::max()) {
+        return false;
+    }
+    const uint64_t mask = bits == 0 ? 0 : (0xFFFFFFFFull << (32 - bits)) & 0xFFFFFFFFull;
+    return (base & mask) == (own & mask);
+}
+
 // "21:44" as minutes since midnight; -1 when it is not that.
 int32_t clock_minutes(const std::string& text) {
     if (text.size() != 5 || text[2] != ':') {
@@ -501,6 +523,16 @@ void note_names(Entry& entry, const std::string& name, const std::string& kind) 
     }
 }
 
+// The subject of one of the list's devices.
+Subject entry_subject(const Entry& entry) {
+    Subject subject;
+    subject.key = entry.device.id;
+    subject.device = entry.device.id;
+    subject.label = entry.device.name;  // a host name stays as the device gave it
+    subject.object = entry.device.router ? std::string("the router") : entry.device.name;
+    return subject;
+}
+
 // The subject of something about `address` (empty: not about one device).
 Subject device_subject(DeviceList& list, const std::string& address, const std::string& hardware) {
     Subject subject;
@@ -511,14 +543,29 @@ Subject device_subject(DeviceList& list, const std::string& address, const std::
         return subject;
     }
     if (Entry* entry = list.find(address, hardware)) {
-        subject.key = entry->device.id;
-        subject.device = entry->device.id;
-        subject.label = entry->device.name;  // a host name stays as the device gave it
-        subject.object = entry->device.router ? std::string("the router") : entry->device.name;
-        return subject;
+        return entry_subject(*entry);
     }
     subject.key = address.empty() ? hardware : address;
     subject.label = address.empty() ? std::string("A device") : address;
+    subject.object = subject.label;
+    return subject;
+}
+
+// The subject of a fake router alert: the device that claims the router's
+// address, found by its hardware address and never by the address it
+// claims (that is the real router's). A list entry with the router's
+// address does not count, as Discover may have heard the claimant there.
+Subject claimant_subject(DeviceList& list, const WatchAlert& alert) {
+    if (!alert.hardware.empty()) {
+        for (Entry& entry : list.entries()) {
+            if (entry.hardware == alert.hardware && entry.device.address != alert.address) {
+                return entry_subject(entry);
+            }
+        }
+    }
+    Subject subject;
+    subject.key = alert.hardware.empty() ? alert.address : alert.hardware;
+    subject.label = alert.hardware.empty() ? std::string("A device") : alert.hardware;
     subject.object = subject.label;
     return subject;
 }
@@ -648,6 +695,8 @@ Candidate watch_candidate(const WatchAlert& alert, DeviceList& list) {
         candidate.subject.key = "network";
         candidate.subject.label = "Your network";
         candidate.subject.object = "your network";
+    } else if (alert.kind == WatchAlertKind::FakeRouter) {
+        candidate.subject = claimant_subject(list, alert);
     } else {
         candidate.subject = device_subject(list, alert.address, alert.hardware);
     }
@@ -683,7 +732,11 @@ Candidate watch_candidate(const WatchAlert& alert, DeviceList& list) {
     DashIssue issue = watch_issue(alert);
     candidate.about = std::move(issue.about);
     candidate.steps = std::move(issue.steps);
-    candidate.where = alert.address.empty() ? candidate.subject.label : alert.address;
+    if (alert.kind == WatchAlertKind::FakeRouter && !alert.hardware.empty()) {
+        candidate.where = alert.hardware;  // the claimant; the address is the router's
+    } else {
+        candidate.where = alert.address.empty() ? candidate.subject.label : alert.address;
+    }
     return candidate;
 }
 
@@ -729,9 +782,25 @@ const char* finding_tier_name(FindingTier tier) {
     return "ok";
 }
 
+bool health_run_here(const HealthRun& health, const HomeData& home) {
+    if (health.state == ToolState::Idle || health.state == ToolState::Running) {
+        return true;
+    }
+    // The Cardputer may have joined another Wi-Fi, or its cable another
+    // network, since the check ran.
+    if (health.interface_name != home.uplink_name || health.router != home.gateway_address ||
+        health.wifi_name != home.wifi_name) {
+        return false;
+    }
+    return health.network.empty() || in_network(home.uplink_address, health.network);
+}
+
 DashOverview dashboard_overview(const HomeData& home, const ToolsData& tools, const WatchData& watch) {
     DashOverview overview;
-    const HealthRun& health = tools.health;
+    // A check of another network says nothing about this one: it counts
+    // as none, so its devices and findings are not shown as this one's.
+    const HealthRun none;
+    const HealthRun& health = health_run_here(tools.health, home) ? tools.health : none;
     overview.checking = health.state == ToolState::Running;
     overview.checked = health.state == ToolState::Done;
     overview.checked_at = health.finished;
@@ -1089,6 +1158,7 @@ DashSample sample_dashboard() {
     health.asked = 253;
     health.elapsed_s = 94;
     health.finished = "07:44";
+    health.router = "10.0.0.1";
     HealthDevice router = sample_device("10.0.0.1", "", "router", {53, 80, 443});
     router.router = true;
     router.banners = {{80, "lighttpd/1.4.59"}};

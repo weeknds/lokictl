@@ -349,4 +349,36 @@ int compare_versions(std::string_view left, std::string_view right) {
     }
 }
 
+std::string without_last_token(std::string_view said) {
+    std::size_t end = said.size();
+    if (end > 0 && !separator(said[end - 1])) {
+        while (end > 0 && !separator(said[end - 1])) {
+            --end;
+        }
+        while (end > 0 && separator(said[end - 1])) {
+            --end;
+        }
+    }
+    return std::string(said.substr(0, end));
+}
+
+std::string cut_at_token(std::string_view said, std::size_t max) {
+    if (said.size() <= max) {
+        return std::string(said);
+    }
+    std::size_t end = max;
+    if (!separator(said[max])) {
+        while (end > 0 && !separator(said[end - 1])) {
+            --end;  // the token the cut falls in
+        }
+        while (end > 0 && separator(said[end - 1])) {
+            --end;  // and the separators before it
+        }
+    }
+    while (end > 0 && said[end - 1] == ' ') {
+        --end;
+    }
+    return std::string(said.substr(0, end));
+}
+
 } // namespace model

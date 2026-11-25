@@ -246,7 +246,10 @@ checks, each with its own line:
 - **IPv6.** When an interface other than the tunnel has a public IPv6
   address, the same trick finds the way to a public IPv6 address. Through
   the tunnel, or no way out at all, is fine; another interface is a leak.
-  Without IPv6 on the network there is nothing to leak.
+  Without IPv6 on the network there is nothing to leak. A WireGuard file
+  without an IPv6 `Address` always gives `IPv6: NOT through VPN` on a
+  network with IPv6, also when it lists `::/0`, because LokiCTL then turns
+  IPv6 off on the tunnel.
 - **Public address.** One HTTPS request (IPv4) to Cloudflare's trace page,
   `https://www.cloudflare.com/cdn-cgi/trace`, which answers with the
   address it saw. A run with the VPN off only notes this address, in

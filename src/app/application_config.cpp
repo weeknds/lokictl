@@ -6,14 +6,69 @@
 
 #include "application_config.h"
 
+#include <fcntl.h>
+#include <unistd.h>
+
 #include <algorithm>
 #include <cctype>
+#include <cerrno>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <vector>
 
 namespace app {
 namespace {
+
+std::string errno_text(int number) {
+    return std::strerror(number);
+}
+
+// Puts `content` in place of the file at `path`: it goes into a new file
+// next to it (`<path>.tmp`, the user's only, 0600, from the start, as it
+// can hold the hotspot password and the device lists), which is written,
+// flushed to the disk and closed before it is renamed over `path`. A save
+// that fails or is cut short (a full disk, a failing card, the power) so
+// leaves the old file as it was, never an empty one.
+bool replace_file(const std::filesystem::path& path, const std::string& content, std::string& error) {
+    const std::string temporary = path.string() + ".tmp";
+    ::unlink(temporary.c_str());  // a leftover of a save cut short
+    const int file = ::open(temporary.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_TRUNC | O_CLOEXEC, 0600);
+    if (file < 0) {
+        error = "could not open file for writing: " + errno_text(errno);
+        return false;
+    }
+    int failure = 0;
+    std::size_t written = 0;
+    while (written < content.size()) {
+        const ssize_t count = ::write(file, content.data() + written, content.size() - written);
+        if (count < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            failure = errno;
+            break;
+        }
+        written += static_cast<std::size_t>(count);
+    }
+    if (failure == 0 && ::fsync(file) != 0) {
+        failure = errno;
+    }
+    if (::close(file) != 0 && failure == 0) {
+        failure = errno;
+    }
+    if (failure != 0) {
+        error = "failed while writing file: " + errno_text(failure);
+        ::unlink(temporary.c_str());
+        return false;
+    }
+    if (::rename(temporary.c_str(), path.c_str()) != 0) {
+        error = "could not replace the file: " + errno_text(errno);
+        ::unlink(temporary.c_str());
+        return false;
+    }
+    return true;
+}
 
 std::string trim(std::string value) {
     const auto is_not_space = [](unsigned char character) {
@@ -295,39 +350,12 @@ bool save_application_config(const std::string& path,
         }
     }
 
-    {
-        // The file is the user's only (0600) at every save: it can hold the
-        // hotspot password and the device lists. Made private before the
-        // new content goes in, and before the old content is dropped, so a
-        // failure here changes nothing but an empty new file.
-        if (!std::filesystem::exists(config_path)) {
-            std::ofstream create(path, std::ios::app);
-        }
-        std::error_code permissions_error;
-        std::filesystem::permissions(config_path,
-                                     std::filesystem::perms::owner_read | std::filesystem::perms::owner_write,
-                                     std::filesystem::perm_options::replace,
-                                     permissions_error);
-        if (permissions_error) {
-            error = "could not make the file private: " + permissions_error.message();
-            return false;
-        }
-    }
-
-    std::ofstream output(path, std::ios::trunc);
-    if (!output) {
-        error = "could not open file for writing";
-        return false;
-    }
+    std::string content;
     for (const auto& updated_line : updated) {
-        output << updated_line << '\n';
+        content += updated_line;
+        content += '\n';
     }
-    if (!output) {
-        error = "failed while writing file";
-        return false;
-    }
-
-    return true;
+    return replace_file(config_path, content, error);
 }
 
 } // namespace app

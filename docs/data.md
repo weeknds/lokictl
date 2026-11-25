@@ -650,6 +650,13 @@ two names: keys and the rest of a file never leave
   gives a fixed reason that quotes nothing of it (`bad PrivateKey`, `no
   [Peer]`, `bad line 7`). The file is read only at the request and its
   keys are wiped once NetworkManager has them.
+- **A known limit:** a family without an Address is turned off on the
+  tunnel (see the profile below), also when AllowedIPs lists `::/0` (or
+  `0.0.0.0/0`). On a network that has that family, the Cardputer's own
+  traffic of that family then goes out directly, not through the tunnel.
+  Hotspot devices are IPv4 only, so a missing IPv6 Address does not
+  affect them. The leak test shows the IPv6 case as `IPv6: NOT through
+  VPN`.
 - **The profile** is WireGuard on `lokiwg0` with the file's keys, port,
   mark, MTU and peers; manual addresses (a family without one is
   disabled); the file's DNS servers, used alone (priority -50) when a peer
@@ -687,9 +694,10 @@ $B --snapshot build/shots/modes-vpn-on.png --page modes --data wifi --keys down,
 **The hotspot's password** never goes into `HomeData`, the log or
 `--print-data`. On the device it is the `hotspot_password=` key of the
 settings file: made at the first switch to Router (12 characters from a
-set without look-alikes such as `0`/`o` and `1`/`l`), saved with the file
-made readable by its owner only (mode 0600) before the line goes in, and
-kept. The shipped `/etc/lokictl.conf` has no such line. The simulator and
+set without look-alikes such as `0`/`o` and `1`/`l`), saved in a new
+copy of the file that is readable by its owner only (mode 0600) from the
+start and is renamed over the old file once it is on the disk, so a
+failed save leaves the old file as it was, and kept. The shipped `/etc/lokictl.conf` has no such line. The simulator and
 snapshots show a fixed made-up password and never write one.
 
 **The hotspot's name** lives in the view model next to the password: the
@@ -1135,7 +1143,12 @@ after the page's confirmation (key 6 twice), for that target only.
   whole DNS answer is in. The run keeps printable ASCII only, at most 120
   characters (`model::kBannerKeptMax`): the first piece of text without its
   protocol's prefix (`SSH-2.0-`, `220 `, `+OK`, `* OK`), with Telnet's
-  option bytes skipped. Pages show what fits.
+  option bytes skipped. Pages show what fits. A cut never keeps half a
+  word: a text over 120 characters and a `Server:` or `X-Powered-By:`
+  line cut by the 512-byte limit lose the word the cut falls in, so a
+  version cut short (`lighttpd/1.4.7` of `lighttpd/1.4.76`) is never
+  checked as an older one. An SSDP `SERVER` line over 60 characters is
+  cut the same way.
 - **The check** (`model::check_services()`, `src/model/vuln_list.*`): when
   a scan ends (not when it is stopped), the runner reads the software and
   version each port named (`model::read_service()`,
@@ -1291,7 +1304,13 @@ is one more tool job, so it takes the runner like the others.
   security (the uplink's, else the scan list's joined entry), the scan list
   itself and whether the uplink is a cable. The Health page has the data
   layer read NetworkManager's scan list like the Wi-Fi page does (no scan
-  is asked for).
+  is asked for). `app::ToolController` also puts the uplink's router and
+  Wi-Fi network as the check started into every run it hands over
+  (`HealthRun::router` and `wifi_name`), and the web dashboard
+  (`model::dashboard_overview()`) counts a run that has ended only while
+  the uplink's interface, router and Wi-Fi network are still those and
+  its address is in the network the check swept; otherwise it shows no
+  check. The made-up dashboard's check always matches the made-up network.
 - **The live runner** reads the cable's `speed` and `duplex`, then runs the
   probe's sweep and questions (`probe_network()`), picks the devices
   (`model::health_hosts()`: router, this device, then the sweep's and the

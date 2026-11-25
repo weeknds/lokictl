@@ -126,6 +126,12 @@ folder, for example
 `LOKICTL_REPORT_DIR=$PWD/build/reports lokictl --snapshot out.png --page
 health --keys 6,6,data,data,r --settle-ms 9000` saves one from the made-up
 health check.
+`build/darwin-arm64/Debug/lokictl_config_tests` (also run by `ctest`, with
+the same checkers) saves a made-up settings file in a temporary folder and
+checks that every other line stays, that the file is its owner's only and
+no temporary file is left, and that a save that cannot write (no file may
+grow) returns false and leaves the old file exactly as it was
+(`tests/config_checks.cpp`).
 
 ## Screenshots without a window
 

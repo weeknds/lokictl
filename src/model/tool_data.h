@@ -523,6 +523,12 @@ struct HealthRun {
     std::vector<HealthFinding> findings;  // the worst first (health_check.h); at most kHealthMaxFindings
     std::vector<HealthDevice> devices;    // each device scanned so far, in the order scanned
     std::string finished;                 // local time the run ended, "21:44"; empty until it is Done
+    // The uplink it was started on, as HomeData said then: its router
+    // (gateway_address) and its Wi-Fi network (wifi_name, empty on a
+    // cable). Set by app::ToolController; the web dashboard counts a run
+    // only while the uplink is still the one it checked (dashboard_overview()).
+    std::string router;
+    std::string wifi_name;
 };
 
 bool operator==(const HealthRun& left, const HealthRun& right);

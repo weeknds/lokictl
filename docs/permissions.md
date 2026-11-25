@@ -272,8 +272,9 @@ device.
 
 ## Files LokiCTL writes
 
-- `~/.config/lokictl/lokictl.conf`, readable by you only (0600, set at
-  every save, in a folder that is yours only, 0700): the theme,
+- `~/.config/lokictl/lokictl.conf`, readable by you only (0600, written
+  as a new copy that replaces the file only once it is complete, in a
+  folder that is yours only, 0700): the theme,
   "Dim when idle", "Keep mode after quitting", the hotspot's name and
   password (the password is made once, at the first switch to Router or
   Share), the list of blocked devices (`blocked_devices=`) and Watch's
@@ -321,7 +322,7 @@ what the hardware could do. LokiCTL's:
 |---|---|---|
 | `network` | true | It is a network tool: it scans, probes, runs a hotspot and a VPN, and sends a few requests to the internet (see [Data use](guide.md#data-use) in the guide). |
 | `additional_hardware` | true | The Wi-Fi survey works only with a USB Wi-Fi stick, and LokiCTL looks for such sticks among the network interfaces. The stick is optional: everything else uses only the built-in Wi-Fi and Ethernet port. The store counts USB accessories under this flag, so it is declared. |
-| `background_service` | false | The launcher starts LokiCTL when you open it. The package installs no systemd unit, and nothing of LokiCTL keeps running after it quits. "Keep mode after quitting" leaves NetworkManager's hotspot and VPN profiles running, which NetworkManager itself looks after; Debian's iperf3 server is never switched on. |
+| `background_service` | false | The launcher starts LokiCTL when you open it. The package installs no systemd unit, and nothing of LokiCTL keeps running after it quits. "Keep mode after quitting" leaves NetworkManager's hotspot, VPN and Laptop link profiles running, which NetworkManager itself looks after; Debian's iperf3 server is never switched on. |
 | `camera` | false | The QR codes (hotspot, security holes, sign-in page) are only shown on the screen, for your phone to scan. LokiCTL never uses the camera. |
 | `microphone` | false | Not used. |
 | `imu` | false | Not used. |

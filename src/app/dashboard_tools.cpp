@@ -342,8 +342,13 @@ void write_survey(Fields& tool, const viewmodel::BaseViewModel& view_model) {
 }
 
 // Who an alert row names, as the Watch page's row: its IPv4 address, else
-// its hardware address.
+// its hardware address. A fake router's row names both, as the Cardputer's
+// Watch detail does: the router's address and the claimant's hardware
+// address.
 std::string alert_who(const model::WatchAlert& alert) {
+    if (alert.kind == model::WatchAlertKind::FakeRouter && !alert.hardware.empty()) {
+        return alert.address.empty() ? alert.hardware : alert.address + " " + alert.hardware;
+    }
     if (!alert.address.empty() && alert.address.find(':') == std::string::npos) {
         return alert.address;
     }

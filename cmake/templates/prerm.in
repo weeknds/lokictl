@@ -15,7 +15,7 @@
 set -e
 
 if [ "$1" = "remove" ] && [ -x /usr/bin/nmcli ]; then
-    for profile in "LokiCTL hotspot" "LokiCTL VPN"; do
+    for profile in "LokiCTL hotspot" "LokiCTL VPN" "LokiCTL laptop link"; do
         /usr/bin/nmcli connection delete id "$profile" >/dev/null 2>&1 || true
     done
 fi

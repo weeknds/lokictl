@@ -130,6 +130,30 @@ void reading_checks() {
     const auto* bytes = reinterpret_cast<const uint8_t*>(http);
     expect(model::banner_text(model::BannerProbe::Http, bytes, sizeof(http) - 1) == "nginx/1.18.0; PHP/7.4.33",
            "Server and X-Powered-By");
+    // A Server line cut by the 512-byte read loses the word the cut falls
+    // in: "lighttpd/1.4.7" of "lighttpd/1.4.76" would be an older version.
+    const std::string head = "HTTP/1.1 200 OK\r\nX-Filler: " + std::string(461, 'a') + "\r\nServer: lighttpd/1.4.76\r\n\r\n";
+    const auto* head_bytes = reinterpret_cast<const uint8_t*>(head.data());
+    const std::size_t cut = head.find("1.4.76") + 5;
+    expect(cut == model::kBannerBytesMax &&
+               model::banner_text(model::BannerProbe::Http, head_bytes, model::kBannerBytesMax).empty(),
+           "a Server line cut in its version keeps no version");
+    expect(model::banner_text(model::BannerProbe::Http, head_bytes, head.size()) == "lighttpd/1.4.76",
+           "the whole Server line keeps its version");
+    expect(model::banner_text(model::BannerProbe::Http, head_bytes, head.find("\r\n\r\n") + 1) == "lighttpd/1.4.76",
+           "a Server line cut between CR and LF is whole");
+    // A text over 120 characters loses the word the cut falls in.
+    const std::string server = "Apache/2.4.62 (Debian) OpenSSL/3.0.15 mod_fcgid/2.3.9 mod_wsgi/4.9.4 Python/3.11 "
+                               "mod_perl/2.0.12 Perl/v5.36.0";
+    const std::string long_head = "HTTP/1.1 200 OK\r\nServer: " + server + "\r\nX-Powered-By: PHP/8.4.14\r\n\r\n";
+    expect(server.size() == 109 &&
+               model::banner_text(model::BannerProbe::Http, reinterpret_cast<const uint8_t*>(long_head.data()),
+                                  long_head.size()) == server,
+           "a version cut at 120 characters is dropped, not shortened");
+    expect(model::cut_at_token("Exim 4.92", 7) == "Exim" && model::cut_at_token("Exim 4.92 #3", 9) == "Exim 4.92" &&
+               model::cut_at_token("nginx/1.18.0 (Ubuntu)", 14) == "nginx/1.18.0" &&
+               model::cut_at_token("PHP/8.4.14", 9).empty() && model::cut_at_token("PHP/8.4.14", 10) == "PHP/8.4.14",
+           "cut_at_token keeps whole words only");
     expect(model::banner_probe(53) == model::BannerProbe::Dns, "port 53 is asked its version");
     expect(model::dns_version_text("9.18.24-1-Debian") == "BIND 9.18.24-1-Debian", "a number alone is BIND");
     expect(model::dns_version_text("dnsmasq-2.90") == "dnsmasq-2.90", "dnsmasq says its name");

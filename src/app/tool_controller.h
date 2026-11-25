@@ -118,6 +118,10 @@ private:
     std::string joined_wifi_;     // the Wi-Fi network the own check is for (model::signin_check_due())
     bool own_check_due_{false};   // the own check waits for the runner
     bool own_check_runs_{false};  // the sign-in run under way is the own check
+    // The uplink the last health check started on (model::HealthRun::router
+    // and wifi_name), put into every health run handed over.
+    std::string health_router_;
+    std::string health_wifi_;
 };
 
 } // namespace app

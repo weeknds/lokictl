@@ -184,6 +184,10 @@ void ToolController::handle_request() {
         if (!runner_->start(job)) {
             return;  // one runs already
         }
+        if (kind == model::ToolKind::Health) {
+            health_router_ = view_model_.home().gateway_address;
+            health_wifi_ = view_model_.home().wifi_name;
+        }
         if (kind == model::ToolKind::Signin) {
             own_check_due_ = false;  // this run answers the same question
         }
@@ -232,6 +236,10 @@ void ToolController::poll() {
     model::ToolsData next = data_;
     runner_->take(next);
     next.sent = platform::sent_packets();
+    if (next.health.state != model::ToolState::Idle) {
+        next.health.router = health_router_;
+        next.health.wifi_name = health_wifi_;
+    }
     if (own_check_runs_ && next.signin.state != model::ToolState::Running) {
         // The own check has ended (or was stopped); only "sign-in needed"
         // is worth a message.

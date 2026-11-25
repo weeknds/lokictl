@@ -105,7 +105,12 @@ internet.
   the traffic of the last minute, the mode and VPN, and Watch's newest
   alerts and the trap. A computer also lists the devices. Before any
   health check the verdict says `Not checked yet`: a device nobody has
-  checked never counts as fine.
+  checked never counts as fine. A check counts only on the network it
+  checked: once the Cardputer is on another one (another Wi-Fi, cable
+  port, router or address range), the verdict says `Not checked yet`
+  again and the old check's verdict, devices and findings are not shown.
+  Devices that Discover heard or a Ports scan checked before the change
+  stay in the list until that tool runs again or LokiCTL is restarted.
 - **Devices** lists every device the Cardputer knows, one line each, in
   three groups: `Needs attention`, `Looks fine` and `Not checked yet`
   (only when there are any). A search box finds a name, an address or a

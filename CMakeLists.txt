@@ -6,7 +6,7 @@
 
 cmake_minimum_required(VERSION 3.31)
 
-project(lokictl VERSION 0.1.1 LANGUAGES C CXX)
+project(lokictl VERSION 0.1.2 LANGUAGES C CXX)
 
 # Application identity. This block and the project() line above are the only
 # places where the build names the app: targets, install paths, package
@@ -801,8 +801,8 @@ target_link_libraries(${PROJECT_NAME}
 # security holes (tests/vuln_checks.cpp), of Watch's alerts, of the
 # health check's rules, of the leak test's rules, of the sign-in check, of
 # the trap, of the topology frames, of the names hotspot devices look up, of
-# the LAN speed test's iperf3 output, of reports and of the web dashboard,
-# on the Mac only:
+# the LAN speed test's iperf3 output, of reports, of the web dashboard and
+# of saving the settings file, on the Mac only:
 # build/darwin-arm64/Debug/lokictl_tests, or ctest.
 if(USE_DESKTOP)
     add_executable(${PROJECT_NAME}_tests tests/vuln_checks.cpp src/platform/dns_message.cpp)
@@ -949,6 +949,17 @@ if(USE_DESKTOP)
             FONTS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts"
     )
     add_test(NAME web_checks COMMAND ${PROJECT_NAME}_web_tests)
+
+    # Saving the settings file: other lines kept, the file private, and a
+    # save that fails while writing leaves the old file as it was
+    # (tests/config_checks.cpp), with the address and undefined-behaviour
+    # checkers: build/darwin-arm64/Debug/lokictl_config_tests, or ctest.
+    add_executable(${PROJECT_NAME}_config_tests tests/config_checks.cpp src/app/application_config.cpp)
+    target_include_directories(${PROJECT_NAME}_config_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/app)
+    target_compile_definitions(${PROJECT_NAME}_config_tests PRIVATE APP_CONFIG_NAME="${APP_CONFIG_NAME}")
+    target_compile_options(${PROJECT_NAME}_config_tests PRIVATE -fsanitize=address,undefined -fno-sanitize-recover=all)
+    target_link_options(${PROJECT_NAME}_config_tests PRIVATE -fsanitize=address,undefined)
+    add_test(NAME config_checks COMMAND ${PROJECT_NAME}_config_tests)
 endif()
 
 # Package deb
